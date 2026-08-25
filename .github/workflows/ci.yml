@@ -44,7 +44,7 @@ jobs:
       - name: Migrate database
         run: dotnet run --project src/Hosts/Agro360.Migrator/Agro360.Migrator.csproj --configuration Release --no-build
       - name: Test
-        run: dotnet test MNSOFT.Agro360.sln --configuration Release --no-build --collect:"XPlat Code Coverage"
+        run: dotnet test MNSOFT.Agro360.sln --configuration Release --no-build
       - name: Docker build
         run: |
           docker build -f deploy/Dockerfile.api -t agro360-api:ci .
