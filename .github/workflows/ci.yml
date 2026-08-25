@@ -30,6 +30,10 @@ jobs:
         run: |
           sha256sum --check checksums.sha256
           ! grep -nE '^\\(i|include|ir)\b' agro360-v0.2.0-full-install.sql
+      - name: Validate Sprint 9 standalone SQL
+        run: |
+          ./scripts/validate-full-sql.sh database/agro360-postgres-full.sql
+          cd database/releases/v0.6.0 && sha256sum --check checksums.sha256
       - name: Test
         run: dotnet test MNSOFT.Agro360.sln --configuration Release --no-build --report-trx --results-directory TestResults
       - name: Audit vulnerable packages

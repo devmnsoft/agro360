@@ -34,3 +34,17 @@ dotnet run --project src/Hosts/Agro360.Web
 ## Financeiro Agro
 
 Após instalar o SQL único, execute nativamente `dotnet run --project src/Hosts/Agro360.Api`, `dotnet run --project src/Hosts/Agro360.Web` e `dotnet run --project src/Hosts/Agro360.Worker`. Todos leem `ConnectionStrings__Agro360`; o Migrator é executado com `dotnet run --project src/Hosts/Agro360.Migrator`.
+
+## Hosts da Sprint 9
+
+```bash
+export ConnectionStrings__Agro360='Host=...;Database=...;Username=...;Password=...'
+export Jwt__SigningKey='uma-chave-local-com-pelo-menos-32-caracteres'
+psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
+dotnet run --project src/Hosts/Agro360.Migrator
+dotnet run --project src/Hosts/Agro360.Api
+dotnet run --project src/Hosts/Agro360.Worker
+dotnet run --project src/Hosts/Agro360.Web
+```
+
+Cada host também pode ser iniciado pelos scripts `scripts/run-*.sh`. Docker permanece opcional.

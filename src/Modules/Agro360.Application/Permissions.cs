@@ -23,6 +23,10 @@ public static class Permissions
     public const string MaintenanceRead = "maintenance.read";
     public const string MaintenanceWrite = "maintenance.write";
     public const string DashboardRead = "dashboard.read";
+    public const string StorageRead = "storage.read";
+    public const string StorageWrite = "storage.write";
+    public const string LogisticsRead = "logistics.read";
+    public const string LogisticsWrite = "logistics.write";
 
     public static IReadOnlyCollection<string> Administrator =>
     [
@@ -39,6 +43,6 @@ public static class Permissions
         CommercialWrite,
         FinanceRead, FinanceWrite,
         PurchasingRead, PurchasingWrite, PurchasingApprove, FleetRead, FleetWrite, MaintenanceRead, MaintenanceWrite,
-        DashboardRead
+        DashboardRead, StorageRead, StorageWrite, LogisticsRead, LogisticsWrite
     ];
 }

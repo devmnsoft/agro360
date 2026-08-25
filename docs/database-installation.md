@@ -49,3 +49,13 @@ No pgAdmin/DBeaver, abra o mesmo arquivo no editor conectado ao banco alvo. Para
 ## Sprint 8 / v0.5.0
 
 Instalação integral e portável: `psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql`. Para manutenção incremental, aplique `database/migrations/007_sprint8_finance.sql`. O release reproduzível está em `database/releases/v0.5.0/` com checksums SHA-256.
+
+## Instalador completo até a Sprint 9
+
+`database/agro360-postgres-full.sql` contém fundação e todas as migrações até armazenagem/logística. Ele não seleciona nem cria banco, usuário ou senha.
+
+```bash
+psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
+```
+
+No pgAdmin ou DBeaver, conecte-se ao banco desejado, abra o mesmo arquivo e execute-o integralmente. Valide portabilidade com `./scripts/validate-full-sql.sh`.

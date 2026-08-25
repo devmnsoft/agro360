@@ -42,6 +42,9 @@ public static class DependencyInjection
         services.AddScoped<IOperationsService, OperationsService>();
         services.AddScoped<IGlobalSearchService, GlobalSearchService>();
         services.AddScoped<ITraceabilityService, TraceabilityService>();
+        services.AddScoped<IStorageService, StorageService>();
+        services.AddScoped<ILogisticsService, LogisticsService>();
+        services.AddScoped<IDeliveryContractService, DeliveryContractService>();
         return services;
     }
 }
