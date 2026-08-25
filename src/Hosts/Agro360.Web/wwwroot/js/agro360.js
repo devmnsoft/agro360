@@ -124,6 +124,7 @@
             const result = await api("/api/v1/dashboard/command-center");
             renderDashboard(result);
             await loadLivestockDashboard();
+            await loadStorageDashboard();
             element("sync-time").textContent = "sincronizado agora";
         } catch (error) {
             if (error.status !== 401) toast("Não foi possível atualizar", error.message, true);
@@ -145,6 +146,20 @@
             ];
             host.replaceChildren(...cards.map(([label, value]) => { const card=document.createElement("article"); card.innerHTML=`<small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong>`; return card; }));
         } catch (error) { host.innerHTML=`<p class="error-state">Não foi possível carregar Pecuária 360: ${escapeHtml(error.message)}</p>`; }
+    }
+
+    async function loadStorageDashboard() {
+        try {
+            const d = await api("/api/storage/dashboard");
+            setText("storage-total", `${number.format(d.totalCapacity)} t`);
+            setText("storage-occupied", `${number.format(d.occupiedCapacity)} t`);
+            setText("storage-available", `${number.format(d.availableCapacity)} t`);
+            setText("storage-receipts", d.pendingReceipts);
+            setText("storage-freight", money.format(d.freightThisMonth));
+            setText("storage-alerts", `${d.blockedLots} lote(s) bloqueado(s) · ${d.qualityAlerts} alerta(s) de qualidade · ${d.capacityAlerts} alerta(s) de capacidade`);
+        } catch (error) {
+            setText("storage-alerts", `Não foi possível carregar armazenagem: ${error.message}`);
+        }
     }
 
     function renderDashboard(result) {
@@ -285,7 +300,15 @@
             stock: "Use POST /api/v1/inventory/movements/receipts.",
             sale: "Use POST /api/v1/commercial/sales.",
             finance: "O contas a receber é gerado automaticamente nas vendas.",
-            logistics: "A torre logística está planejada na Fase 13.",
+            logistics: "Viagens e fretes estão disponíveis em /api/logistics/trips.",
+            "storage-structures": "Cadastre e filtre estruturas em /api/storage/structures.",
+            "storage-receipts": "O fluxo de romaneio, pesagem, classificação e descarga está disponível na API.",
+            "storage-quality": "Parâmetros, alertas, laudos e descontos são calculados por produto.",
+            "storage-lots": "Consulte saldos e transfira ou bloqueie lotes rastreáveis.",
+            "storage-processing": "Ordens controlam secagem, beneficiamento, perdas e lote de saída.",
+            "storage-shipments": "Expedições carregadas baixam lote e capacidade de forma transacional.",
+            "storage-logistics": "Viagens calculam custo por tonelada e quilômetro e registram ocorrências.",
+            "storage-contracts": "Contratos operacionais acompanham automaticamente o saldo a entregar.",
             analytics: "Os indicadores atuais vêm diretamente do Command Center.",
             notifications: "Alertas críticos aparecem nos indicadores do Command Center.",
             context: "Envie X-Farm-ID nas chamadas para limitar o contexto operacional.",
@@ -342,7 +365,7 @@
     init();
     async function loadOperationalDashboard() {
         try {
-            const data = await apiFetch("/api/operations/dashboard");
+            const data = await api("/api/operations/dashboard");
             if (!data) return;
             const set = (id, value) => { const target = element(id); if (target) target.textContent = value; };
             set("ops-open-purchases", data.openPurchases);

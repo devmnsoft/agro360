@@ -24,3 +24,14 @@ Testes unitários não exigem banco. Integrações reais usam exclusivamente `AG
 ## Sprint 8
 
 As regras financeiras são cobertas pelos testes unitários. Testes que abrem PostgreSQL leem exclusivamente `AGRO360_TEST_CONNECTION_STRING` e são ignorados, com justificativa, quando ela não está definida. Valide também o artefato portável com `bash scripts/validate-full-sql.sh`.
+
+## Sprint 9
+
+Os testes unitários cobrem pesos, descontos, capacidade, bloqueio/saldo de lote e frete. Testes que abrem PostgreSQL leem exclusivamente `AGRO360_TEST_CONNECTION_STRING`; sem a variável são ignorados com mensagem explícita.
+
+```bash
+dotnet restore
+dotnet build --configuration Release
+dotnet test --configuration Release
+./scripts/validate-full-sql.sh
+```

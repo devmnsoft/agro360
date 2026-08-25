@@ -17,3 +17,7 @@ Os contratos ficam em Application, regras invariantes no Domain e a orquestraç�
 ## Contextos Finance e Commercial (Sprint 8)
 
 Contratos permanecem em Application; regras puras em Domain; serviços Dapper parametrizados em Infrastructure; controllers somente adaptam HTTP. Escritas financeiras são transacionais, filtradas por tenant e persistem auditoria. PostgreSQL aplica constraints, índices e RLS como defesa adicional.
+
+## Armazenagem e logística (Sprint 9)
+
+Regras determinísticas residem em Domain; contratos e comandos em Application; implementações Dapper em Infrastructure; controllers apenas traduzem HTTP. Descarga, transferência, processamento e despacho usam funções PostgreSQL transacionais para manter lote, capacidade, contrato e rastreabilidade atômicos. Todas as tabelas e queries operacionais aplicam `tenant_id`.

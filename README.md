@@ -158,3 +158,7 @@ Consulte o [guia da Sprint 7](docs/sprint-7-pecuaria-360.md), a [instalação](d
 ## Sprint 8 — Financeiro Agro
 
 Plano de contas, centros de custo, pagar/receber, comercialização, baixas, fluxo de caixa, resultados dimensionais e dashboard econômico estão disponíveis na v0.5.0. Consulte [o guia da Sprint 8](docs/sprint-8-financeiro-agro.md) e instale todo o banco com `psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql`.
+
+## Sprint 9 — Armazenagem e logística
+
+A v0.6.0 entrega estruturas/silos, romaneio e pesagem, qualidade e descontos, lotes rastreáveis, secagem/beneficiamento, expedição, contratos operacionais, viagens/fretes e dashboard consolidado. Consulte [o guia operacional](docs/sprint-9-armazenagem-logistica.md).

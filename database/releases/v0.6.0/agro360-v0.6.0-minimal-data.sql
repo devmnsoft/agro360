@@ -1,0 +1,1 @@
+-- Sprint 9 não exige dados fixos: cadastros são isolados por tenant e criados pela API.

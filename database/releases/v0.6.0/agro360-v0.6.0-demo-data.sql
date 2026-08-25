@@ -1,0 +1,1 @@
+-- Dados demonstrativos não são instalados automaticamente para preservar o isolamento multi-tenant.

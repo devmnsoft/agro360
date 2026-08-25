@@ -2,6 +2,7 @@ using Agro360.Domain.Agriculture;
 using Agro360.Domain.Inventory;
 using Agro360.Domain.Livestock;
 using Agro360.Domain.Operations;
+using Agro360.Domain.Storage;
 using Agro360.Domain.Finance;
 using Agro360.SharedKernel;
 
@@ -121,4 +122,12 @@ public sealed class DomainRulesTests
     [Fact] public void FinancialTitleCalculatesDiscountAndCharges() => Assert.Equal(102m, FinanceRules.FinalAmount(100, 3, 2, 3));
     [Fact] public void FinancialTitleRejectsNegativeValues() => Assert.Throws<DomainException>(() => FinanceRules.FinalAmount(100, -1, 0, 0));
     [Fact] public void ChartOfAccountsValidatesType() => Assert.Throws<DomainException>(() => FinanceRules.Account("1", "Conta", "UNKNOWN", "DEBIT"));
+    [Fact] public void ReceiptNetWeightSubtractsTare() => Assert.Equal(8_500m, StorageRules.NetWeight(10_000, 1_500));
+    [Fact] public void ReceiptRejectsTareAboveGross() => Assert.Throws<DomainException>(() => StorageRules.NetWeight(1_000, 1_001));
+    [Fact] public void TechnicalDiscountCalculatesFinalWeight() => Assert.Equal(9_500m, StorageRules.FinalWeight(10_000, 5));
+    [Fact] public void StructureRejectsCapacityOverflow() => Assert.Throws<DomainException>(() => StorageRules.Capacity(100, 101));
+    [Fact] public void BlockedLotCannotBeDispatched() => Assert.Throws<DomainException>(() => StorageRules.LotWithdrawal(100, 10, true));
+    [Fact] public void LotCannotDispatchAboveBalance() => Assert.Throws<DomainException>(() => StorageRules.LotWithdrawal(100, 101, false));
+    [Fact] public void FreightCostPerTonneIsCalculated() => Assert.Equal(125m, StorageRules.Freight(1_000, 200, 8));
+    [Fact] public void FreightRejectsNegativeValue() => Assert.Throws<DomainException>(() => StorageRules.Freight(-1, 10, 1));
 }
