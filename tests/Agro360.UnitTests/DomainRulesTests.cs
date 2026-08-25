@@ -4,6 +4,7 @@ using Agro360.Domain.Livestock;
 using Agro360.Domain.Operations;
 using Agro360.Domain.Storage;
 using Agro360.Domain.Finance;
+using Agro360.Domain.Traceability;
 using Agro360.SharedKernel;
 
 namespace Agro360.UnitTests;
@@ -130,4 +131,11 @@ public sealed class DomainRulesTests
     [Fact] public void LotCannotDispatchAboveBalance() => Assert.Throws<DomainException>(() => StorageRules.LotWithdrawal(100, 101, false));
     [Fact] public void FreightCostPerTonneIsCalculated() => Assert.Equal(125m, StorageRules.Freight(1_000, 200, 8));
     [Fact] public void FreightRejectsNegativeValue() => Assert.Throws<DomainException>(() => StorageRules.Freight(-1, 10, 1));
+    [Fact] public void TraceableLotRequiresOrigin() => Assert.Throws<DomainException>(() => Sprint10Rules.RequireOrigin(null,""));
+    [Fact] public void TucupiMinimumBoilingTimeIsEnforced() => Assert.False(Sprint10Rules.ProcessingComplies(DateTimeOffset.UtcNow,DateTimeOffset.UtcNow.AddMinutes(20),100,30,95));
+    [Fact] public void CompliantTucupiBoilingIsApproved() => Assert.True(Sprint10Rules.ProcessingComplies(DateTimeOffset.UtcNow,DateTimeOffset.UtcNow.AddMinutes(40),98,30,95));
+    [Fact] public void LedgerHashChainDependsOnPreviousHash() => Assert.NotEqual(Sprint10Rules.LedgerHash(null,"{}","m"),Sprint10Rules.LedgerHash("abc","{}","m"));
+    [Fact] public void InterdictedSegmentNeedsAuthorization() => Assert.Throws<DomainException>(() => Sprint10Rules.RequireRouteAuthorization("INTERDICTED",false));
+    [Fact] public void SellerPercentageCommissionIsCalculated() => Assert.Equal(100m,Sprint10Rules.Commission(1000,10,true));
+    [Fact] public void SplitMustBalanceSaleTotal() => Assert.Throws<DomainException>(() => Sprint10Rules.ValidateSplit(100,[50,40]));
 }

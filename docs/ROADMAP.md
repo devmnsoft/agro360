@@ -100,3 +100,12 @@ Gate do meio: terceiro fluxo E2E — milho colhido → armazém → fórmula de 
 - RLS, autorização, backup/restore e logs auditados;
 - acessibilidade, responsividade, erros JS e links verificados;
 - runbook de incidente, suporte, atualização e rollback aprovado.
+
+## v0.7.0 — diferenciais estratégicos entregues
+
+- Rastreabilidade amazônica e genérica; conformidade de beneficiamento; ledger relacional imutável; certificados; logística fluvial/vicinal; força de vendas e split.
+
+## Expansões futuras opcionais
+
+- Adaptador blockchain real, gateways de pagamento, certificadoras e fluxos de exportação.
+- Evidências ESG/carbono, sensores IoT de temperatura e rastreamento GPS/hidrológico.
