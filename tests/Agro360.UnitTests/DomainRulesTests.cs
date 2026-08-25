@@ -110,4 +110,11 @@ public sealed class DomainRulesTests
         Assert.Equal(525m, OperationalRules.FuelTotal(50, 10.5m));
         Assert.Equal(350m, OperationalRules.MaintenanceTotal(200, 150));
     }
+
+    [Fact] public void LivestockRejectsNegativeProduction() => Assert.Throws<DomainException>(() => Agro360.Domain.Livestock.LivestockRules.NonNegative(-1, "Produção"));
+    [Fact] public void LivestockCalculatesAverageDailyGain() => Assert.Equal(1m, Agro360.Domain.Livestock.LivestockRules.AverageDailyGain(300, new DateOnly(2026,8,1), 324, new DateOnly(2026,8,25)));
+    [Fact] public void ReproductionRequiresFemale() => Assert.Throws<DomainException>(() => Agro360.Domain.Livestock.LivestockRules.RequireFemale("M"));
+    [Fact] public void PregnancyDiagnosisCalculatesExpectedBirth() => Assert.Equal(new DateOnly(2027,6,4), Agro360.Domain.Livestock.LivestockRules.ExpectedBirth(new DateOnly(2026,8,25), "BOVINO"));
+    [Fact] public void NutritionPlanRequiresItems() => Assert.Throws<DomainException>(() => Agro360.Domain.Livestock.LivestockRules.DietCost([]));
+    [Fact] public void NutritionPlanCalculatesCost() => Assert.Equal(25m, Agro360.Domain.Livestock.LivestockRules.DietCost([(10m,2.5m)]));
 }

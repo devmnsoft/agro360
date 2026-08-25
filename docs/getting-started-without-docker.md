@@ -18,3 +18,15 @@ Para publicar, execute `dotnet publish src/Hosts/Agro360.Api -c Release -o artif
 ## Sprint 6
 
 Após instalar `database/agro360-postgres-full.sql`, exporte `ConnectionStrings__Agro360` para API, Worker e Migrator. Execute em terminais separados: `dotnet run --project src/Hosts/Agro360.Api`, `dotnet run --project src/Hosts/Agro360.Web` e `dotnet run --project src/Hosts/Agro360.Worker`. Para migrations incrementais use `dotnet run --project src/Hosts/Agro360.Migrator`. Nenhum desses comandos requer Docker.
+
+## Pecuária 360
+
+Após instalar o schema v0.4.0, inicie API, Worker e Web em terminais separados. Nenhum host pressupõe PostgreSQL local ou Docker; todos recebem `ConnectionStrings__Agro360`.
+
+```bash
+export ConnectionStrings__Agro360='SUA CONNECTION STRING POSTGRESQL'
+dotnet run --project src/Hosts/Agro360.Migrator -- migrate
+dotnet run --project src/Hosts/Agro360.Api
+dotnet run --project src/Hosts/Agro360.Worker
+dotnet run --project src/Hosts/Agro360.Web
+```

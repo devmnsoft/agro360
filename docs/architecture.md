@@ -9,3 +9,7 @@ SQL de evolução vive somente em `database/migrations`; seeds são separados de
 ## Fatia operacional da Sprint 6
 
 `OperationalRules` mantém invariantes puras no Domain. Contratos/DTOs e `IOperationsService` ficam em Application. A implementação Infrastructure coordena Dapper, transações PostgreSQL, bloqueio pessimista, RLS e auditoria; controllers apenas traduzem HTTP e autorização. O arquivo SQL único e as migrações usam constraints como segunda linha de defesa.
+
+## Slice Pecuária 360
+
+Os contratos ficam em Application, regras invariantes no Domain e a orquestração transacional/Dapper em Infrastructure. O controller apenas traduz HTTP. Baixas sanitárias e nutricionais bloqueiam saldo, atualizam estoque e gravam o evento na mesma transação; todas as escritas críticas usam a trilha de auditoria compartilhada. O dashboard possui serviço e query consolidada próprios.
