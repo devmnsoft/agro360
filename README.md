@@ -1,100 +1,125 @@
 # MNSOFT Agro 360
 
-Plataforma integrada, multi-tenant e modular para gestão do agronegócio. A solução conecta propriedade, agricultura, pecuária, estoque, custos, comercial, financeiro e rastreabilidade em uma única cadeia operacional.
+Plataforma modular e multi-tenant para gestão do agronegócio, em .NET 10 e PostgreSQL/PostGIS. **A execução principal é nativa e não requer Docker.** Docker Compose permanece somente como conveniência opcional.
 
-> Todo acontecimento físico deve produzir, quando aplicável, reflexos operacionais, financeiros, logísticos, documentais e analíticos.
+## Início rápido sem Docker
 
-## Estado desta entrega
+### Pré-requisitos
 
-Esta versão candidata à homologação interna fecha a fundação técnica e entrega APIs transacionais para os fluxos abaixo. A interface Web atual é um Command Center/PWA; os formulários operacionais completos ainda são `FOUNDATION`, portanto os fluxos não são classificados como `CORE` ponta a ponta:
+- .NET SDK 10 (a versão é fixada em `global.json`);
+- PostgreSQL 14 ou superior, local, remoto ou gerenciado;
+- PostGIS e as extensões `pgcrypto`, `pg_trgm` e `unaccent` disponíveis;
+- PostgreSQL client tools (`psql`, `pg_dump`, `pg_restore`) para instalação manual e manutenção.
 
-1. propriedade → talhão → safra → insumo → plantio → colheita → venda → contas a receber;
-2. animal → pesagem/vacinação → consumo de estoque → custo → venda → rastreabilidade;
-3. milho → estoque → alimentação animal → custo do lote, preparado pela malha de rastreabilidade.
-
-Os demais domínios estão planejados em `docs/ROADMAP.md` e catalogados em `docs/MODULE-CATALOG.md`. Um módulo só é marcado como concluído quando possui regra, persistência, autorização, auditoria, API, interface e teste.
-
-## Arquitetura
-
-- .NET 10, ASP.NET Core e C#;
-- monólito modular orientado a domínio, pronto para extração futura;
-- PostgreSQL + PostGIS, Dapper e SQL versionado;
-- API REST com JWT, refresh token, Problem Details, paginação, idempotência, rate limit e correlation ID;
-- Razor Pages/PWA responsiva, com tema claro/escuro e `Ctrl+K`;
-- worker de Outbox;
-- isolamento multi-tenant em aplicação e Row-Level Security;
-- UUID como chave distribuída, `numeric` para dinheiro/medidas e concorrência otimista;
-- Docker Compose com PostgreSQL/PostGIS, API, Web, Worker e Migrator. Redis e MinIO só serão incluídos quando houver consumidores reais.
-
-## Projetos
-
-```text
-src/
-  BuildingBlocks/
-    Agro360.SharedKernel
-    Agro360.Multitenancy
-  Modules/
-    Agro360.Domain
-    Agro360.Application
-    Agro360.Infrastructure
-  Hosts/
-    Agro360.Api
-    Agro360.Web
-    Agro360.Worker
-    Agro360.Migrator
-  Mobile/
-    Agro360.Mobile.Core
-tests/
-  Agro360.UnitTests
-  Agro360.ArchitectureTests
-  Agro360.IntegrationTests
-database/migrations
-deploy
-docs
-scripts
-```
-
-## Início rápido
-
-Pré-requisitos: Docker Desktop ou Docker Engine com Compose.
+Prepare um servidor externo (os nomes são exemplos; a senha deve ser digitada com segurança pelo administrador):
 
 ```bash
-cp .env.example .env
-docker compose up --build
+createuser --host localhost --port 5432 --pwprompt agro360_app
+createdb --host localhost --port 5432 --owner agro360_app agro360
+psql --host localhost --port 5432 --dbname agro360 --file database/bootstrap/003-enable-extensions.sql
+export ConnectionStrings__Agro360='Host=localhost;Port=5432;Database=agro360;Username=agro360_app;Password=ALTERAR;Pooling=true;Timeout=15;Command Timeout=30'
 ```
 
-- interface: `http://localhost:8080`
-- API: `http://localhost:8081`
-- OpenAPI: `http://localhost:8081/openapi/v1.json`
-- health: `http://localhost:8081/health`
-
-O migrador executa antes dos hosts. Em desenvolvimento, `POST /api/v1/bootstrap` cria o primeiro tenant e administrador. Desabilite `Bootstrap__Enabled` após a criação.
-
-Exemplo:
+Não versione essa variável. Em desenvolvimento também é possível usar User Secrets:
 
 ```bash
-curl -X POST http://localhost:8081/api/v1/bootstrap \
-  -H 'Content-Type: application/json' \
-  -d '{"tenantName":"Fazenda Demonstração","tenantSlug":"demo","adminName":"Administrador","email":"admin@agro360.local","password":"TroqueAgora!123"}'
+dotnet user-secrets --project src/Hosts/Agro360.Api set ConnectionStrings:Agro360 'SUA_CONEXAO'
+dotnet user-secrets --project src/Hosts/Agro360.Migrator set ConnectionStrings:Agro360 'SUA_CONEXAO'
 ```
 
-Depois, autentique em `POST /api/v1/auth/login` e envie `Authorization: Bearer <token>`.
+Um `appsettings.Development.json` local ignorado pelo Git ou o secret manager da plataforma de produção são igualmente suportados. API, Worker e Migrator usam a chave única `ConnectionStrings:Agro360`; nenhum host de container é assumido.
 
-## Desenvolvimento local
+Execute a preparação e, depois, os hosts:
+
+```bash
+./scripts/setup-local.sh
+./scripts/migrate-local.sh
+./scripts/run-local.sh
+# PowerShell: ./scripts/setup-local.ps1; ./scripts/migrate-local.ps1; ./scripts/run-local.ps1
+```
+
+O script de execução inicia API, Worker e Web e encerra todos ao receber `Ctrl+C`. A sequência equivalente, sem scripts, é:
 
 ```bash
 dotnet restore MNSOFT.Agro360.sln
-dotnet build MNSOFT.Agro360.sln --no-restore
-dotnet test MNSOFT.Agro360.sln --no-build
+dotnet build MNSOFT.Agro360.sln --configuration Release
+dotnet run --project src/Hosts/Agro360.Migrator -- migrate
+dotnet run --project src/Hosts/Agro360.Api
+dotnet run --project src/Hosts/Agro360.Worker
+dotnet run --project src/Hosts/Agro360.Web
 ```
 
-Use `scripts/verify.sh` para executar formatação, build e testes. Consulte `docs/ARCHITECTURE.md`, `docs/BUSINESS-RULES.md`, `docs/API.md` e `docs/ROADMAP.md` antes de ampliar módulos.
+## Instalação do banco
 
-Para staging, recuperação e evidências da candidata v0.2.0, consulte `docs/DEPLOYMENT-STAGING.md`, `docs/BACKUP-RESTORE.md` e `docs/HOMOLOGATION-REPORT-v0.2.0.md`.
+### A — Migrator (recomendado)
 
-## Segurança
+```bash
+dotnet run --project src/Hosts/Agro360.Migrator -- status
+dotnet run --project src/Hosts/Agro360.Migrator -- validate
+dotnet run --project src/Hosts/Agro360.Migrator -- migrate
+dotnet run --project src/Hosts/Agro360.Migrator -- seed --environment Homologation
+# migrations externas: --migrations /caminho/fornecido
+```
 
-- Nunca use os segredos de exemplo em produção.
-- O header de tenant não substitui a claim JWT fora de desenvolvimento.
-- O usuário da aplicação não deve ser proprietário do banco, para que RLS não seja contornada.
-- Ações de suporte e bootstrap devem permanecer desabilitadas por padrão em produção.
+O Migrator usa lock consultivo, checksum, histórico e uma transação por migration. Um checksum alterado ou PostGIS indisponível gera erro específico e exit code não zero.
+
+### B — SQL consolidado
+
+Em um **banco vazio**:
+
+```bash
+psql --host localhost --port 5432 --username agro360_app --dbname agro360 --set=ON_ERROR_STOP=1 --file database/releases/v0.2.0/agro360-v0.2.0-full-install.sql
+```
+
+### C — pgAdmin, DBeaver ou equivalente
+
+Conecte ao banco de destino, abra o editor SQL, carregue `database/releases/v0.2.0/agro360-v0.2.0-full-install.sql` e execute o script completo. Ele não usa `\i`, proprietário, senha, banco fixo ou caminhos externos. Consulte `database/README.md` para a organização do pacote.
+
+## Testes nativos com PostgreSQL externo
+
+Use somente banco descartável cujo nome contenha `test` ou `teste`; o script recusa outro destino:
+
+```bash
+export AGRO360_TEST_CONNECTION_STRING='Host=localhost;Port=5432;Database=agro360_test;Username=agro360_app;Password=ALTERAR'
+./scripts/test-local.sh
+# PowerShell: $env:AGRO360_TEST_CONNECTION_STRING='...'; ./scripts/test-local.ps1
+```
+
+As migrations reais são aplicadas antes da suíte. O banco informado é responsabilidade do operador e nunca deve ser o de produção.
+
+## Backup e restauração sem containers
+
+A autenticação deve usar prompt, `PGPASSWORD` temporário ou, preferencialmente, `.pgpass`/`pgpass.conf` protegido; os scripts não recebem nem imprimem senha:
+
+```bash
+export PGHOST=localhost PGPORT=5432 PGUSER=agro360_app PGDATABASE=agro360
+./database/maintenance/backup.sh agro360
+createdb --host "$PGHOST" --port "$PGPORT" --username "$PGUSER" agro360_restore
+PGDATABASE=agro360_restore ./database/maintenance/restore.sh agro360.backup
+PGDATABASE=agro360_restore ./database/maintenance/restore.sh agro360.sql
+```
+
+## Publicação nativa
+
+Os artefatos incluem documentação, scripts, migrations e instalador consolidado:
+
+```bash
+for host in Agro360.Migrator Agro360.Api Agro360.Worker Agro360.Web; do
+  dotnet publish "src/Hosts/$host" --configuration Release --output "artifacts/$host"
+done
+```
+
+## Docker Compose (alternativa opcional)
+
+Somente se Docker estiver disponível:
+
+```bash
+cp .env.example .env       # substitua ALTERAR localmente; não versione .env
+docker compose up --build
+```
+
+O Compose usa `postgres` apenas dentro de sua configuração opcional; aplicações nativas nunca dependem desse hostname. Web: `http://localhost:8080`; API: `http://localhost:8081`.
+
+## Estrutura e segurança
+
+Os hosts ficam em `src/Hosts`, módulos em `src/Modules`, testes em `tests` e SQL físico em `database`. RLS protege dados tenant; o usuário da aplicação não deve ser proprietário do banco. Nunca mantenha credenciais em JSON versionado, logs, scripts ou linha de comando compartilhada.

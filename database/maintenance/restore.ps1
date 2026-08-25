@@ -1,0 +1,2 @@
+$ErrorActionPreference='Stop'; if (-not $env:PGDATABASE) { throw 'Defina PGDATABASE para banco de restauração.' }; if(-not $args[0]){throw 'Informe .sql ou .backup.'}
+if($args[0] -like '*.backup'){& pg_restore --exit-on-error --no-owner --no-privileges --dbname=$env:PGDATABASE $args[0]}elseif($args[0] -like '*.sql'){& psql --set=ON_ERROR_STOP=1 --dbname=$env:PGDATABASE --file=$args[0]}else{throw 'Formato inválido.'}; if($LASTEXITCODE){throw 'Restauração falhou.'}

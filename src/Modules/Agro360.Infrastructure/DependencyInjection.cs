@@ -15,8 +15,8 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("PostgreSQL")
-            ?? throw new InvalidOperationException("ConnectionStrings:PostgreSQL não foi configurada.");
+        var connectionString = configuration.GetConnectionString("Agro360")
+            ?? throw new InvalidOperationException("ConnectionStrings:Agro360 não foi configurada. Defina ConnectionStrings__Agro360 ou use um secret manager.");
 
         services.AddSingleton<IDbConnectionFactory>(_ => new NpgsqlConnectionFactory(connectionString));
         services.AddSingleton<IClock, SystemClock>();

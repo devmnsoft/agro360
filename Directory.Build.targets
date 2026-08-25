@@ -1,0 +1,7 @@
+<Project>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Agro360.Api' Or '$(MSBuildProjectName)' == 'Agro360.Web' Or '$(MSBuildProjectName)' == 'Agro360.Worker'">
+    <Content Include="$(MSBuildThisFileDirectory)database\**\*" Link="database\%(RecursiveDir)%(Filename)%(Extension)" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(MSBuildThisFileDirectory)scripts\**\*" Link="scripts\%(RecursiveDir)%(Filename)%(Extension)" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(MSBuildThisFileDirectory)README.md" Link="README.md" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

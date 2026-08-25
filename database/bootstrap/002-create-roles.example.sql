@@ -1,0 +1,3 @@
+-- Exemplos deliberadamente sem senha. Crie credenciais por prompt/secret manager.
+-- CREATE ROLE agro360_app LOGIN;
+-- GRANT CONNECT ON DATABASE agro360 TO agro360_app;

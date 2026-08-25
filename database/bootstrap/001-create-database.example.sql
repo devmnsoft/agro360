@@ -1,0 +1,2 @@
+-- Execute conectado a um banco administrativo. Substitua os identificadores conforme sua política.
+-- CREATE DATABASE agro360;

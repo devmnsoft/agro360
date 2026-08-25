@@ -6,8 +6,8 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-agro360}
       POSTGRES_USER: ${POSTGRES_USER:-agro360}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-this-development-password}
-      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-change-this-application-password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
     ports:
       - "5432:5432"
     volumes:
@@ -24,7 +24,7 @@ services:
       context: .
       dockerfile: deploy/Dockerfile.migrator
     environment:
-      ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=${POSTGRES_DB:-agro360};Username=${POSTGRES_USER:-agro360};Password=${POSTGRES_PASSWORD:-change-this-development-password};Include Error Detail=false
+      ConnectionStrings__Agro360: Host=postgres;Port=5432;Database=${POSTGRES_DB:-agro360};Username=${POSTGRES_USER:-agro360};Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env};Include Error Detail=false
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,8 +37,8 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: 8080
-      ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=${POSTGRES_DB:-agro360};Username=agro360_app;Password=${APP_DB_PASSWORD:-change-this-application-password};Include Error Detail=false
-      Jwt__SigningKey: ${JWT_SIGNING_KEY:-development-only-change-this-key-32-bytes-minimum}
+      ConnectionStrings__Agro360: Host=postgres;Port=5432;Database=${POSTGRES_DB:-agro360};Username=agro360_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env};Include Error Detail=false
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:?set JWT_SIGNING_KEY in .env}
       Bootstrap__Enabled: "true"
       Cors__AllowedOrigins__0: http://localhost:8080
     ports:
@@ -71,8 +71,8 @@ services:
       context: .
       dockerfile: deploy/Dockerfile.worker
     environment:
-      ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=${POSTGRES_DB:-agro360};Username=agro360_app;Password=${APP_DB_PASSWORD:-change-this-application-password};Include Error Detail=false
-      Jwt__SigningKey: ${JWT_SIGNING_KEY:-development-only-change-this-key-32-bytes-minimum}
+      ConnectionStrings__Agro360: Host=postgres;Port=5432;Database=${POSTGRES_DB:-agro360};Username=agro360_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env};Include Error Detail=false
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:?set JWT_SIGNING_KEY in .env}
     depends_on:
       migrator:
         condition: service_completed_successfully
