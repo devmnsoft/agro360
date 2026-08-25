@@ -165,3 +165,13 @@ public sealed class Agriculture360RulesTests
     public void Weather_rejects_values_outside_ranges(decimal rain, decimal temperature, decimal humidity, decimal wind) =>
         Assert.Throws<DomainException>(() => Agro360.Domain.Agriculture.Agriculture360Rules.Weather(rain, temperature, humidity, wind));
 }
+
+public sealed class MobileRulesTests
+{
+    [Fact] public void Valid_location_is_accepted()=>Agro360.Domain.Mobile.MobileRules.ValidateLocation(-3.1m,-60.0m,8m);
+    [Theory]
+    [InlineData(-91,-60)] [InlineData(91,-60)] [InlineData(-3,-181)] [InlineData(-3,181)]
+    public void Invalid_location_is_rejected(decimal latitude,decimal longitude)=>Assert.Throws<Agro360.SharedKernel.DomainException>(()=>Agro360.Domain.Mobile.MobileRules.ValidateLocation(latitude,longitude,1));
+    [Fact] public void Negative_quick_record_is_rejected()=>Assert.Throws<Agro360.SharedKernel.DomainException>(()=>Agro360.Domain.Mobile.MobileRules.ValidateQuickRecord("WEIGHING",-1,DateTimeOffset.UtcNow));
+    [Fact] public void Empty_entity_is_rejected()=>Assert.Throws<Agro360.SharedKernel.DomainException>(()=>Agro360.Domain.Mobile.MobileRules.ValidateEntity("animal",Guid.Empty));
+}

@@ -1,17 +1,1 @@
-{
-  "name": "MNSOFT Agro 360",
-  "short_name": "Agro 360",
-  "description": "O sistema operacional do agronegócio.",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#081612",
-  "theme_color": "#0d2019",
-  "icons": [
-    {
-      "src": "/icons/agro360.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
-  ]
-}
+{"name":"Agro 360 - Operação de Campo","short_name":"Agro 360","description":"Operação rural segura, mobile e offline.","id":"/field","start_url":"/field","scope":"/","display":"standalone","orientation":"any","background_color":"#f4f7f4","theme_color":"#174d2d","lang":"pt-BR","categories":["business","productivity"],"icons":[{"src":"/icons/agro360.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}],"shortcuts":[{"name":"Registro rápido","url":"/field#quick"},{"name":"QR Code","url":"/field#qr"}]}
