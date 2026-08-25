@@ -49,3 +49,5 @@ jobs:
         run: |
           docker build -f deploy/Dockerfile.api -t agro360-api:ci .
           docker build -f deploy/Dockerfile.web -t agro360-web:ci .
+          docker build -f deploy/Dockerfile.worker -t agro360-worker:ci .
+          docker build -f deploy/Dockerfile.migrator -t agro360-migrator:ci .
