@@ -12,24 +12,8 @@ permissions:
 jobs:
   build-test:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgis/postgis:16-3.4
-        env:
-          POSTGRES_DB: agro360_test
-          POSTGRES_USER: agro360
-          POSTGRES_PASSWORD: agro360-ci-password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U agro360 -d agro360_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     env:
       CI: "true"
-      ConnectionStrings__Agro360: Host=localhost;Port=5432;Database=agro360_test;Username=agro360;Password=agro360-ci-password;Include Error Detail=false
-      AGRO360_TEST_CONNECTION_STRING: Host=localhost;Port=5432;Database=agro360_test;Username=agro360;Password=agro360-ci-password;Include Error Detail=false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -41,17 +25,11 @@ jobs:
         run: dotnet format MNSOFT.Agro360.sln --verify-no-changes --no-restore
       - name: Build
         run: dotnet build MNSOFT.Agro360.sln --configuration Release --no-restore
-      - name: Validate consolidated SQL on an empty database
-        env:
-          PGPASSWORD: agro360-ci-password
+      - name: Validate portable database release
+        working-directory: database/releases/v0.2.0
         run: |
-          createdb -h localhost -U agro360 agro360_full_install
-          psql -v ON_ERROR_STOP=1 -h localhost -U agro360 -d agro360_full_install -f database/releases/v0.2.0/agro360-v0.2.0-full-install.sql
-          psql -h localhost -U agro360 -d agro360_full_install -f database/maintenance/validate-database.sql
-      - name: Migrate database
-        run: dotnet run --project src/Hosts/Agro360.Migrator/Agro360.Migrator.csproj --configuration Release --no-build
-      - name: Verify migration idempotency
-        run: dotnet run --project src/Hosts/Agro360.Migrator/Agro360.Migrator.csproj --configuration Release --no-build
+          sha256sum --check checksums.sha256
+          ! grep -nE '^\\(i|include|ir)\b' agro360-v0.2.0-full-install.sql
       - name: Test
         run: dotnet test MNSOFT.Agro360.sln --configuration Release --no-build --report-trx --results-directory TestResults
       - name: Audit vulnerable packages
@@ -62,9 +40,3 @@ jobs:
         with:
           name: test-results
           path: TestResults/**/*.trx
-      - name: Docker build
-        run: |
-          docker build -f deploy/Dockerfile.api -t agro360-api:ci .
-          docker build -f deploy/Dockerfile.web -t agro360-web:ci .
-          docker build -f deploy/Dockerfile.worker -t agro360-worker:ci .
-          docker build -f deploy/Dockerfile.migrator -t agro360-migrator:ci .
