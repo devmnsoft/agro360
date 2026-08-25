@@ -1,10 +1,10 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
 WORKDIR /src
 COPY . .
 RUN dotnet restore src/Hosts/Agro360.Api/Agro360.Api.csproj
 RUN dotnet publish src/Hosts/Agro360.Api/Agro360.Api.csproj -c Release --no-restore -o /app/publish
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS final
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
