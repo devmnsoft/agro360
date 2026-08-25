@@ -6,7 +6,6 @@ RUN dotnet publish src/Hosts/Agro360.Migrator/Agro360.Migrator.csproj -c Release
 
 FROM mcr.microsoft.com/dotnet/runtime:10.0-noble AS final
 WORKDIR /app
-RUN addgroup --system agro360 && adduser --system --ingroup agro360 agro360
 COPY --from=build /app/publish .
-USER agro360
+USER $APP_UID
 ENTRYPOINT ["dotnet", "Agro360.Migrator.dll"]

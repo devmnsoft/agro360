@@ -6,8 +6,7 @@ RUN dotnet publish src/Hosts/Agro360.Web/Agro360.Web.csproj -c Release --no-rest
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS final
 WORKDIR /app
-RUN addgroup --system agro360 && adduser --system --ingroup agro360 agro360
 COPY --from=build /app/publish .
-USER agro360
+USER $APP_UID
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "Agro360.Web.dll"]

@@ -8,10 +8,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS final
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && addgroup --system agro360 \
-    && adduser --system --ingroup agro360 agro360
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/publish .
-USER agro360
+USER $APP_UID
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "Agro360.Api.dll"]
