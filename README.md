@@ -166,3 +166,7 @@ A v0.6.0 entrega estruturas/silos, romaneio e pesagem, qualidade e descontos, lo
 ## Sprint 10 — Rastreabilidade Amazônica (v0.7.0)
 
 Rastreabilidade ponta a ponta, beneficiamento configurável, ledger imutável, certificados públicos, logística fluvial/vicinal e força de vendas com split auditável estão integrados à API e ao Command Center. Instale o banco completo com `psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql` e consulte o [guia da Sprint 10](docs/sprint-10-rastreabilidade-amazonica.md).
+
+## Sprint 11 — Agricultura 360
+
+O sistema inclui caderno de campo, planejamento, fitossanidade, recomendações/aplicações, irrigação, clima, ordens de serviço, dashboard e lookups pesquisáveis multi-tenant. Consulte [a documentação da sprint](docs/sprint-11-agricultura-360.md) e [o padrão de formulários](docs/form-validation-and-lookups.md). A instalação standalone usa `database/agro360-postgres-full.sql` e não requer Docker.

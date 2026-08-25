@@ -35,3 +35,7 @@ dotnet build --configuration Release
 dotnet test --configuration Release
 ./scripts/validate-full-sql.sh
 ```
+
+## Cobertura da Sprint 11
+
+`dotnet test --configuration Release` inclui regras de dose, períodos de irrigação, clima, talhão duplicado, formulário sem inputs de IDs técnicos e integridade do SQL standalone. Testes de integração precisam de `ConnectionStrings__Agro360` apontando para PostgreSQL descartável.

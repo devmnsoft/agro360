@@ -1334,4 +1334,24 @@ insert into identity.permissions(code,module,description) values ('traceability.
 insert into inventory.products(id,tenant_id,sku,name,category,base_unit,requires_lot,created_by) select gen_random_uuid(),t.id,'AMZ-'||x.sku,x.name,'AMAZON_REGIONAL',x.unit,true,(select id from identity.users where tenant_id=t.id order by created_at limit 1) from tenancy.tenants t cross join (values('ACAI','Açaí','kg'),('TUCUPI','Tucupi','l'),('CACAU','Cacau','kg'),('CASTANHA','Castanha-do-pará','kg'),('MANDIOCA','Mandioca/Farinha','kg'),('GEN','Produto genérico','kg')) x(sku,name,unit) where exists(select 1 from identity.users where tenant_id=t.id) and not exists(select 1 from inventory.products p where p.tenant_id=t.id and p.sku='AMZ-'||x.sku);
 insert into platform.schema_versions(version,description,installed_at) values('0.7.0','Sprint 10 - Rastreabilidade Amazônica',now()) on conflict(version) do nothing;
 
+
+-- Sprint 11 - Agricultura 360
+create table if not exists agriculture.crops(
+ id uuid primary key, tenant_id uuid not null references tenancy.tenants(id), name varchar(120) not null,
+ description varchar(300), active boolean not null default true, created_at timestamptz not null default now(),
+ created_by uuid not null, unique(tenant_id,name));
+create table if not exists agriculture.records(
+ id uuid primary key, tenant_id uuid not null references tenancy.tenants(id), module varchar(30) not null,
+ status varchar(24) not null, data jsonb not null default '{}'::jsonb, created_at timestamptz not null default now(),
+ created_by uuid not null, updated_at timestamptz, updated_by uuid, deleted_at timestamptz, version bigint not null default 1,
+ unique(tenant_id,id), check(module in('field-notes','plans','scouting','recommendations','applications','irrigations','weather-records','work-orders')),
+ check(status in('OPEN','PLANNED','RELEASED','IN_PROGRESS','PAUSED','COMPLETED','CANCELLED','APPROVED','REVISION','CLOSED')));
+create index if not exists ix_agriculture_records_tenant_module on agriculture.records(tenant_id,module,created_at desc) where deleted_at is null;
+create index if not exists ix_agriculture_records_data on agriculture.records using gin(data);
+create table if not exists agriculture.status_history(
+ id uuid primary key, tenant_id uuid not null references tenancy.tenants(id), record_id uuid not null references agriculture.records(id),
+ from_status varchar(24) not null, to_status varchar(24) not null, reason varchar(500), changed_at timestamptz not null default now(), changed_by uuid not null);
+do $$ declare rec record; begin for rec in select * from (values ('agriculture','crops'),('agriculture','records'),('agriculture','status_history')) x(schema_name,table_name) loop execute format('alter table %I.%I enable row level security',rec.schema_name,rec.table_name); execute format('alter table %I.%I force row level security',rec.schema_name,rec.table_name); if not exists(select 1 from pg_policies where schemaname=rec.schema_name and tablename=rec.table_name and policyname=rec.table_name||'_tenant') then execute format('create policy %I on %I.%I using (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid) with check (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid)',rec.table_name||'_tenant',rec.schema_name,rec.table_name); end if; end loop; end $$;
+insert into platform.schema_versions(version,description,installed_at) values('0.8.0','Sprint 11 - Agricultura 360',now()) on conflict(version) do nothing;
+
 commit;

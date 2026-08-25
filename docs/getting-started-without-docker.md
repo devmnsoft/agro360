@@ -48,3 +48,7 @@ dotnet run --project src/Hosts/Agro360.Web
 ```
 
 Cada host também pode ser iniciado pelos scripts `scripts/run-*.sh`. Docker permanece opcional.
+
+## Agricultura 360
+
+Depois de instalar o banco e iniciar API e Web, acesse `http://localhost:8080/agriculture`. A API lê exclusivamente `ConnectionStrings__Agro360`; Docker não é necessário.

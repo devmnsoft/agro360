@@ -139,3 +139,29 @@ public sealed class DomainRulesTests
     [Fact] public void SellerPercentageCommissionIsCalculated() => Assert.Equal(100m,Sprint10Rules.Commission(1000,10,true));
     [Fact] public void SplitMustBalanceSaleTotal() => Assert.Throws<DomainException>(() => Sprint10Rules.ValidateSplit(100,[50,40]));
 }
+
+public sealed class Agriculture360RulesTests
+{
+    [Fact]
+    public void Plan_rejects_duplicate_fields()
+    {
+        var field = Guid.NewGuid();
+        Assert.Throws<DomainException>(() => Agro360.Domain.Agriculture.Agriculture360Rules.UniqueFields([field, field]));
+    }
+
+    [Fact]
+    public void Application_rejects_non_positive_dose() =>
+        Assert.Throws<DomainException>(() => Agro360.Domain.Agriculture.Agriculture360Rules.Positive(0, "Dose"));
+
+    [Fact]
+    public void Irrigation_rejects_inverted_period() =>
+        Assert.Throws<DomainException>(() => Agro360.Domain.Agriculture.Agriculture360Rules.Period(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddHours(-1)));
+
+    [Theory]
+    [InlineData(-1, 25, 80, 5)]
+    [InlineData(1, 80, 80, 5)]
+    [InlineData(1, 25, 101, 5)]
+    [InlineData(1, 25, 80, -1)]
+    public void Weather_rejects_values_outside_ranges(decimal rain, decimal temperature, decimal humidity, decimal wind) =>
+        Assert.Throws<DomainException>(() => Agro360.Domain.Agriculture.Agriculture360Rules.Weather(rain, temperature, humidity, wind));
+}
