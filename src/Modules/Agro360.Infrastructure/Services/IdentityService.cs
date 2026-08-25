@@ -273,7 +273,10 @@ public sealed class IdentityService(
             throw new ValidationException(new Dictionary<string, string[]>
             {
                 [nameof(email)] = ["E-mail inválido."]
-            }) { Source = exception.Source };
+            })
+            {
+                Source = exception.Source
+            };
         }
     }
 
