@@ -1,21 +1,6 @@
-const CACHE = "agro360-shell-v1";
-const SHELL = ["/", "/css/agro360.css", "/js/agro360.js", "/icons/agro360.svg", "/manifest.webmanifest"];
-
-self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
-  self.skipWaiting();
-});
-
-self.addEventListener("activate", event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))));
-  self.clients.claim();
-});
-
-self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET" || new URL(event.request.url).pathname.startsWith("/api/")) return;
-  event.respondWith(fetch(event.request).then(response => {
-    const copy = response.clone();
-    caches.open(CACHE).then(cache => cache.put(event.request, copy));
-    return response;
-  }).catch(() => caches.match(event.request).then(match => match || caches.match("/"))));
-});
+const SHELL_CACHE="agro360-shell-v12", LOOKUP_CACHE="agro360-lookups-v12";
+const SHELL=["/","/field","/css/agro360.css","/css/field.css","/js/agro360.js","/js/field.js","/icons/agro360.svg","/manifest.webmanifest"];
+self.addEventListener("install",e=>{e.waitUntil(caches.open(SHELL_CACHE).then(c=>c.addAll(SHELL)));self.skipWaiting()});
+self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>![SHELL_CACHE,LOOKUP_CACHE].includes(k)).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
+self.addEventListener("fetch",e=>{const u=new URL(e.request.url);if(e.request.method!=="GET")return;if(u.pathname==="/api/mobile/bootstrap"){e.respondWith(fetch(e.request).then(r=>{if(r.ok)caches.open(LOOKUP_CACHE).then(c=>c.put(e.request,r.clone()));return r}).catch(()=>caches.match(e.request)));return}if(u.pathname.startsWith("/api/"))return;e.respondWith(fetch(e.request).then(r=>{if(r.ok)caches.open(SHELL_CACHE).then(c=>c.put(e.request,r.clone()));return r}).catch(()=>caches.match(e.request).then(r=>r||caches.match("/field"))))});
+self.addEventListener("sync",e=>{if(e.tag==="agro360-sync")e.waitUntil(self.clients.matchAll({includeUncontrolled:true}).then(cs=>cs.forEach(c=>c.postMessage({type:"SYNC_REQUESTED"}))))});

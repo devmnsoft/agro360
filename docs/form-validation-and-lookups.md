@@ -1,11 +1,3 @@
-# Validação de formulários e lookups
+# Validação e lookups
 
-## Contrato
-
-`GET /api/lookups/{resource}?search=texto&page=1&pageSize=20` retorna uma página com `id`, `label`, `description`, `status` e `metadata`. São suportados: `properties`, `production-areas`, `fields`, `crops`, `crop-seasons`, `suppliers`, `inventory-items`, `machines`, `people`, `cost-centers`, `livestock-batches`, `storage-lots` e `routes`.
-
-A fonte é uma lista permitida no servidor, nunca SQL fornecido pelo cliente. As consultas usam parâmetros Dapper, filtro obrigatório pelo tenant, apenas ativos por padrão, ordenação amigável e limite máximo de 50. `includeInactive=true` é explícito.
-
-## Formulários
-
-O navegador valida obrigatoriedade, limites, números e datas antes do envio e associa mensagens ao campo. Relações usam autocomplete com texto amigável e um campo oculto para a chave selecionada. Digitar texto sem escolher um resultado é inválido. No backend, referências são revalidadas no tenant e regras cruzadas são aplicadas dentro da mesma transação que persiste efeitos de estoque e auditoria.
+Relações são escolhidas por busca/select alimentado pelo bootstrap (propriedades, talhões, culturas, animais e estoque); IDs técnicos ficam internos ao option. Campos obrigatórios usam `required`, quantidades `min=0`, datas são convertidas para ISO e mensagens aparecem em região acessível. O backend repete toda regra crítica: entidade/tipo permitido, UUID não vazio, quantidade, data, coordenadas, arquivo/tipo/tamanho e respostas obrigatórias. Nunca confie somente na validação do navegador.

@@ -170,3 +170,7 @@ Rastreabilidade ponta a ponta, beneficiamento configurável, ledger imutável, c
 ## Sprint 11 — Agricultura 360
 
 O sistema inclui caderno de campo, planejamento, fitossanidade, recomendações/aplicações, irrigação, clima, ordens de serviço, dashboard e lookups pesquisáveis multi-tenant. Consulte [a documentação da sprint](docs/sprint-11-agricultura-360.md) e [o padrão de formulários](docs/form-validation-and-lookups.md). A instalação standalone usa `database/agro360-postgres-full.sql` e não requer Docker.
+
+## Sprint 12 — Campo Mobile/Offline
+
+Execute sem Docker configurando `ConnectionStrings__Agro360`, aplique `database/agro360-postgres-full.sql`, inicie API e Web com `dotnet run --project`. Abra `/field` para dashboard, registros rápidos, evidências, QR, checklists e fila offline. Consulte [guia da sprint](docs/sprint-12-mobile-offline.md), [PWA](docs/pwa-mobile.md) e [sincronização](docs/offline-sync.md).
