@@ -1,6 +1,7 @@
 using Agro360.Domain.Agriculture;
 using Agro360.Domain.Inventory;
 using Agro360.Domain.Livestock;
+using Agro360.Domain.Operations;
 using Agro360.SharedKernel;
 
 namespace Agro360.UnitTests;
@@ -86,5 +87,27 @@ public sealed class DomainRulesTests
         var exception = Assert.Throws<DomainException>(() => _ = brl + usd);
 
         Assert.Equal("money.currency_mismatch", exception.Code);
+    }
+
+    [Fact]
+    public void PurchaseCannotBeApprovedWithoutItems() =>
+        Assert.Throws<DomainException>(() => OperationalRules.PurchaseTotal([], 0, 0, 0));
+
+    [Fact]
+    public void CancelledPurchaseCannotBeReceived() =>
+        Assert.Throws<DomainException>(() => OperationalRules.Receive(PurchaseStatus.Cancelled, 10, 0, 1));
+
+    [Fact]
+    public void PartialAndFullReceiptCloseAtTheCorrectTime()
+    {
+        Assert.Equal(PurchaseStatus.PartiallyReceived, OperationalRules.Receive(PurchaseStatus.Approved, 10, 0, 4));
+        Assert.Equal(PurchaseStatus.Received, OperationalRules.Receive(PurchaseStatus.PartiallyReceived, 10, 4, 6));
+    }
+
+    [Fact]
+    public void FuelAndMaintenanceCostsAreCalculated()
+    {
+        Assert.Equal(525m, OperationalRules.FuelTotal(50, 10.5m));
+        Assert.Equal(350m, OperationalRules.MaintenanceTotal(200, 150));
     }
 }

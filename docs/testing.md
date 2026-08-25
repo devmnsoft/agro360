@@ -12,3 +12,7 @@ dotnet test tests/Agro360.IntegrationTests -c Release
 ```
 
 Use um banco descartável já criado e com as extensões requeridas. A CI padrão prova restore, formatação, compilação e testes sem serviço Docker; validação PostgreSQL completa pode ser executada em ambiente protegido que forneça a variável.
+
+## Sprint 6 e PostgreSQL de integração
+
+As regras operacionais têm testes unitários sem infraestrutura. Testes que abrem PostgreSQL leem exclusivamente `AGRO360_TEST_CONNECTION_STRING`; quando ausente, são ignorados com mensagem explícita. Execute `dotnet test --configuration Release`. O SQL único também pode ser validado com `psql "$AGRO360_TEST_CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` em um banco descartável.

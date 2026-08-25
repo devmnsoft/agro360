@@ -8,6 +8,17 @@ namespace Agro360.Infrastructure.Persistence;
 
 public sealed class DatabaseExecutor(IDbConnectionFactory connectionFactory, ITenantContext tenantContext)
 {
+    public async Task InTenantTransactionAsync(
+        Func<NpgsqlConnection, NpgsqlTransaction, Task> action,
+        CancellationToken cancellationToken)
+    {
+        await InTenantTransactionAsync(async (connection, transaction) =>
+        {
+            await action(connection, transaction).ConfigureAwait(false);
+            return true;
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
     public Task<T> InTenantTransactionAsync<T>(
         Func<NpgsqlConnection, NpgsqlTransaction, Task<T>> action,
         CancellationToken cancellationToken) =>

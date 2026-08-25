@@ -323,4 +323,20 @@
     }
 
     init();
+    async function loadOperationalDashboard() {
+        try {
+            const data = await apiFetch("/api/operations/dashboard");
+            if (!data) return;
+            const set = (id, value) => { const target = element(id); if (target) target.textContent = value; };
+            set("ops-open-purchases", data.openPurchases);
+            set("ops-awaiting", `${data.awaitingApproval} aguardando aprovação`);
+            set("ops-low-stock", data.lowStockItems);
+            set("ops-expiring", `${data.expiringItems} próximos do vencimento`);
+            set("ops-assets", data.availableAssets);
+            set("ops-maintenance", `${data.assetsInMaintenance} em manutenção`);
+            set("ops-fuel", number.format(data.fuelThisMonth));
+        } catch (error) { console.error("Falha ao carregar dashboard operacional", error); }
+    }
+    loadOperationalDashboard();
+
 })();
