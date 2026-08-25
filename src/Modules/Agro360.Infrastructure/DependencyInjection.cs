@@ -34,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped<IInventoryService, InventoryService>();
         services.AddScoped<IAgricultureService, AgricultureService>();
         services.AddScoped<ILivestockService, LivestockService>();
+        services.AddScoped<ILivestock360Service, Livestock360Service>();
         services.AddScoped<ICommercialService, CommercialService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IOperationsService, OperationsService>();

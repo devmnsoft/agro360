@@ -35,3 +35,13 @@ psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgr
 O arquivo é autossuficiente: cria extensões, schemas, estruturas, índices, funções, triggers/políticas, views, permissões, perfis, configurações e dados mínimos. Não contém host, credencial, porta ou nome de banco. No pgAdmin/DBeaver, conecte-se ao banco desejado e execute o arquivo inteiro.
 
 Para manutenção incremental, execute `database/migrations/005_sprint6_operations.sql` após as migrações anteriores ou use o Migrator. A release imutável está em `database/releases/v0.3.0/` com checksums SHA-256.
+
+## Instalador completo v0.4.0 (Sprint 7)
+
+O arquivo autossuficiente `database/agro360-postgres-full.sql` contém todo o histórico até a Pecuária 360. Em banco PostgreSQL vazio com PostGIS disponível:
+
+```bash
+psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
+```
+
+No pgAdmin/DBeaver, abra o mesmo arquivo no editor conectado ao banco alvo. Para atualizar uma instalação v0.3.0, execute o Migrator ou `database/migrations/006_sprint7_livestock360.sql`. O pacote versionado está em `database/releases/v0.4.0/` e `checksums.sha256` permite validar sua integridade.

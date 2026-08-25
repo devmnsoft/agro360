@@ -123,11 +123,28 @@
         try {
             const result = await api("/api/v1/dashboard/command-center");
             renderDashboard(result);
+            await loadLivestockDashboard();
             element("sync-time").textContent = "sincronizado agora";
         } catch (error) {
             if (error.status !== 401) toast("Não foi possível atualizar", error.message, true);
             element("dashboard-subtitle").textContent = "Não foi possível consolidar os indicadores agora.";
         }
+    }
+
+    async function loadLivestockDashboard() {
+        const host = element("livestock-kpis");
+        if (!host) return;
+        try {
+            const d = await api("/api/livestock/dashboard");
+            const cards = [
+                ["Animais ativos", d.activeAnimals], ["Lotes ativos", d.activeHerds],
+                ["Leite no mês", `${number.format(d.milkThisMonthLiters)} L`], ["Matrizes prenhes", d.pregnantFemales],
+                ["Partos previstos", d.expectedBirths], ["Vacinas próximas", d.vaccinesDue],
+                ["Em carência", d.inWithdrawal], ["Sobrelotação", d.overcapacityAlerts],
+                ["Custo nutricional", money.format(d.nutritionCostMonth)], ["Custo sanitário", money.format(d.healthCostMonth)]
+            ];
+            host.replaceChildren(...cards.map(([label, value]) => { const card=document.createElement("article"); card.innerHTML=`<small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong>`; return card; }));
+        } catch (error) { host.innerHTML=`<p class="error-state">Não foi possível carregar Pecuária 360: ${escapeHtml(error.message)}</p>`; }
     }
 
     function renderDashboard(result) {

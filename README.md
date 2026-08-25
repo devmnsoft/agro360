@@ -144,3 +144,13 @@ psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgr
 ```
 
 Veja [execução nativa](docs/getting-started-without-docker.md), [instalação do banco](docs/database-installation.md) e [guia dos módulos](docs/sprint-6-operational-modules.md).
+
+## Sprint 7 — Pecuária 360 (v0.4.0)
+
+Rebanho, lotes, pastagens/piquetes, manejo, sanidade, reprodução, nutrição, leite, ganho de peso e dashboard zootécnico estão disponíveis ponta a ponta. Instale todo o banco, sem Docker, com:
+
+```bash
+psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
+```
+
+Consulte o [guia da Sprint 7](docs/sprint-7-pecuaria-360.md), a [instalação](docs/database-installation.md) e a [execução nativa](docs/getting-started-without-docker.md).
