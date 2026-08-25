@@ -28,7 +28,7 @@ jobs:
           --health-retries 20
     env:
       CI: "true"
-      ConnectionStrings__PostgreSQL: Host=localhost;Port=5432;Database=agro360_test;Username=agro360;Password=agro360-ci-password;Include Error Detail=false
+      ConnectionStrings__Agro360: Host=localhost;Port=5432;Database=agro360_test;Username=agro360;Password=agro360-ci-password;Include Error Detail=false
       AGRO360_TEST_CONNECTION_STRING: Host=localhost;Port=5432;Database=agro360_test;Username=agro360;Password=agro360-ci-password;Include Error Detail=false
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +41,13 @@ jobs:
         run: dotnet format MNSOFT.Agro360.sln --verify-no-changes --no-restore
       - name: Build
         run: dotnet build MNSOFT.Agro360.sln --configuration Release --no-restore
+      - name: Validate consolidated SQL on an empty database
+        env:
+          PGPASSWORD: agro360-ci-password
+        run: |
+          createdb -h localhost -U agro360 agro360_full_install
+          psql -v ON_ERROR_STOP=1 -h localhost -U agro360 -d agro360_full_install -f database/releases/v0.2.0/agro360-v0.2.0-full-install.sql
+          psql -h localhost -U agro360 -d agro360_full_install -f database/maintenance/validate-database.sql
       - name: Migrate database
         run: dotnet run --project src/Hosts/Agro360.Migrator/Agro360.Migrator.csproj --configuration Release --no-build
       - name: Verify migration idempotency

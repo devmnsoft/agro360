@@ -12,7 +12,7 @@ public sealed class NpgsqlConnectionFactory : IDbConnectionFactory, IAsyncDispos
     {
         if (string.IsNullOrWhiteSpace(connectionString))
         {
-            throw new InvalidOperationException("A connection string 'PostgreSQL' é obrigatória.");
+            throw new InvalidOperationException("A connection string 'Agro360' é obrigatória.");
         }
 
         var builder = new NpgsqlDataSourceBuilder(connectionString);
