@@ -7,19 +7,19 @@ Status não é marketing: `CORE` significa fluxo conectado nesta versão; `FOUND
 | Identidade/Tenancy | JWT, refresh, tenant, organização, RBAC | CORE | 1 |
 | Propriedades | fazenda, talhão, PostGIS, documentos cadastrais | CORE | 2 |
 | Digital Twin | mapa operacional por camadas | PLANNED | 2–24 |
-| Agricultura | safra, planejamento, plantio, colheita | CORE | 3 |
+| Agricultura | API de safra, plantio e colheita; UI operacional pendente | FOUNDATION | 3 |
 | Caderno de Campo | aplicação, operador, GPS, condição, fotos | FOUNDATION | 3 |
 | Agronomia | solo, folha, fertilidade, praga, receituário | PLANNED | 3+ |
 | Precisão | produtividade, manejo, taxa variável, satélite | PLANNED | 3+ |
 | Clima/Irrigação | estação, alertas, pivô, lâmina e energia | PLANNED | 23 |
-| Estoque | produto, depósito, saldo, lote, custo médio | CORE | 4 |
+| Estoque | API de produto, depósito, saldo e movimento; UI operacional pendente | FOUNDATION | 4 |
 | Inventário | contagem, divergência e ajuste auditável | PLANNED | 4 |
 | Frota | ativo e horímetro | FOUNDATION | 5 |
 | Manutenção | preventiva, corretiva e preditiva | PLANNED | 5 |
 | Combustível | tanque, abastecimento, anomalia e custo | PLANNED | 5 |
-| Pecuária | animal, identificação e timeline | CORE | 6 |
-| Pesagem | individual, GMD e projeção | CORE | 6 |
-| Sanidade | tratamento, medicamento, custo e carência | CORE | 6 |
+| Pecuária | API de animal, identificação e timeline; UI operacional pendente | FOUNDATION | 6 |
+| Pesagem | API individual e GMD; UI operacional pendente | FOUNDATION | 6 |
+| Sanidade | API de tratamento, medicamento, custo e carência; UI operacional pendente | FOUNDATION | 6 |
 | Reprodução/Genética | cio, IA, gestação, parto, genealogia, DEP | PLANNED | 6 |
 | Pastagens | pasto, piquete, lotação e descanso | PLANNED | 7 |
 | Confinamento | dieta, trato, conversão e custo/@ | PLANNED | 7 |
@@ -27,17 +27,17 @@ Status não é marketing: `CORE` significa fluxo conectado nesta versão; `FOUND
 | Fornecedores | histórico, documento, preço e score | PLANNED | 8 |
 | Financeiro | recebível integrado a venda | FOUNDATION | 9 |
 | Caixa/Bancos/DRE | pagar, receber, conciliar, orçamento e fluxo | PLANNED | 9 |
-| Motor de Custos | fazenda, safra, talhão, animal e origem | CORE | 10 |
+| Motor de Custos | apropriação transacional inicial por origem | FOUNDATION | 10 |
 | Rateio | regra reproduzível e auditável | PLANNED | 10 |
-| Comercial | venda vegetal/animal e margem | CORE | 11 |
+| Comercial | API de venda vegetal/animal e recebível; UI operacional pendente | FOUNDATION | 11 |
 | Contratos | compra, venda, barter, transporte e arrendamento | PLANNED | 11 |
 | Armazenagem | recepção, qualidade, secagem, silo e expedição | PLANNED | 12 |
 | Balança | duas pesagens e peso líquido | PLANNED | 12 |
 | Logística | fundação de carga e estados | FOUNDATION | 13 |
 | Torre Logística | mapa, atraso e bloqueio | PLANNED | 13 |
-| AgroGraph | nós, arestas e consulta recursiva autorizada | CORE | 14 |
+| AgroGraph | nós, arestas e consulta API autorizada; navegação UI pendente | FOUNDATION | 14 |
 | QR de Origem | visão pública controlada | PLANNED | 14 |
-| Web/PWA | desktop, tablet, celular e shell offline | CORE | 15 |
+| Web/PWA | Command Center responsivo e shell offline; formulários operacionais pendentes | FOUNDATION | 15 |
 | Mobile MAUI | contratos Local Outbox e conflitos | FOUNDATION | 15–16 |
 | GED Agro | metadados, checksum, storage, versão e OCR status | FOUNDATION | 17 |
 | Ambiental/ESG | compliance e vencimentos | FOUNDATION | 18 |

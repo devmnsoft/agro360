@@ -1,0 +1,11 @@
+.git
+.github
+**/bin
+**/obj
+**/TestResults
+.env
+*.user
+*.suo
+artifacts
+backups
+docs

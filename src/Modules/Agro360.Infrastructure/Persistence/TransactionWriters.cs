@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Agro360.Multitenancy;
 using Agro360.SharedKernel;
@@ -52,9 +53,9 @@ internal static class TransactionWriters
         connection.ExecuteAsync(new CommandDefinition(
             """
             insert into platform.outbox_messages
-                (id, tenant_id, event_type, aggregate_id, payload, occurred_at, attempts)
+                (id, tenant_id, event_type, aggregate_id, payload, occurred_at, attempts, correlation_id)
             values
-                (@Id, @TenantId, @EventType, @AggregateId, cast(@Payload as jsonb), now(), 0);
+                (@Id, @TenantId, @EventType, @AggregateId, cast(@Payload as jsonb), now(), 0, @CorrelationId);
             """,
             new
             {
@@ -62,7 +63,8 @@ internal static class TransactionWriters
                 TenantId = tenantId,
                 EventType = eventType,
                 AggregateId = aggregateId,
-                Payload = JsonSerializer.Serialize(payload, JsonOptions)
+                Payload = JsonSerializer.Serialize(payload, JsonOptions),
+                CorrelationId = Activity.Current?.TraceId.ToString()
             },
             transaction,
             cancellationToken: cancellationToken));

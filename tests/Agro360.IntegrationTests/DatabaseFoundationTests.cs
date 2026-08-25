@@ -18,7 +18,25 @@ public sealed class DatabaseFoundationTests
         var migrations = await connection.ExecuteScalarAsync<int>("select count(*) from platform.schema_migrations;");
 
         Assert.Equal(["pg_trgm", "pgcrypto", "postgis", "unaccent"], extensions);
-        Assert.True(migrations >= 2);
+        Assert.True(migrations >= 4);
+    }
+
+    [Fact]
+    public async Task OutboxSupportsBoundedRetriesAndOperationalDiagnosis()
+    {
+        await using var connection = new NpgsqlConnection(GetRequiredConnectionString());
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        var columns = (await connection.QueryAsync<string>(
+            """
+            select column_name
+            from information_schema.columns
+            where table_schema = 'platform'
+              and table_name = 'outbox_messages'
+              and column_name = any(array['correlation_id', 'last_attempt_at', 'dead_lettered_at'])
+            order by column_name;
+            """)).ToArray();
+
+        Assert.Equal(["correlation_id", "dead_lettered_at", "last_attempt_at"], columns);
     }
 
     [Fact]

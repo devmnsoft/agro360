@@ -17,7 +17,14 @@ Objetivo: executar o primeiro fluxo agrícola e o fluxo animal sem ilhas de dado
 | 4 | colheita, produto, venda, recebível, dashboard e AgroGraph | primeiro fluxo E2E completo |
 | 5 | animal, timeline, pesagem/GMD, sanidade/carência e venda | segundo fluxo E2E completo |
 
-Estado atual: Sprints 0–5 entregues como primeira fatia vertical; hardening e ampliação de testes continuam antes de release comercial.
+Estado atual: Sprints 0–5 entregaram a primeira fatia vertical de backend. A Sprint 5.5 candidata v0.2.0 adiciona hardening operacional de Outbox, migration corretiva, CI e recuperação. A homologação E2E pela interface permanece pendente; por isso agricultura, estoque, pecuária e comercial continuam `FOUNDATION`, sem antecipar a classificação `CORE`.
+
+### Sprint 5.5 — gate honesto da candidata v0.2.0
+
+- concluído no repositório: transações verticais existentes, RLS forçada, RBAC de API, retry limitado/dead-letter da Outbox, migração repetível, build das quatro imagens no CI e runbook de backup/restauração;
+- exige ambiente com .NET 10 e Docker: restore, build, testes PostgreSQL/PostGIS, duas execuções do Migrator, smoke dos hosts e restauração temporária;
+- pendente para promover fluxos a `CORE`: formulários Web conectados, E2E de browser, seed completo por perfis e homologação formal nas larguras-alvo;
+- Sprint 7 mantém o backlog de pasto/confinamento/dieta e apropriação do milho ao lote; nenhuma fábrica de ração fictícia foi criada.
 
 ### Meio — completar operação e cadeias empresariais
 

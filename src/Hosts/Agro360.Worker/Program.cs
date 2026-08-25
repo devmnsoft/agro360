@@ -15,6 +15,7 @@ builder.Logging.ClearProviders();
 builder.Logging.AddSerilog(Log.Logger, dispose: true);
 
 builder.Services.AddAgro360Infrastructure(builder.Configuration);
+builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection(OutboxOptions.SectionName));
 builder.Services.AddSingleton<IOutboxPublisher, LoggingOutboxPublisher>();
 builder.Services.AddHostedService<OutboxWorker>();
 
