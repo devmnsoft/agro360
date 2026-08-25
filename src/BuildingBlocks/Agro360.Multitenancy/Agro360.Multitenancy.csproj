@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Agro360.SharedKernel\Agro360.SharedKernel.csproj" />
+  </ItemGroup>
+</Project>

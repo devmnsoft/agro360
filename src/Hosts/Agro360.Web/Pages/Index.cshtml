@@ -1,0 +1,84 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Command Center";
+}
+
+<div class="page-content">
+    <section class="page-heading">
+        <div>
+            <span class="eyebrow">Visão integrada da operação</span>
+            <h1>Bom dia. <span>O campo está em movimento.</span></h1>
+            <p id="dashboard-subtitle">Consolidando produção, rebanho, estoque e resultado.</p>
+        </div>
+        <div class="heading-actions">
+            <button class="secondary-button" type="button" id="refresh-dashboard"><svg><use href="#i-chart" /></svg> Atualizar dados</button>
+            <button class="primary-button" type="button" data-feature="quick-action"><svg><use href="#i-plus" /></svg> Nova operação</button>
+        </div>
+    </section>
+
+    <section class="kpi-grid" aria-label="Indicadores principais">
+        <article class="kpi-card accent-green">
+            <div class="kpi-top"><span>Margem estimada</span><i>resultado</i></div>
+            <strong id="kpi-margin" class="skeleton-value">R$ —</strong>
+            <footer><span class="trend positive">visão corrente</span><small>recebíveis − custos</small></footer>
+        </article>
+        <article class="kpi-card">
+            <div class="kpi-top"><span>Valor em estoque</span><i>estoque</i></div>
+            <strong id="kpi-inventory" class="skeleton-value">R$ —</strong>
+            <footer><span id="kpi-alerts" class="trend neutral">— alertas</span><small>custo médio</small></footer>
+        </article>
+        <article class="kpi-card">
+            <div class="kpi-top"><span>Safras ativas</span><i>agricultura</i></div>
+            <strong id="kpi-seasons" class="skeleton-value">—</strong>
+            <footer><span id="kpi-area" class="trend positive">— ha</span><small>área gerenciada</small></footer>
+        </article>
+        <article class="kpi-card">
+            <div class="kpi-top"><span>Rebanho ativo</span><i>pecuária</i></div>
+            <strong id="kpi-animals" class="skeleton-value">—</strong>
+            <footer><span id="kpi-farms" class="trend neutral">— fazendas</span><small>animais rastreados</small></footer>
+        </article>
+    </section>
+
+    <section class="command-grid">
+        <article class="panel operations-panel">
+            <header class="panel-header">
+                <div><span class="eyebrow">Fluxo operacional</span><h2>Atividade recente</h2></div>
+                <span class="live-badge"><i></i> dados autorizados</span>
+            </header>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Operação</th><th>Módulo</th><th>Valor</th><th>Status</th><th>Horário</th></tr></thead>
+                    <tbody id="recent-operations">
+                        <tr class="empty-row"><td colspan="5"><span class="loading-ring"></span> Carregando operações...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </article>
+
+        <aside class="panel pulse-panel">
+            <header class="panel-header"><div><span class="eyebrow">Pulso da operação</span><h2>Agro Pulse</h2></div><span class="ai-label">explicável</span></header>
+            <div class="pulse-score"><div><strong id="pulse-score">—</strong><small>/100</small></div><span>Qualidade operacional</span></div>
+            <div class="pulse-bars">
+                <div><span>Dados de campo</span><i><b style="--value: 0%"></b></i><strong id="pulse-field">—</strong></div>
+                <div><span>Estoque conciliado</span><i><b style="--value: 0%"></b></i><strong id="pulse-stock">—</strong></div>
+                <div><span>Rastreabilidade</span><i><b style="--value: 0%"></b></i><strong id="pulse-trace">—</strong></div>
+            </div>
+            <div class="insight-card">
+                <span>Leitura do sistema</span>
+                <p id="pulse-insight">Conecte-se para gerar uma leitura baseada nos dados reais do tenant.</p>
+                <small>Fonte: dados operacionais autorizados · sem execução automática</small>
+            </div>
+        </aside>
+    </section>
+
+    <section class="module-strip">
+        <header class="panel-header"><div><span class="eyebrow">Atalhos inteligentes</span><h2>Continue de onde parou</h2></div></header>
+        <div class="module-cards">
+            <button type="button" data-feature="planting"><span class="module-icon"><svg><use href="#i-leaf" /></svg></span><div><strong>Registrar plantio</strong><small>Baixa estoque e gera custo</small></div><svg><use href="#i-arrow" /></svg></button>
+            <button type="button" data-feature="weighing"><span class="module-icon"><svg><use href="#i-animal" /></svg></span><div><strong>Nova pesagem</strong><small>Calcula GMD automaticamente</small></div><svg><use href="#i-arrow" /></svg></button>
+            <button type="button" data-feature="stock"><span class="module-icon"><svg><use href="#i-box" /></svg></span><div><strong>Entrada de estoque</strong><small>Lote, validade e custo médio</small></div><svg><use href="#i-arrow" /></svg></button>
+            <button type="button" data-feature="sale"><span class="module-icon"><svg><use href="#i-coins" /></svg></span><div><strong>Confirmar venda</strong><small>Gera recebível e rastreio</small></div><svg><use href="#i-arrow" /></svg></button>
+        </div>
+    </section>
+</div>

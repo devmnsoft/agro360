@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Primitivas de domínio compartilhadas pelo Agro 360.</Description>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,12 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY . .
+RUN dotnet restore src/Hosts/Agro360.Migrator/Agro360.Migrator.csproj
+RUN dotnet publish src/Hosts/Agro360.Migrator/Agro360.Migrator.csproj -c Release --no-restore -o /app/publish
+
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
+WORKDIR /app
+RUN addgroup --system agro360 && adduser --system --ingroup agro360 agro360
+COPY --from=build /app/publish .
+USER agro360
+ENTRYPOINT ["dotnet", "Agro360.Migrator.dll"]

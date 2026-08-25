@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\BuildingBlocks\Agro360.Multitenancy\Agro360.Multitenancy.csproj" />
+    <ProjectReference Include="..\Agro360.Domain\Agro360.Domain.csproj" />
+  </ItemGroup>
+</Project>

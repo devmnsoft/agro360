@@ -1,0 +1,51 @@
+name: agro360-ci
+
+on:
+  push:
+    branches: [main, "codex/**", "feature/**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: agro360_test
+          POSTGRES_USER: agro360
+          POSTGRES_PASSWORD: agro360-ci-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agro360 -d agro360_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      CI: "true"
+      ConnectionStrings__PostgreSQL: Host=localhost;Port=5432;Database=agro360_test;Username=agro360;Password=agro360-ci-password;Include Error Detail=false
+      AGRO360_TEST_CONNECTION_STRING: Host=localhost;Port=5432;Database=agro360_test;Username=agro360;Password=agro360-ci-password;Include Error Detail=false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore MNSOFT.Agro360.sln
+      - name: Format
+        run: dotnet format MNSOFT.Agro360.sln --verify-no-changes --no-restore
+      - name: Build
+        run: dotnet build MNSOFT.Agro360.sln --configuration Release --no-restore
+      - name: Migrate database
+        run: dotnet run --project src/Hosts/Agro360.Migrator/Agro360.Migrator.csproj --configuration Release --no-build
+      - name: Test
+        run: dotnet test MNSOFT.Agro360.sln --configuration Release --no-build --collect:"XPlat Code Coverage"
+      - name: Docker build
+        run: |
+          docker build -f deploy/Dockerfile.api -t agro360-api:ci .
+          docker build -f deploy/Dockerfile.web -t agro360-web:ci .

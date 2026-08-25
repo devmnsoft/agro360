@@ -1,0 +1,17 @@
+{
+  "name": "MNSOFT Agro 360",
+  "short_name": "Agro 360",
+  "description": "O sistema operacional do agronegócio.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#081612",
+  "theme_color": "#0d2019",
+  "icons": [
+    {
+      "src": "/icons/agro360.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

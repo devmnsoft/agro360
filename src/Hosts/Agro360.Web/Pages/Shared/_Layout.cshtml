@@ -1,0 +1,112 @@
+@inject IConfiguration Configuration
+@{
+    var apiBaseUrl = Configuration["ApiBaseUrl"] ?? "http://localhost:8081";
+}
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#081612" />
+    <meta name="api-base" content="@apiBaseUrl" />
+    <meta name="description" content="MNSOFT Agro 360 — o sistema operacional do agronegócio." />
+    <title>@ViewData["Title"] · Agro 360</title>
+    <link rel="manifest" href="~/manifest.webmanifest" />
+    <link rel="icon" href="~/icons/agro360.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="~/css/agro360.css" asp-append-version="true" />
+</head>
+<body>
+    <svg class="icon-sprite" aria-hidden="true">
+        <symbol id="i-grid" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></symbol>
+        <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M20 4C11 4 5 8.4 5 15c0 1.2.3 2.2.8 3.1M20 4c0 9-4.4 15-11 15-1.2 0-2.2-.3-3.1-.8M20 4 5 19"/></symbol>
+        <symbol id="i-map" viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15"/></symbol>
+        <symbol id="i-animal" viewBox="0 0 24 24"><path d="M6 9 3 5v5l3 2m12-3 3-4v5l-3 2M7 8c2-2 8-2 10 0v7c0 4-10 4-10 0zM9 14h.01M15 14h.01M10 17h4"/></symbol>
+        <symbol id="i-box" viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4zM4 7v10l8 4 8-4V7M12 11v10"/></symbol>
+        <symbol id="i-coins" viewBox="0 0 24 24"><ellipse cx="9" cy="6" rx="6" ry="3"/><path d="M3 6v4c0 1.7 2.7 3 6 3 1.1 0 2.1-.1 3-.4M3 10v4c0 1.7 2.7 3 6 3h1M15 11c3.3 0 6 1.3 6 3s-2.7 3-6 3-6-1.3-6-3 2.7-3 6-3zM9 14v4c0 1.7 2.7 3 6 3s6-1.3 6-3v-4"/></symbol>
+        <symbol id="i-truck" viewBox="0 0 24 24"><path d="M3 5h11v12H3zM14 9h4l3 4v4h-7zM7 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM18 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></symbol>
+        <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></symbol>
+        <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></symbol>
+        <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+        <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+        <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M14 7l5 5-5 5"/></symbol>
+    </svg>
+
+    <div class="app-shell">
+        <aside class="sidebar" id="sidebar">
+            <a class="brand" href="/" aria-label="Agro 360, início">
+                <span class="brand-mark"><svg><use href="#i-leaf" /></svg></span>
+                <span><strong>AGRO</strong><b>360</b><small>by MNSOFT</small></span>
+            </a>
+            <div class="context-card">
+                <span class="eyebrow">Contexto ativo</span>
+                <strong id="active-farm">Todas as fazendas</strong>
+                <button type="button" data-feature="context">Alterar contexto <svg><use href="#i-arrow" /></svg></button>
+            </div>
+            <nav class="main-nav" aria-label="Navegação principal">
+                <span class="nav-label">Operação</span>
+                <a class="active" href="/"><svg><use href="#i-grid" /></svg><span>Command Center</span></a>
+                <button type="button" data-feature="properties"><svg><use href="#i-map" /></svg><span>Propriedades</span><i>core</i></button>
+                <button type="button" data-feature="agriculture"><svg><use href="#i-leaf" /></svg><span>Agricultura</span><i>core</i></button>
+                <button type="button" data-feature="livestock"><svg><use href="#i-animal" /></svg><span>Pecuária</span><i>core</i></button>
+                <button type="button" data-feature="inventory"><svg><use href="#i-box" /></svg><span>Estoque</span><i>core</i></button>
+                <span class="nav-label">Gestão</span>
+                <button type="button" data-feature="finance"><svg><use href="#i-coins" /></svg><span>Financeiro</span></button>
+                <button type="button" data-feature="logistics"><svg><use href="#i-truck" /></svg><span>Logística</span></button>
+                <button type="button" data-feature="analytics"><svg><use href="#i-chart" /></svg><span>Analytics</span></button>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="sync-state"><span></span><div><strong>Serviços online</strong><small id="sync-time">verificando agora</small></div></div>
+                <button class="user-chip" type="button" id="logout-button">
+                    <span id="user-initials">A3</span>
+                    <div><strong id="user-name">Agro 360</strong><small id="user-email">Entrar na conta</small></div>
+                </button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="topbar">
+                <button class="icon-button menu-button" type="button" id="menu-button" aria-label="Abrir menu"><svg><use href="#i-menu" /></svg></button>
+                <button class="search-trigger" type="button" id="search-trigger">
+                    <svg><use href="#i-search" /></svg><span>Buscar animal, fazenda, produto, safra...</span><kbd>Ctrl K</kbd>
+                </button>
+                <div class="top-actions">
+                    <span class="weather-pill"><small>Belém, PA</small><strong>29°</strong><i>tempo</i></span>
+                    <button class="icon-button" type="button" id="theme-button" aria-label="Alternar tema"><svg><use href="#i-sun" /></svg></button>
+                    <button class="icon-button notification-button" type="button" data-feature="notifications" aria-label="Notificações"><svg><use href="#i-bell" /></svg><span></span></button>
+                </div>
+            </header>
+            @RenderBody()
+        </main>
+    </div>
+
+    <div class="modal-backdrop" id="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title" hidden>
+        <form class="login-card" id="login-form">
+            <div class="login-brand"><span class="brand-mark"><svg><use href="#i-leaf" /></svg></span><span>AGRO <b>360</b></span></div>
+            <span class="eyebrow">Acesso seguro</span>
+            <h2 id="login-title">Sua operação em uma única visão.</h2>
+            <p>Entre no tenant da sua empresa para acessar dados autorizados.</p>
+            <label>Tenant<input name="tenantSlug" autocomplete="organization" placeholder="ex.: fazenda-boa-vista" required /></label>
+            <label>E-mail<input name="email" type="email" autocomplete="username" placeholder="voce@empresa.com.br" required /></label>
+            <label>Senha<input name="password" type="password" autocomplete="current-password" required /></label>
+            <button class="primary-button" type="submit"><span>Entrar no Agro 360</span><svg><use href="#i-arrow" /></svg></button>
+            <div class="form-message" id="login-message" role="alert"></div>
+            <small>A sessão usa token de curta duração e refresh token rotativo.</small>
+        </form>
+    </div>
+
+    <div class="modal-backdrop palette-backdrop" id="command-palette" role="dialog" aria-modal="true" aria-label="Busca global" hidden>
+        <div class="command-palette">
+            <div class="palette-input"><svg><use href="#i-search" /></svg><input id="global-search" autocomplete="off" placeholder="O que você procura?" /><kbd>ESC</kbd></div>
+            <div class="palette-results" id="search-results"><p>Digite pelo menos dois caracteres para buscar em toda a operação.</p></div>
+            <footer><span>↑↓ navegar</span><span>↵ abrir</span><span>Resultados respeitam suas permissões</span></footer>
+        </div>
+    </div>
+
+    <div class="toast-region" id="toast-region" aria-live="polite"></div>
+    <script src="~/js/agro360.js" asp-append-version="true" defer></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

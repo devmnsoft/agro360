@@ -1,0 +1,16 @@
+bin/
+obj/
+.vs/
+.vscode/
+.idea/
+TestResults/
+coverage/
+artifacts/
+upload/
+.env
+MNSOFT-Agro360-*.zip
+*.user
+*.suo
+*.nupkg
+*.log
+**/wwwroot/assets/generated/
