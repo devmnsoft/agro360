@@ -10,3 +10,11 @@ psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgr
 O arquivo consolidado é autocontido, idempotente e inclui todas as versões até 0.7.0. Não contém `\\i`, host, usuário, banco ou senha fixos. Alternativamente, execute migrations em ordem e depois `database/seeds/minimal-production.sql` e `database/seeds/sprint10-amazon-products.sql`.
 
 Valide com `./scripts/validate-full-sql.sh` e rode a API com `dotnet run --project src/Hosts/Agro360.Api`. Docker Compose é apenas opcional.
+
+## Sprint 11
+
+O arquivo único já contém as tabelas, índices, constraints, políticas RLS e versão da Agricultura 360. Execute sem Docker:
+
+```bash
+psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
+```

@@ -1,0 +1,28 @@
+@page "/agriculture"
+@model Agro360.Web.Pages.Agriculture.IndexModel
+@{ ViewData["Title"] = "Agricultura 360"; }
+<section class="page-content agriculture-360">
+ <header class="page-heading"><div><span class="eyebrow">Sprint 11 · operação agrícola</span><h1>Agricultura <span>360</span></h1><p>Planejamento, execução, sanidade e custos no mesmo contexto.</p></div></header>
+ <nav class="livestock-modules" aria-label="Módulos agrícolas" id="agriculture-tabs">
+  <button data-module="field-notes"><strong>Caderno de campo</strong><small>atividades e insumos</small></button><button data-module="plans"><strong>Planejamento</strong><small>previsto × realizado</small></button><button data-module="scouting"><strong>Monitoramento</strong><small>pragas e doenças</small></button><button data-module="recommendations"><strong>Recomendações</strong><small>orientação técnica</small></button><button data-module="applications"><strong>Aplicações</strong><small>estoque e custo</small></button><button data-module="irrigations"><strong>Irrigação</strong><small>lâmina e duração</small></button><button data-module="weather-records"><strong>Clima</strong><small>risco operacional</small></button><button data-module="work-orders"><strong>Ordens de serviço</strong><small>equipe e checklist</small></button>
+ </nav>
+ <section class="panel" aria-labelledby="form-title"><header class="panel-header"><div><span class="eyebrow">Novo registro</span><h2 id="form-title">Caderno de campo</h2></div></header>
+  <div id="form-summary" class="validation-summary" role="alert" hidden></div>
+  <form id="agriculture-form" novalidate>
+   <input type="hidden" name="module" value="field-notes" />
+   <div class="agriculture-form-grid">
+    <label>Propriedade <input class="lookup" data-lookup="properties" data-target="propertyId" autocomplete="off" required minlength="2" placeholder="Busque pelo nome da fazenda" /><input type="hidden" name="propertyId" /></label>
+    <label>Talhão <input class="lookup" data-lookup="fields" data-target="fieldId" autocomplete="off" required minlength="2" placeholder="Busque pelo nome e safra" /><input type="hidden" name="fieldId" /></label>
+    <label>Safra <input class="lookup" data-lookup="crop-seasons" data-target="cropSeasonId" autocomplete="off" placeholder="Busque pela safra" /><input type="hidden" name="cropSeasonId" /></label>
+    <label>Cultura <input class="lookup" data-lookup="crops" data-target="cropId" autocomplete="off" placeholder="Busque pela cultura" /><input type="hidden" name="cropId" /></label>
+    <label>Responsável <input class="lookup" data-lookup="people" data-target="responsibleId" autocomplete="off" placeholder="Busque pelo nome ou e-mail" /><input type="hidden" name="responsibleId" /></label>
+    <label>Máquina <input class="lookup" data-lookup="machines" data-target="machineId" autocomplete="off" placeholder="Busque por nome ou identificação" /><input type="hidden" name="machineId" /></label>
+    <label>Atividade<input name="name" required minlength="3" maxlength="160" /></label><label>Data planejada<input name="plannedAt" type="datetime-local" required /></label><label>Área (ha)<input name="area" type="number" min="0.0001" step="0.0001" required /></label>
+    <label>Status<select name="status" required><option value="PLANNED">Planejada</option><option value="RELEASED">Liberada</option><option value="IN_PROGRESS">Em execução</option><option value="COMPLETED">Realizada</option><option value="CANCELLED">Cancelada</option></select></label>
+    <label class="form-wide">Observações<textarea name="notes" maxlength="2000"></textarea></label>
+   </div><button class="primary-button" type="submit"><span>Salvar registro</span></button><p id="form-result" role="status"></p>
+  </form>
+ </section>
+ <section class="panel"><header class="panel-header"><h2>Registros recentes</h2></header><div id="agriculture-list" class="empty-row">Carregando registros...</div></section>
+</section>
+<script src="~/js/agriculture360.js" asp-append-version="true"></script>
