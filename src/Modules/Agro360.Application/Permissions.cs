@@ -14,6 +14,13 @@ public static class Permissions
     public const string LivestockSell = "livestock.sell";
     public const string CommercialWrite = "commercial.write";
     public const string FinanceRead = "finance.read";
+    public const string PurchasingRead = "purchasing.read";
+    public const string PurchasingWrite = "purchasing.write";
+    public const string PurchasingApprove = "purchasing.approve";
+    public const string FleetRead = "fleet.read";
+    public const string FleetWrite = "fleet.write";
+    public const string MaintenanceRead = "maintenance.read";
+    public const string MaintenanceWrite = "maintenance.write";
     public const string DashboardRead = "dashboard.read";
 
     public static IReadOnlyCollection<string> Administrator =>
@@ -30,6 +37,7 @@ public static class Permissions
         LivestockSell,
         CommercialWrite,
         FinanceRead,
+        PurchasingRead, PurchasingWrite, PurchasingApprove, FleetRead, FleetWrite, MaintenanceRead, MaintenanceWrite,
         DashboardRead
     ];
 }

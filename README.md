@@ -134,3 +134,13 @@ Os hosts ficam em `src/Hosts`, módulos em `src/Modules`, testes em `tests` e SQ
 - [Arquitetura](docs/architecture.md)
 - [Testes](docs/testing.md)
 - [Release v0.2.0](docs/release-v0.2.0.md)
+
+## Sprint 6 — operação completa
+
+Fornecedores, compras/recebimentos, estoque/insumos, frota, manutenção, abastecimento e dashboard operacional estão disponíveis na API e no Command Center. A instalação PostgreSQL portátil recomendada é:
+
+```bash
+psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
+```
+
+Veja [execução nativa](docs/getting-started-without-docker.md), [instalação do banco](docs/database-installation.md) e [guia dos módulos](docs/sprint-6-operational-modules.md).

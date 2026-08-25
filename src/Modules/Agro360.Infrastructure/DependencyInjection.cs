@@ -36,6 +36,7 @@ public static class DependencyInjection
         services.AddScoped<ILivestockService, LivestockService>();
         services.AddScoped<ICommercialService, CommercialService>();
         services.AddScoped<IDashboardService, DashboardService>();
+        services.AddScoped<IOperationsService, OperationsService>();
         services.AddScoped<IGlobalSearchService, GlobalSearchService>();
         services.AddScoped<ITraceabilityService, TraceabilityService>();
         return services;
