@@ -55,14 +55,15 @@ try
             Log.Information("Validação concluída sem alterações; checksums e requisitos são compatíveis.");
             break;
         case "migrate":
-            await MigrateAsync(connection, migrations, applied).ConfigureAwait(false);
+            await MigrateAsync(connection, migrations).ConfigureAwait(false);
             break;
         case "seed":
-            var environment = GetOption(args, "--environment") ?? throw new ArgumentException("Use seed --environment Development|Homologation|Production.");
+            var environment = GetOption(args, "--environment") ?? GetSeedProfile(args)
+                ?? throw new ArgumentException("Use seed minimal|demo ou seed --environment Development|Homologation|Production.");
             await SeedAsync(connection, environment).ConfigureAwait(false);
             break;
         default:
-            throw new ArgumentException("Comando inválido. Use status, validate, migrate ou seed --environment <ambiente>.");
+            throw new ArgumentException("Comando inválido. Use status, validate, migrate, seed minimal ou seed demo.");
     }
 
     return 0;
@@ -91,11 +92,17 @@ static void ValidateChecksums(IEnumerable<Migration> migrations, IReadOnlyDictio
             throw new InvalidOperationException($"Migration aplicada '{migration.Name}' foi alterada (checksum divergente).");
 }
 
-static async Task MigrateAsync(NpgsqlConnection connection, IEnumerable<Migration> migrations, IReadOnlyDictionary<string, AppliedMigration> applied)
+static async Task MigrateAsync(NpgsqlConnection connection, Migration[] migrations)
 {
     await connection.ExecuteAsync("select pg_advisory_lock(hashtext('mnsoft-agro360-migrator'));").ConfigureAwait(false);
     try
     {
+        // Releia o histórico depois de adquirir o lock. Assim, um processo que
+        // aguardou outro migrator não tenta reaplicar migrations recém-concluídas.
+        var applied = (await connection.QueryAsync<AppliedMigration>(
+            "select version, name, checksum from platform.schema_migrations order by version;").ConfigureAwait(false))
+            .ToDictionary(item => item.Version, StringComparer.Ordinal);
+        ValidateChecksums(migrations, applied);
         foreach (var migration in migrations.Where(item => !applied.ContainsKey(item.Version)))
         {
             Log.Information("Aplicando {Migration}...", migration.Name);
@@ -129,6 +136,18 @@ static string? GetOption(string[] values, string name)
 {
     var index = Array.FindIndex(values, value => string.Equals(value, name, StringComparison.OrdinalIgnoreCase));
     return index >= 0 && index + 1 < values.Length ? values[index + 1] : null;
+}
+
+static string? GetSeedProfile(string[] values)
+{
+    var seedIndex = Array.FindIndex(values, value => string.Equals(value, "seed", StringComparison.OrdinalIgnoreCase));
+    if (seedIndex < 0 || seedIndex + 1 >= values.Length) return null;
+    return values[seedIndex + 1].ToLowerInvariant() switch
+    {
+        "minimal" => "Production",
+        "demo" => "Homologation",
+        _ => throw new ArgumentException("Perfil de seed inválido. Use minimal ou demo.")
+    };
 }
 
 internal sealed record Migration(string Version, string Name, string Checksum, string Sql)

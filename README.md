@@ -33,9 +33,11 @@ Execute a preparação e, depois, os hosts:
 
 ```bash
 ./scripts/setup-local.sh
-./scripts/migrate-local.sh
-./scripts/run-local.sh
-# PowerShell: ./scripts/setup-local.ps1; ./scripts/migrate-local.ps1; ./scripts/run-local.ps1
+./scripts/migrate.sh migrate
+./scripts/run-api.sh       # terminais separados
+./scripts/run-worker.sh
+./scripts/run-web.sh
+# PowerShell: use os scripts .ps1 equivalentes
 ```
 
 O script de execução inicia API, Worker e Web e encerra todos ao receber `Ctrl+C`. A sequência equivalente, sem scripts, é:
@@ -57,7 +59,8 @@ dotnet run --project src/Hosts/Agro360.Web
 dotnet run --project src/Hosts/Agro360.Migrator -- status
 dotnet run --project src/Hosts/Agro360.Migrator -- validate
 dotnet run --project src/Hosts/Agro360.Migrator -- migrate
-dotnet run --project src/Hosts/Agro360.Migrator -- seed --environment Homologation
+dotnet run --project src/Hosts/Agro360.Migrator -- seed minimal
+dotnet run --project src/Hosts/Agro360.Migrator -- seed demo # nunca em produção
 # migrations externas: --migrations /caminho/fornecido
 ```
 
@@ -123,3 +126,11 @@ O Compose usa `postgres` apenas dentro de sua configuração opcional; aplicaç�
 ## Estrutura e segurança
 
 Os hosts ficam em `src/Hosts`, módulos em `src/Modules`, testes em `tests` e SQL físico em `database`. RLS protege dados tenant; o usuário da aplicação não deve ser proprietário do banco. Nunca mantenha credenciais em JSON versionado, logs, scripts ou linha de comando compartilhada.
+
+## Guias operacionais
+
+- [Primeiros passos sem Docker](docs/getting-started-without-docker.md)
+- [Instalação, backup e restauração do banco](docs/database-installation.md)
+- [Arquitetura](docs/architecture.md)
+- [Testes](docs/testing.md)
+- [Release v0.2.0](docs/release-v0.2.0.md)
