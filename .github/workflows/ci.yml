@@ -43,8 +43,18 @@ jobs:
         run: dotnet build MNSOFT.Agro360.sln --configuration Release --no-restore
       - name: Migrate database
         run: dotnet run --project src/Hosts/Agro360.Migrator/Agro360.Migrator.csproj --configuration Release --no-build
+      - name: Verify migration idempotency
+        run: dotnet run --project src/Hosts/Agro360.Migrator/Agro360.Migrator.csproj --configuration Release --no-build
       - name: Test
-        run: dotnet test MNSOFT.Agro360.sln --configuration Release --no-build
+        run: dotnet test MNSOFT.Agro360.sln --configuration Release --no-build --report-trx --results-directory TestResults
+      - name: Audit vulnerable packages
+        run: dotnet list MNSOFT.Agro360.sln package --vulnerable --include-transitive
+      - name: Publish test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/**/*.trx
       - name: Docker build
         run: |
           docker build -f deploy/Dockerfile.api -t agro360-api:ci .

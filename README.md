@@ -6,7 +6,7 @@ Plataforma integrada, multi-tenant e modular para gestão do agronegócio. A sol
 
 ## Estado desta entrega
 
-Esta versão fecha a fundação técnica e entrega uma primeira fatia vertical executável dos três fluxos que validam o produto:
+Esta versão candidata à homologação interna fecha a fundação técnica e entrega APIs transacionais para os fluxos abaixo. A interface Web atual é um Command Center/PWA; os formulários operacionais completos ainda são `FOUNDATION`, portanto os fluxos não são classificados como `CORE` ponta a ponta:
 
 1. propriedade → talhão → safra → insumo → plantio → colheita → venda → contas a receber;
 2. animal → pesagem/vacinação → consumo de estoque → custo → venda → rastreabilidade;
@@ -24,7 +24,7 @@ Os demais domínios estão planejados em `docs/ROADMAP.md` e catalogados em `doc
 - worker de Outbox;
 - isolamento multi-tenant em aplicação e Row-Level Security;
 - UUID como chave distribuída, `numeric` para dinheiro/medidas e concorrência otimista;
-- Docker Compose com PostgreSQL/PostGIS, Redis, MinIO, API, Web, Worker e Migrator.
+- Docker Compose com PostgreSQL/PostGIS, API, Web, Worker e Migrator. Redis e MinIO só serão incluídos quando houver consumidores reais.
 
 ## Projetos
 
@@ -67,7 +67,6 @@ docker compose up --build
 - API: `http://localhost:8081`
 - OpenAPI: `http://localhost:8081/openapi/v1.json`
 - health: `http://localhost:8081/health`
-- MinIO: `http://localhost:9001`
 
 O migrador executa antes dos hosts. Em desenvolvimento, `POST /api/v1/bootstrap` cria o primeiro tenant e administrador. Desabilite `Bootstrap__Enabled` após a criação.
 
@@ -90,6 +89,8 @@ dotnet test MNSOFT.Agro360.sln --no-build
 ```
 
 Use `scripts/verify.sh` para executar formatação, build e testes. Consulte `docs/ARCHITECTURE.md`, `docs/BUSINESS-RULES.md`, `docs/API.md` e `docs/ROADMAP.md` antes de ampliar módulos.
+
+Para staging, recuperação e evidências da candidata v0.2.0, consulte `docs/DEPLOYMENT-STAGING.md`, `docs/BACKUP-RESTORE.md` e `docs/HOMOLOGATION-REPORT-v0.2.0.md`.
 
 ## Segurança
 
