@@ -14,6 +14,7 @@ public static class Permissions
     public const string LivestockSell = "livestock.sell";
     public const string CommercialWrite = "commercial.write";
     public const string FinanceRead = "finance.read";
+    public const string FinanceWrite = "finance.write";
     public const string PurchasingRead = "purchasing.read";
     public const string PurchasingWrite = "purchasing.write";
     public const string PurchasingApprove = "purchasing.approve";
@@ -36,7 +37,7 @@ public static class Permissions
         LivestockWrite,
         LivestockSell,
         CommercialWrite,
-        FinanceRead,
+        FinanceRead, FinanceWrite,
         PurchasingRead, PurchasingWrite, PurchasingApprove, FleetRead, FleetWrite, MaintenanceRead, MaintenanceWrite,
         DashboardRead
     ];

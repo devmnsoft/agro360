@@ -13,3 +13,7 @@ SQL de evolução vive somente em `database/migrations`; seeds são separados de
 ## Slice Pecuária 360
 
 Os contratos ficam em Application, regras invariantes no Domain e a orquestração transacional/Dapper em Infrastructure. O controller apenas traduz HTTP. Baixas sanitárias e nutricionais bloqueiam saldo, atualizam estoque e gravam o evento na mesma transação; todas as escritas críticas usam a trilha de auditoria compartilhada. O dashboard possui serviço e query consolidada próprios.
+
+## Contextos Finance e Commercial (Sprint 8)
+
+Contratos permanecem em Application; regras puras em Domain; serviços Dapper parametrizados em Infrastructure; controllers somente adaptam HTTP. Escritas financeiras são transacionais, filtradas por tenant e persistem auditoria. PostgreSQL aplica constraints, índices e RLS como defesa adicional.

@@ -30,3 +30,7 @@ dotnet run --project src/Hosts/Agro360.Api
 dotnet run --project src/Hosts/Agro360.Worker
 dotnet run --project src/Hosts/Agro360.Web
 ```
+
+## Financeiro Agro
+
+Após instalar o SQL único, execute nativamente `dotnet run --project src/Hosts/Agro360.Api`, `dotnet run --project src/Hosts/Agro360.Web` e `dotnet run --project src/Hosts/Agro360.Worker`. Todos leem `ConnectionStrings__Agro360`; o Migrator é executado com `dotnet run --project src/Hosts/Agro360.Migrator`.

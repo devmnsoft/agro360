@@ -154,3 +154,7 @@ psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgr
 ```
 
 Consulte o [guia da Sprint 7](docs/sprint-7-pecuaria-360.md), a [instalação](docs/database-installation.md) e a [execução nativa](docs/getting-started-without-docker.md).
+
+## Sprint 8 — Financeiro Agro
+
+Plano de contas, centros de custo, pagar/receber, comercialização, baixas, fluxo de caixa, resultados dimensionais e dashboard econômico estão disponíveis na v0.5.0. Consulte [o guia da Sprint 8](docs/sprint-8-financeiro-agro.md) e instale todo o banco com `psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql`.

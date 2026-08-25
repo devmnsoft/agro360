@@ -1,0 +1,1 @@
+-- Dados mínimos são criados pela API por tenant; nenhum usuário ou segredo é fixado.
