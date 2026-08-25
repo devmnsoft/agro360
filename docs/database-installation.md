@@ -45,3 +45,7 @@ psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgr
 ```
 
 No pgAdmin/DBeaver, abra o mesmo arquivo no editor conectado ao banco alvo. Para atualizar uma instalação v0.3.0, execute o Migrator ou `database/migrations/006_sprint7_livestock360.sql`. O pacote versionado está em `database/releases/v0.4.0/` e `checksums.sha256` permite validar sua integridade.
+
+## Sprint 8 / v0.5.0
+
+Instalação integral e portável: `psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql`. Para manutenção incremental, aplique `database/migrations/007_sprint8_finance.sql`. O release reproduzível está em `database/releases/v0.5.0/` com checksums SHA-256.

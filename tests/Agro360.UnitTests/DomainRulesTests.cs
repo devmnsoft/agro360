@@ -2,6 +2,7 @@ using Agro360.Domain.Agriculture;
 using Agro360.Domain.Inventory;
 using Agro360.Domain.Livestock;
 using Agro360.Domain.Operations;
+using Agro360.Domain.Finance;
 using Agro360.SharedKernel;
 
 namespace Agro360.UnitTests;
@@ -117,4 +118,7 @@ public sealed class DomainRulesTests
     [Fact] public void PregnancyDiagnosisCalculatesExpectedBirth() => Assert.Equal(new DateOnly(2027,6,4), Agro360.Domain.Livestock.LivestockRules.ExpectedBirth(new DateOnly(2026,8,25), "BOVINO"));
     [Fact] public void NutritionPlanRequiresItems() => Assert.Throws<DomainException>(() => Agro360.Domain.Livestock.LivestockRules.DietCost([]));
     [Fact] public void NutritionPlanCalculatesCost() => Assert.Equal(25m, Agro360.Domain.Livestock.LivestockRules.DietCost([(10m,2.5m)]));
+    [Fact] public void FinancialTitleCalculatesDiscountAndCharges() => Assert.Equal(102m, FinanceRules.FinalAmount(100, 3, 2, 3));
+    [Fact] public void FinancialTitleRejectsNegativeValues() => Assert.Throws<DomainException>(() => FinanceRules.FinalAmount(100, -1, 0, 0));
+    [Fact] public void ChartOfAccountsValidatesType() => Assert.Throws<DomainException>(() => FinanceRules.Account("1", "Conta", "UNKNOWN", "DEBIT"));
 }

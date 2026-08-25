@@ -20,3 +20,7 @@ As regras operacionais têm testes unitários sem infraestrutura. Testes que abr
 ## Testes da Sprint 7
 
 Testes unitários não exigem banco. Integrações reais usam exclusivamente `AGRO360_TEST_CONNECTION_STRING`; sem a variável, são ignoradas de forma explícita. Para validar o instalador consolidado também execute `./scripts/validate-full-sql.sh`.
+
+## Sprint 8
+
+As regras financeiras são cobertas pelos testes unitários. Testes que abrem PostgreSQL leem exclusivamente `AGRO360_TEST_CONNECTION_STRING` e são ignorados, com justificativa, quando ela não está definida. Valide também o artefato portável com `bash scripts/validate-full-sql.sh`.
