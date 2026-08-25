@@ -162,3 +162,7 @@ Plano de contas, centros de custo, pagar/receber, comercialização, baixas, flu
 ## Sprint 9 — Armazenagem e logística
 
 A v0.6.0 entrega estruturas/silos, romaneio e pesagem, qualidade e descontos, lotes rastreáveis, secagem/beneficiamento, expedição, contratos operacionais, viagens/fretes e dashboard consolidado. Consulte [o guia operacional](docs/sprint-9-armazenagem-logistica.md).
+
+## Sprint 10 — Rastreabilidade Amazônica (v0.7.0)
+
+Rastreabilidade ponta a ponta, beneficiamento configurável, ledger imutável, certificados públicos, logística fluvial/vicinal e força de vendas com split auditável estão integrados à API e ao Command Center. Instale o banco completo com `psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql` e consulte o [guia da Sprint 10](docs/sprint-10-rastreabilidade-amazonica.md).

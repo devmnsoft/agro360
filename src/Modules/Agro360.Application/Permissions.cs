@@ -27,6 +27,14 @@ public static class Permissions
     public const string StorageWrite = "storage.write";
     public const string LogisticsRead = "logistics.read";
     public const string LogisticsWrite = "logistics.write";
+    public const string TraceabilityRead = "traceability.read";
+    public const string TraceabilityWrite = "traceability.write";
+    public const string LedgerValidate = "ledger.validate";
+    public const string RegionalLogisticsRead = "regional-logistics.read";
+    public const string RegionalLogisticsWrite = "regional-logistics.write";
+    public const string SalesNetworkRead = "sales-network.read";
+    public const string SalesNetworkWrite = "sales-network.write";
+    public const string SalesNetworkApprove = "sales-network.approve";
 
     public static IReadOnlyCollection<string> Administrator =>
     [
@@ -43,6 +51,8 @@ public static class Permissions
         CommercialWrite,
         FinanceRead, FinanceWrite,
         PurchasingRead, PurchasingWrite, PurchasingApprove, FleetRead, FleetWrite, MaintenanceRead, MaintenanceWrite,
-        DashboardRead, StorageRead, StorageWrite, LogisticsRead, LogisticsWrite
+        DashboardRead, StorageRead, StorageWrite, LogisticsRead, LogisticsWrite,
+        TraceabilityRead, TraceabilityWrite, LedgerValidate, RegionalLogisticsRead,
+        RegionalLogisticsWrite, SalesNetworkRead, SalesNetworkWrite, SalesNetworkApprove
     ];
 }
