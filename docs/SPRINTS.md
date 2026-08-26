@@ -9,3 +9,7 @@ As Sprints 6–19 entregaram operação base, pecuária, financeiro, armazenagem
 - navegação principal com destinos reais e busca global que abre a rota autorizada;
 - testes de arquitetura para portabilidade do SQL e integridade da navegação;
 - checklist único dos dez fluxos de homologação.
+
+## Sprint 21 — implantação comercial
+
+Entregue onboarding assistido, cinco templates agro, módulos por tenant, checklist percentual, dashboard real e importação CSV com mapeamento, pré-visualização, erros por linha, confirmação, histórico e rollback auditável. A homologação exige executar o SQL completo, carregar opcionalmente o seed demo, validar isolamento por tenant e percorrer `/Deployment` em desktop e mobile.

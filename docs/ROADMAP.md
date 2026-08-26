@@ -111,3 +111,7 @@ Gate do meio: terceiro fluxo E2E — milho colhido → armazém → fórmula de 
 
 - Adaptador blockchain real, gateways de pagamento, certificadoras e fluxos de exportação.
 - Evidências ESG/carbono, sensores IoT de temperatura e rastreamento GPS/hidrológico.
+
+## Sprint 21 — implantação comercial
+
+Entregue onboarding assistido, cinco templates agro, módulos por tenant, checklist percentual, dashboard real e importação CSV com mapeamento, pré-visualização, erros por linha, confirmação, histórico e rollback auditável. A homologação exige executar o SQL completo, carregar opcionalmente o seed demo, validar isolamento por tenant e percorrer `/Deployment` em desktop e mobile.
