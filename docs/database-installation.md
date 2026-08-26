@@ -37,3 +37,16 @@ O arquivo consolidado inclui o schema `intelligence`, RLS forçada, regras de al
 ```bash
 psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
 ```
+
+## Sprint 14
+
+O instalador único inclui todo o esquema até a Sprint 14, incluindo `saas` e auditoria. Sem Docker:
+
+```bash
+export ConnectionStrings__Agro360='Host=localhost;Port=5432;Database=agro360;Username=agro360_app;Password=use-um-secret'
+psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql
+dotnet run --project src/Hosts/Agro360.Api
+dotnet run --project src/Hosts/Agro360.Web
+```
+
+O valor é exemplo; use secret manager e não versione credenciais.

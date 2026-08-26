@@ -1,0 +1,8 @@
+namespace Agro360.ArchitectureTests;
+public sealed class SaasGovernanceTests
+{
+ [Fact] public void Saas_ui_never_requests_technical_ids(){var root=FindRoot();var text=File.ReadAllText(Path.Combine(root,"src/Hosts/Agro360.Web/Pages/Saas/Index.cshtml"))+File.ReadAllText(Path.Combine(root,"src/Hosts/Agro360.Web/wwwroot/js/saas.js"));Assert.DoesNotContain("name=\"tenantId\"",text,StringComparison.OrdinalIgnoreCase);Assert.DoesNotContain("name=\"planId\"",text,StringComparison.OrdinalIgnoreCase);Assert.DoesNotContain("name=\"roleId\"",text,StringComparison.OrdinalIgnoreCase);}
+ [Fact] public void Sql_is_standalone_and_contains_saas_modules(){var sql=File.ReadAllText(Path.Combine(FindRoot(),"database/agro360-postgres-full.sql"));Assert.DoesNotContain("\\i ",sql);Assert.Contains("create schema if not exists saas",sql,StringComparison.OrdinalIgnoreCase);Assert.Contains("'Essencial'",sql);Assert.Contains("audit.saas_events",sql);}
+ [Fact] public void Expected_endpoints_are_declared(){var api=File.ReadAllText(Path.Combine(FindRoot(),"src/Hosts/Agro360.Api/Controllers/SaasControllers.cs"));foreach(var route in new[]{"api/platform","tenants","plans","usage","dashboard","api/account","upgrade-requests","api/users","api/roles","api/invitations","api/security","sessions","devices","api/notifications","api/settings/organization"})Assert.Contains(route,api);}
+ private static string FindRoot(){var d=new DirectoryInfo(AppContext.BaseDirectory);while(d is not null&&!File.Exists(Path.Combine(d.FullName,"MNSOFT.Agro360.sln")))d=d.Parent;return d?.FullName??throw new DirectoryNotFoundException();}
+}
