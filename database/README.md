@@ -15,3 +15,7 @@ Antes da publicação, rode `./scripts/validate-full-sql.sh`. A instalação reg
 - `maintenance/`: diagnóstico, backup e restauração nativos.
 
 Instalação recomendada: `dotnet run --project src/Hosts/Agro360.Migrator -- migrate`. Alternativamente execute `agro360-v0.2.0-full-install.sql` no banco vazio. No pgAdmin abra Query Tool, carregue o arquivo e execute; no DBeaver use **SQL Editor > Open SQL Script** e execute o script inteiro. Não use a conexão de produção para seeds de Development/Homologation.
+
+## Sprint 21 e dados demonstrativos
+
+`agro360-postgres-full.sql` continua sendo o instalador único e completo do schema. Execute-o com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. Para uma apresentação comercial, carregue depois `database/seed-demo.sql`; o seed é idempotente e separado apenas por ser opcional. Não há dependência de Docker nem extensões fora da distribuição PostgreSQL (`pgcrypto`, `pg_trgm`, `unaccent`).

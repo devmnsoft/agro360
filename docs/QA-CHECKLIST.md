@@ -14,3 +14,7 @@ Antes de iniciar, instale o SQL completo, inicie API e Web, crie um tenant desca
 - [ ] **BI:** filtros por safra, propriedade, produto e lote funcionam; estados vazios não quebram gráficos.
 - [ ] Repetir leitura/alteração com usuário de outro tenant e confirmar `403`/`404`, sem vazamento.
 - [ ] Confirmar mensagens em português, loading, sucesso, erro, paginação e confirmação destrutiva em cada formulário usado.
+
+## Sprint 21 — implantação comercial
+
+Entregue onboarding assistido, cinco templates agro, módulos por tenant, checklist percentual, dashboard real e importação CSV com mapeamento, pré-visualização, erros por linha, confirmação, histórico e rollback auditável. A homologação exige executar o SQL completo, carregar opcionalmente o seed demo, validar isolamento por tenant e percorrer `/Deployment` em desktop e mobile.

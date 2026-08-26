@@ -52,6 +52,8 @@ public static class Permissions
     public const string RuralHrRead = "rural-hr.read";
     public const string RuralHrWrite = "rural-hr.write";
     public const string RuralHrSafety = "rural-hr.safety";
+    public const string DeploymentRead = "deployment.read";
+    public const string DeploymentWrite = "deployment.write";
 
     public static IReadOnlyCollection<string> Administrator =>
     [
@@ -73,6 +75,6 @@ public static class Permissions
         RegionalLogisticsWrite, SalesNetworkRead, SalesNetworkWrite, SalesNetworkApprove,
         IntelligenceRead, IntelligenceWrite, ComplianceRead, ComplianceWrite, ComplianceApprove, EsgRead, EsgWrite,
         IntegrationsRead, IntegrationsWrite, MapsRead, MapsWrite, CooperativeRead, CooperativeWrite, CooperativeApprove,
-        RuralHrRead, RuralHrWrite, RuralHrSafety
+        RuralHrRead, RuralHrWrite, RuralHrSafety, DeploymentRead, DeploymentWrite
     ];
 }

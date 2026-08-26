@@ -1591,3 +1591,65 @@ commit;
 insert into platform.schema_versions(version,description,installed_at)
 values('2.0.0-rc.1','Sprint 20 - Release Candidate consolidado',now())
 on conflict(version) do update set description=excluded.description;
+
+-- Sprint 21 - implantação comercial, onboarding, templates e importações auditáveis
+begin;
+create schema if not exists deployment;
+create table if not exists deployment.templates(
+ code varchar(40) primary key,name varchar(120) not null,segment varchar(30) not null,
+ description varchar(500) not null,configuration jsonb not null default '{}',active boolean not null default true,
+ constraint ck_deployment_template_segment check(segment in('GRAINS','LIVESTOCK','AMAZON','COOPERATIVE','AGROINDUSTRY')));
+create table if not exists deployment.onboardings(
+ id uuid primary key,tenant_id uuid not null references tenancy.tenants(id),segment varchar(30) not null,
+ template_code varchar(40) not null references deployment.templates(code),status varchar(20) not null,
+ payload jsonb not null,created_by uuid not null,created_at timestamptz not null default now(),completed_at timestamptz not null default now(),
+ unique(tenant_id,id),constraint ck_onboarding_status check(status in('IN_PROGRESS','COMPLETED','CANCELLED')));
+create table if not exists deployment.organization_modules(
+ tenant_id uuid not null references tenancy.tenants(id),module_code varchar(80) not null references platform.modules(code),enabled boolean not null default true,
+ settings jsonb not null default '{}',configured_by uuid not null,configured_at timestamptz not null default now(),primary key(tenant_id,module_code));
+create table if not exists deployment.checklist_catalog(code varchar(40) primary key,label varchar(160) not null,required boolean not null,sort_order int not null unique);
+create table if not exists deployment.checklist(
+ tenant_id uuid not null references tenancy.tenants(id),item_code varchar(40) not null references deployment.checklist_catalog(code),label varchar(160) not null,
+ required boolean not null,completed boolean not null default false,notes varchar(500),sort_order int not null default 0,completed_at timestamptz,
+ updated_by uuid not null,updated_at timestamptz not null default now(),primary key(tenant_id,item_code));
+create table if not exists deployment.import_previews(
+ token uuid primary key,tenant_id uuid not null references tenancy.tenants(id),type varchar(30) not null,file_name varchar(240) not null,
+ mapping jsonb not null,rows jsonb not null,created_at timestamptz not null default now(),expires_at timestamptz not null);
+create table if not exists deployment.import_errors(
+ id uuid primary key default gen_random_uuid(),tenant_id uuid not null references tenancy.tenants(id),preview_token uuid references deployment.import_previews(token) on delete cascade,
+ import_id uuid,line_number int not null check(line_number>1),field_name varchar(120),message varchar(500) not null,created_at timestamptz not null default now());
+create table if not exists deployment.imports(
+ id uuid primary key,tenant_id uuid not null references tenancy.tenants(id),type varchar(30) not null,file_name varchar(240) not null,
+ status varchar(20) not null,total_rows int not null,valid_rows int not null,invalid_rows int not null,rows jsonb not null,
+ created_by uuid not null,created_at timestamptz not null default now(),confirmed_at timestamptz,rolled_back_at timestamptz,rolled_back_by uuid,
+ unique(tenant_id,id),constraint ck_import_counts check(total_rows>=0 and valid_rows>=0 and invalid_rows>=0 and valid_rows+invalid_rows=total_rows),
+ constraint ck_import_status check(status in('COMPLETED','ROLLED_BACK')));
+do $$ begin if not exists(select 1 from pg_constraint where conname='fk_deployment_import_error_import') then alter table deployment.import_errors add constraint fk_deployment_import_error_import foreign key(import_id) references deployment.imports(id); end if; end $$;
+create index if not exists ix_deployment_import_errors on deployment.import_errors(tenant_id,preview_token,line_number);
+create index if not exists ix_deployment_imports_history on deployment.imports(tenant_id,created_at desc);
+create index if not exists ix_deployment_checklist_pending on deployment.checklist(tenant_id,required,completed);
+insert into deployment.checklist_catalog(code,label,required,sort_order) values
+ ('ORGANIZATION','Organização criada',true,10),('ADMIN_USER','Usuário administrador configurado',true,20),('PROPERTY','Propriedade criada',true,30),
+ ('CYCLE','Safra ou ciclo configurado',true,40),('PRODUCTS','Produtos, culturas e atividades configurados',true,50),('COST_CENTERS','Centros de custo configurados',true,60),
+ ('INITIAL_STOCK','Estoque inicial configurado',false,70),('INITIAL_FINANCE','Financeiro inicial configurado',false,80),('MODULES','Módulos habilitados',true,90),
+ ('TRACEABILITY','Rastreabilidade configurada quando aplicável',false,100),('COMMISSIONS_SPLIT','Comissão e split configurados quando aplicável',false,110),('USERS_ROLES','Usuários e perfis configurados',true,120)
+on conflict(code) do update set label=excluded.label,required=excluded.required,sort_order=excluded.sort_order;
+insert into deployment.templates(code,name,segment,description,configuration) values
+ ('GRAINS','Soja, milho e grãos','GRAINS','Operação agrícola e pós-colheita', '{"cultures":["Soja","Milho"],"operations":["Plantio","Pulverização","Colheita"],"inputs":["Sementes","Fertilizantes","Defensivos"],"indicators":["Produtividade","Custo por hectare"],"costCenters":["Lavoura","Máquinas","Pós-colheita"],"postHarvest":["Recepção","Secagem","Armazenagem"]}'),
+ ('LIVESTOCK','Pecuária de corte e leite','LIVESTOCK','Manejo e indicadores zootécnicos','{"herdCategories":["Cria","Recria","Engorda","Lactação"],"management":["Sanidade","Pesagem","Reprodução","Nutrição"],"indicators":["GMD","Taxa de prenhez","Produção de leite"]}'),
+ ('AMAZON','Açaí, tucupi, cacau e Amazônia','AMAZON','Beneficiamento e rastreabilidade regional','{"products":["Açaí","Tucupi","Cacau"],"processing":["Recepção","Beneficiamento","Fervura","Envase"],"compliance":["Controle de fervura","Hash imutável","Rastreabilidade por lote"],"logistics":["Fluvial","Vicinal"]}'),
+ ('COOPERATIVE','Cooperativa agro','COOPERATIVE','Rede de cooperados e operações coletivas','{"features":["Cooperados","Propriedades","Programas produtivos","Compras coletivas","Vendas coletivas","Assistência técnica","Rateios","Bonificações","Comissões"]}'),
+ ('AGROINDUSTRY','Agroindústria','AGROINDUSTRY','Recebimento, transformação e expedição','{"stages":["Recebimento","Controle de qualidade","Processamento","Lote industrial","Expedição"],"compliance":["Dossiê de conformidade"]}')
+on conflict(code) do update set name=excluded.name,segment=excluded.segment,description=excluded.description,configuration=excluded.configuration;
+create or replace view deployment.organization_progress as
+ select t.id tenant_id,coalesce(round(100.0*count(*) filter(where c.completed and c.required)/nullif(count(*) filter(where c.required),0)),0)::int progress
+ from tenancy.tenants t left join deployment.checklist c on c.tenant_id=t.id group by t.id;
+do $$ declare tab text; begin for tab in select unnest(array['onboardings','organization_modules','checklist','import_previews','import_errors','imports']) loop
+ execute format('alter table deployment.%I enable row level security',tab); execute format('alter table deployment.%I force row level security',tab);
+ if not exists(select 1 from pg_policies where schemaname='deployment' and tablename=tab and policyname=tab||'_tenant') then execute format('create policy %I on deployment.%I using (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid) with check (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid)',tab||'_tenant',tab); end if;
+ end loop; end $$;
+insert into identity.permissions(code,module,description) values
+ ('deployment.read','Implantação','Consultar onboarding, checklist, templates e importações.'),('deployment.write','Implantação','Executar onboarding, parametrização e importações.')
+on conflict(code) do update set module=excluded.module,description=excluded.description;
+insert into platform.schema_versions(version,description,installed_at) values('2.1.0','Sprint 21 - implantação comercial e onboarding',now()) on conflict(version) do update set description=excluded.description;
+commit;
