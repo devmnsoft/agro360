@@ -1380,4 +1380,57 @@ create index if not exists ix_mobile_timeline on mobile.geolocation_events(tenan
 do $$ declare tab text; begin foreach tab in array array['devices','sessions','sync_batches','offline_commands','sync_items','sync_errors','sync_conflicts','id_mappings','quick_records','evidences','geolocation_events','qr_codes','checklist_templates','checklist_questions','checklist_runs','checklist_answers','audit_events'] loop execute format('alter table mobile.%I enable row level security',tab); execute format('alter table mobile.%I force row level security',tab); if not exists(select 1 from pg_policies where schemaname='mobile' and tablename=tab and policyname=tab||'_tenant') then execute format('create policy %I on mobile.%I using (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid) with check (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid)',tab||'_tenant',tab); end if; end loop; end $$;
 insert into platform.schema_versions(version,description,installed_at) values('0.9.0','Sprint 12 - Mobile Offline e PWA',now()) on conflict(version) do nothing;
 
+
+
+-- Sprint 13 - Inteligencia Agro, BI, alertas e paineis executivos
+create schema if not exists intelligence;
+create table if not exists intelligence.alert_rules(
+ id uuid primary key, tenant_id uuid references tenancy.tenants(id), type varchar(60) not null,
+ name varchar(160) not null, severity varchar(12) not null check(severity in('LOW','MEDIUM','HIGH','CRITICAL')),
+ parameters jsonb not null default '{}', enabled boolean not null default true, cooldown_minutes integer not null default 1440 check(cooldown_minutes>0),
+ created_at timestamptz not null default now(), created_by uuid, unique(tenant_id,type));
+create table if not exists intelligence.alerts(
+ id uuid primary key, tenant_id uuid not null references tenancy.tenants(id), farm_id uuid, rule_id uuid references intelligence.alert_rules(id),
+ type varchar(60) not null, severity varchar(12) not null, title varchar(240) not null, entity_type varchar(60), entity_id uuid,
+ fingerprint varchar(128) not null, status varchar(12) not null default 'OPEN' check(status in('OPEN','SNOOZED','RESOLVED','IGNORED')),
+ evidence jsonb not null default '{}', detected_at timestamptz not null default now(), snoozed_until timestamptz,
+ resolved_by uuid, resolved_at timestamptz, resolution_reason varchar(500));
+create unique index if not exists ux_intelligence_alert_dedup on intelligence.alerts(tenant_id,fingerprint) where status in('OPEN','SNOOZED');
+create index if not exists ix_intelligence_alert_queue on intelligence.alerts(tenant_id,status,severity,detected_at desc);
+create table if not exists intelligence.alert_audit(
+ id uuid primary key,tenant_id uuid not null references tenancy.tenants(id),alert_id uuid not null references intelligence.alerts(id),
+ action varchar(12) not null,acted_by uuid not null,acted_at timestamptz not null,reason varchar(500));
+create table if not exists intelligence.custom_dashboards(
+ id uuid primary key,tenant_id uuid not null references tenancy.tenants(id),name varchar(120) not null,description varchar(500),
+ shared_roles text[] not null default '{}',created_by uuid not null,created_at timestamptz not null default now(),updated_at timestamptz,
+ unique(tenant_id,name));
+create table if not exists intelligence.dashboard_widgets(
+ id uuid primary key,tenant_id uuid not null references tenancy.tenants(id),dashboard_id uuid not null references intelligence.custom_dashboards(id) on delete cascade,
+ indicator_code varchar(80) not null,farm_id uuid,season_id uuid,position integer not null default 0,size varchar(10) not null check(size in('SMALL','MEDIUM','LARGE')),
+ unique(dashboard_id,position));
+create table if not exists intelligence.report_runs(
+ id uuid primary key,tenant_id uuid not null references tenancy.tenants(id),report_id varchar(80) not null,filters jsonb not null,
+ requested_by uuid not null,requested_at timestamptz not null default now(),row_count integer,finished_at timestamptz);
+do $$ declare tab text; begin foreach tab in array array['alert_rules','alerts','alert_audit','custom_dashboards','dashboard_widgets','report_runs'] loop
+ execute format('alter table intelligence.%I enable row level security',tab); execute format('alter table intelligence.%I force row level security',tab);
+ if not exists(select 1 from pg_policies where schemaname='intelligence' and tablename=tab and policyname=tab||'_tenant') then
+  execute format('create policy %I on intelligence.%I using (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid) with check (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid)',tab||'_tenant',tab);
+ end if; end loop; end $$;
+insert into identity.permissions(code,module,description) values
+ ('intelligence.read','Intelligence','Consultar BI, relatórios, alertas e previsões.'),
+ ('intelligence.write','Intelligence','Administrar alertas e painéis personalizados.')
+on conflict(code) do update set module=excluded.module,description=excluded.description;
+insert into intelligence.alert_rules(id,tenant_id,type,name,severity,parameters,created_by)
+select gen_random_uuid(),t.id,x.type,x.name,x.severity,'{}',u.id from tenancy.tenants t
+join lateral(select id from identity.users where tenant_id=t.id order by created_at limit 1)u on true
+cross join(values
+ ('LOW_STOCK','Estoque baixo','HIGH'),('EXPIRED_PRODUCT','Produto vencido','CRITICAL'),('EXPIRING_PRODUCT','Produto próximo do vencimento','HIGH'),
+ ('LATE_ACTIVITY','Atividade agrícola atrasada','HIGH'),('CRITICAL_WEATHER','Aplicação em clima crítico','CRITICAL'),('OVERSTOCKED_PADDOCK','Piquete sobrelotado','HIGH'),
+ ('ANIMAL_WITHDRAWAL','Animal em carência','HIGH'),('EXPIRED_VACCINE','Vacina vencida','CRITICAL'),('OVERDUE_MAINTENANCE','Manutenção vencida','HIGH'),
+ ('OVERDUE_PAYABLE','Conta a pagar vencida','CRITICAL'),('OVERDUE_RECEIVABLE','Conta a receber vencida','HIGH'),('STOPPED_RECEIPT','Romaneio parado','HIGH'),
+ ('NONCONFORMING_LOT','Lote sem conformidade','CRITICAL'),('INVALID_LEDGER','Ledger inválido','CRITICAL'),('LATE_SHIPMENT','Expedição atrasada','HIGH'),
+ ('CRITICAL_ROUTE','Viagem em rota crítica','CRITICAL'),('PENDING_SPLIT','Split pendente','HIGH'),('MOBILE_SYNC_ERROR','Erro de sincronização mobile','HIGH'))x(type,name,severity)
+on conflict(tenant_id,type) do nothing;
+insert into platform.schema_versions(version,description,installed_at) values('1.0.0','Sprint 13 - Inteligencia Agro e BI',now()) on conflict(version) do nothing;
+
 commit;

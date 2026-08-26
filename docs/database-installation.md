@@ -29,3 +29,11 @@ psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql
 ```
 
 O arquivo é autônomo, transacional e inclui o schema `mobile` até a Sprint 12. A aplicação usa a mesma connection string e Dapper/Npgsql.
+
+## Sprint 13
+
+O arquivo consolidado inclui o schema `intelligence`, RLS forçada, regras de alerta, auditoria e dashboards. Instale sem Docker com:
+
+```bash
+psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
+```

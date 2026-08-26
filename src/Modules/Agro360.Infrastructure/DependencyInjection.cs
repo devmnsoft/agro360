@@ -51,6 +51,7 @@ public static class DependencyInjection
         services.AddScoped<IPaymentSplitProvider, ControlledPaymentSplitProvider>();
         services.AddScoped<ISprint10Service, Sprint10Service>();
         services.AddScoped<IMobileService, MobileService>();
+        services.AddScoped<IIntelligenceService, IntelligenceService>();
         return services;
     }
 }

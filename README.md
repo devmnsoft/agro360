@@ -174,3 +174,7 @@ O sistema inclui caderno de campo, planejamento, fitossanidade, recomendações/
 ## Sprint 12 — Campo Mobile/Offline
 
 Execute sem Docker configurando `ConnectionStrings__Agro360`, aplique `database/agro360-postgres-full.sql`, inicie API e Web com `dotnet run --project`. Abra `/field` para dashboard, registros rápidos, evidências, QR, checklists e fila offline. Consulte [guia da sprint](docs/sprint-12-mobile-offline.md), [PWA](docs/pwa-mobile.md) e [sincronização](docs/offline-sync.md).
+
+## Inteligência Agro — Sprint 13
+
+A rota `/intelligence` oferece BI, 23 relatórios com CSV, alertas, painel executivo, previsões determinísticas, assistente baseado no banco e dashboards personalizados. A instalação continua independente de Docker: configure `ConnectionStrings__Agro360`, execute `database/agro360-postgres-full.sql` com `psql` e use `scripts/run-local.sh`. Consulte [a documentação da Sprint 13](docs/sprint-13-inteligencia-agro.md).
