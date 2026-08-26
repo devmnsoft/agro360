@@ -56,6 +56,7 @@ public static class DependencyInjection
         services.AddScoped<IComplianceService, ComplianceService>();
         services.AddScoped<IEsgService, EsgService>();
         services.AddScoped<IIntegrationService, IntegrationService>();
+        services.AddScoped<IGeospatialService, GeospatialService>();
         return services;
     }
 }

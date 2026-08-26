@@ -199,3 +199,9 @@ psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql
 dotnet run --project src/Hosts/Agro360.Api
 dotnet run --project src/Hosts/Agro360.Web
 ```
+
+## Sprint 17 — Mapa Agro
+
+O módulo `/Maps` reúne mapas operacionais, desenho de propriedades/talhões/pastagens/piquetes/zonas, ocorrências, rotas, monitoramento territorial e dashboard. GeoJSON/JSONB e latitude/longitude garantem execução em qualquer PostgreSQL, sem PostGIS e sem token de mapas obrigatórios. Consulte [visão da sprint](docs/sprint-17-mapa-geoespacial.md), [modelo](docs/geospatial-model.md), [importação/exportação](docs/geojson-import-export.md) e [UI](docs/map-ui.md).
+
+Para rodar sem Docker, configure `ConnectionStrings__Agro360`, aplique `database/agro360-postgres-full.sql` com `psql` e execute `dotnet run --project src/Hosts/Agro360.Api` e `dotnet run --project src/Hosts/Agro360.Web`.
