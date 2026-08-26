@@ -1,0 +1,11 @@
+@page
+@model Agro360.Web.Pages.RuralHr.IndexModel
+@{ViewData["Title"]="RH Rural e SST";}
+<section class="rural-hr-shell" data-api="/api/rural-hr">
+<header><p class="eyebrow">Sprint 19 · pessoas e segurança</p><h1>Dashboard RH Rural/SST</h1><p>Jornada, produtividade, conformidade e segurança das equipes em campo.</p></header>
+<nav class="tabs" aria-label="Áreas de RH">@foreach(var x in new[]{"Pessoas","Equipes","Jornada","Alocações","Custos de Mão de Obra","Treinamentos","EPIs","Segurança","Incidentes","Ações Corretivas","Alojamento","Transporte","Dashboard RH Rural/SST"}){<button type="button" data-tab="@x">@x</button>}</nav>
+<form id="hr-filters"><label>Buscar<input type="search" name="search" maxlength="100" /></label><label>Status<select name="status"><option value="">Todos</option><option>ACTIVE</option><option>OPEN</option><option>COMPLETED</option><option>EXPIRED</option></select></label><button type="submit">Filtrar</button></form>
+<div id="hr-feedback" role="status" aria-live="polite"></div><div id="hr-content"><p class="empty">Carregando dados…</p></div><button id="new-hr-record" type="button">Novo registro</button>
+<dialog id="hr-editor"><form id="hr-form"><h2>Novo registro</h2><label>Nome<input name="name" required minlength="3" maxlength="180" /></label><label>Pessoa<select name="personId" data-lookup="people"><option value="">Pesquise e selecione</option></select></label><label>Equipe<select name="teamId" data-lookup="teams"><option value="">Selecione</option></select></label><label>Propriedade / unidade<select name="propertyId" data-lookup="properties" required><option value="">Selecione</option></select></label><label>Atividade, talhão, lote ou máquina<select name="resourceId" data-lookup="operational-resources"><option value="">Selecione quando aplicável</option></select></label><label>Início<input name="startsAt" type="datetime-local" required /></label><label>Fim<input name="endsAt" type="datetime-local" /></label><label>Valor<input name="amount" type="number" min="0" step="0.01" value="0" /></label><label>Observações<textarea name="notes" maxlength="2000"></textarea></label><menu><button type="button" data-close>Cancelar</button><button type="submit">Salvar</button></menu></form></dialog>
+</section>
+<script src="~/js/rural-hr.js" asp-append-version="true"></script>
