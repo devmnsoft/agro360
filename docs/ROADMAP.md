@@ -115,3 +115,8 @@ Gate do meio: terceiro fluxo E2E — milho colhido → armazém → fórmula de 
 ## Sprint 21 — implantação comercial
 
 Entregue onboarding assistido, cinco templates agro, módulos por tenant, checklist percentual, dashboard real e importação CSV com mapeamento, pré-visualização, erros por linha, confirmação, histórico e rollback auditável. A homologação exige executar o SQL completo, carregar opcionalmente o seed demo, validar isolamento por tenant e percorrer `/Deployment` em desktop e mobile.
+
+## Sprint 22 — concluída
+- CRM Agro e força de vendas distribuída; funil, agenda, preços, pedidos, contratos e metas.
+- Comissões e split interno com validações, auditoria e isolamento por tenant.
+- Próxima evolução: consumidores assíncronos dos eventos comerciais para reserva física e conciliação/repasse por provedor financeiro homologado.

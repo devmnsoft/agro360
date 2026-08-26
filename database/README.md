@@ -19,3 +19,10 @@ Instalação recomendada: `dotnet run --project src/Hosts/Agro360.Migrator -- mi
 ## Sprint 21 e dados demonstrativos
 
 `agro360-postgres-full.sql` continua sendo o instalador único e completo do schema. Execute-o com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. Para uma apresentação comercial, carregue depois `database/seed-demo.sql`; o seed é idempotente e separado apenas por ser opcional. Não há dependência de Docker nem extensões fora da distribuição PostgreSQL (`pgcrypto`, `pg_trgm`, `unaccent`).
+
+## Banco da Sprint 22
+A migration `migrations/021_sprint22_commercial_crm.sql` cria CRM e comercial com chaves compostas por tenant, constraints, índices, RLS e eventos de integração. Ela já está incorporada integralmente a `agro360-postgres-full.sql`; o instalador completo não usa `\\i` nem depende de Docker ou credenciais fixas:
+```bash
+psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql
+```
+O split persistido é um controle interno e não movimenta recursos bancários.

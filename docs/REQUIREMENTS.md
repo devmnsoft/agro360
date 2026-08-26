@@ -9,3 +9,12 @@ Funcionalidades futuras devem entrar com contrato Application, regra Domain quan
 ## Sprint 21 — implantação comercial
 
 Entregue onboarding assistido, cinco templates agro, módulos por tenant, checklist percentual, dashboard real e importação CSV com mapeamento, pré-visualização, erros por linha, confirmação, histórico e rollback auditável. A homologação exige executar o SQL completo, carregar opcionalmente o seed demo, validar isolamento por tenant e percorrer `/Deployment` em desktop e mobile.
+
+## Requisitos comerciais (Sprint 22)
+- **COM-001:** clientes, prospects, contatos e equipe são isolados por tenant e selecionados por lookup.
+- **COM-002:** funil registra toda transição; perda exige motivo.
+- **COM-003:** pedido exige cliente elegível, item positivo e desconto autorizado; aprovação persiste evento de integração.
+- **COM-004:** contrato controla vigência e quantidade entregue.
+- **COM-005:** comissão usa uma única modalidade e não duplica pedido/regra/representante.
+- **COM-006:** split usa participantes únicos, modalidade exclusiva e percentual acumulado de no máximo 100%; é controle interno.
+- **COM-007:** dashboard e filtros usam apenas persistência real e são seguros quando vazios.
