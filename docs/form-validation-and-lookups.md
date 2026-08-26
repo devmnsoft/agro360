@@ -1,3 +1,5 @@
-# Validação e lookups
+# Validação de formulários e lookups
 
-Toda mutação valida novamente no backend. A página SaaS apresenta planos, perfis, usuários e organizações por nome; IDs viajam apenas como valores internos selecionados. É proibido `input` de `tenantId`, `roleId`, `planId` ou qualquer chave técnica. Formulários usam `required`, tipos semânticos, limites, mensagens acessíveis, confirmação para bloqueio/revogação e estados de loading, erro, vazio e sucesso.
+A tela da Sprint 15 usa `required`, tipos `date`/`number`, limites e `reportValidity()` no navegador. A API repete as restrições com Data Annotations e regras de domínio; o banco adiciona checks e chaves. Erros RFC Problem Details são exibidos junto ao formulário, o botão fica desabilitado durante envio e listas exibem loading, falha e estado vazio.
+
+Nenhum formulário pede ID técnico. Produto, titular, responsável, propriedade, lote, comprador, template e demais relações são selecionados por listas pesquisáveis obtidas em `/api/lookups/{resource}`. A API recebe o UUID escolhido, mas o usuário vê rótulo contextual. Novos formulários devem seguir o mesmo padrão.
