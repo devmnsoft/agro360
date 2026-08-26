@@ -1,0 +1,12 @@
+@page "/compliance"
+@model Agro360.Web.Pages.Compliance.IndexModel
+@{ViewData["Title"]="Compliance e ESG";}
+<link rel="stylesheet" href="~/css/compliance.css" asp-append-version="true" />
+<section class="compliance-page">
+ <header><div><span class="eyebrow">Sprint 15 · cadeia responsável</span><h1>Compliance Agro &amp; ESG</h1><p>Documentação, certificação, auditoria, sustentabilidade e exportação verificável.</p></div><button class="primary-button" id="compliance-new" type="button">Novo registro</button></header>
+ <nav class="compliance-tabs" aria-label="Áreas de compliance"><button class="active" data-view="dashboard">Dashboard</button><button data-view="documents">Documentos</button><button data-view="product-rules">Regras por produto</button><button data-view="certifications">Certificações</button><button data-view="audits">Auditorias</button><button data-view="non-conformities">Não conformidades</button><button data-view="indicators">ESG</button><button data-view="carbon">Carbono</button><button data-view="export-dossiers">Exportação</button></nav>
+ <div class="compliance-toolbar"><label>Filtrar <input id="compliance-filter" type="search" autocomplete="off" placeholder="Nome, status, produto ou mercado" /></label><button id="compliance-refresh" type="button">Atualizar</button></div>
+ <div id="compliance-status" role="status">Carregando dados…</div><main id="compliance-content" aria-live="polite"></main>
+</section>
+<dialog id="compliance-dialog"><form id="compliance-form"><h2 id="compliance-form-title">Novo registro</h2><div id="compliance-fields"></div><p class="form-message" role="alert"></p><footer><button type="button" data-close>Cancelar</button><button class="primary-button" type="submit">Salvar</button></footer></form></dialog>
+@section Scripts{<script src="~/js/compliance.js" asp-append-version="true" defer></script>}

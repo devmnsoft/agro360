@@ -53,6 +53,8 @@ public static class DependencyInjection
         services.AddScoped<IMobileService, MobileService>();
         services.AddScoped<IIntelligenceService, IntelligenceService>();
         services.AddScoped<ISaasService, SaasService>();
+        services.AddScoped<IComplianceService, ComplianceService>();
+        services.AddScoped<IEsgService, EsgService>();
         return services;
     }
 }

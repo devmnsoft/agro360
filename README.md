@@ -182,3 +182,9 @@ A rota `/intelligence` oferece BI, 23 relatórios com CSV, alertas, painel execu
 ## Sprint 14 — operação SaaS
 
 A governança comercial está disponível em `/saas`, com administração de organizações, onboarding, planos e limites, RBAC, convites, segurança, notificações, configurações, conta do cliente e dashboard. A API lê PostgreSQL de `ConnectionStrings__Agro360` e usa Dapper. A instalação completa, sem Docker, é `psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql`; consulte [governança SaaS](docs/sprint-14-saas-governance.md) e [instalação](docs/database-installation.md).
+
+## Sprint 15 — Compliance Agro e ESG
+
+A aplicação inclui gestão multitenant de documentos regulatórios, regras por produto/mercado, certificações, auditorias de cadeia, não conformidades, indicadores ESG, inventário de carbono e dossiê público de exportação. A interface está em `/compliance` e os endpoints em `/api/compliance` e `/api/esg`. Consulte [a documentação da Sprint 15](docs/sprint-15-compliance-esg.md).
+
+A instalação continua sem Docker: configure `ConnectionStrings__Agro360`, aplique `psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql` e execute os hosts com `dotnet run`.
