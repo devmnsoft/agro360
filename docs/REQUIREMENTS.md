@@ -18,3 +18,10 @@ Entregue onboarding assistido, cinco templates agro, módulos por tenant, checkl
 - **COM-005:** comissão usa uma única modalidade e não duplica pedido/regra/representante.
 - **COM-006:** split usa participantes únicos, modalidade exclusiva e percentual acumulado de no máximo 100%; é controle interno.
 - **COM-007:** dashboard e filtros usam apenas persistência real e são seguros quando vazios.
+
+## Requisitos Sprint 23
+- DOC-01: arquivo em raiz configurável, nome físico imprevisível, hash SHA-256, tipo/tamanho/extensão validados e download autorizado por tenant.
+- DOC-02: versões anteriores são preservadas e nova versão exige motivo.
+- EVI-01: validação registra ator/data; rejeição exige motivo e evidência validada não é removida fisicamente.
+- DOS-01: aprovação exige checklist obrigatório concluído; reprovação exige motivo.
+- CER-01: emissão exige vínculo válido; consulta pública omite IDs e dados internos; revogação exige motivo.

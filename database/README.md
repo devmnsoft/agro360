@@ -26,3 +26,6 @@ A migration `migrations/021_sprint22_commercial_crm.sql` cria CRM e comercial co
 psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql
 ```
 O split persistido é um controle interno e não movimenta recursos bancários.
+
+## Sprint 23
+As tabelas do schema `documents` e os 17 tipos documentais estão incluídos no arquivo completo. Aplique sem Docker: `psql "$AGRO360_CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. O script não contém host, usuário ou senha e não usa `\i`. Arquivos são externos ao PostgreSQL e configurados por `Storage__RootPath`.

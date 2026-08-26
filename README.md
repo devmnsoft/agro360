@@ -250,3 +250,7 @@ dotnet run --project src/Hosts/Agro360.Api
 dotnet run --project src/Hosts/Agro360.Web
 ```
 Detalhes operacionais e homologação: [docs/COMMERCIAL-MODULE.md](docs/COMMERCIAL-MODULE.md).
+
+## Sprint 23 — Documentos e Evidências
+
+A biblioteca documental operacional está disponível em `/Documents`. Configure arquivos com `Storage__RootPath` (padrão local seguro `App_Data/documents`) e PostgreSQL externo com `ConnectionStrings__Agro360`. Consulte [o guia do módulo](docs/DOCUMENTS-EVIDENCES.md) para instalação sem Docker, permissões, homologação e consulta pública.

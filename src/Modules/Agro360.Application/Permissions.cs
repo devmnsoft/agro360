@@ -59,6 +59,14 @@ public static class Permissions
     public const string RuralHrSafety = "rural-hr.safety";
     public const string DeploymentRead = "deployment.read";
     public const string DeploymentWrite = "deployment.write";
+    public const string DocumentsRead = "documents.read";
+    public const string DocumentsUpload = "documents.upload";
+    public const string DocumentsDownload = "documents.download";
+    public const string EvidencesValidate = "evidences.validate";
+    public const string DossiersCreate = "dossiers.create";
+    public const string DossiersApprove = "dossiers.approve";
+    public const string CertificatesIssue = "certificates.issue";
+    public const string CertificatesRevoke = "certificates.revoke";
 
     public static IReadOnlyCollection<string> Administrator =>
     [
@@ -80,6 +88,7 @@ public static class Permissions
         RegionalLogisticsWrite, SalesNetworkRead, SalesNetworkWrite, SalesNetworkApprove,
         IntelligenceRead, IntelligenceWrite, ComplianceRead, ComplianceWrite, ComplianceApprove, EsgRead, EsgWrite,
         IntegrationsRead, IntegrationsWrite, MapsRead, MapsWrite, CooperativeRead, CooperativeWrite, CooperativeApprove,
-        RuralHrRead, RuralHrWrite, RuralHrSafety, DeploymentRead, DeploymentWrite
+        RuralHrRead, RuralHrWrite, RuralHrSafety, DeploymentRead, DeploymentWrite,
+        DocumentsRead, DocumentsUpload, DocumentsDownload, EvidencesValidate, DossiersCreate, DossiersApprove, CertificatesIssue, CertificatesRevoke
     ];
 }
