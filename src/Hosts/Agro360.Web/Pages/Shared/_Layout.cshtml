@@ -50,17 +50,14 @@
                 <a class="active" href="/"><svg><use href="#i-grid" /></svg><span>Command Center</span></a>
                 <a href="/field"><svg><use href="#i-map" /></svg><span>Campo Mobile</span><i>offline</i></a>
                 <a href="/Maps"><svg><use href="#i-map" /></svg><span>Mapa Agro</span><i>geo</i></a>
-                <button type="button" data-feature="properties"><svg><use href="#i-map" /></svg><span>Propriedades</span><i>core</i></button>
-                <button type="button" data-feature="agriculture"><svg><use href="#i-leaf" /></svg><span>Agricultura</span><i>core</i></button>
-                <button type="button" data-feature="livestock"><svg><use href="#i-animal" /></svg><span>Pecuária</span><i>core</i></button>
-                <button type="button" data-feature="inventory"><svg><use href="#i-box" /></svg><span>Estoque e insumos</span><i>core</i></button>
-                <button type="button" data-feature="suppliers"><svg><use href="#i-coins" /></svg><span>Fornecedores e compras</span></button>
-                <button type="button" data-feature="fleet"><svg><use href="#i-truck" /></svg><span>Frota e manutenção</span></button>
-                <button type="button" data-feature="fuel"><svg><use href="#i-chart" /></svg><span>Abastecimentos</span></button>
+                <a href="/Agriculture"><svg><use href="#i-map" /></svg><span>Propriedades e agricultura</span><i>core</i></a>
+                <a href="/#livestock"><svg><use href="#i-animal" /></svg><span>Pecuária</span><i>core</i></a>
+                <a href="/#storage"><svg><use href="#i-box" /></svg><span>Estoque e armazenagem</span><i>core</i></a>
+                <a href="/#operations"><svg><use href="#i-coins" /></svg><span>Compras e operação</span></a>
                 <span class="nav-label">Gestão</span>
                 <a href="/saas"><svg><use href="#i-grid" /></svg><span>Governança SaaS</span><i>admin</i></a>
-                <button type="button" data-feature="finance"><svg><use href="#i-coins" /></svg><span>Financeiro</span></button>
-                <button type="button" data-feature="logistics"><svg><use href="#i-truck" /></svg><span>Logística</span></button>
+                <a href="/Intelligence"><svg><use href="#i-coins" /></svg><span>Financeiro e resultados</span></a>
+                <a href="/Maps"><svg><use href="#i-truck" /></svg><span>Logística regional</span></a>
                 <a href="/intelligence"><svg><use href="#i-chart" /></svg><span>Inteligência Agro</span><i>BI</i></a>
                 <a href="/compliance"><svg><use href="#i-leaf" /></svg><span>Compliance &amp; ESG</span><i>ESG</i></a>
                 <a href="/Integrations">Integrações</a>
@@ -85,7 +82,7 @@
                 <div class="top-actions">
                     <span class="weather-pill"><small>Belém, PA</small><strong>29°</strong><i>tempo</i></span>
                     <button class="icon-button" type="button" id="theme-button" aria-label="Alternar tema"><svg><use href="#i-sun" /></svg></button>
-                    <button class="icon-button notification-button" type="button" data-feature="notifications" aria-label="Notificações"><svg><use href="#i-bell" /></svg><span></span></button>
+                    <a class="icon-button notification-button" href="/Compliance" aria-label="Alertas de conformidade"><svg><use href="#i-bell" /></svg><span></span></a>
                 </div>
             </header>
             @RenderBody()

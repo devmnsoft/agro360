@@ -1586,3 +1586,8 @@ do $$ declare tab text; begin for tab in select tablename from pg_tables where s
 insert into identity.permissions(code,module,description) values('rural-hr.read','RH Rural/SST','Consultar pessoas, jornada e segurança.'),('rural-hr.write','RH Rural/SST','Gerenciar pessoas, equipes, jornada e conformidade.'),('rural-hr.safety','RH Rural/SST','Gerenciar incidentes e ações SST.') on conflict(code) do update set module=excluded.module,description=excluded.description;
 insert into platform.schema_versions(version,description,installed_at) values('1.6.0','Sprint 19 - RH Rural e SST',now()) on conflict(version) do nothing;
 commit;
+
+-- Sprint 20 - release candidate: marcador idempotente do schema consolidado auditado.
+insert into platform.schema_versions(version,description,installed_at)
+values('2.0.0-rc.1','Sprint 20 - Release Candidate consolidado',now())
+on conflict(version) do update set description=excluded.description;

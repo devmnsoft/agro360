@@ -268,7 +268,9 @@
                 button.innerHTML = `<span>${escapeHtml(item.entityType.slice(0, 3))}</span><div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.subtitle ?? item.entityType)}</small></div><i>abrir</i>`;
                 button.addEventListener("click", () => {
                     closePalette();
-                    toast("Resultado localizado", `${item.title} está disponível no módulo ${item.entityType}.`);
+                    const route = String(item.route ?? "");
+                    if (route.startsWith("/") && !route.startsWith("//")) window.location.assign(route);
+                    else toast("Resultado indisponível", "O destino retornado pela busca não é uma rota interna válida.", true);
                 });
                 container.append(button);
             });
@@ -290,32 +292,17 @@
 
     function featureMessage(event) {
         const feature = event.currentTarget.dataset.feature;
-        const messages = {
-            properties: "Cadastro de fazendas e talhões disponível pela API v1.",
-            agriculture: "Safras, plantio e colheita já possuem fluxo transacional.",
-            livestock: "Cadastro, pesagem e sanidade já possuem fluxo transacional.",
-            inventory: "Produtos, depósitos, entradas e consumos já estão operacionais.",
-            planting: "Use POST /api/v1/agriculture/operations/planting.",
-            weighing: "Use POST /api/v1/livestock/animals/{id}/weights.",
-            stock: "Use POST /api/v1/inventory/movements/receipts.",
-            sale: "Use POST /api/v1/commercial/sales.",
-            finance: "O contas a receber é gerado automaticamente nas vendas.",
-            logistics: "Viagens e fretes estão disponíveis em /api/logistics/trips.",
-            "storage-structures": "Cadastre e filtre estruturas em /api/storage/structures.",
-            "storage-receipts": "O fluxo de romaneio, pesagem, classificação e descarga está disponível na API.",
-            "storage-quality": "Parâmetros, alertas, laudos e descontos são calculados por produto.",
-            "storage-lots": "Consulte saldos e transfira ou bloqueie lotes rastreáveis.",
-            "storage-processing": "Ordens controlam secagem, beneficiamento, perdas e lote de saída.",
-            "storage-shipments": "Expedições carregadas baixam lote e capacidade de forma transacional.",
-            "storage-logistics": "Viagens calculam custo por tonelada e quilômetro e registram ocorrências.",
-            "storage-contracts": "Contratos operacionais acompanham automaticamente o saldo a entregar.",
-            analytics: "Os indicadores atuais vêm diretamente do Command Center.",
-            notifications: "Alertas críticos aparecem nos indicadores do Command Center.",
-            context: "Envie X-Farm-ID nas chamadas para limitar o contexto operacional.",
-            "quick-action": "Escolha Plantio, Pesagem, Estoque ou Venda nos atalhos abaixo."
-        };
-        toast("Agro 360", messages[feature] ?? "Funcionalidade mapeada no catálogo de módulos.");
-        if (window.innerWidth <= 920) document.body.classList.remove("menu-open");
+        const finance = new Set(["chart-accounts", "cost-centers", "payables", "receivables", "cash-flow", "economic-results", "analytics"]);
+        const storage = new Set(["stock", "storage-structures", "storage-receipts", "storage-quality", "storage-lots", "storage-processing", "storage-shipments", "storage-logistics", "storage-contracts"]);
+        const livestock = new Set(["weighing", "animals", "herds", "pastures", "handling", "health", "reproduction", "nutrition", "production"]);
+        const traceability = new Set(["traceability-lots", "lot-timeline", "processing-compliance", "immutable-ledger", "certificates", "regional-routes", "regional-trips", "sales-partners", "commissions", "revenue-split"]);
+        let route = "/Agriculture";
+        if (feature === "context") route = "/Saas";
+        else if (finance.has(feature)) route = "/Intelligence";
+        else if (storage.has(feature)) route = "/#storage";
+        else if (livestock.has(feature)) route = "/#livestock";
+        else if (traceability.has(feature)) route = feature === "processing-compliance" ? "/Compliance" : "/Maps";
+        window.location.assign(route);
     }
 
     function toggleTheme() {
