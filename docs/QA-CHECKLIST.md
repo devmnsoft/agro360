@@ -18,3 +18,15 @@ Antes de iniciar, instale o SQL completo, inicie API e Web, crie um tenant desca
 ## Sprint 21 — implantação comercial
 
 Entregue onboarding assistido, cinco templates agro, módulos por tenant, checklist percentual, dashboard real e importação CSV com mapeamento, pré-visualização, erros por linha, confirmação, histórico e rollback auditável. A homologação exige executar o SQL completo, carregar opcionalmente o seed demo, validar isolamento por tenant e percorrer `/Deployment` em desktop e mobile.
+
+## Sprint 22 — Comercial
+- [ ] Executar restore/build/test e SQL completo em PostgreSQL limpo.
+- [ ] Validar criação, edição, busca e paginação de cliente e prospect sem digitar IDs.
+- [ ] Bloquear pedido para cliente inativo e exigir permissão para bloqueado.
+- [ ] Exigir motivo em oportunidade perdida, atividade/pedido cancelado e comissão bloqueada/estornada.
+- [ ] Rejeitar pedido vazio, quantidade zero e desconto acima do teto.
+- [ ] Confirmar histórico de etapa, eventos de pedido e isolamento de tenant/RLS.
+- [ ] Rejeitar comissão duplicada e pedido cancelado; validar cálculo fixo e percentual.
+- [ ] Rejeitar participante duplicado, modalidade conflitante e soma de split acima de 100%.
+- [ ] Conferir dashboard vazio e populado, navegação mobile e mensagens de erro.
+- [ ] Confirmar ao usuário que split é interno e não executa pagamento bancário.

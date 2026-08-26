@@ -240,3 +240,13 @@ dotnet run --project src/Hosts/Agro360.Web
 Acesse `/Deployment` para executar onboarding por segmento, aplicar templates, acompanhar o checklist e validar importações CSV antes da gravação. A referência operacional está em [docs/ONBOARDING.md](docs/ONBOARDING.md).
 
 Sem Docker: instale o SDK definido em `global.json` e PostgreSQL comum, defina `ConnectionStrings__Agro360`, execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` e inicie API/Web com `dotnet run --project`. Dados de demonstração são opcionais: `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/seed-demo.sql`.
+
+## Sprint 22 — CRM Agro e Comercial B2B
+O Agro360 inclui CRM, força de vendas, funil, atividades, preços, pedidos, contratos, metas, comissões e split interno em `/Commercial`. Use PostgreSQL externo em `ConnectionStrings__Agro360` e instale sem Docker:
+```bash
+export ConnectionStrings__Agro360='Host=localhost;Port=5432;Database=agro360;Username=agro360;Password=...'
+psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql
+dotnet run --project src/Hosts/Agro360.Api
+dotnet run --project src/Hosts/Agro360.Web
+```
+Detalhes operacionais e homologação: [docs/COMMERCIAL-MODULE.md](docs/COMMERCIAL-MODULE.md).

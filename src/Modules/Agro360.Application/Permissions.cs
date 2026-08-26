@@ -13,6 +13,11 @@ public static class Permissions
     public const string LivestockWrite = "livestock.write";
     public const string LivestockSell = "livestock.sell";
     public const string CommercialWrite = "commercial.write";
+    public const string CommercialRead = "commercial.read";
+    public const string CommercialApproveOrder = "commercial.orders.approve";
+    public const string CommercialOverrideBlock = "commercial.customers.override-block";
+    public const string CommercialManageCommission = "commercial.commissions.manage";
+    public const string CommercialApproveSplit = "commercial.splits.approve";
     public const string FinanceRead = "finance.read";
     public const string FinanceWrite = "finance.write";
     public const string PurchasingRead = "purchasing.read";
@@ -67,7 +72,7 @@ public static class Permissions
         LivestockRead,
         LivestockWrite,
         LivestockSell,
-        CommercialWrite,
+        CommercialRead, CommercialWrite, CommercialApproveOrder, CommercialOverrideBlock, CommercialManageCommission, CommercialApproveSplit,
         FinanceRead, FinanceWrite,
         PurchasingRead, PurchasingWrite, PurchasingApprove, FleetRead, FleetWrite, MaintenanceRead, MaintenanceWrite,
         DashboardRead, StorageRead, StorageWrite, LogisticsRead, LogisticsWrite,
