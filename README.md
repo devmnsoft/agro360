@@ -188,3 +188,14 @@ A governança comercial está disponível em `/saas`, com administração de org
 A aplicação inclui gestão multitenant de documentos regulatórios, regras por produto/mercado, certificações, auditorias de cadeia, não conformidades, indicadores ESG, inventário de carbono e dossiê público de exportação. A interface está em `/compliance` e os endpoints em `/api/compliance` e `/api/esg`. Consulte [a documentação da Sprint 15](docs/sprint-15-compliance-esg.md).
 
 A instalação continua sem Docker: configure `ConnectionStrings__Agro360`, aplique `psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql` e execute os hosts com `dotnet run`.
+
+## Sprint 16 — Integrações
+
+A central em `/Integrations` oferece API pública, webhooks assinados, importação/exportação CSV, documentos fiscais como metadados, IoT, split manual, mensageria e monitoramento. Consulte [`docs/sprint-16-integrations.md`](docs/sprint-16-integrations.md). Para rodar sem Docker, defina uma connection string PostgreSQL e execute:
+
+```bash
+export ConnectionStrings__Agro360='Host=localhost;Port=5432;Database=agro360;Username=agro360;Password=troque-me'
+psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql
+dotnet run --project src/Hosts/Agro360.Api
+dotnet run --project src/Hosts/Agro360.Web
+```
