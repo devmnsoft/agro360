@@ -55,6 +55,7 @@ public static class DependencyInjection
         services.AddScoped<ISaasService, SaasService>();
         services.AddScoped<IComplianceService, ComplianceService>();
         services.AddScoped<IEsgService, EsgService>();
+        services.AddScoped<IIntegrationService, IntegrationService>();
         return services;
     }
 }

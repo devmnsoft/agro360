@@ -11,3 +11,13 @@ dotnet run --project src/Hosts/Agro360.Web
 ```
 
 O arquivo único contém todas as estruturas até a Sprint 15, extensões, permissões, índices e RLS. É idempotente para instalação/atualização estrutural; backups continuam obrigatórios antes de reaplicar em produção.
+
+## Sprint 16
+
+O arquivo `database/agro360-postgres-full.sql` permanece autocontido e inclui o schema `integrations`, RLS, índices, constraints e permissões. Não requer Docker nem scripts auxiliares:
+
+```bash
+psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
+```
+
+A connection string deve apontar para um banco PostgreSQL existente e deve vir de variável de ambiente ou secret manager, nunca do repositório.
