@@ -52,6 +52,7 @@ public static class DependencyInjection
         services.AddScoped<ISprint10Service, Sprint10Service>();
         services.AddScoped<IMobileService, MobileService>();
         services.AddScoped<IIntelligenceService, IntelligenceService>();
+        services.AddScoped<ISaasService, SaasService>();
         return services;
     }
 }

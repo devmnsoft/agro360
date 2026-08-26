@@ -178,3 +178,7 @@ Execute sem Docker configurando `ConnectionStrings__Agro360`, aplique `database/
 ## Inteligência Agro — Sprint 13
 
 A rota `/intelligence` oferece BI, 23 relatórios com CSV, alertas, painel executivo, previsões determinísticas, assistente baseado no banco e dashboards personalizados. A instalação continua independente de Docker: configure `ConnectionStrings__Agro360`, execute `database/agro360-postgres-full.sql` com `psql` e use `scripts/run-local.sh`. Consulte [a documentação da Sprint 13](docs/sprint-13-inteligencia-agro.md).
+
+## Sprint 14 — operação SaaS
+
+A governança comercial está disponível em `/saas`, com administração de organizações, onboarding, planos e limites, RBAC, convites, segurança, notificações, configurações, conta do cliente e dashboard. A API lê PostgreSQL de `ConnectionStrings__Agro360` e usa Dapper. A instalação completa, sem Docker, é `psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql`; consulte [governança SaaS](docs/sprint-14-saas-governance.md) e [instalação](docs/database-installation.md).
