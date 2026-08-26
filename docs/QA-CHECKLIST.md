@@ -30,3 +30,13 @@ Entregue onboarding assistido, cinco templates agro, módulos por tenant, checkl
 - [ ] Rejeitar participante duplicado, modalidade conflitante e soma de split acima de 100%.
 - [ ] Conferir dashboard vazio e populado, navegação mobile e mensagens de erro.
 - [ ] Confirmar ao usuário que split é interno e não executa pagamento bancário.
+
+## Sprint 23 — Documentos e Evidências
+- [ ] Upload permitido conclui e SHA-256 confere; extensão perigosa, arquivo vazio, >25 MB e traversal são recusados.
+- [ ] Download exige autenticação, permissão e mesmo tenant; caminho físico nunca aparece na resposta.
+- [ ] Nova versão exige motivo e versões antigas continuam disponíveis.
+- [ ] Dropdowns de vínculo retornam somente registros do tenant; nenhuma tela pede GUID.
+- [ ] Rejeição de evidência e revogação de certificado exigem motivo.
+- [ ] Dossiê com pendência obrigatória não aprova.
+- [ ] Consulta pública mostra somente campos essenciais e registra acesso com IP hasheado.
+- [ ] Dashboard e CSV funcionam com banco vazio e com dados.

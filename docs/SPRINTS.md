@@ -16,3 +16,6 @@ Entregue onboarding assistido, cinco templates agro, módulos por tenant, checkl
 
 ## Sprint 22 — CRM Agro, vendas B2B, comissões e split
 Entregue: CRM multi-tenant, equipe e regiões, funil auditado, agenda, preços, pedidos e contratos, cálculo idempotente de comissão, split interno validado, eventos de integração, dashboard real, UI responsiva, RBAC, SQL completo e testes de regras/arquitetura. O split não representa pagamento bancário.
+
+## Sprint 23 — Documentos, evidências, dossiês e certificados
+Concluída: armazenamento local configurável, SHA-256, versionamento, vínculos multi-módulo, validação de evidências, checklists de dossiê, certificados revogáveis, consulta pública mínima, dashboard real e CSV.

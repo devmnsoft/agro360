@@ -120,3 +120,6 @@ Entregue onboarding assistido, cinco templates agro, módulos por tenant, checkl
 - CRM Agro e força de vendas distribuída; funil, agenda, preços, pedidos, contratos e metas.
 - Comissões e split interno com validações, auditoria e isolamento por tenant.
 - Próxima evolução: consumidores assíncronos dos eventos comerciais para reserva física e conciliação/repasse por provedor financeiro homologado.
+
+### Sprint 23 — entregue
+Biblioteca documental agro integrada, evidências auditáveis, dossiês e certificados operacionais. Próxima evolução real: renderização PDF assinada; nesta entrega a exportação é CSV para não simular PDF.
