@@ -208,3 +208,16 @@ Para rodar sem Docker, configure `ConnectionStrings__Agro360`, aplique `database
 
 ## Sprint 18 — Cooperativas e B2B
 A central `/Cooperatives` reúne cooperados, assistência técnica, programas integrados, marketplace, compras coletivas, contratos, bonificações, repasses, crédito rural interno e portal do produtor. Para executar sem Docker, exporte `ConnectionStrings__Agro360`, aplique `database/agro360-postgres-full.sql` com `psql`, e inicie API e Web com `dotnet run --project src/Hosts/Agro360.Api` e `dotnet run --project src/Hosts/Agro360.Web`.
+
+## Sprint 19 — RH Rural e SST
+
+A área `/RuralHr` entrega pessoas, equipes, jornada, alocações, produtividade/custos, treinamentos, EPIs, segurança, incidentes, ações corretivas, alojamento, transporte e dashboard. A API está em `/api/rural-hr/*`. Consulte [visão funcional](docs/sprint-19-rh-rural-sst.md), [custos](docs/labor-costs.md), [treinamentos e EPIs](docs/trainings-and-ppe.md), [segurança](docs/safety-incidents.md) e [validação/lookups](docs/form-validation-and-lookups.md).
+
+Execução local sem Docker:
+
+```bash
+export ConnectionStrings__Agro360='Host=localhost;Port=5432;Database=agro360;Username=agro360;Password=senha'
+psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql
+dotnet run --project src/Hosts/Agro360.Api
+dotnet run --project src/Hosts/Agro360.Web
+```

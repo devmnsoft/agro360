@@ -34,3 +34,14 @@ O script cria `geospatial`, tabelas JSONB, índices, RLS e permissões `maps.rea
 
 ## Sprint 18
 O arquivo único já inclui o schema `cooperative`, RLS, índices e permissões. Aplique sem Docker com `psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql`.
+
+## Sprint 19 — instalação única sem Docker
+
+Defina uma conexão PostgreSQL e aplique o arquivo completo, que contém todas as versões até RH Rural/SST:
+
+```bash
+export ConnectionStrings__Agro360='Host=localhost;Port=5432;Database=agro360;Username=agro360;Password=troque-esta-senha'
+psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql
+```
+
+O script não seleciona banco/host e não inclui credenciais. A aplicação e o migrador leem a mesma variável de ambiente.

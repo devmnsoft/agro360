@@ -6,3 +6,6 @@ Nenhum formulário pede ID técnico. Produto, titular, responsável, propriedade
 
 ## Sprint 18
 Os formulários cooperativos usam validação HTML (`required`, limites, tipo e faixas) e DataAnnotations no backend. Produtor, organização, classificação, propriedade, talhão, lote, animal, produto e fornecedor são sempre selects pesquisáveis/autocomplete; nenhum UUID é apresentado para digitação. Ações de aprovar, ativar, cancelar, encerrar e gerar repasse exigem confirmação.
+
+## Sprint 19
+A UI de RH Rural usa validação HTML (`required`, limites, tipos) antes do envio e Data Annotations/regras de domínio no backend. Relações são selecionadas por dropdown pesquisável (`data-lookup`) para pessoas, equipes, propriedades e recursos operacionais. Nenhum formulário solicita UUID/ID técnico digitável. Ações críticas exigem confirmação e todas as telas exibem loading, erro, vazio e filtros.
