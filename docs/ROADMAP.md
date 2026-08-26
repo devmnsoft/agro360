@@ -123,3 +123,8 @@ Entregue onboarding assistido, cinco templates agro, módulos por tenant, checkl
 
 ### Sprint 23 — entregue
 Biblioteca documental agro integrada, evidências auditáveis, dossiês e certificados operacionais. Próxima evolução real: renderização PDF assinada; nesta entrega a exportação é CSV para não simular PDF.
+
+### Sprint 24 — concluída
+- Operação 360: tarefas, alertas, regras, workflows, notificações, agenda e dashboard.
+- Outbox multicanal preparada, sem declarar envio quando provider não existe.
+- Próxima evolução: providers externos contratados e avaliadores adicionais por evento de domínio.

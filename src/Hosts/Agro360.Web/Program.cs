@@ -34,5 +34,9 @@ app.UseStaticFiles();
 app.UseRouting();
 app.MapHealthChecks("/health");
 app.MapRazorPages();
+foreach (var route in new[] { "/Tasks", "/Tasks/Dashboard", "/Tasks/New", "/Tasks/Details", "/Alerts", "/Alerts/Details", "/Rules", "/Rules/New", "/Rules/Edit", "/Workflows", "/Workflows/Details", "/Workflows/Decision", "/Notifications", "/Calendar/Operational", "/Outbox" })
+{
+    app.MapGet(route, (string? id) => Results.Redirect($"/Work?view={Uri.EscapeDataString(route)}{(string.IsNullOrWhiteSpace(id) ? "" : $"&id={Uri.EscapeDataString(id)}")}"));
+}
 
 await app.RunAsync();

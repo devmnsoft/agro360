@@ -254,3 +254,7 @@ Detalhes operacionais e homologação: [docs/COMMERCIAL-MODULE.md](docs/COMMERCI
 ## Sprint 23 — Documentos e Evidências
 
 A biblioteca documental operacional está disponível em `/Documents`. Configure arquivos com `Storage__RootPath` (padrão local seguro `App_Data/documents`) e PostgreSQL externo com `ConnectionStrings__Agro360`. Consulte [o guia do módulo](docs/DOCUMENTS-EVIDENCES.md) para instalação sem Docker, permissões, homologação e consulta pública.
+
+## Sprint 24 — Operação 360
+
+A rota `/Work` oferece tarefas, alertas determinísticos, regras configuráveis, aprovações, notificações internas, agenda e outbox com persistência PostgreSQL real. Configure `ConnectionStrings__Agro360` com a connection string do PostgreSQL externo, execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` e use `dotnet run` nos hosts API e Web; Docker é opcional. Consulte [o guia de workflows e alertas](docs/WORKFLOWS-ALERTS.md).

@@ -67,6 +67,9 @@ public static class Permissions
     public const string DossiersApprove = "dossiers.approve";
     public const string CertificatesIssue = "certificates.issue";
     public const string CertificatesRevoke = "certificates.revoke";
+    public const string WorkRead = "work.read";
+    public const string WorkWrite = "work.write";
+    public const string WorkApprove = "work.approve";
 
     public static IReadOnlyCollection<string> Administrator =>
     [
@@ -89,6 +92,7 @@ public static class Permissions
         IntelligenceRead, IntelligenceWrite, ComplianceRead, ComplianceWrite, ComplianceApprove, EsgRead, EsgWrite,
         IntegrationsRead, IntegrationsWrite, MapsRead, MapsWrite, CooperativeRead, CooperativeWrite, CooperativeApprove,
         RuralHrRead, RuralHrWrite, RuralHrSafety, DeploymentRead, DeploymentWrite,
-        DocumentsRead, DocumentsUpload, DocumentsDownload, EvidencesValidate, DossiersCreate, DossiersApprove, CertificatesIssue, CertificatesRevoke
+        DocumentsRead, DocumentsUpload, DocumentsDownload, EvidencesValidate, DossiersCreate, DossiersApprove, CertificatesIssue, CertificatesRevoke,
+        WorkRead, WorkWrite, WorkApprove
     ];
 }

@@ -62,6 +62,7 @@ public static class DependencyInjection
         services.AddScoped<IRuralHrService, RuralHrService>();
         services.AddScoped<IDeploymentService, DeploymentService>();
         services.AddScoped<IDocumentService, DocumentService>();
+        services.AddScoped<IWorkManagementService, WorkManagementService>();
         return services;
     }
 }

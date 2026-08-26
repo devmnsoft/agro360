@@ -19,3 +19,7 @@ Entregue: CRM multi-tenant, equipe e regiões, funil auditado, agenda, preços, 
 
 ## Sprint 23 — Documentos, evidências, dossiês e certificados
 Concluída: armazenamento local configurável, SHA-256, versionamento, vínculos multi-módulo, validação de evidências, checklists de dossiê, certificados revogáveis, consulta pública mínima, dashboard real e CSV.
+
+## Sprint 24 — Workflows, alertas, tarefas e notificações
+
+Entregues central operacional persistente, regras determinísticas sem IA, deduplicação de alertas, aprovações com segregação, notificações por usuário, agenda, dashboard de saúde e outbox honesta. A migration `022_sprint24_work_management.sql` e o SQL completo suportam instalação externa sem Docker.
