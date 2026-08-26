@@ -205,3 +205,6 @@ dotnet run --project src/Hosts/Agro360.Web
 O módulo `/Maps` reúne mapas operacionais, desenho de propriedades/talhões/pastagens/piquetes/zonas, ocorrências, rotas, monitoramento territorial e dashboard. GeoJSON/JSONB e latitude/longitude garantem execução em qualquer PostgreSQL, sem PostGIS e sem token de mapas obrigatórios. Consulte [visão da sprint](docs/sprint-17-mapa-geoespacial.md), [modelo](docs/geospatial-model.md), [importação/exportação](docs/geojson-import-export.md) e [UI](docs/map-ui.md).
 
 Para rodar sem Docker, configure `ConnectionStrings__Agro360`, aplique `database/agro360-postgres-full.sql` com `psql` e execute `dotnet run --project src/Hosts/Agro360.Api` e `dotnet run --project src/Hosts/Agro360.Web`.
+
+## Sprint 18 — Cooperativas e B2B
+A central `/Cooperatives` reúne cooperados, assistência técnica, programas integrados, marketplace, compras coletivas, contratos, bonificações, repasses, crédito rural interno e portal do produtor. Para executar sem Docker, exporte `ConnectionStrings__Agro360`, aplique `database/agro360-postgres-full.sql` com `psql`, e inicie API e Web com `dotnet run --project src/Hosts/Agro360.Api` e `dotnet run --project src/Hosts/Agro360.Web`.

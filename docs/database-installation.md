@@ -31,3 +31,6 @@ psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgr
 ```
 
 O script cria `geospatial`, tabelas JSONB, índices, RLS e permissões `maps.read`/`maps.write`. Não contém host, usuário, senha ou banco fixos.
+
+## Sprint 18
+O arquivo único já inclui o schema `cooperative`, RLS, índices e permissões. Aplique sem Docker com `psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql`.

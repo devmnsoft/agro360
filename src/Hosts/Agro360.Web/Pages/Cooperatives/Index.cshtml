@@ -1,0 +1,12 @@
+@page
+@model Agro360.Web.Pages.Cooperatives.IndexModel
+@{ViewData["Title"]="Cooperativas e Marketplace";}
+<section class="cooperative-shell" data-api="/api/cooperative">
+ <header><p class="eyebrow">Sprint 18 · rede comercial</p><h1>Dashboard Cooperativo/Comercial</h1><p>Produtores, assistência, programas e negócios B2B em uma operação multitenant.</p></header>
+ <nav class="tabs" aria-label="Áreas cooperativas">@foreach(var x in new[]{"Cooperados","Assistência Técnica","Visitas","Recomendações","Programas de Produção","Marketplace","Ofertas","Demandas","Compras Coletivas","Contratos","Bonificações","Repasses","Pré-análise de Crédito","Portal do Produtor","Dashboard Cooperativo"}){<button type="button" data-tab="@x">@x</button>}</nav>
+ <form id="filters"><label>Buscar<input name="search" type="search" maxlength="100" /></label><label>Status<select name="status"><option value="">Todos</option><option>ACTIVE</option><option>DRAFT</option><option>APPROVED</option><option>CLOSED</option></select></label><button type="submit">Filtrar</button></form>
+ <div id="feedback" role="status" aria-live="polite"></div><div id="cooperative-content"><p class="empty">Carregando dados…</p></div>
+ <dialog id="editor"><form id="cooperative-form"><h2>Novo registro</h2><label>Nome<input name="name" required minlength="3" maxlength="180" /></label><label>Produtor / parte<select name="partyId" data-lookup="members" required><option value="">Pesquise e selecione</option></select></label><label>Propriedade<select name="propertyId" data-lookup="properties"><option value="">Selecione quando aplicável</option></select></label><label>Talhão, lote ou animal<select name="resource" data-lookup="traceability"><option value="">Selecione quando aplicável</option></select></label><label>Valor / volume<input name="amount" type="number" min="0" step="0.01" required /></label><label>Detalhes<textarea name="details" maxlength="2000"></textarea></label><menu><button type="button" data-close>Cancelar</button><button type="submit">Salvar</button></menu></form></dialog>
+ <button id="new-record" type="button">Novo registro</button>
+</section>
+<script src="~/js/cooperatives.js" asp-append-version="true"></script>
