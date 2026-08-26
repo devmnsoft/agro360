@@ -25,3 +25,12 @@ Entregue onboarding assistido, cinco templates agro, módulos por tenant, checkl
 - EVI-01: validação registra ator/data; rejeição exige motivo e evidência validada não é removida fisicamente.
 - DOS-01: aprovação exige checklist obrigatório concluído; reprovação exige motivo.
 - CER-01: emissão exige vínculo válido; consulta pública omite IDs e dados internos; revogação exige motivo.
+
+## Requisitos operacionais da Sprint 24
+
+- **OP-01:** tarefa pertence ao tenant, exige responsável ativo, prioridade e prazo; conclusão/cancelamento exigem justificativa adequada.
+- **OP-02:** alerta tem origem, severidade, histórico e chave ativa de deduplicação.
+- **OP-03:** regra determinística é configurável, auditável e registra execução.
+- **OP-04:** workflow registra solicitante, aprovador, decisão e impede autoaprovação segregada.
+- **OP-05:** notificação pertence a tenant e destinatário; outbox só marca envio após provider real.
+- **OP-06:** agenda e dashboard calculam dados persistidos e aceitam estado vazio.

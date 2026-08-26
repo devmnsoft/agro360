@@ -40,3 +40,14 @@ Entregue onboarding assistido, cinco templates agro, módulos por tenant, checkl
 - [ ] Dossiê com pendência obrigatória não aprova.
 - [ ] Consulta pública mostra somente campos essenciais e registra acesso com IP hasheado.
 - [ ] Dashboard e CSV funcionam com banco vazio e com dados.
+
+## Sprint 24 — Operação 360
+- [ ] Criar tarefa usando dropdown de usuário ativo e validar título/prazo/prioridade.
+- [ ] Confirmar descrição obrigatória na conclusão e motivo no cancelamento.
+- [ ] Avaliar regras duas vezes e confirmar deduplicação de estoque/financeiro/SLA.
+- [ ] Marcar alerta lido e resolvido preservando eventos.
+- [ ] Aprovar e reprovar workflow; testar permissão, motivo e segregação.
+- [ ] Ler uma/todas notificações e validar isolamento de destinatário/tenant.
+- [ ] Filtrar agenda por período, módulo, responsável e prioridade.
+- [ ] Confirmar dashboard vazio e populado e outbox não enviada sem provider.
+- [ ] Executar restore, build, testes e `scripts/validate-full-sql.sh`.

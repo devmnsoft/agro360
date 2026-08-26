@@ -29,3 +29,7 @@ O split persistido é um controle interno e não movimenta recursos bancários.
 
 ## Sprint 23
 As tabelas do schema `documents` e os 17 tipos documentais estão incluídos no arquivo completo. Aplique sem Docker: `psql "$AGRO360_CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. O script não contém host, usuário ou senha e não usa `\i`. Arquivos são externos ao PostgreSQL e configurados por `Storage__RootPath`.
+
+## Sprint 24
+
+`migrations/022_sprint24_work_management.sql` cria o schema `operations`; ele já está incorporado em `agro360-postgres-full.sql` (sem `\\i`). Para PostgreSQL externo: `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. A connection string é fornecida pelo ambiente, sem host, usuário ou senha embutidos. O script inclui constraints, FKs, índices, RLS, workflows iniciais e o avaliador determinístico de estoque, financeiro e SLA.
