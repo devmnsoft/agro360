@@ -53,6 +53,19 @@ dotnet run --project src/Hosts/Agro360.Web
 
 ## Instalação do banco
 
+O instalador canônico da release candidate pode ser aplicado diretamente pela mesma connection string usada pela aplicação:
+
+```bash
+export ConnectionStrings__Agro360="Host=localhost;Port=5432;Database=agro360;Username=postgres;Password=postgres"
+psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql
+dotnet restore
+dotnet build
+dotnet test
+dotnet run --project src/Hosts/Agro360.Api
+```
+
+Os valores são apenas exemplos locais. Em pgAdmin/DBeaver, abra e execute o mesmo arquivo inteiro; ele não seleciona banco, usuário ou host e não inclui outros arquivos.
+
 ### A — Migrator (recomendado)
 
 ```bash
