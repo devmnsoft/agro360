@@ -1,5 +1,4 @@
 create extension if not exists pgcrypto;
-create extension if not exists postgis;
 create extension if not exists pg_trgm;
 create extension if not exists unaccent;
 
@@ -190,7 +189,7 @@ create table if not exists geo.farms (
     car_number varchar(100) null,
     ccir_number varchar(100) null,
     itr_number varchar(100) null,
-    boundary geometry(MultiPolygon, 4326) null,
+    boundary jsonb null,
     created_at timestamptz not null default now(),
     created_by uuid not null,
     updated_at timestamptz null,
@@ -206,7 +205,7 @@ create table if not exists geo.farms (
     constraint ck_farms_useful_area check (useful_area_ha is null or (useful_area_ha >= 0 and useful_area_ha <= total_area_ha))
 );
 
-create index if not exists ix_farms_boundary on geo.farms using gist (boundary);
+create index if not exists ix_farms_boundary on geo.farms using gin (boundary);
 create index if not exists ix_farms_name_trgm on geo.farms using gin (name gin_trgm_ops);
 
 create table if not exists geo.fields (
@@ -216,7 +215,7 @@ create table if not exists geo.fields (
     code bigint generated always as identity,
     name varchar(120) not null,
     area_ha numeric(18,4) not null,
-    boundary geometry(MultiPolygon, 4326) null,
+    boundary jsonb null,
     created_at timestamptz not null default now(),
     created_by uuid not null,
     updated_at timestamptz null,
@@ -388,7 +387,7 @@ create table if not exists agriculture.field_operations (
     quantity numeric(20,6) null,
     unit varchar(16) null references platform.units(code),
     equipment_id uuid null,
-    gps geography(Point, 4326) null,
+    gps jsonb null,
     executed_at timestamptz not null,
     notes varchar(2000) null,
     idempotency_key varchar(160) null,
@@ -958,7 +957,7 @@ on conflict (code) do update set
 
 insert into platform.modules (code, name, phase, status, description) values
     ('platform', 'Plataforma e segurança', 1, 'CORE', 'Tenant, organização, usuário, permissão e auditoria.'),
-    ('properties', 'Propriedades e geoprocessamento', 2, 'CORE', 'Fazendas, talhões e geometrias PostGIS.'),
+    ('properties', 'Propriedades e geoprocessamento', 2, 'CORE', 'Fazendas, talhões e geometrias GeoJSON.'),
     ('agriculture', 'Agricultura', 3, 'CORE', 'Safras, planejamento, plantio e colheita.'),
     ('inventory', 'Estoque', 4, 'CORE', 'Produtos, depósitos, lotes, custo médio e movimentações.'),
     ('fleet', 'Máquinas e frota', 5, 'FOUNDATION', 'Ativos, horímetro e fundação de telemetria.'),
@@ -1524,4 +1523,30 @@ create index if not exists ix_message_outbox_queue on integrations.message_outbo
 do $$ declare tab text; begin for tab in select tablename from pg_tables where schemaname='integrations' loop execute format('alter table integrations.%I enable row level security',tab); execute format('alter table integrations.%I force row level security',tab); if not exists(select 1 from pg_policies where schemaname='integrations' and tablename=tab and policyname=tab||'_tenant') then execute format('create policy %I on integrations.%I using (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid) with check (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid)',tab||'_tenant',tab); end if; end loop; end $$;
 insert into identity.permissions(code,module,description) values('integrations.read','Integrações','Consultar integrações, IoT e interoperabilidade.'),('integrations.write','Integrações','Administrar integrações, chaves, filas e split manual.') on conflict(code) do update set module=excluded.module,description=excluded.description;
 insert into platform.schema_versions(version,description,installed_at) values('1.3.0','Sprint 16 - Integracoes e Interoperabilidade',now()) on conflict(version) do nothing;
+commit;
+
+-- Sprint 17 - Mapa Agro e camada geoespacial (PostgreSQL puro, extensões espaciais opcionais)
+begin;
+create schema if not exists geospatial;
+create table if not exists geospatial.features(
+ id uuid primary key, tenant_id uuid not null references tenancy.tenants(id), entity_type varchar(30) not null check(entity_type in('PROPERTY','FIELD','PASTURE','PADDOCK','WAREHOUSE','ROUTE','LOGISTICS_POINT','OCCURRENCE','MANAGEMENT_ZONE','ENVIRONMENTAL_AREA')),
+ name varchar(180) not null, geometry_type varchar(20) not null check(geometry_type in('Point','LineString','Polygon','MultiPolygon')), geojson jsonb not null,
+ centroid_latitude numeric(10,7), centroid_longitude numeric(10,7), bounding_box jsonb, informed_area_ha numeric(18,4) check(informed_area_ha is null or informed_area_ha>0), calculated_area_ha numeric(18,4) check(calculated_area_ha is null or calculated_area_ha>=0),
+ property_id uuid, parent_id uuid, status varchar(16) not null default 'ACTIVE' check(status in('DRAFT','ACTIVE','INACTIVE','BLOCKED','RESOLVED')), origin varchar(40) not null,
+ created_by uuid not null, updated_by uuid not null, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), unique(tenant_id,id),
+ check(geojson ? 'type' and geojson ? 'coordinates'), check(centroid_latitude is null or centroid_latitude between -90 and 90), check(centroid_longitude is null or centroid_longitude between -180 and 180),
+ foreign key(tenant_id,property_id) references geo.farms(tenant_id,id), foreign key(tenant_id,parent_id) references geospatial.features(tenant_id,id));
+create table if not exists geospatial.occurrences(id uuid primary key,tenant_id uuid not null references tenancy.tenants(id),feature_id uuid not null,type varchar(40) not null,severity varchar(12) not null check(severity in('LOW','MEDIUM','HIGH','CRITICAL')),responsible_id uuid not null,status varchar(16) not null default 'OPEN' check(status in('OPEN','IN_PROGRESS','RESOLVED','CLOSED')),notes varchar(1000),created_at timestamptz not null default now(),updated_at timestamptz not null default now(),unique(tenant_id,id),foreign key(tenant_id,feature_id) references geospatial.features(tenant_id,id),foreign key(tenant_id,responsible_id) references identity.users(tenant_id,id));
+create table if not exists geospatial.occurrence_evidence(id uuid primary key,tenant_id uuid not null,occurrence_id uuid not null,file_name varchar(240) not null,storage_url varchar(1000) not null,sha256 char(64) not null,uploaded_by uuid not null,created_at timestamptz not null default now(),foreign key(tenant_id,occurrence_id) references geospatial.occurrences(tenant_id,id));
+create table if not exists geospatial.route_segments(id uuid primary key,tenant_id uuid not null references tenancy.tenants(id),route_feature_id uuid not null,type varchar(20) not null check(type in('RIVER','RURAL_ROAD','FERRY','HIGHWAY')),name varchar(180) not null,geojson jsonb not null,distance_km numeric(12,3) not null check(distance_km>0),estimated_minutes int not null check(estimated_minutes>0),status varchar(16) not null check(status in('ACTIVE','RESTRICTED','BLOCKED')),restrictions varchar(500),operational_window varchar(200),authorized_override boolean not null default false,created_by uuid not null,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),unique(tenant_id,id),foreign key(tenant_id,route_feature_id) references geospatial.features(tenant_id,id),check(geojson->>'type'='LineString'));
+create table if not exists geospatial.management_zone_links(id uuid primary key default gen_random_uuid(),tenant_id uuid not null,zone_feature_id uuid not null,link_type varchar(30) not null check(link_type in('ACTIVITY','RECOMMENDATION','OCCURRENCE','COST')),linked_id uuid not null,notes varchar(500),created_at timestamptz not null default now(),foreign key(tenant_id,zone_feature_id) references geospatial.features(tenant_id,id));
+create table if not exists geospatial.imports(id uuid primary key,tenant_id uuid not null references tenancy.tenants(id),entity_type varchar(30) not null,file_name varchar(240) not null,payload jsonb not null,status varchar(16) not null check(status in('VALIDATED','INVALID','IMPORTED')),total_features int not null,valid_features int not null,error_features int not null,created_by uuid not null,created_at timestamptz not null default now(),unique(tenant_id,id));
+create table if not exists geospatial.import_errors(id uuid primary key,tenant_id uuid not null,import_id uuid not null,feature_number int not null,message varchar(1000) not null,foreign key(tenant_id,import_id) references geospatial.imports(tenant_id,id) on delete cascade);
+create table if not exists geospatial.feature_audit(id uuid primary key default gen_random_uuid(),tenant_id uuid not null,feature_id uuid,event varchar(40) not null,actor_id uuid not null,details jsonb not null default '{}',occurred_at timestamptz not null default now());
+create index if not exists ix_geo_features_map on geospatial.features(tenant_id,entity_type,status);
+create index if not exists ix_geo_occurrences_queue on geospatial.occurrences(tenant_id,status,severity);
+create index if not exists ix_geo_segments_route on geospatial.route_segments(tenant_id,route_feature_id,status);
+do $$ declare tab text; begin for tab in select tablename from pg_tables where schemaname='geospatial' loop execute format('alter table geospatial.%I enable row level security',tab); execute format('alter table geospatial.%I force row level security',tab); if not exists(select 1 from pg_policies where schemaname='geospatial' and tablename=tab and policyname=tab||'_tenant') then execute format('create policy %I on geospatial.%I using (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid) with check (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid)',tab||'_tenant',tab); end if; end loop; end $$;
+insert into identity.permissions(code,module,description) values('maps.read','Mapa Agro','Consultar mapas e dados territoriais.'),('maps.write','Mapa Agro','Editar geometrias, ocorrências, zonas e rotas.') on conflict(code) do update set module=excluded.module,description=excluded.description;
+insert into platform.schema_versions(version,description,installed_at) values('1.4.0','Sprint 17 - Mapa Agro e Geoespacial',now()) on conflict(version) do nothing;
 commit;

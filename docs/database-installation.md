@@ -21,3 +21,13 @@ psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgr
 ```
 
 A connection string deve apontar para um banco PostgreSQL existente e deve vir de variável de ambiente ou secret manager, nunca do repositório.
+
+## Sprint 17 — camada geoespacial
+
+A instalação integral continua sendo um único comando, sem Docker e sem PostGIS obrigatório:
+
+```bash
+psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
+```
+
+O script cria `geospatial`, tabelas JSONB, índices, RLS e permissões `maps.read`/`maps.write`. Não contém host, usuário, senha ou banco fixos.

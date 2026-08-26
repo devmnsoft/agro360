@@ -44,6 +44,8 @@ public static class Permissions
     public const string EsgWrite = "esg.write";
     public const string IntegrationsRead = "integrations.read";
     public const string IntegrationsWrite = "integrations.write";
+    public const string MapsRead = "maps.read";
+    public const string MapsWrite = "maps.write";
 
     public static IReadOnlyCollection<string> Administrator =>
     [
@@ -64,6 +66,6 @@ public static class Permissions
         TraceabilityRead, TraceabilityWrite, LedgerValidate, RegionalLogisticsRead,
         RegionalLogisticsWrite, SalesNetworkRead, SalesNetworkWrite, SalesNetworkApprove,
         IntelligenceRead, IntelligenceWrite, ComplianceRead, ComplianceWrite, ComplianceApprove, EsgRead, EsgWrite,
-        IntegrationsRead, IntegrationsWrite
+        IntegrationsRead, IntegrationsWrite, MapsRead, MapsWrite
     ];
 }

@@ -110,7 +110,7 @@ public sealed class PropertyService(DatabaseExecutor database, ITenantContext te
                 values
                     (@Id, @TenantId, @FarmId, @Name, @AreaHa,
                      case when @BoundaryGeoJson is null then null
-                          else ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(@BoundaryGeoJson), 4326)) end,
+                          else cast(@BoundaryGeoJson as jsonb) end,
                      now(), @CreatedBy, 1);
                 """,
                 new
@@ -197,7 +197,7 @@ public sealed class PropertyService(DatabaseExecutor database, ITenantContext te
                 where tenant_id = @TenantId and farm_id = @FarmId and deleted_at is null;
 
                 select id, farm_id as FarmId, name, area_ha as AreaHa,
-                       case when boundary is null then null else ST_AsGeoJSON(boundary) end as BoundaryGeoJson,
+                       case when boundary is null then null else boundary::text end as BoundaryGeoJson,
                        version
                 from geo.fields
                 where tenant_id = @TenantId and farm_id = @FarmId and deleted_at is null
