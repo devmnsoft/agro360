@@ -1,5 +1,9 @@
 # Design System Agro360
 
+## Componentes de decisão
+
+Cards seguem título–motivo–fonte; badges incluem texto; score circular sempre acompanha valor; fatores usam timeline e estados vazios explicam o próximo passo. Cor nunca é o único sinal. Tabelas e ações devem funcionar a 320 px e por teclado.
+
 O sistema usa uma linguagem SaaS B2B sóbria: superfícies escuras calmas, contraste alto, bordas discretas, tipografia legível e verde apenas para foco e ações. `agro360.css` é a fonte dos primitives compartilhados: shell, topbar, navegação, cards, botões, campos, tabelas responsivas, badges, modais, toast, loading e empty state.
 
 ## Regras de componentes

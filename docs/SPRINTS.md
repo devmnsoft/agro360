@@ -1,5 +1,9 @@
 # Histórico de sprints
 
+## Sprint 31 — Inteligência Operacional Agro
+
+Central de decisão, recomendações auditáveis, scores com fatores, anomalias com observado/referência, prioridades, regras configuráveis e Agro360 Assistente baseado em dados reais.
+
 As Sprints 6–19 entregaram operação base, pecuária, financeiro, armazenagem, rastreabilidade amazônica, agricultura, mobile/offline, BI, governança SaaS, compliance, integrações, geoespacial, cooperativas e RH/SST. Os guias detalhados permanecem em `docs/sprint-*.md`.
 
 ## Sprint 20 — Release Candidate

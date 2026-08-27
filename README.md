@@ -1,5 +1,7 @@
 # MNSOFT Agro 360
 
+> **Sprint 31:** **Inteligência Agro360** entrega recomendações rastreáveis, scores, anomalias, Prioridades do Dia e assistente interno sem exigir IA externa. Veja [a documentação operacional](docs/INTELIGENCIA-AGRO360.md).
+
 Plataforma modular e multi-tenant para gestão do agronegócio, em .NET 10 e PostgreSQL/PostGIS. **A execução principal é nativa e não requer Docker.** Docker Compose permanece somente como conveniência opcional.
 
 ## Início rápido sem Docker

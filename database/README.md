@@ -1,5 +1,9 @@
 # Banco portátil Agro 360
 
+## Sprint 31
+
+O script completo cria as 17 estruturas de inteligência, constraints, índices e RLS. Em PostgreSQL externo execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. A aplicação lê `ConnectionStrings__Agro360`; container não é obrigatório.
+
 PostgreSQL 14+ é suportado. PostGIS, `pgcrypto`, `pg_trgm` e `unaccent` são requeridos pelos recursos atuais; um administrador deve disponibilizá-los quando o usuário da aplicação não puder executar `CREATE EXTENSION`.
 
 ## Instalador canônico da Release Candidate

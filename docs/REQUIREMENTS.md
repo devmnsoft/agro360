@@ -1,5 +1,12 @@
 # Requisitos da release candidate
 
+## Inteligência operacional
+
+- Recomendações exigem motivo, fonte, módulo, severidade e aprovação antes de ações.
+- Scores ficam entre 0 e 100 e preservam fórmula/fatores.
+- Anomalias registram critério, observado e referência sem alegar fraude.
+- Assistente funciona sem IA externa, respeita tenant/permissão e informa fonte.
+
 O Agro360 atende operações agrícolas, pecuárias, financeiras, logísticas, de rastreabilidade, compliance, cooperativas e RH em contexto multiempresa. A release candidate exige PostgreSQL externo, .NET 10, autenticação JWT, autorização por permissão e persistência Dapper; Docker é apenas opcional.
 
 Relacionamentos são escolhidos por lookups pesquisáveis, e comandos são validados no navegador e novamente na API. Toda consulta ou alteração privada deve usar o `tenant_id` obtido do token, nunca um tenant fornecido pelo corpo da requisição. O instalador canônico é `database/agro360-postgres-full.sql`.
