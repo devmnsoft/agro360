@@ -41,3 +41,7 @@ Entregue onboarding assistido, cinco templates agro, módulos por tenant, checkl
 - CSV DEVE representar a consulta real filtrada; vazio é um resultado válido.
 - Coordenadas DEVEM respeitar latitude [-90,90] e longitude [-180,180].
 - Interfaces DEVEM possuir foco visível, empty/loading/error states e funcionar a partir de 360 px.
+
+## RF-MOB-26 — Agro360 Campo
+
+O sistema deve permitir registrar manejo, ocorrência, check-in e evidência em experiência responsiva, enfileirar operações no IndexedDB durante indisponibilidade de rede e sincronizá-las com idempotência, validação server-side, tenant e usuário autenticado. Check-in GPS exige coordenadas válidas; check-in manual exige justificativa.

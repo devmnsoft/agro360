@@ -70,6 +70,11 @@ public static class Permissions
     public const string WorkRead = "work.read";
     public const string WorkWrite = "work.write";
     public const string WorkApprove = "work.approve";
+    public const string MobileRead = "mobile.read";
+    public const string MobileWrite = "mobile.write";
+    public const string MobileSync = "mobile.sync";
+    public const string MobileResolveConflicts = "mobile.conflicts.resolve";
+    public const string FieldChecklistsManage = "field-checklists.manage";
 
     public static IReadOnlyCollection<string> Administrator =>
     [
@@ -93,6 +98,6 @@ public static class Permissions
         IntegrationsRead, IntegrationsWrite, MapsRead, MapsWrite, CooperativeRead, CooperativeWrite, CooperativeApprove,
         RuralHrRead, RuralHrWrite, RuralHrSafety, DeploymentRead, DeploymentWrite,
         DocumentsRead, DocumentsUpload, DocumentsDownload, EvidencesValidate, DossiersCreate, DossiersApprove, CertificatesIssue, CertificatesRevoke,
-        WorkRead, WorkWrite, WorkApprove
+        WorkRead, WorkWrite, WorkApprove, MobileRead, MobileWrite, MobileSync, MobileResolveConflicts, FieldChecklistsManage
     ];
 }

@@ -133,3 +133,7 @@ Biblioteca documental agro integrada, evidências auditáveis, dossiês e certif
 - Inteligência Agro360 e catálogo de relatórios reais por módulo.
 - Persistência governada de BI, mapas operacionais, preferências e auditoria de UI.
 - Central de Relatórios CSV e design system responsivo. PDF segue no backlog por depender de infraestrutura real.
+
+### Sprint 26 — concluída no código
+
+Base operacional do Agro360 Campo, sincronização offline, geolocalização, evidências e esquema de checklists. A assinatura biométrica e mapas offline permanecem fora do escopo por exigirem infraestrutura/dispositivo específicos.

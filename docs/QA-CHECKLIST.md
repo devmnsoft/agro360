@@ -60,3 +60,13 @@ Entregue onboarding assistido, cinco templates agro, módulos por tenant, checkl
 - [ ] Latitude/longitude inválidas e rota sem pontos são rejeitadas.
 - [ ] Dois tenants não compartilham widgets, filtros, dropdowns, mapas ou exports.
 - [ ] Layout homologado em 360/768/1280/1920 px, teclado e zoom 200%.
+
+## Sprint 26 — Mobile/PWA
+
+- [ ] Validar `/field` em 360 px, 390 px, tablet e desktop.
+- [ ] Alternar modo avião e confirmar persistência real no IndexedDB.
+- [ ] Reenviar a mesma chave e confirmar ausência de duplicidade.
+- [ ] Negar GPS e validar justificativa manual obrigatória.
+- [ ] Testar latitude fora da faixa e arquivo/MIME/tamanho inválidos.
+- [ ] Confirmar que service worker não cacheia APIs/páginas privadas.
+- [ ] Confirmar isolamento entre tenants e permissão `mobile.write`.

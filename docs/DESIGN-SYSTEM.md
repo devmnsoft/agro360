@@ -14,3 +14,7 @@ O sistema usa uma linguagem SaaS B2B sóbria: superfícies escuras calmas, contr
 ## Checklist visual
 
 Homologue em 360, 768, 1280 e 1920 px; temas claro/escuro; teclado; leitor de tela; vazio, carregando, sucesso, erro e permissão negada. Confirme alinhamento, alvo de toque, overflow de tabela e que todos os botões executam uma ação.
+
+## Padrão mobile de campo
+
+Alvos de toque têm no mínimo 44 px; formulários passam a uma coluna em até 650 px; a navegação inferior permanece acessível em celular. Estados offline usam rótulos textuais além de cor (`Pendente`/`Falhou`) e tabelas operacionais devem virar cards sem scroll horizontal.

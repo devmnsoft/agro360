@@ -65,7 +65,7 @@ public readonly record struct Result<T>
 
 public class DomainException : Exception
 {
-    public DomainException(string message, string code)
+    public DomainException(string message, string code = "domain_error")
         : base(message)
     {
         Code = code;
