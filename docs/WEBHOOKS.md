@@ -1,0 +1,2 @@
+# Webhooks
+Cadastre URL HTTPS, eventos e uma referência de segredo. Eventos suportados incluem ciclos de pedido, contrato, lote, certificado, documento, evidência, não conformidade, entrega, cotação, cobrança, assinatura, tenant e alerta crítico. Entregas são assinadas por HMAC quando o segredo está configurado, registram HTTP/erro real e usam backoff limitado. Somente falhas podem ser reprocessadas e somente pendências podem ser canceladas pelos endpoints `/retry` e `/cancel`; sucesso nunca é simulado.

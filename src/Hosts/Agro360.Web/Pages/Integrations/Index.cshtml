@@ -1,13 +1,14 @@
 @page
 @model Agro360.Web.Pages.Integrations.IndexModel
 @{ ViewData["Title"]="Integrações"; }
+<link rel="stylesheet" href="~/css/integrations.css" asp-append-version="true" />
 <section class="integration-shell" data-api="/api/integrations">
- <header><p class="eyebrow">Sprint 16 · interoperabilidade</p><h1>Central de Integrações</h1><p>Monitore conectores, filas, sensores e operações externas sem expor segredos.</p></header>
+ <header class="integration-hero"><div><p class="eyebrow">Operations cloud · Sprint 30</p><h1>Integrações & Fiscal</h1><p>Uma central segura para conectores, parceiros, filas, arquivos e documentos fiscais.</p></div><span class="hero-chip">Ambiente controlado</span></header>
  <nav class="tabs" aria-label="Módulos de integração">
-  @foreach(var tab in new[]{"Dashboard","Hub","API Keys","Webhooks","Importações","Exportações","Documentos fiscais","IoT / Sensores","Split / Pagamentos","Mensagens"}){<button type="button" data-tab="@tab">@tab</button>}
+  @foreach(var tab in new[]{"Dashboard","Conectores","API Externa","Webhooks","Importações","Exportações","Fiscal","Filas"}){<button type="button" data-tab="@tab">@tab</button>}
  </nav>
  <div id="feedback" role="status" aria-live="polite"></div><div id="content" class="cards"><p class="empty">Carregando dados…</p></div>
- <dialog id="editor"><form id="integration-form" method="dialog"><h2>Nova integração</h2><label>Nome<input name="name" maxlength="120" required /></label><label>Tipo<select name="type" required><option value="">Selecione</option><option>PAYMENT</option><option>FISCAL</option><option>MESSAGING</option><option>IOT</option></select></label><label>Provider<select name="provider" required><option value="">Selecione</option><option>INTERNAL</option><option>EXTERNAL</option></select></label><p>Credenciais são selecionadas no cofre de referências; nunca são digitadas aqui.</p><menu><button value="cancel">Cancelar</button><button type="submit" value="default">Salvar</button></menu></form></dialog>
+ <dialog id="editor"><form id="integration-form" method="dialog"><h2>Nova integração</h2><label>Nome<input name="name" maxlength="120" autocomplete="organization" required /></label><label>Tipo<select name="type" required><option value="">Selecione</option><option>ERP</option><option>FISCAL</option><option>LOGISTICS</option><option>FINANCIAL</option><option>MARKETPLACE</option><option>BI</option><option>COOPERATIVE</option><option>EXTERNAL_PORTAL</option><option>GOVERNMENT</option><option>WEBHOOK</option><option>EXTERNAL_API</option><option>OTHER</option></select></label><label>Provedor<select name="provider" required><option value="">Selecione</option><option>INTERNAL</option><option>EXTERNAL</option></select></label><div class="security-note">Credenciais são selecionadas no cofre de referências e nunca digitadas ou exibidas nesta tela. A integração nasce como não configurada.</div><menu><button value="cancel">Cancelar</button><button class="primary" type="submit" value="default">Salvar com segurança</button></menu></form></dialog>
  <button id="new-integration" type="button">Cadastrar integração</button>
 </section>
 <script src="~/js/integrations.js" asp-append-version="true"></script>

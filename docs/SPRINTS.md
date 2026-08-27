@@ -42,3 +42,6 @@ Implementação persistente de requisitos configuráveis, especificações versi
 ## Sprint 29 — Administracao SaaS
 
 Governanca multiempresa, planos, assinaturas, cobrancas internas manuais, feature flags, limites, overrides, onboarding, white label, RBAC e auditoria administrativa. As invariantes possuem regras de dominio e instalacao PostgreSQL completa; pagamento automatico permanece fora do produto ate integracao real.
+
+## Sprint 30 — Integrações, API externa e Fiscal
+Fundação produtiva multi-tenant para conectores e filas idempotentes, aplicações/API keys com hash e revogação, webhooks auditáveis, importação assistida, exportação CSV e documentos/rascunhos fiscais. Nenhuma autorização ou transmissão fiscal é simulada: provider oficial, certificado e ambiente homologado são pré-condições reais.

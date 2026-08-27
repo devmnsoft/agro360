@@ -280,3 +280,7 @@ A Central de Qualidade adiciona requisitos configuráveis, especificações vers
 ## Sprint 29 — Produto SaaS B2B
 
 A governanca comercial passa a incluir tenants auditados, catalogo de planos/features/limites, assinaturas e cobrancas internas sem gateway ficticio, overrides temporarios, onboarding e white label. Consulte [Administracao SaaS](docs/SAAS-ADMIN.md), [Planos e assinaturas](docs/PLANS-SUBSCRIPTIONS.md), [Feature flags](docs/FEATURE-FLAGS.md) e [Onboarding/white label](docs/ONBOARDING-WHITELABEL.md). Para executar sem Docker, configure PostgreSQL externo em `ConnectionStrings__Agro360`, aplique `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` e execute `./scripts/run-local.sh`.
+
+## Sprint 30 — Integrações e Fiscal
+
+A central `/Integrations` reúne conectores, aplicações externas, chaves hasheadas, webhooks, importações CSV, exportações e documentos fiscais por tenant. Configure PostgreSQL externo em `ConnectionStrings__Agro360`, aplique `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` e execute `./scripts/run-local.sh`; Docker não é necessário. Emissão fiscal permanece bloqueada até provider oficial, credencial e certificado serem homologados. Consulte `docs/INTEGRATIONS.md`, `docs/API-EXTERNA.md`, `docs/WEBHOOKS.md`, `docs/IMPORT-EXPORT.md` e `docs/FISCAL.md`.

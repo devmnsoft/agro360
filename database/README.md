@@ -59,3 +59,6 @@ O bloco `2.8.0` do instalador completo cria o schema `quality`, 25 tabelas multi
 ## Sprint 29 — SaaS
 
 O bloco `2.9.0` cria o catalogo SaaS de features/limites/permissoes e tabelas de status, assinatura, cobranca, consumo, override, onboarding, branding e auditoria, com FKs, checks, indices e RLS tenant-scoped. Em PostgreSQL externo execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. Nao ha banco embutido nem dependencia obrigatoria de Docker.
+
+## Sprint 30
+A migration `migrations/030_sprint30_integrations_fiscal.sql` também integra o instalador completo. Em PostgreSQL externo execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. Ela cria schemas/tabelas, FKs compostas, checks, índices e RLS multi-tenant para integrações, API, webhooks, jobs e fiscal. Segredos são apenas referências; faça backup do cofre separadamente.

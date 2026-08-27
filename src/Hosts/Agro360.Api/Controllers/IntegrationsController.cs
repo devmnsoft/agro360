@@ -16,10 +16,12 @@ public sealed class IntegrationsController(IIntegrationService service,ILogger<I
  [HttpGet("api/integrations/{id:guid}/logs")]public Task<object> Logs(Guid id,CancellationToken ct)=>service.LogsAsync(id,ct);
  [HttpGet("api/api-keys")]public Task<object> Keys(CancellationToken ct)=>service.ApiKeysAsync(ct);
  [HttpPost("api/api-keys"),Authorize(Policy=Permissions.IntegrationsWrite)]public async Task<IActionResult> Key(ApiKeyCommand x,CancellationToken ct)=>Ok(await Boundary("create API key",()=>service.CreateApiKeyAsync(x,ct)));
+ [HttpPost("api/api-keys/{id:guid}/revoke"),Authorize(Policy=Permissions.IntegrationsWrite)]public Task<IActionResult> RevokeKey(Guid id,CancellationToken ct)=>Action(()=>service.RevokeApiKeyAsync(id,ct),"revoke API key");
  [HttpGet("api/webhooks")]public Task<object> Webhooks(CancellationToken ct)=>service.WebhooksAsync(ct);
  [HttpPost("api/webhooks"),Authorize(Policy=Permissions.IntegrationsWrite)]public Task<IActionResult> Webhook(WebhookCommand x,CancellationToken ct)=>Created(()=>service.CreateWebhookAsync(x,ct),"api/webhooks");
  [HttpGet("api/webhooks/events")]public Task<object> Events(CancellationToken ct)=>service.WebhookEventsAsync(ct);
  [HttpPost("api/webhooks/events/{id:guid}/retry"),Authorize(Policy=Permissions.IntegrationsWrite)]public Task<IActionResult> Retry(Guid id,CancellationToken ct)=>Action(()=>service.RetryWebhookAsync(id,ct),"retry webhook");
+ [HttpPost("api/webhooks/events/{id:guid}/cancel"),Authorize(Policy=Permissions.IntegrationsWrite)]public Task<IActionResult> Cancel(Guid id,CancellationToken ct)=>Action(()=>service.CancelWebhookAsync(id,ct),"cancel webhook");
  [HttpGet("api/imports")]public Task<object> Imports(CancellationToken ct)=>service.ImportsAsync(ct);
  [HttpPost("api/imports"),Authorize(Policy=Permissions.IntegrationsWrite)]public Task<IActionResult> Import(ImportCommand x,CancellationToken ct)=>Created(()=>service.CreateImportAsync(x,ct),"api/imports");
  [HttpPost("api/imports/{id:guid}/validate"),Authorize(Policy=Permissions.IntegrationsWrite)]public Task<object> Validate(Guid id,CancellationToken ct)=>service.ValidateImportAsync(id,ct);

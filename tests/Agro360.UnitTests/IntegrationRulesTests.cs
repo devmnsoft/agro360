@@ -6,7 +6,7 @@ namespace Agro360.UnitTests;
 public sealed class IntegrationRulesTests
 {
  [Fact] public void Api_key_requires_scope()=>Assert.Contains(Validate(new ApiKeyCommand("mobile",[],null)),x=>x.MemberNames.Contains("Scopes"));
- [Fact] public void Api_key_accepts_module_scope()=>Assert.Empty(Validate(new ApiKeyCommand("mobile",["mobile"],DateTimeOffset.UtcNow.AddDays(30),60)));
+ [Fact] public void Api_key_accepts_external_scope()=>Assert.Empty(Validate(new ApiKeyCommand("partner",["properties.read"],DateTimeOffset.UtcNow.AddDays(30),60)));
  [Fact] public void Integration_requires_provider()=>Assert.NotEmpty(Validate(new IntegrationCommand("ERP","FISCAL","",null)));
  [Fact] public void Webhook_requires_valid_url()=>Assert.NotEmpty(Validate(new WebhookCommand("not-a-url",["LOT_CREATED"],Guid.NewGuid())));
  [Fact] public void Import_rejects_unknown_entity()=>Assert.NotEmpty(Validate(new ImportCommand("UNKNOWN","items.csv","name\nMilho")));
