@@ -34,3 +34,10 @@ Entregue onboarding assistido, cinco templates agro, módulos por tenant, checkl
 - **OP-04:** workflow registra solicitante, aprovador, decisão e impede autoaprovação segregada.
 - **OP-05:** notificação pertence a tenant e destinatário; outbox só marca envio após provider real.
 - **OP-06:** agenda e dashboard calculam dados persistidos e aceitam estado vazio.
+
+## Requisitos Sprint 25
+- BI, mapas e relatórios DEVEM filtrar pelo tenant e autorização da sessão.
+- Filtros DEVEM usar entidades pelo nome; IDs técnicos não podem ser solicitados ao usuário.
+- CSV DEVE representar a consulta real filtrada; vazio é um resultado válido.
+- Coordenadas DEVEM respeitar latitude [-90,90] e longitude [-180,180].
+- Interfaces DEVEM possuir foco visível, empty/loading/error states e funcionar a partir de 360 px.

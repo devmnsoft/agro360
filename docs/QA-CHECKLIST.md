@@ -51,3 +51,12 @@ Entregue onboarding assistido, cinco templates agro, módulos por tenant, checkl
 - [ ] Filtrar agenda por período, módulo, responsável e prioridade.
 - [ ] Confirmar dashboard vazio e populado e outbox não enviada sem provider.
 - [ ] Executar restore, build, testes e `scripts/validate-full-sql.sh`.
+
+## Sprint 25
+- [ ] Dashboard vazio e populado não quebra; gráficos não inventam pontos.
+- [ ] Período, propriedade, safra, cultura, cliente, status, região e responsável respeitam seleção e tenant.
+- [ ] Relatório vazio/populado e CSV UTF-8 conferem com a consulta.
+- [ ] Usuário sem permissão recebe 403 em consulta/exportação.
+- [ ] Latitude/longitude inválidas e rota sem pontos são rejeitadas.
+- [ ] Dois tenants não compartilham widgets, filtros, dropdowns, mapas ou exports.
+- [ ] Layout homologado em 360/768/1280/1920 px, teclado e zoom 200%.

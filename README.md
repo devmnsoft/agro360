@@ -258,3 +258,7 @@ A biblioteca documental operacional está disponível em `/Documents`. Configure
 ## Sprint 24 — Operação 360
 
 A rota `/Work` oferece tarefas, alertas determinísticos, regras configuráveis, aprovações, notificações internas, agenda e outbox com persistência PostgreSQL real. Configure `ConnectionStrings__Agro360` com a connection string do PostgreSQL externo, execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` e use `dotnet run` nos hosts API e Web; Docker é opcional. Consulte [o guia de workflows e alertas](docs/WORKFLOWS-ALERTS.md).
+
+## Inteligência Agro360 e Relatórios
+
+Após configurar o PostgreSQL externo em `ConnectionStrings__Agro360`, execute a aplicação sem Docker com `scripts/run-local.sh`. Acesse `/Intelligence` para indicadores e gráficos reais, `/Maps` para geovisualização operacional e `/Reports` para relatórios filtrados e CSV. Consulte `docs/BI-REPORTS-MAPS.md` e `docs/DESIGN-SYSTEM.md` para uso e homologação responsiva.
