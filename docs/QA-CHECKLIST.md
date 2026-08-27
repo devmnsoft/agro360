@@ -1,5 +1,13 @@
 # Checklist de homologação da Release Candidate
 
+## Sprint 31
+
+- [ ] Testar dois tenants e UUID cruzado em dashboard, listas, detalhes e assistente.
+- [ ] Validar aceite, recusa motivada, arquivo e histórico.
+- [ ] Conferir score 0/100, fatores e anomalia observado/referência.
+- [ ] Validar regra inativa, deduplicação, falha auditada, plano e feature flag.
+- [ ] Homologar 320/768/1440 px, teclado, foco, loading, erro e contraste.
+
 Antes de iniciar, instale o SQL completo, inicie API e Web, crie um tenant descartável e registre evidência (resultado, horário e usuário) para cada etapa.
 
 - [ ] **Onboarding:** organização, administrador, propriedade, safra e cultura persistem e reaparecem após novo login.

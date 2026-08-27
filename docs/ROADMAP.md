@@ -1,5 +1,9 @@
 # Roadmap e sprints
 
+## Sprint 31 — concluída
+
+Fundação funcional de inteligência determinística e multi-tenant. Evoluções futuras: executor periódico por feature flag, novos eventos e provider opcional após homologação de privacidade.
+
 > Estado atual: Sprint 20 em Release Candidate (`2.0.0-rc.1`). A promoção para versão estável depende da homologação integral de `docs/QA-CHECKLIST.md`; itens posteriores continuam futuros e não devem aparecer como recursos entregues na interface.
 
 ## Estratégia de entrega
