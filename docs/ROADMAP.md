@@ -144,3 +144,7 @@ Portal externo B2B, controle de acesso por vínculo, Marketplace Agro360, cotaç
 
 ## Sprint 28 — Qualidade e Compliance
 Implementação persistente de requisitos configuráveis, especificações versionadas, inspeções, decisão auditável de lotes, não conformidades/CAPA, auditorias, beneficiamento e prontidão de exportação. Homologar regras e UX conforme [Qualidade e Compliance](QUALITY-COMPLIANCE.md) e [Prontidão para exportação](EXPORT-READINESS.md).
+
+### Sprint 29 — concluida
+
+Fundacao comercial SaaS persistente e auditavel. Proxima evolucao: integrar gateway contratado e storage de objetos homologado, sem simulacao de sucesso.

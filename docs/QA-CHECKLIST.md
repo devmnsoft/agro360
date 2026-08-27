@@ -84,3 +84,14 @@ Entregue onboarding assistido, cinco templates agro, módulos por tenant, checkl
 
 ## Sprint 28 — Qualidade e Compliance
 Implementação persistente de requisitos configuráveis, especificações versionadas, inspeções, decisão auditável de lotes, não conformidades/CAPA, auditorias, beneficiamento e prontidão de exportação. Homologar regras e UX conforme [Qualidade e Compliance](QUALITY-COMPLIANCE.md) e [Prontidão para exportação](EXPORT-READINESS.md).
+
+## Sprint 29 — SaaS
+
+- [ ] Admin Tenant recebe 403 e nao visualiza menu da Administracao SaaS.
+- [ ] Suspender/reativar/cancelar/override sem motivo falha no frontend e backend.
+- [ ] Feature bloqueada desaparece do menu e a URL direta e bloqueada.
+- [ ] Consumo em 80% alerta; em 100% bloqueia nova inclusao sem apagar registros.
+- [ ] Baixa manual sem data falha e nenhuma cobranca e paga automaticamente.
+- [ ] Onboarding incompleto nao conclui; logo/tamanho/cor invalidos sao rejeitados.
+- [ ] Busca, dropdown, CSV, dashboard e auditoria nunca retornam tenant diferente.
+- [ ] Validar 360, 768 e 1440 px, teclado, foco, contraste, loading e estado vazio.

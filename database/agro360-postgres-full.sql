@@ -1434,6 +1434,8 @@ insert into platform.schema_versions(version,description,installed_at) values('1
 
 commit;
 
+
+
 -- Sprint 26 - Agro360 Campo, fila offline auditavel e checklists inteligentes
 begin;
 create schema if not exists field_operations;
@@ -2043,4 +2045,147 @@ create index if not exists ix_quality_processing_lot on quality.processing_compl
 create index if not exists ix_quality_export_lot on quality.export_readiness_checks(tenant_id,lot_id,status) where deleted_at is null;
 do $$ declare t text; begin foreach t in array array['compliance_requirements','compliance_requirement_entities','compliance_requirement_evidences','compliance_requirement_events','quality_specifications','quality_specification_parameters','quality_specification_versions','quality_inspections','quality_inspection_parameters','quality_inspection_results','lot_quality_status_history','lot_quality_holds','non_conformities','non_conformity_events','corrective_actions','corrective_action_evidences','compliance_audits','compliance_audit_scopes','compliance_audit_checklists','compliance_audit_findings','compliance_audit_evidences','processing_compliance_rules','processing_compliance_records','export_readiness_checks','export_readiness_items'] loop execute format('alter table quality.%I enable row level security',t);execute format('drop policy if exists tenant_isolation on quality.%I',t);execute format('create policy tenant_isolation on quality.%I using (tenant_id=platform.current_tenant_id()) with check (tenant_id=platform.current_tenant_id())',t);end loop;end $$;
 insert into platform.schema_versions(version,description,installed_at) values('2.8.0','Sprint 28 - Qualidade e Compliance',now()) on conflict(version) do update set description=excluded.description;
+commit;
+
+-- Sprint 29 - administracao SaaS, assinaturas, limites, onboarding e white label
+begin;
+create schema if not exists saas;
+
+alter table saas.plans add column if not exists max_producers int not null default 10 check(max_producers>0);
+alter table saas.plans add column if not exists max_customers int not null default 10 check(max_customers>0);
+alter table saas.plans add column if not exists max_suppliers int not null default 10 check(max_suppliers>0);
+alter table saas.plans add column if not exists max_documents int not null default 100 check(max_documents>0);
+alter table saas.plans add column if not exists max_integrations int not null default 1 check(max_integrations>0);
+alter table saas.plans add column if not exists max_offline_records_month int not null default 1000 check(max_offline_records_month>0);
+alter table saas.plans add column if not exists support_level varchar(40) not null default 'STANDARD';
+alter table saas.plans add column if not exists sla_hours int check(sla_hours>0);
+alter table saas.plans add column if not exists trial_allowed boolean not null default false;
+alter table saas.plans add column if not exists trial_days int not null default 0 check(trial_days>=0);
+alter table saas.plans add column if not exists white_label_allowed boolean not null default false;
+alter table saas.plans add column if not exists external_portal_allowed boolean not null default false;
+alter table saas.plans add column if not exists external_api_allowed boolean not null default false;
+alter table saas.plans add column if not exists advanced_compliance_allowed boolean not null default false;
+alter table saas.plans add column if not exists created_by uuid;
+alter table saas.plans add column if not exists updated_by uuid;
+alter table saas.plans add column if not exists deleted_at timestamptz;
+
+create table if not exists saas.tenant_status_events(
+ id uuid primary key, tenant_id uuid not null references tenancy.tenants(id), previous_status varchar(20) not null,
+ new_status varchar(20) not null check(new_status in('IMPLEMENTING','TRIAL','ACTIVE','SUSPENDED','INACTIVE','CANCELLED')),
+ reason varchar(1000) not null check(length(trim(reason))>=5), created_at timestamptz not null default now(), created_by uuid not null);
+create index if not exists ix_saas_tenant_status_events on saas.tenant_status_events(tenant_id,created_at desc);
+
+create table if not exists saas.feature_flags(
+ id uuid primary key default gen_random_uuid(), code varchar(80) not null unique, name varchar(120) not null, description varchar(500) not null,
+ beta boolean not null default false, active boolean not null default true, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), created_by uuid, updated_by uuid, deleted_at timestamptz);
+create table if not exists saas.plan_features(
+ plan_id uuid not null references saas.plans(id), feature_id uuid not null references saas.feature_flags(id), enabled boolean not null default true,
+ created_at timestamptz not null default now(), updated_at timestamptz not null default now(), created_by uuid, updated_by uuid, primary key(plan_id,feature_id));
+create index if not exists ix_saas_plan_features_feature on saas.plan_features(feature_id,plan_id);
+create table if not exists saas.plan_limits(
+ plan_id uuid not null references saas.plans(id), metric_code varchar(80) not null, limit_value bigint not null check(limit_value>0), block_at_limit boolean not null default true,
+ created_at timestamptz not null default now(), updated_at timestamptz not null default now(), created_by uuid, updated_by uuid, primary key(plan_id,metric_code));
+
+create table if not exists saas.subscriptions(
+ id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenancy.tenants(id), plan_id uuid not null references saas.plans(id),
+ status varchar(20) not null check(status in('TRIAL','ACTIVE','EXPIRED','SUSPENDED','CANCELLED','NEGOTIATING','COURTESY')),
+ cycle varchar(20) not null check(cycle in('MONTHLY','ANNUAL','TRIAL','LICENSE','COURTESY')), starts_on date not null, ends_on date,
+ contracted_value numeric(14,2) not null check(contracted_value>=0), discount numeric(14,2) not null default 0 check(discount>=0 and discount<=contracted_value),
+ discount_reason varchar(1000), due_day smallint check(due_day between 1 and 28), auto_renew boolean not null default false, contracted_by uuid,
+ notes varchar(2000), cancellation_reason varchar(1000), grace_days int not null default 5 check(grace_days>=0), created_at timestamptz not null default now(),
+ updated_at timestamptz not null default now(), created_by uuid not null, updated_by uuid, deleted_at timestamptz,
+ check(ends_on is null or ends_on>starts_on), check(discount=0 or length(trim(coalesce(discount_reason,'')))>=5),
+ check(status<>'CANCELLED' or length(trim(coalesce(cancellation_reason,'')))>=5));
+create index if not exists ix_saas_subscriptions_tenant_status on saas.subscriptions(tenant_id,status);
+create index if not exists ix_saas_subscriptions_plan on saas.subscriptions(plan_id,status);
+create table if not exists saas.subscription_events(
+ id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenancy.tenants(id), subscription_id uuid not null references saas.subscriptions(id),
+ event_type varchar(60) not null, previous_value jsonb not null default '{}', new_value jsonb not null default '{}', reason varchar(1000), created_at timestamptz not null default now(), created_by uuid not null);
+create index if not exists ix_saas_subscription_events on saas.subscription_events(tenant_id,subscription_id,created_at desc);
+
+create table if not exists saas.billing_charges(
+ id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenancy.tenants(id), subscription_id uuid not null references saas.subscriptions(id),
+ competence date not null check(competence=date_trunc('month',competence)::date), due_on date not null, amount numeric(14,2) not null check(amount>0),
+ status varchar(20) not null default 'OPEN' check(status in('OPEN','ISSUED','PAID','OVERDUE','CANCELLED')), paid_on date, payment_method varchar(80),
+ external_reference varchar(160), notes varchar(2000), cancellation_reason varchar(1000), created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+ created_by uuid not null, updated_by uuid, deleted_at timestamptz, check(status<>'PAID' or paid_on is not null),
+ check(status<>'CANCELLED' or length(trim(coalesce(cancellation_reason,'')))>=5));
+create unique index if not exists ux_saas_charge_competence on saas.billing_charges(subscription_id,competence) where status<>'CANCELLED' and deleted_at is null;
+create index if not exists ix_saas_charges_tenant_status_due on saas.billing_charges(tenant_id,status,due_on);
+create table if not exists saas.billing_charge_events(
+ id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenancy.tenants(id), charge_id uuid not null references saas.billing_charges(id),
+ event_type varchar(50) not null, details jsonb not null default '{}', reason varchar(1000), created_at timestamptz not null default now(), created_by uuid not null);
+
+create table if not exists saas.tenant_feature_flags(
+ tenant_id uuid not null references tenancy.tenants(id), feature_id uuid not null references saas.feature_flags(id), enabled boolean not null,
+ origin varchar(30) not null check(origin in('PLAN','MANUAL_OVERRIDE','TRIAL','BETA','ADMIN_BLOCK')), reason varchar(1000), expires_at timestamptz,
+ created_at timestamptz not null default now(), updated_at timestamptz not null default now(), created_by uuid not null, updated_by uuid, primary key(tenant_id,feature_id),
+ check(origin='PLAN' or length(trim(coalesce(reason,'')))>=5));
+create index if not exists ix_saas_tenant_features_feature on saas.tenant_feature_flags(feature_id,tenant_id);
+alter table saas.usage_metrics add column if not exists active_users bigint not null default 0;
+alter table saas.usage_metrics add column if not exists properties bigint not null default 0;
+alter table saas.usage_metrics add column if not exists producers bigint not null default 0;
+alter table saas.usage_metrics add column if not exists customers bigint not null default 0;
+alter table saas.usage_metrics add column if not exists suppliers bigint not null default 0;
+alter table saas.usage_metrics add column if not exists documents bigint not null default 0;
+alter table saas.usage_metrics add column if not exists integrations bigint not null default 0;
+create table if not exists saas.usage_snapshots(
+ id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenancy.tenants(id), metric_code varchar(80) not null,
+ value bigint not null check(value>=0), limit_value bigint not null check(limit_value>0), measured_at timestamptz not null default now(), created_at timestamptz not null default now(), created_by uuid);
+create index if not exists ix_saas_usage_snapshots on saas.usage_snapshots(tenant_id,metric_code,measured_at desc);
+create table if not exists saas.limit_overrides(
+ id uuid primary key default gen_random_uuid(), tenant_id uuid not null references tenancy.tenants(id), metric_code varchar(80) not null, limit_value bigint not null check(limit_value>0),
+ reason varchar(1000) not null check(length(trim(reason))>=5), starts_at timestamptz not null default now(), expires_at timestamptz not null,
+ created_at timestamptz not null default now(), updated_at timestamptz not null default now(), created_by uuid not null, updated_by uuid, deleted_at timestamptz, check(expires_at>starts_at));
+create index if not exists ix_saas_limit_overrides_active on saas.limit_overrides(tenant_id,metric_code,expires_at) where deleted_at is null;
+
+create table if not exists saas.onboarding_templates(
+ id uuid primary key default gen_random_uuid(), name varchar(120) not null, active boolean not null default true, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), created_by uuid, updated_by uuid);
+create table if not exists saas.onboarding_steps(
+ id uuid primary key default gen_random_uuid(), template_id uuid not null references saas.onboarding_templates(id), code varchar(80) not null, title varchar(160) not null,
+ description varchar(500) not null, position int not null check(position>0), required boolean not null default true, feature_code varchar(80),
+ created_at timestamptz not null default now(), updated_at timestamptz not null default now(), created_by uuid, updated_by uuid, unique(template_id,code),unique(template_id,position));
+create table if not exists saas.tenant_onboarding_progress(
+ tenant_id uuid not null references tenancy.tenants(id), step_id uuid not null references saas.onboarding_steps(id), status varchar(20) not null check(status in('PENDING','IN_PROGRESS','COMPLETED','SKIPPED')),
+ data jsonb not null default '{}', completed_at timestamptz, completed_by uuid, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), created_by uuid, updated_by uuid,
+ primary key(tenant_id,step_id), check(status<>'COMPLETED' or (completed_at is not null and completed_by is not null)));
+create index if not exists ix_saas_onboarding_pending on saas.tenant_onboarding_progress(tenant_id,status);
+create table if not exists saas.tenant_branding(
+ tenant_id uuid primary key references tenancy.tenants(id), display_name varchar(160) not null, logo_storage_key varchar(500), logo_content_type varchar(80), logo_size_bytes bigint check(logo_size_bytes between 1 and 2097152),
+ primary_color char(7) not null default '#174C3C', secondary_color char(7) not null default '#102A25', accent_color char(7) not null default '#D6A84B',
+ contact_email varchar(254), institutional_text varchar(500), public_url varchar(500), show_on_portal boolean not null default true, show_on_documents boolean not null default false,
+ created_at timestamptz not null default now(), updated_at timestamptz not null default now(), created_by uuid not null, updated_by uuid,
+ check(primary_color~'^#[0-9A-Fa-f]{6}$' and secondary_color~'^#[0-9A-Fa-f]{6}$' and accent_color~'^#[0-9A-Fa-f]{6}$'),
+ check(logo_storage_key is null or logo_content_type in('image/png','image/jpeg','image/webp','image/svg+xml')));
+
+create table if not exists saas.admin_audit_events(
+ id uuid primary key default gen_random_uuid(), tenant_id uuid references tenancy.tenants(id), actor_id uuid not null, action varchar(100) not null,
+ entity_type varchar(80) not null, entity_id uuid, reason varchar(1000), safe_details jsonb not null default '{}', correlation_id varchar(100), ip_hash char(64), created_at timestamptz not null default now());
+create index if not exists ix_saas_admin_audit_tenant on saas.admin_audit_events(tenant_id,created_at desc);
+create index if not exists ix_saas_admin_audit_action on saas.admin_audit_events(action,created_at desc);
+create table if not exists saas.permission_catalog(code varchar(100) primary key, name varchar(160) not null, description varchar(500) not null, critical boolean not null default false, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), created_by uuid, updated_by uuid);
+create table if not exists saas.role_permissions(tenant_id uuid not null references tenancy.tenants(id), role_id uuid not null, permission_code varchar(100) not null references saas.permission_catalog(code), created_at timestamptz not null default now(), created_by uuid not null, primary key(tenant_id,role_id,permission_code), foreign key(tenant_id,role_id) references identity.roles(tenant_id,id));
+
+insert into saas.feature_flags(code,name,description) values
+ ('agriculture','Producao agricola','Planejamento e operacao agricola.'),('livestock','Pecuaria','Gestao pecuaria.'),('inventory','Estoque','Estoque e armazenagem.'),
+ ('commercial','Comercial','Vendas e contratos.'),('finance','Financeiro','Gestao financeira.'),('logistics','Logistica','Entregas e transportes.'),
+ ('traceability','Rastreabilidade','Lotes e cadeia de custodia.'),('documents','Documentos','Evidencias e documentos.'),('advanced-bi','BI avancado','Indicadores executivos.'),
+ ('external-portal','Portal externo','Autosservico B2B.'),('marketplace','Marketplace','Ofertas comerciais.'),('mobile-offline','Mobile e offline','Operacao de campo offline.'),
+ ('advanced-compliance','Compliance avancado','Qualidade, auditoria e ESG.'),('export','Exportacao','Exportacao administrativa.'),('external-api','API externa','Integracao por API.'),('white-label','White label','Identidade visual por tenant.')
+on conflict(code) do update set name=excluded.name,description=excluded.description;
+insert into saas.permission_catalog(code,name,description,critical) values
+ ('saas.tenants.manage','Gerenciar tenants','Criar e editar tenants.',true),('saas.tenants.suspend','Suspender tenant','Suspender acesso operacional.',true),
+ ('saas.plans.manage','Gerenciar planos','Editar recursos e limites.',true),('saas.subscriptions.manage','Gerenciar assinaturas','Alterar plano, valor e ciclo.',true),
+ ('saas.billing.manage','Gerenciar cobrancas','Emitir, baixar manualmente e cancelar.',true),('saas.features.manage','Gerenciar features','Conceder ou bloquear recursos.',true),
+ ('saas.limits.override','Conceder override','Alterar limite temporariamente.',true),('saas.branding.manage','Gerenciar white label','Editar identidade visual.',false),
+ ('saas.onboarding.manage','Gerenciar onboarding','Reabrir e acompanhar onboarding.',false),('saas.audit.read','Acessar auditoria SaaS','Consultar eventos administrativos.',true),
+ ('saas.export','Exportar dados administrativos','Exportar dados autorizados.',true)
+on conflict(code) do update set name=excluded.name,description=excluded.description,critical=excluded.critical;
+
+do $$ declare tab text; begin foreach tab in array array['tenant_status_events','subscriptions','subscription_events','billing_charges','billing_charge_events','tenant_feature_flags','usage_metrics','usage_snapshots','limit_overrides','tenant_onboarding_progress','tenant_branding','role_permissions'] loop
+ execute format('alter table saas.%I enable row level security',tab);
+ execute format('drop policy if exists tenant_isolation on saas.%I',tab);
+ execute format('create policy tenant_isolation on saas.%I using (tenant_id=platform.current_tenant_id()) with check (tenant_id=platform.current_tenant_id())',tab);
+end loop; end $$;
+insert into platform.schema_versions(version,description,installed_at) values('2.9.0','Sprint 29 - Administracao SaaS, planos, assinaturas, onboarding e white label',now()) on conflict(version) do nothing;
 commit;
