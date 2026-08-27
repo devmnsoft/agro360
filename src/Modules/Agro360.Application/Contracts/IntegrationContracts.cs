@@ -19,8 +19,8 @@ public sealed record IntegrationDashboard(int ActiveIntegrations,int FailedInteg
 public interface IIntegrationService
 {
  Task<IReadOnlyList<IntegrationItem>> ListAsync(CancellationToken ct); Task<Guid> SaveAsync(Guid? id,IntegrationCommand command,CancellationToken ct); Task SetStatusAsync(Guid id,bool active,CancellationToken ct); Task<object> LogsAsync(Guid id,CancellationToken ct);
- Task<ApiKeyCreated> CreateApiKeyAsync(ApiKeyCommand command,CancellationToken ct); Task<object> ApiKeysAsync(CancellationToken ct);
- Task<Guid> CreateWebhookAsync(WebhookCommand command,CancellationToken ct); Task<object> WebhooksAsync(CancellationToken ct); Task<object> WebhookEventsAsync(CancellationToken ct); Task RetryWebhookAsync(Guid eventId,CancellationToken ct);
+ Task<ApiKeyCreated> CreateApiKeyAsync(ApiKeyCommand command,CancellationToken ct); Task<object> ApiKeysAsync(CancellationToken ct); Task RevokeApiKeyAsync(Guid id,CancellationToken ct);
+ Task<Guid> CreateWebhookAsync(WebhookCommand command,CancellationToken ct); Task<object> WebhooksAsync(CancellationToken ct); Task<object> WebhookEventsAsync(CancellationToken ct); Task RetryWebhookAsync(Guid eventId,CancellationToken ct); Task CancelWebhookAsync(Guid eventId,CancellationToken ct);
  Task<Guid> CreateImportAsync(ImportCommand command,CancellationToken ct); Task<object> ImportsAsync(CancellationToken ct); Task<object> ValidateImportAsync(Guid id,CancellationToken ct); Task ConfirmImportAsync(Guid id,CancellationToken ct); Task<byte[]> ExportAsync(string entity,CancellationToken ct);
  Task<Guid> AddFiscalDocumentAsync(FiscalDocumentCommand command,CancellationToken ct); Task<object> FiscalDocumentsAsync(CancellationToken ct);
  Task<(Guid Id,string Token)> AddDeviceAsync(DeviceCommand command,CancellationToken ct); Task<object> DevicesAsync(CancellationToken ct); Task<Guid> AddReadingAsync(ReadingCommand command,CancellationToken ct);

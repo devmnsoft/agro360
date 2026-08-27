@@ -29,3 +29,6 @@ Implementação persistente de requisitos configuráveis, especificações versi
 ## Primitivas SaaS Sprint 29
 
 Cards de plano usam hierarquia de preco, beneficios e CTA unico; status e beta usam badge textual, nunca somente cor. Uso combina valor, limite e barra com `aria-valuenow`. Timelines apresentam ator/data/motivo. Wizards conservam progresso, foco e resumo de erros. Dialogos criticos exigem motivo visivel. Tabelas viram cards em 360 px e todos os estados possuem loading, vazio e erro acionavel. Paletas white label precisam manter contraste WCAG AA.
+
+## Central de integrações
+Use hero calmo, cards responsivos, badges sem depender só de cor, timelines de tentativas e empty states explicativos. Tabelas viram cards no mobile; loading usa `aria-busy`, feedback usa `aria-live` e modais preservam foco/teclado. Nunca renderize segredo, XML ou payload sensível em cards.

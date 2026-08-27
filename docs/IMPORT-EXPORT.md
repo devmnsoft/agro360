@@ -1,0 +1,2 @@
+# Importação e exportação
+Envie CSV UTF-8, escolha a entidade e faça o mapeamento por código, documento, nome ou chave de negócio — nunca por GUID digitado. O preview registra cada linha, obrigatórios, duplicidade natural e erros; apenas válidas seguem para confirmação. Jobs grandes expõem progresso e erros podem ser exportados em CSV. Exportações CSV preservam cabeçalhos mesmo vazias, respeitam tenant/permissão e são auditadas. XLSX/PDF só são habilitados quando biblioteca/infraestrutura real estiver instalada.

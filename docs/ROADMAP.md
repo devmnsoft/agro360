@@ -148,3 +148,6 @@ Implementação persistente de requisitos configuráveis, especificações versi
 ### Sprint 29 — concluida
 
 Fundacao comercial SaaS persistente e auditavel. Proxima evolucao: integrar gateway contratado e storage de objetos homologado, sem simulacao de sucesso.
+
+## Sprint 30 entregue
+Central de integrações, contrato de API externa, webhooks com tentativas limitadas, jobs de import/export e fundação fiscal estão disponíveis. Próxima etapa real: homologar providers fiscais/SEFAZ e armazenamento criptografado específico de cada implantação antes de habilitar transmissão.

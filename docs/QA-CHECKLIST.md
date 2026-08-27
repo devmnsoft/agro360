@@ -95,3 +95,12 @@ Implementação persistente de requisitos configuráveis, especificações versi
 - [ ] Onboarding incompleto nao conclui; logo/tamanho/cor invalidos sao rejeitados.
 - [ ] Busca, dropdown, CSV, dashboard e auditoria nunca retornam tenant diferente.
 - [ ] Validar 360, 768 e 1440 px, teclado, foco, contraste, loading e estado vazio.
+
+## Sprint 30
+- [ ] Validar RLS com dois tenants e permissões de XML/exportação.
+- [ ] Confirmar que chave aparece uma vez, hash é persistido e revogação retorna 401.
+- [ ] Confirmar escopo insuficiente (403) e rate limit (429).
+- [ ] Testar webhook HTTPS/HMAC, falha real, backoff, retry e cancelamento.
+- [ ] Importar CSV válido/inválido/duplicado e exportar arquivo vazio com cabeçalho.
+- [ ] Importar XML fiscal, bloquear duplicidade e bloquear envio sem provider/certificado.
+- [ ] Homologar 320/768/1024/1440 px, teclado, loading e estados vazios.

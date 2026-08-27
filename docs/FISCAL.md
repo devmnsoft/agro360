@@ -1,0 +1,4 @@
+# Fiscal Agro360
+O módulo registra/importa NF-e, NFC-e, NFS-e, CT-e, MDF-e, nota de produtor e documentos de transporte/exportação. XML é limitado a 10 MB, deve ser Base64 e possuir raiz fiscal reconhecida; hash e chave de acesso são únicos por tenant. Download exige `fiscal.xml.download`.
+
+Rascunho de pedido valida participante/documento/endereço, itens, unidade fiscal, valores, NCM/CFOP informados, transportador e lote. Pendências bloqueantes impedem fila. `AUTHORIZED` somente pode resultar de protocolo/resposta real persistida. Sem provider `ACTIVE`, certificado referenciado e ambiente homologado, o envio permanece bloqueado e registra tentativa — nunca autorização. Cancelamento exige motivo e gera alerta; estoque/financeiro só recebem evento por contrato de serviço e regra habilitada do tenant.

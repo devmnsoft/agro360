@@ -66,3 +66,6 @@ Implementação persistente de requisitos configuráveis, especificações versi
 - **RF-SAAS-03:** bloqueio administrativo prevalece sobre plano; limite esgotado impede somente novos registros.
 - **RF-SAAS-04:** onboarding exige etapas obrigatorias; white label depende do plano e valida logo/cores.
 - **RNF-SAAS-01:** toda consulta tenant deve usar contexto, SQL parametrizado e RLS; nenhum seletor solicita GUID.
+
+## Requisitos Sprint 30
+Todo registro operacional possui `tenant_id`, RLS e auditoria. Chaves são persistidas somente por SHA-256; segredos/certificados são referências a cofre. Autorização fiscal exige resposta verificável de provider. Importações validam linhas e chaves naturais; exportações exigem permissão e geram auditoria.
