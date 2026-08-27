@@ -266,3 +266,9 @@ Após configurar o PostgreSQL externo em `ConnectionStrings__Agro360`, execute a
 ## Sprint 26 — Agro360 Campo
 
 Acesse `/field` para a operação mobile/PWA. Manejos, ocorrências, check-ins e evidências podem entrar na fila IndexedDB e são materializados no PostgreSQL por sincronização idempotente. Consulte [operações mobile](docs/MOBILE-FIELD-OPERATIONS.md) e [sincronização offline](docs/OFFLINE-SYNC.md).
+
+## Portal Agro360 (Sprint 27)
+
+O portal B2B externo está em `/Portal/Login`, separado da administração, com convite seguro, primeiro acesso, dashboard por perfil, comunicados, solicitações e Marketplace com cotações persistidas. Consulte [Portal Externo](docs/PORTAL-EXTERNO.md) e [Marketplace B2B](docs/MARKETPLACE-B2B.md).
+
+Para rodar sem Docker, instale o SDK definido em `global.json`, configure `ConnectionStrings__Agro360` com uma connection string PostgreSQL externa, execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` e use `./scripts/run-local.sh`. Nenhum PostgreSQL embutido é iniciado.

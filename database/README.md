@@ -41,3 +41,13 @@ As tabelas do schema `documents` e os 17 tipos documentais estão incluídos no 
 ## Sprint 26
 
 O script completo cria `field_operations`, amplia as tabelas `mobile` e instala constraints, índices e RLS da operação de campo. Execute o arquivo integral contra PostgreSQL externo com `psql "$ConnectionStrings__Postgres" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`; ele é idempotente para a evolução documentada.
+
+## Instalação Sprint 27 em PostgreSQL externo
+
+Defina uma connection string externa (por exemplo, `export ConnectionStrings__Agro360='Host=db.exemplo;Port=5432;Database=agro360;Username=agro360;Password=***;SSL Mode=Require'`) e execute:
+
+```bash
+psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
+```
+
+O bloco `2.7.0` cria o schema `portal`, chaves, checks, índices e RLS, além dos nove perfis e termo inicial para tenants existentes. Execute o script completo em banco vazio; para tenants criados depois, o onboarding deve provisionar perfis/termo antes de emitir convites.

@@ -45,3 +45,13 @@ Entregue onboarding assistido, cinco templates agro, módulos por tenant, checkl
 ## RF-MOB-26 — Agro360 Campo
 
 O sistema deve permitir registrar manejo, ocorrência, check-in e evidência em experiência responsiva, enfileirar operações no IndexedDB durante indisponibilidade de rede e sincronizá-las com idempotência, validação server-side, tenant e usuário autenticado. Check-in GPS exige coordenadas válidas; check-in manual exige justificativa.
+
+## Requisitos funcionais Sprint 27
+
+- **RF-PORTAL-01:** autenticar usuário externo sem conceder permissões administrativas.
+- **RF-PORTAL-02:** convidar com token aleatório armazenado apenas como hash, validade, revogação, termo e outbox real.
+- **RF-PORTAL-03:** restringir consultas a tenant, usuário e entidade vinculada.
+- **RF-PORTAL-04:** persistir solicitações, eventos, comunicados e leituras.
+- **RF-MKT-01:** listar somente disponibilidade positiva e certificação autorizada.
+- **RF-MKT-02:** rejeitar cotação vazia, quantidade inválida ou indisponível e não simular pagamento/pedido.
+- **RNF-PORTAL-01:** validar formulários no navegador e no domínio, usar SQL parametrizado, RLS e trilha auditável.

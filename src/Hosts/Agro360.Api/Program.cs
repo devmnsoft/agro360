@@ -61,6 +61,7 @@ builder.Services.AddAuthorization(options =>
             .RequireAuthenticatedUser()
             .RequireClaim("permission", permission));
     }
+    options.AddPolicy(Permissions.PortalAccess, policy => policy.RequireAuthenticatedUser().RequireClaim("permission", Permissions.PortalAccess));
 });
 
 builder.Services.AddRateLimiter(options =>

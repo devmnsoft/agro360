@@ -31,3 +31,7 @@ Entregues a Central de Relatórios com CSV real, fundação multi-tenant para fi
 ## Sprint 26 — Operação Mobile de Campo
 
 Agro360 Campo mobile-first, PWA instalável, outbox IndexedDB, sincronização auditável/idempotente, ocorrências, check-ins geográficos, evidências e evolução de checklists de campo.
+
+## Sprint 27 — Portal Externo e Marketplace B2B
+
+Entregues: identidade externa isolada, convites com token hasheado e outbox, aceite de termos, dashboard responsivo por perfil, comunicados lidos, central de solicitações, catálogo com disponibilidade real, cotação transacional, schema com RLS e design premium mobile-first. Integrações de pedido/pagamento permanecem deliberadamente desabilitadas até homologação de providers reais.
