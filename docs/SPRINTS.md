@@ -35,3 +35,6 @@ Agro360 Campo mobile-first, PWA instalável, outbox IndexedDB, sincronização a
 ## Sprint 27 — Portal Externo e Marketplace B2B
 
 Entregues: identidade externa isolada, convites com token hasheado e outbox, aceite de termos, dashboard responsivo por perfil, comunicados lidos, central de solicitações, catálogo com disponibilidade real, cotação transacional, schema com RLS e design premium mobile-first. Integrações de pedido/pagamento permanecem deliberadamente desabilitadas até homologação de providers reais.
+
+## Sprint 28 — Qualidade e Compliance
+Implementação persistente de requisitos configuráveis, especificações versionadas, inspeções, decisão auditável de lotes, não conformidades/CAPA, auditorias, beneficiamento e prontidão de exportação. Homologar regras e UX conforme [Qualidade e Compliance](QUALITY-COMPLIANCE.md) e [Prontidão para exportação](EXPORT-READINESS.md).

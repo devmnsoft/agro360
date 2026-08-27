@@ -81,3 +81,6 @@ Entregue onboarding assistido, cinco templates agro, módulos por tenant, checkl
 - [ ] Validar login, aceite, catálogo, cotação e solicitação em 360, 768 e 1440 px, teclado e leitor de tela.
 - [ ] Confirmar estado vazio sem dados e ausência de botões sem ação.
 - [ ] Validar upload por extensão, MIME, tamanho e autorização no módulo documental antes da homologação.
+
+## Sprint 28 — Qualidade e Compliance
+Implementação persistente de requisitos configuráveis, especificações versionadas, inspeções, decisão auditável de lotes, não conformidades/CAPA, auditorias, beneficiamento e prontidão de exportação. Homologar regras e UX conforme [Qualidade e Compliance](QUALITY-COMPLIANCE.md) e [Prontidão para exportação](EXPORT-READINESS.md).

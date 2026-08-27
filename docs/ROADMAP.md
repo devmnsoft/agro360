@@ -141,3 +141,6 @@ Base operacional do Agro360 Campo, sincronização offline, geolocalização, ev
 ### Sprint 27 — concluída
 
 Portal externo B2B, controle de acesso por vínculo, Marketplace Agro360, cotações, solicitações, comunicados e fundações para homologação de fornecedores e atualizações logísticas. Próxima evolução: conectar conversão de cotação e recuperação de senha aos providers comerciais e de e-mail homologados.
+
+## Sprint 28 — Qualidade e Compliance
+Implementação persistente de requisitos configuráveis, especificações versionadas, inspeções, decisão auditável de lotes, não conformidades/CAPA, auditorias, beneficiamento e prontidão de exportação. Homologar regras e UX conforme [Qualidade e Compliance](QUALITY-COMPLIANCE.md) e [Prontidão para exportação](EXPORT-READINESS.md).

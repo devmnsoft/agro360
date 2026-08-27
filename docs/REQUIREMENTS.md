@@ -55,3 +55,6 @@ O sistema deve permitir registrar manejo, ocorrência, check-in e evidência em 
 - **RF-MKT-01:** listar somente disponibilidade positiva e certificação autorizada.
 - **RF-MKT-02:** rejeitar cotação vazia, quantidade inválida ou indisponível e não simular pagamento/pedido.
 - **RNF-PORTAL-01:** validar formulários no navegador e no domínio, usar SQL parametrizado, RLS e trilha auditável.
+
+## Sprint 28 — Qualidade e Compliance
+Implementação persistente de requisitos configuráveis, especificações versionadas, inspeções, decisão auditável de lotes, não conformidades/CAPA, auditorias, beneficiamento e prontidão de exportação. Homologar regras e UX conforme [Qualidade e Compliance](QUALITY-COMPLIANCE.md) e [Prontidão para exportação](EXPORT-READINESS.md).
