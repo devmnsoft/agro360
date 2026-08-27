@@ -23,3 +23,7 @@ Concluída: armazenamento local configurável, SHA-256, versionamento, vínculos
 ## Sprint 24 — Workflows, alertas, tarefas e notificações
 
 Entregues central operacional persistente, regras determinísticas sem IA, deduplicação de alertas, aprovações com segregação, notificações por usuário, agenda, dashboard de saúde e outbox honesta. A migration `022_sprint24_work_management.sql` e o SQL completo suportam instalação externa sem Docker.
+
+## Sprint 25 — BI executivo, mapas, relatórios e design unificado
+
+Entregues a Central de Relatórios com CSV real, fundação multi-tenant para filtros/widgets/exportações, modelo geográfico de locais/áreas/rotas, preferências pessoais, auditoria de UI e primitives visuais responsivos. O PDF permanece pendente até haver infraestrutura real.

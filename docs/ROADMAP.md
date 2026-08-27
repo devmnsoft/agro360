@@ -128,3 +128,8 @@ Biblioteca documental agro integrada, evidências auditáveis, dossiês e certif
 - Operação 360: tarefas, alertas, regras, workflows, notificações, agenda e dashboard.
 - Outbox multicanal preparada, sem declarar envio quando provider não existe.
 - Próxima evolução: providers externos contratados e avaliadores adicionais por evento de domínio.
+
+### Sprint 25 — concluída
+- Inteligência Agro360 e catálogo de relatórios reais por módulo.
+- Persistência governada de BI, mapas operacionais, preferências e auditoria de UI.
+- Central de Relatórios CSV e design system responsivo. PDF segue no backlog por depender de infraestrutura real.

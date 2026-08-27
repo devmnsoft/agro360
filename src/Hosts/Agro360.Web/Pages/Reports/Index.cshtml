@@ -1,0 +1,12 @@
+@page
+@model Agro360.Web.Pages.Reports.IndexModel
+@{ ViewData["Title"] = "Relatórios"; }
+@section Head { <link rel="stylesheet" href="~/css/intelligence.css" asp-append-version="true" /> }
+<section class="page intelligence-page">
+ <header class="page-heading"><div><span class="eyebrow">Governança e decisão</span><h1>Relatórios</h1><p>Relatórios gerenciais consultados no PostgreSQL do tenant, com filtros auditáveis e exportação CSV.</p></div><a class="secondary-button" href="/Intelligence">Abrir Inteligência Agro360</a></header>
+ <form class="filter-bar" id="report-filters"><label>Período inicial<input type="date" name="from" required /></label><label>Período final<input type="date" name="to" required /></label><label>Categoria<select name="category"><option value="">Todas</option></select></label><label>Relatório<select name="report" required><option value="">Selecione pelo nome</option></select></label><button class="primary-button" type="submit">Gerar relatório</button><button class="secondary-button" type="button" id="export-report" disabled>Exportar CSV</button></form>
+ <div id="report-status" class="form-message" role="status" aria-live="polite">Selecione um relatório. Os resultados respeitam as permissões e o tenant da sessão.</div>
+ <section class="panel"><div class="panel-heading"><div><span class="eyebrow">Resultado real</span><h2 id="report-title">Nenhum relatório gerado</h2></div></div><div class="table-wrap"><table><thead id="report-head"></thead><tbody id="report-body"><tr><td class="empty-state">Use os filtros para consultar. Um resultado vazio será exibido sem dados artificiais.</td></tr></tbody></table></div></section>
+ <aside class="panel"><strong>PDF</strong><p>A exportação PDF permanece pendente até existir infraestrutura real de renderização e armazenamento. Nenhum arquivo simulado é oferecido.</p></aside>
+</section>
+@section Scripts { <script src="~/js/reports.js" asp-append-version="true" defer></script> }
