@@ -27,3 +27,7 @@ Entregues central operacional persistente, regras determinísticas sem IA, dedup
 ## Sprint 25 — BI executivo, mapas, relatórios e design unificado
 
 Entregues a Central de Relatórios com CSV real, fundação multi-tenant para filtros/widgets/exportações, modelo geográfico de locais/áreas/rotas, preferências pessoais, auditoria de UI e primitives visuais responsivos. O PDF permanece pendente até haver infraestrutura real.
+
+## Sprint 26 — Operação Mobile de Campo
+
+Agro360 Campo mobile-first, PWA instalável, outbox IndexedDB, sincronização auditável/idempotente, ocorrências, check-ins geográficos, evidências e evolução de checklists de campo.

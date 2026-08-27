@@ -1,4 +1,5 @@
 using Agro360.Application.Contracts;
+using Agro360.Application;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -12,6 +13,8 @@ public sealed class MobileController(IMobileService service) : ControllerBase
     [HttpGet("sync/status")] public Task<dynamic> Status([FromQuery] Guid deviceId,CancellationToken ct)=>service.SyncStatusAsync(deviceId,ct);
     [HttpGet("dashboard")] public Task<dynamic> Dashboard(CancellationToken ct)=>service.DashboardAsync(ct);
     [HttpPost("quick-records/{area:regex(^(agriculture|livestock|inventory|logistics)$)}")] public async Task<IActionResult> Quick(string area,QuickRecordCommand command,CancellationToken ct)=>Created("api/mobile/dashboard",new{id=await service.QuickRecordAsync(area,command,ct)});
+    [HttpPost("occurrences"), Authorize(Policy=Permissions.MobileWrite)] public async Task<IActionResult> Occurrence(FieldOccurrenceCommand command,CancellationToken ct)=>Created("api/mobile/dashboard",new{id=await service.AddOccurrenceAsync(command,ct)});
+    [HttpPost("checkins"), Authorize(Policy=Permissions.MobileWrite)] public async Task<IActionResult> Checkin(FieldCheckinCommand command,CancellationToken ct)=>Created("api/mobile/dashboard",new{id=await service.AddCheckinAsync(command,ct)});
 }
 
 [ApiController, Route("api/evidences"), Authorize]

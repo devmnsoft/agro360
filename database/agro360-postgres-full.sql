@@ -1434,6 +1434,110 @@ insert into platform.schema_versions(version,description,installed_at) values('1
 
 commit;
 
+-- Sprint 26 - Agro360 Campo, fila offline auditavel e checklists inteligentes
+begin;
+create schema if not exists field_operations;
+
+create table if not exists field_operations.occurrences(
+ id uuid primary key, tenant_id uuid not null references tenancy.tenants(id), user_id uuid not null,
+ occurrence_type varchar(40) not null, severity varchar(12) not null check(severity in('LOW','MEDIUM','HIGH','CRITICAL')),
+ title varchar(160) not null, description varchar(2000) not null, entity_type varchar(40), entity_id uuid,
+ latitude numeric(10,7), longitude numeric(10,7), occurred_at timestamptz not null,
+ status varchar(20) not null default 'OPEN' check(status in('OPEN','IN_PROGRESS','RESOLVED','CANCELLED')),
+ created_at timestamptz not null default now(), updated_at timestamptz not null default now(), created_by uuid not null, updated_by uuid not null, deleted_at timestamptz,
+ unique(tenant_id,id), check((latitude is null)=(longitude is null)), check(latitude is null or latitude between -90 and 90), check(longitude is null or longitude between -180 and 180),
+ foreign key(tenant_id,user_id) references identity.users(tenant_id,id));
+
+create table if not exists field_operations.checkins(
+ id uuid primary key, tenant_id uuid not null references tenancy.tenants(id), user_id uuid not null,
+ operation_type varchar(40) not null, entity_type varchar(40), entity_id uuid, occurred_at timestamptz not null,
+ latitude numeric(10,7), longitude numeric(10,7), accuracy numeric(10,2), location_source varchar(12) not null check(location_source in('GPS','MANUAL')),
+ manual_reason varchar(500), observation varchar(1000), evidence_id uuid,
+ status varchar(20) not null default 'REGISTERED' check(status in('REGISTERED','VALIDATED','REJECTED','CANCELLED')),
+ created_at timestamptz not null default now(), updated_at timestamptz not null default now(), created_by uuid not null, updated_by uuid not null, deleted_at timestamptz,
+ unique(tenant_id,id), check(latitude is null or latitude between -90 and 90), check(longitude is null or longitude between -180 and 180),
+ check((latitude is null)=(longitude is null)), check(accuracy is null or accuracy>=0), check(location_source<>'MANUAL' or length(trim(coalesce(manual_reason,'')))>=5),
+ foreign key(tenant_id,user_id) references identity.users(tenant_id,id));
+
+create table if not exists field_operations.visit_logs(
+ id uuid primary key, tenant_id uuid not null references tenancy.tenants(id), user_id uuid not null, visit_type varchar(40) not null,
+ entity_type varchar(40) not null, entity_id uuid not null, started_at timestamptz not null, ended_at timestamptz, notes varchar(2000), outcome varchar(500),
+ created_at timestamptz not null default now(), updated_at timestamptz not null default now(), created_by uuid not null, updated_by uuid not null, deleted_at timestamptz,
+ unique(tenant_id,id), check(ended_at is null or ended_at>=started_at), foreign key(tenant_id,user_id) references identity.users(tenant_id,id));
+
+create table if not exists field_operations.media_uploads(
+ id uuid primary key, tenant_id uuid not null references tenancy.tenants(id), user_id uuid not null, entity_type varchar(40) not null, entity_id uuid not null,
+ original_file_name varchar(240) not null, storage_key varchar(500) not null, content_type varchar(100) not null, size_bytes bigint not null check(size_bytes between 1 and 10485760),
+ sha256 char(64) not null, description varchar(1000), tags text[] not null default '{}', latitude numeric(10,7), longitude numeric(10,7), captured_at timestamptz not null,
+ status varchar(20) not null check(status in('PENDING','UPLOADED','FAILED','REJECTED')),
+ created_at timestamptz not null default now(), updated_at timestamptz not null default now(), created_by uuid not null, updated_by uuid not null, deleted_at timestamptz,
+ unique(tenant_id,id), unique(tenant_id,sha256,entity_type,entity_id), check((latitude is null)=(longitude is null)), check(latitude is null or latitude between -90 and 90), check(longitude is null or longitude between -180 and 180),
+ foreign key(tenant_id,user_id) references identity.users(tenant_id,id));
+
+alter table mobile.devices add column if not exists created_at timestamptz not null default now();
+alter table mobile.devices add column if not exists updated_at timestamptz not null default now();
+alter table mobile.devices add column if not exists created_by uuid;
+alter table mobile.devices add column if not exists updated_by uuid;
+alter table mobile.devices add column if not exists deleted_at timestamptz;
+alter table mobile.offline_commands add column if not exists attempts int not null default 0 check(attempts>=0);
+alter table mobile.offline_commands add column if not exists error_message varchar(1000);
+alter table mobile.offline_commands add column if not exists received_at timestamptz;
+alter table mobile.offline_commands add column if not exists updated_at timestamptz not null default now();
+alter table mobile.offline_commands drop constraint if exists offline_commands_status_check;
+alter table mobile.offline_commands add constraint offline_commands_status_check check(status in('PENDING','SYNCING','SYNCED','FAILED','CONFLICT','CANCELLED'));
+create unique index if not exists ux_mobile_idempotency_operation on mobile.offline_commands(tenant_id,command_type,idempotency_key);
+
+create table if not exists mobile.operation_logs(
+ id uuid primary key, tenant_id uuid not null references tenancy.tenants(id), user_id uuid not null, command_id uuid,
+ operation_type varchar(80) not null, status varchar(20) not null check(status in('PENDING','SYNCING','SYNCED','FAILED','CONFLICT','CANCELLED')),
+ safe_details jsonb not null default '{}', occurred_at timestamptz not null default now(), created_at timestamptz not null default now(), created_by uuid not null,
+ foreign key(tenant_id,user_id) references identity.users(tenant_id,id));
+create table if not exists mobile.user_preferences(
+ id uuid primary key, tenant_id uuid not null references tenancy.tenants(id), user_id uuid not null, profile varchar(40) not null,
+ quick_actions text[] not null default '{}', preferences jsonb not null default '{}', created_at timestamptz not null default now(), updated_at timestamptz not null default now(), created_by uuid not null, updated_by uuid not null, deleted_at timestamptz,
+ unique(tenant_id,id), unique(tenant_id,user_id), foreign key(tenant_id,user_id) references identity.users(tenant_id,id));
+create table if not exists mobile.pwa_install_events(
+ id uuid primary key, tenant_id uuid not null references tenancy.tenants(id), user_id uuid not null, device_id uuid,
+ event_type varchar(20) not null check(event_type in('PROMPTED','ACCEPTED','DISMISSED','INSTALLED')), platform varchar(80), occurred_at timestamptz not null default now(),
+ created_at timestamptz not null default now(), created_by uuid not null, foreign key(tenant_id,user_id) references identity.users(tenant_id,id));
+
+alter table mobile.checklist_templates add column if not exists checklist_type varchar(40) not null default 'PROPERTY_INSPECTION';
+alter table mobile.checklist_templates add column if not exists updated_at timestamptz not null default now();
+alter table mobile.checklist_templates add column if not exists updated_by uuid;
+alter table mobile.checklist_templates add column if not exists deleted_at timestamptz;
+alter table mobile.checklist_questions add column if not exists evidence_required boolean not null default false;
+alter table mobile.checklist_questions add column if not exists weight numeric(8,2) not null default 1 check(weight>=0);
+alter table mobile.checklist_questions add column if not exists criticality varchar(12) not null default 'MEDIUM' check(criticality in('LOW','MEDIUM','HIGH','CRITICAL'));
+alter table mobile.checklist_runs add column if not exists rejection_reason varchar(1000);
+alter table mobile.checklist_runs add column if not exists updated_at timestamptz not null default now();
+alter table mobile.checklist_runs add column if not exists updated_by uuid;
+alter table mobile.checklist_answers add column if not exists updated_at timestamptz not null default now();
+
+create index if not exists ix_field_occurrences_queue on field_operations.occurrences(tenant_id,user_id,status,occurred_at desc) where deleted_at is null;
+create index if not exists ix_field_occurrences_type on field_operations.occurrences(tenant_id,occurrence_type,severity,created_at desc) where deleted_at is null;
+create index if not exists ix_field_checkins_queue on field_operations.checkins(tenant_id,user_id,status,occurred_at desc) where deleted_at is null;
+create index if not exists ix_field_checkins_operation on field_operations.checkins(tenant_id,operation_type,occurred_at desc) where deleted_at is null;
+create index if not exists ix_field_visits_user_date on field_operations.visit_logs(tenant_id,user_id,started_at desc) where deleted_at is null;
+create index if not exists ix_field_media_status on field_operations.media_uploads(tenant_id,user_id,status,created_at desc) where deleted_at is null;
+create index if not exists ix_mobile_sync_status on mobile.offline_commands(tenant_id,user_id,status,created_offline_at desc);
+create index if not exists ix_mobile_sync_type on mobile.offline_commands(tenant_id,command_type,created_offline_at desc);
+create index if not exists ix_mobile_operation_logs on mobile.operation_logs(tenant_id,user_id,status,occurred_at desc);
+
+do $$ declare item record; begin
+ for item in select * from (values ('field_operations','occurrences'),('field_operations','checkins'),('field_operations','visit_logs'),('field_operations','media_uploads'),('mobile','operation_logs'),('mobile','user_preferences'),('mobile','pwa_install_events')) as scoped(schema_name,table_name) loop
+  execute format('alter table %I.%I enable row level security',item.schema_name,item.table_name);
+  execute format('drop policy if exists tenant_isolation on %I.%I',item.schema_name,item.table_name);
+  execute format('create policy tenant_isolation on %I.%I using (tenant_id=platform.current_tenant_id()) with check (tenant_id=platform.current_tenant_id())',item.schema_name,item.table_name);
+ end loop;
+end $$;
+insert into identity.permissions(code,module,description) values
+ ('mobile.read','Agro360 Campo','Consultar painel e operações de campo.'),('mobile.write','Agro360 Campo','Registrar ocorrências, check-ins, visitas e evidências.'),
+ ('mobile.sync','Agro360 Campo','Sincronizar e reenviar operações offline.'),('mobile.conflicts.resolve','Agro360 Campo','Resolver conflitos de sincronização.'),
+ ('field-checklists.manage','Checklists de Campo','Criar e administrar modelos de checklist.')
+on conflict(code) do update set module=excluded.module,description=excluded.description;
+insert into platform.schema_versions(version,description,installed_at) values('2.3.0','Sprint 26 - Agro360 Campo, Offline Sync e Checklists',now()) on conflict(version) do nothing;
+commit;
+
 -- Sprint 14 - governança SaaS B2B (instalação autocontida)
 create schema if not exists saas;
 create schema if not exists audit;

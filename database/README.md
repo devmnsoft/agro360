@@ -37,3 +37,7 @@ As tabelas do schema `documents` e os 17 tipos documentais estão incluídos no 
 ## Sprint 25
 
 `agro360-postgres-full.sql` inclui BI, relatórios, mapas, preferências e auditoria visual. Em PostgreSQL externo, configure `ConnectionStrings__Agro360`, execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` e valide com `scripts/validate-full-sql.sh`. A migration incremental é `database/migrations/023_sprint25_bi_reports_maps_design.sql`. Docker não é necessário.
+
+## Sprint 26
+
+O script completo cria `field_operations`, amplia as tabelas `mobile` e instala constraints, índices e RLS da operação de campo. Execute o arquivo integral contra PostgreSQL externo com `psql "$ConnectionStrings__Postgres" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`; ele é idempotente para a evolução documentada.

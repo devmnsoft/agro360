@@ -262,3 +262,7 @@ A rota `/Work` oferece tarefas, alertas determinísticos, regras configuráveis,
 ## Inteligência Agro360 e Relatórios
 
 Após configurar o PostgreSQL externo em `ConnectionStrings__Agro360`, execute a aplicação sem Docker com `scripts/run-local.sh`. Acesse `/Intelligence` para indicadores e gráficos reais, `/Maps` para geovisualização operacional e `/Reports` para relatórios filtrados e CSV. Consulte `docs/BI-REPORTS-MAPS.md` e `docs/DESIGN-SYSTEM.md` para uso e homologação responsiva.
+
+## Sprint 26 — Agro360 Campo
+
+Acesse `/field` para a operação mobile/PWA. Manejos, ocorrências, check-ins e evidências podem entrar na fila IndexedDB e são materializados no PostgreSQL por sincronização idempotente. Consulte [operações mobile](docs/MOBILE-FIELD-OPERATIONS.md) e [sincronização offline](docs/OFFLINE-SYNC.md).

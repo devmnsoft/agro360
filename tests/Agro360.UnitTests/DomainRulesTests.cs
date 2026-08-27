@@ -175,3 +175,18 @@ public sealed class MobileRulesTests
     [Fact] public void Negative_quick_record_is_rejected()=>Assert.Throws<Agro360.SharedKernel.DomainException>(()=>Agro360.Domain.Mobile.MobileRules.ValidateQuickRecord("WEIGHING",-1,DateTimeOffset.UtcNow));
     [Fact] public void Empty_entity_is_rejected()=>Assert.Throws<Agro360.SharedKernel.DomainException>(()=>Agro360.Domain.Mobile.MobileRules.ValidateEntity("animal",Guid.Empty));
 }
+
+public sealed class Sprint26MobileRulesTests
+{
+    [Fact]
+    public void Manual_checkin_requires_reason() => Assert.Throws<Agro360.SharedKernel.DomainException>(() =>
+        Agro360.Domain.Mobile.MobileRules.ValidateManualLocation("MANUAL", null, null, null, null));
+
+    [Fact]
+    public void Gps_checkin_rejects_missing_coordinates() => Assert.Throws<Agro360.SharedKernel.DomainException>(() =>
+        Agro360.Domain.Mobile.MobileRules.ValidateManualLocation("GPS", null, null, null, null));
+
+    [Fact]
+    public void Manual_checkin_with_reason_is_valid() =>
+        Agro360.Domain.Mobile.MobileRules.ValidateManualLocation("MANUAL", "Área sem sinal de GPS", null, null, null);
+}

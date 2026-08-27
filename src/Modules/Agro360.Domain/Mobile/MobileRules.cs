@@ -27,4 +27,12 @@ public static class MobileRules
         if (quantity < 0) throw new DomainException("Quantidade não pode ser negativa.", "mobile.negative_quantity");
         if (occurredAt == default || occurredAt > DateTimeOffset.UtcNow.AddMinutes(10)) throw new DomainException("Data do registro é inválida.");
     }
+
+    public static void ValidateManualLocation(string source, string? reason, decimal? latitude, decimal? longitude, decimal? accuracy)
+    {
+        ValidateLocation(latitude, longitude, accuracy);
+        if (source is not ("GPS" or "MANUAL")) throw new DomainException("Origem da localização inválida.", "mobile.invalid_location_source");
+        if (source == "GPS" && latitude is null) throw new DomainException("O GPS não retornou coordenadas. Use o modo manual com justificativa.", "mobile.gps_required");
+        if (source == "MANUAL" && string.IsNullOrWhiteSpace(reason)) throw new DomainException("Justifique o check-in sem GPS.", "mobile.manual_reason_required");
+    }
 }
