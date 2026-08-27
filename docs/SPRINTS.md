@@ -38,3 +38,7 @@ Entregues: identidade externa isolada, convites com token hasheado e outbox, ace
 
 ## Sprint 28 — Qualidade e Compliance
 Implementação persistente de requisitos configuráveis, especificações versionadas, inspeções, decisão auditável de lotes, não conformidades/CAPA, auditorias, beneficiamento e prontidão de exportação. Homologar regras e UX conforme [Qualidade e Compliance](QUALITY-COMPLIANCE.md) e [Prontidão para exportação](EXPORT-READINESS.md).
+
+## Sprint 29 — Administracao SaaS
+
+Governanca multiempresa, planos, assinaturas, cobrancas internas manuais, feature flags, limites, overrides, onboarding, white label, RBAC e auditoria administrativa. As invariantes possuem regras de dominio e instalacao PostgreSQL completa; pagamento automatico permanece fora do produto ate integracao real.

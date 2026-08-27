@@ -58,3 +58,11 @@ O sistema deve permitir registrar manejo, ocorrência, check-in e evidência em 
 
 ## Sprint 28 — Qualidade e Compliance
 Implementação persistente de requisitos configuráveis, especificações versionadas, inspeções, decisão auditável de lotes, não conformidades/CAPA, auditorias, beneficiamento e prontidão de exportação. Homologar regras e UX conforme [Qualidade e Compliance](QUALITY-COMPLIANCE.md) e [Prontidão para exportação](EXPORT-READINESS.md).
+
+## Requisitos Sprint 29
+
+- **RF-SAAS-01:** somente Super Admin gerencia tenants, planos, assinaturas, cobrancas, flags e overrides.
+- **RF-SAAS-02:** mudancas criticas exigem motivo e auditoria; baixa paga exige data e permissao.
+- **RF-SAAS-03:** bloqueio administrativo prevalece sobre plano; limite esgotado impede somente novos registros.
+- **RF-SAAS-04:** onboarding exige etapas obrigatorias; white label depende do plano e valida logo/cores.
+- **RNF-SAAS-01:** toda consulta tenant deve usar contexto, SQL parametrizado e RLS; nenhum seletor solicita GUID.

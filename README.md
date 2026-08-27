@@ -276,3 +276,7 @@ Para rodar sem Docker, instale o SDK definido em `global.json`, configure `Conne
 ## Sprint 28 — Qualidade e Compliance
 
 A Central de Qualidade adiciona requisitos configuráveis, especificações versionadas, inspeções, status/holds de lote, não conformidades, CAPA, auditorias, compliance de beneficiamento e prontidão de exportação. Consulte `docs/QUALITY-COMPLIANCE.md`. O PostgreSQL continua externo e configurado por `ConnectionStrings__Agro360`; aplique `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` sem Docker.
+
+## Sprint 29 — Produto SaaS B2B
+
+A governanca comercial passa a incluir tenants auditados, catalogo de planos/features/limites, assinaturas e cobrancas internas sem gateway ficticio, overrides temporarios, onboarding e white label. Consulte [Administracao SaaS](docs/SAAS-ADMIN.md), [Planos e assinaturas](docs/PLANS-SUBSCRIPTIONS.md), [Feature flags](docs/FEATURE-FLAGS.md) e [Onboarding/white label](docs/ONBOARDING-WHITELABEL.md). Para executar sem Docker, configure PostgreSQL externo em `ConnectionStrings__Agro360`, aplique `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` e execute `./scripts/run-local.sh`.

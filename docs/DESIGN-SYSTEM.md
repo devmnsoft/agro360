@@ -25,3 +25,7 @@ O Portal usa `portal.css`, identidade clara e comercial, largura máxima de 1240
 
 ## Sprint 28 — Qualidade e Compliance
 Implementação persistente de requisitos configuráveis, especificações versionadas, inspeções, decisão auditável de lotes, não conformidades/CAPA, auditorias, beneficiamento e prontidão de exportação. Homologar regras e UX conforme [Qualidade e Compliance](QUALITY-COMPLIANCE.md) e [Prontidão para exportação](EXPORT-READINESS.md).
+
+## Primitivas SaaS Sprint 29
+
+Cards de plano usam hierarquia de preco, beneficios e CTA unico; status e beta usam badge textual, nunca somente cor. Uso combina valor, limite e barra com `aria-valuenow`. Timelines apresentam ator/data/motivo. Wizards conservam progresso, foco e resumo de erros. Dialogos criticos exigem motivo visivel. Tabelas viram cards em 360 px e todos os estados possuem loading, vazio e erro acionavel. Paletas white label precisam manter contraste WCAG AA.

@@ -55,3 +55,7 @@ O bloco `2.7.0` cria o schema `portal`, chaves, checks, índices e RLS, além do
 ## Sprint 28
 
 O bloco `2.8.0` do instalador completo cria o schema `quality`, 25 tabelas multi-tenant, constraints de estados/limites, índices operacionais e RLS. Execute em PostgreSQL externo com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. Limites agroindustriais e referências normativas são cadastrados pelo tenant; o script não inventa normas.
+
+## Sprint 29 — SaaS
+
+O bloco `2.9.0` cria o catalogo SaaS de features/limites/permissoes e tabelas de status, assinatura, cobranca, consumo, override, onboarding, branding e auditoria, com FKs, checks, indices e RLS tenant-scoped. Em PostgreSQL externo execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. Nao ha banco embutido nem dependencia obrigatoria de Docker.
