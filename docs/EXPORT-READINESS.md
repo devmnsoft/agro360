@@ -1,0 +1,3 @@
+# Prontidão para exportação
+
+O checklist é gerado com dados persistidos e requisitos ativos do tenant. Cada item obrigatório registra `PENDING`, `COMPLIANT`, `NON_COMPLIANT` ou `NOT_APPLICABLE`; somente um conjunto sem pendências pode ficar `READY`. Lote bloqueado, em quarentena ou reprovado, inspeção crítica reprovada, não conformidade crítica aberta, documento obrigatório ausente ou rastreabilidade insuficiente bloqueiam a emissão. Revogação e exceções exigem permissão e motivo auditável. Integrações ainda indisponíveis devem implementar contrato interno, permanecendo como pendência explícita — nunca como aprovação simulada.

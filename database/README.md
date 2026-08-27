@@ -51,3 +51,7 @@ psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgr
 ```
 
 O bloco `2.7.0` cria o schema `portal`, chaves, checks, índices e RLS, além dos nove perfis e termo inicial para tenants existentes. Execute o script completo em banco vazio; para tenants criados depois, o onboarding deve provisionar perfis/termo antes de emitir convites.
+
+## Sprint 28
+
+O bloco `2.8.0` do instalador completo cria o schema `quality`, 25 tabelas multi-tenant, constraints de estados/limites, índices operacionais e RLS. Execute em PostgreSQL externo com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. Limites agroindustriais e referências normativas são cadastrados pelo tenant; o script não inventa normas.
