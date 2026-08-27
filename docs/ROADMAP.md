@@ -137,3 +137,7 @@ Biblioteca documental agro integrada, evidências auditáveis, dossiês e certif
 ### Sprint 26 — concluída no código
 
 Base operacional do Agro360 Campo, sincronização offline, geolocalização, evidências e esquema de checklists. A assinatura biométrica e mapas offline permanecem fora do escopo por exigirem infraestrutura/dispositivo específicos.
+
+### Sprint 27 — concluída
+
+Portal externo B2B, controle de acesso por vínculo, Marketplace Agro360, cotações, solicitações, comunicados e fundações para homologação de fornecedores e atualizações logísticas. Próxima evolução: conectar conversão de cotação e recuperação de senha aos providers comerciais e de e-mail homologados.

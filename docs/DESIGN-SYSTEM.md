@@ -18,3 +18,7 @@ Homologue em 360, 768, 1280 e 1920 px; temas claro/escuro; teclado; leitor de te
 ## Padrão mobile de campo
 
 Alvos de toque têm no mínimo 44 px; formulários passam a uma coluna em até 650 px; a navegação inferior permanece acessível em celular. Estados offline usam rótulos textuais além de cor (`Pendente`/`Falhou`) e tabelas operacionais devem virar cards sem scroll horizontal.
+
+## Superfície externa premium
+
+O Portal usa `portal.css`, identidade clara e comercial, largura máxima de 1240 px, cards de 16 px, foco visível e contraste sóbrio. Em até 800 px, grids viram cards em uma coluna e a navegação passa ao rodapé. Estados vazios explicam a próxima ação; skeletons são discretos; diálogos mantêm título, fechar, validação e feedback. Evite IDs técnicos, jargão administrativo, ações sem endpoint e disponibilidade fictícia.

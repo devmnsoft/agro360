@@ -70,3 +70,14 @@ Entregue onboarding assistido, cinco templates agro, módulos por tenant, checkl
 - [ ] Testar latitude fora da faixa e arquivo/MIME/tamanho inválidos.
 - [ ] Confirmar que service worker não cacheia APIs/páginas privadas.
 - [ ] Confirmar isolamento entre tenants e permissão `mobile.write`.
+
+## Sprint 27 — Portal externo
+
+- [ ] Aceitar convite válido e rejeitar expirado, revogado e já usado.
+- [ ] Confirmar que token/senha não aparecem em banco aberto, logs ou payload da outbox.
+- [ ] Confirmar que JWT externo recebe apenas `portal.access` e obtém 403 nas APIs internas.
+- [ ] Repetir dashboard, solicitações, cotações e comunicados com dois tenants.
+- [ ] Rejeitar cotação vazia, quantidade zero e quantidade indisponível.
+- [ ] Validar login, aceite, catálogo, cotação e solicitação em 360, 768 e 1440 px, teclado e leitor de tela.
+- [ ] Confirmar estado vazio sem dados e ausência de botões sem ação.
+- [ ] Validar upload por extensão, MIME, tamanho e autorização no módulo documental antes da homologação.
