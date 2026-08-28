@@ -286,3 +286,9 @@ A governanca comercial passa a incluir tenants auditados, catalogo de planos/fea
 ## Sprint 30 — Integrações e Fiscal
 
 A central `/Integrations` reúne conectores, aplicações externas, chaves hasheadas, webhooks, importações CSV, exportações e documentos fiscais por tenant. Configure PostgreSQL externo em `ConnectionStrings__Agro360`, aplique `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` e execute `./scripts/run-local.sh`; Docker não é necessário. Emissão fiscal permanece bloqueada até provider oficial, credencial e certificado serem homologados. Consulte `docs/INTEGRATIONS.md`, `docs/API-EXTERNA.md`, `docs/WEBHOOKS.md`, `docs/IMPORT-EXPORT.md` e `docs/FISCAL.md`.
+
+## Sprint 33 — Atendimento e Suporte
+
+A rota `/support` oferece chamados persistentes, SLA, Central de Ajuda, implantação assistida, treinamento, feedback, backlog interno e release notes. Execute sem Docker com PostgreSQL externo definindo `ConnectionStrings__Agro360`, aplique `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` e inicie API/Web conforme [guia sem Docker](docs/getting-started-without-docker.md). Detalhes operacionais estão em [Suporte e Customer Success](docs/SUPPORT-CUSTOMER-SUCCESS.md).
+
+A Sprint 33 não admite artefatos binários novos; documentação, exports e evidências desta entrega são texto/Markdown/CSV.

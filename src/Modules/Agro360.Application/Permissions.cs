@@ -77,6 +77,9 @@ public static class Permissions
     public const string FieldChecklistsManage = "field-checklists.manage";
     public const string PortalManage = "portal.manage";
     public const string PortalAccess = "portal.access";
+    public const string SupportRead = "support.read";
+    public const string SupportWrite = "support.write";
+    public const string SupportManage = "support.manage";
 
     public static IReadOnlyCollection<string> Administrator =>
     [
@@ -100,6 +103,7 @@ public static class Permissions
         IntegrationsRead, IntegrationsWrite, MapsRead, MapsWrite, CooperativeRead, CooperativeWrite, CooperativeApprove,
         RuralHrRead, RuralHrWrite, RuralHrSafety, DeploymentRead, DeploymentWrite,
         DocumentsRead, DocumentsUpload, DocumentsDownload, EvidencesValidate, DossiersCreate, DossiersApprove, CertificatesIssue, CertificatesRevoke,
-        WorkRead, WorkWrite, WorkApprove, MobileRead, MobileWrite, MobileSync, MobileResolveConflicts, FieldChecklistsManage, PortalManage
+        WorkRead, WorkWrite, WorkApprove, MobileRead, MobileWrite, MobileSync, MobileResolveConflicts, FieldChecklistsManage, PortalManage,
+        SupportRead, SupportWrite, SupportManage
     ];
 }

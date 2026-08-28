@@ -65,6 +65,7 @@ public static class DependencyInjection
         services.AddScoped<IDocumentService, DocumentService>();
         services.AddScoped<IWorkManagementService, WorkManagementService>();
         services.AddScoped<IPortalService, PortalService>();
+        services.AddScoped<ISupportCustomerSuccessService, SupportCustomerSuccessService>();
         return services;
     }
 }

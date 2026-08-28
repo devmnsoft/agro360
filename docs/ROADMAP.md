@@ -155,3 +155,8 @@ Fundacao comercial SaaS persistente e auditavel. Proxima evolucao: integrar gate
 
 ## Sprint 30 entregue
 Central de integrações, contrato de API externa, webhooks com tentativas limitadas, jobs de import/export e fundação fiscal estão disponíveis. Próxima etapa real: homologar providers fiscais/SEFAZ e armazenamento criptografado específico de cada implantação antes de habilitar transmissão.
+
+### Sprint 33 — concluída
+
+- Central de atendimento, SLA, ajuda, implantação, treinamento, feedback, backlog e release notes.
+- Próxima evolução real: agendamento do verificador de SLA no Worker, calendário de horário útil/feriados e providers externos certificados via outbox.

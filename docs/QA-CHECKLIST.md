@@ -112,3 +112,15 @@ Implementação persistente de requisitos configuráveis, especificações versi
 - [ ] Importar CSV válido/inválido/duplicado e exportar arquivo vazio com cabeçalho.
 - [ ] Importar XML fiscal, bloquear duplicidade e bloquear envio sem provider/certificado.
 - [ ] Homologar 320/768/1024/1440 px, teclado, loading e estados vazios.
+
+## Sprint 33 — atendimento e Customer Success
+
+- [ ] Validar isolamento de chamados, artigos, feedback e dashboards entre dois tenants.
+- [ ] Validar cancelamento/reabertura sem motivo e resolução sem resposta.
+- [ ] Validar SLA Start/Enterprise, vencimento e alerta crítico.
+- [ ] Validar rascunho/arquivo de artigo e avaliação única.
+- [ ] Validar bloqueio do Go-live antes da homologação.
+- [ ] Validar trilha vencida, nota 1–5 e feedback 0–10.
+- [ ] Validar backlog invisível ao usuário externo e leitura de release.
+- [ ] Testar 360, 768, 1024 e 1440 px, teclado e leitor de tela.
+- [ ] Confirmar que nenhum campo solicita GUID e nenhum arquivo binário foi criado.

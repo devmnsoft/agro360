@@ -49,3 +49,7 @@ Governanca multiempresa, planos, assinaturas, cobrancas internas manuais, featur
 
 ## Sprint 30 — Integrações, API externa e Fiscal
 Fundação produtiva multi-tenant para conectores e filas idempotentes, aplicações/API keys com hash e revogação, webhooks auditáveis, importação assistida, exportação CSV e documentos/rascunhos fiscais. Nenhuma autorização ou transmissão fiscal é simulada: provider oficial, certificado e ambiente homologado são pré-condições reais.
+
+## Sprint 33 — Suporte, implantação e Customer Success
+
+Entregue o vertical slice de atendimento multi-tenant: chamados e timeline, transições validadas, política e cálculo de SLA, conhecimento publicável, nove fases de implantação, adoção, NPS/feedback, conversão em backlog, comunicados com leitura e dashboard real resiliente a conjuntos vazios. A interface responsiva consolida as operações sem entrada manual de chaves técnicas.
