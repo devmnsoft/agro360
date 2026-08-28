@@ -66,3 +66,14 @@ O bloco `2.9.0` cria o catalogo SaaS de features/limites/permissoes e tabelas de
 
 ## Sprint 30
 A migration `migrations/030_sprint30_integrations_fiscal.sql` também integra o instalador completo. Em PostgreSQL externo execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. Ela cria schemas/tabelas, FKs compostas, checks, índices e RLS multi-tenant para integrações, API, webhooks, jobs e fiscal. Segredos são apenas referências; faça backup do cofre separadamente.
+
+## Sprint 33
+
+O script integral cria o schema `support`, suas 26 tabelas, FKs, constraints, índices, RLS e permissões. Em PostgreSQL externo:
+
+```bash
+export ConnectionStrings__Agro360='Host=db.exemplo;Port=5432;Database=agro360;Username=agro360;Password=...;SSL Mode=Require'
+psql "host=db.exemplo port=5432 dbname=agro360 user=agro360 sslmode=require" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
+```
+
+Use secret manager para senha; nunca versionar connection string real. O sistema e a instalação não dependem de Docker. Não gere dump, PDF ou outro binário como parte desta sprint.

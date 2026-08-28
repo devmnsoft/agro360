@@ -76,3 +76,14 @@ Implementação persistente de requisitos configuráveis, especificações versi
 
 ## Requisitos Sprint 30
 Todo registro operacional possui `tenant_id`, RLS e auditoria. Chaves são persistidas somente por SHA-256; segredos/certificados são referências a cofre. Autorização fiscal exige resposta verificável de provider. Importações validam linhas e chaves naturais; exportações exigem permissão e geram auditoria.
+
+## Atendimento e Customer Success (Sprint 33)
+
+- **SUP-01:** todo acesso multiempresa deve filtrar `tenant_id` e respeitar RLS.
+- **SUP-02:** cancelamento/reabertura exige motivo; resolução exige resposta; fechamento registra autor/data.
+- **SUP-03:** SLA positivo é calculado na abertura e violações são observáveis.
+- **SUP-04:** conteúdo rascunho/arquivado não é público; avaliação é única por usuário/artigo.
+- **SUP-05:** Go-live requer homologação e toda fase requer checklist ou evidência.
+- **SUP-06:** notas de treinamento são 1–5 e NPS/feedback 0–10.
+- **SUP-07:** backlog é interno; releases respeitam público e persistem leitura.
+- **SUP-08:** nenhuma tela solicita GUID; seleções relacionais exibem nomes autorizados.

@@ -36,3 +36,7 @@ Cards de plano usam hierarquia de preco, beneficios e CTA unico; status e beta u
 
 ## Central de integrações
 Use hero calmo, cards responsivos, badges sem depender só de cor, timelines de tentativas e empty states explicativos. Tabelas viram cards no mobile; loading usa `aria-busy`, feedback usa `aria-live` e modais preservam foco/teclado. Nunca renderize segredo, XML ou payload sensível em cards.
+
+## Atendimento premium (Sprint 33)
+
+Cards com bordas discretas, fundo verde mineral, badges sem depender apenas de cor, timelines cronológicas e estados vazios humanizados formam o padrão da central. Formulários usam labels visíveis, foco nativo, mensagens em `role=alert`, grids que colapsam a uma coluna abaixo de 760 px e loading textual discreto. Ações destrutivas pedem motivo em modal; relacionamentos usam seletores pelo nome.
