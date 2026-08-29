@@ -147,3 +147,10 @@ Implementação persistente de requisitos configuráveis, especificações versi
 ## Sprint 36 — Financeiro e Controladoria
 
 Central financeira real com plano de contas, centros de custo, títulos, baixas e conciliação manual autorizada, orçamento versionado, fluxo de caixa, DRE, rentabilidade, CSV, auditoria, RLS e design executivo responsivo. PostgreSQL é externo por connection string e o full install inclui o schema 3.6.0. Homologar estados vazios, validações, permissões e isolamento por tenant. Nenhum arquivo binário deve ser gerado.
+
+## Sprint 37 — Compras e Suprimentos
+- [ ] Executar restore, build e testes; aplicar o full SQL em PostgreSQL externo vazio.
+- [ ] Validar dois tenants e permissões de solicitar, homologar, aprovar, receber e exportar.
+- [ ] Validar estados vazios, filtros, CSV, responsividade e ausência de entrada manual de GUID.
+- [ ] Exercitar bloqueios, menor preço, recebimento parcial, lote, validade e excesso.
+- [ ] Confirmar que integrações nunca aparecem concluídas sem confirmação real.

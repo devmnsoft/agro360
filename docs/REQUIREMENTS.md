@@ -107,3 +107,9 @@ Todo registro operacional possui `tenant_id`, RLS e auditoria. Chaves são persi
 ## Sprint 36 — Financeiro e Controladoria
 
 Central financeira real com plano de contas, centros de custo, títulos, baixas e conciliação manual autorizada, orçamento versionado, fluxo de caixa, DRE, rentabilidade, CSV, auditoria, RLS e design executivo responsivo. PostgreSQL é externo por connection string e o full install inclui o schema 3.6.0. Homologar estados vazios, validações, permissões e isolamento por tenant. Nenhum arquivo binário deve ser gerado.
+
+## Sprint 37 — Procurement
+- PRC-01: isolar cadastros, dropdowns, relatórios e comandos por tenant com RLS e Dapper parametrizado.
+- PRC-02: impedir fornecedor indisponível, item inativo, valores não positivos e decisões sem motivo obrigatório.
+- PRC-03: calcular pedidos no backend; exigir lote, validade e justificativa de excesso.
+- PRC-04: integrações só concluem após confirmação real.

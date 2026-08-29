@@ -306,3 +306,6 @@ O sistema roda sem Docker: configure `ConnectionStrings__Agro360` com a connecti
 ## Sprint 36 — Financeiro e Controladoria
 
 A central `/Finance` entrega caixa, DRE, orçamento e rentabilidade sobre dados reais, com isolamento por tenant e permissões segregadas. Consulte [o guia financeiro](docs/FINANCEIRO-CONTROLADORIA.md). Rode sem Docker configurando `ConnectionStrings__Agro360` para PostgreSQL externo, aplique `database/agro360-postgres-full.sql` com `psql` e execute `dotnet run --project src/Hosts/Agro360.Api` e `dotnet run --project src/Hosts/Agro360.Web`. Não gere arquivos binários para esta sprint.
+
+## Sprint 37 — Compras e Suprimentos
+A central `/Procurement` cobre fornecedores, homologação, catálogo, requisições, pedidos, recebimento e CSV com PostgreSQL multi-tenant. Consulte [o guia operacional](docs/PROCUREMENT-SUPPLIES.md). O sistema roda sem Docker por `ConnectionStrings__Agro360`.

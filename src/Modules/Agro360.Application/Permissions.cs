@@ -27,6 +27,10 @@ public static class Permissions
     public const string PurchasingRead = "purchasing.read";
     public const string PurchasingWrite = "purchasing.write";
     public const string PurchasingApprove = "purchasing.approve";
+    public const string PurchasingRequest = "purchasing.request";
+    public const string PurchasingReceive = "purchasing.receive";
+    public const string PurchasingHomologate = "purchasing.homologate";
+    public const string PurchasingExport = "purchasing.export";
     public const string FleetRead = "fleet.read";
     public const string FleetWrite = "fleet.write";
     public const string FleetMeterOverride = "fleet.meter.override";
@@ -103,7 +107,7 @@ public static class Permissions
         LivestockSell,
         CommercialRead, CommercialWrite, CommercialApproveOrder, CommercialOverrideBlock, CommercialManageCommission, CommercialApproveSplit,
         FinanceRead, FinanceWrite, FinanceSettle, FinanceReconcile, FinanceExport, FinanceBudgetApprove,
-        PurchasingRead, PurchasingWrite, PurchasingApprove, FleetRead, FleetWrite, FleetMeterOverride, MaintenanceRead, MaintenanceWrite,
+        PurchasingRead, PurchasingWrite, PurchasingApprove, PurchasingRequest, PurchasingReceive, PurchasingHomologate, PurchasingExport, FleetRead, FleetWrite, FleetMeterOverride, MaintenanceRead, MaintenanceWrite,
         DashboardRead, StorageRead, StorageWrite, LogisticsRead, LogisticsWrite,
         TraceabilityRead, TraceabilityWrite, LedgerValidate, RegionalLogisticsRead,
         RegionalLogisticsWrite, SalesNetworkRead, SalesNetworkWrite, SalesNetworkApprove,

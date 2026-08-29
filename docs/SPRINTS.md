@@ -64,3 +64,6 @@ Entregue: modelo multi-tenant completo, regras de ativos/medidores/OS/abastecime
 ## Sprint 36 — Financeiro e Controladoria
 
 Central financeira real com plano de contas, centros de custo, títulos, baixas e conciliação manual autorizada, orçamento versionado, fluxo de caixa, DRE, rentabilidade, CSV, auditoria, RLS e design executivo responsivo. PostgreSQL é externo por connection string e o full install inclui o schema 3.6.0. Homologar estados vazios, validações, permissões e isolamento por tenant. Nenhum arquivo binário deve ser gerado.
+
+## Sprint 37 — Compras e Suprimentos
+Fornecedores e homologação, catálogo, requisições, cotações comparáveis, alçadas, pedidos, recebimento, divergências, contratos de integração, CSV, RLS e central premium responsiva. Integrações permanecem pendentes até confirmação transacional real.
