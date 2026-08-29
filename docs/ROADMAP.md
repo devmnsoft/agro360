@@ -174,3 +174,6 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 
 ## Sprint 37 — concluída
 Compras e suprimentos multi-tenant com cadeia auditável da requisição ao recebimento. Próximos incrementos: providers homologados para comunicação externa e PDF, sem simulação.
+
+## Sprint 38 — concluída
+PCP e beneficiamento agroindustrial disponíveis do insumo ao lote acabado. Próxima evolução real: conectores contábeis específicos por ERP e telemetria de equipamentos, sem estimativas quando a origem não estiver configurada.

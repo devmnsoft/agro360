@@ -154,3 +154,13 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 - [ ] Validar estados vazios, filtros, CSV, responsividade e ausência de entrada manual de GUID.
 - [ ] Exercitar bloqueios, menor preço, recebimento parcial, lote, validade e excesso.
 - [ ] Confirmar que integrações nunca aparecem concluídas sem confirmação real.
+
+## Sprint 38 — Produção Agroindustrial
+- [ ] Criar, versionar e aprovar formulação; confirmar que versão aprovada não é editada.
+- [ ] Criar ordem e negar liberação sem item; testar reserva insuficiente e permissões.
+- [ ] Apontar etapa comum/crítica, temperatura, perda/refugo e evidência sem quantidade negativa.
+- [ ] Consumir saldo real; negar excesso, vencido sem justificativa e bloqueado.
+- [ ] Gerar lote, reprovar/bloquear/liberar qualidade e impedir encerramento pendente.
+- [ ] Registrar parada com motivo; validar alerta/workflow configurado.
+- [ ] Conferir rendimento, custo, dashboard vazio, CSV e rastreabilidade completa.
+- [ ] Repetir chamadas com tenant distinto e confirmar ausência/404, RLS e permissões.
