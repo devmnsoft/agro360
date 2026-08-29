@@ -309,3 +309,6 @@ A central `/Finance` entrega caixa, DRE, orçamento e rentabilidade sobre dados 
 
 ## Sprint 37 — Compras e Suprimentos
 A central `/Procurement` cobre fornecedores, homologação, catálogo, requisições, pedidos, recebimento e CSV com PostgreSQL multi-tenant. Consulte [o guia operacional](docs/PROCUREMENT-SUPPLIES.md). O sistema roda sem Docker por `ConnectionStrings__Agro360`.
+
+## Sprint 38 — Produção Agroindustrial
+O Agro360 inclui PCP agroindustrial com formulações versionadas, ordens, beneficiamento, apontamentos, consumo transacional, rendimento, perdas, qualidade, paradas, custos e rastreabilidade por lote. A execução local não exige Docker: configure o PostgreSQL externo em `ConnectionStrings__Agro360`, aplique `database/agro360-postgres-full.sql` e inicie API/Web com `dotnet run`. Consulte [o guia industrial](docs/INDUSTRIAL-PRODUCTION.md).

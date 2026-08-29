@@ -67,3 +67,6 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 
 ## Sprint 37 — Compras e Suprimentos
 Fornecedores e homologação, catálogo, requisições, cotações comparáveis, alçadas, pedidos, recebimento, divergências, contratos de integração, CSV, RLS e central premium responsiva. Integrações permanecem pendentes até confirmação transacional real.
+
+## Sprint 38 — PCP Agroindustrial
+Entregues estrutura industrial, formulações imutáveis/versionadas, ordens com máquina de estados e histórico, execução, consumo transacional, perdas, lotes, qualidade, paradas, custos, rastreabilidade, dashboard real, CSV, permissões, RLS e testes de regras/arquitetura.

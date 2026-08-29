@@ -113,3 +113,12 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 - PRC-02: impedir fornecedor indisponível, item inativo, valores não positivos e decisões sem motivo obrigatório.
 - PRC-03: calcular pedidos no backend; exigir lote, validade e justificativa de excesso.
 - PRC-04: integrações só concluem após confirmação real.
+
+## Requisitos industriais (Sprint 38)
+- **IND-01:** formulação possui versão, insumos positivos, aprovação e imutabilidade após aprovação.
+- **IND-02:** ordem exige produto, formulação, quantidade, unidade, linha, lote e responsável; transições são autorizadas e auditadas.
+- **IND-03:** início respeita reserva; conclusão respeita apontamento, etapa crítica e qualidade.
+- **IND-04:** consumo é atômico, por tenant/lote/saldo/validade/qualidade.
+- **IND-05:** perdas, refugos, descarte, reprocesso, parada e inspeção exigem seus motivos/evidências aplicáveis.
+- **IND-06:** lote acabado preserva genealogia de origem/destino e bloqueio impede uso comercial/logístico.
+- **IND-07:** dashboard e CSV usam somente registros persistidos e funcionam sem registros.

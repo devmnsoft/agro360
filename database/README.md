@@ -97,3 +97,6 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 
 ## Sprint 37
 `agro360-postgres-full.sql` inclui o schema `procurement` 3.7.0. Execute em PostgreSQL externo com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. Não há host, usuário, senha ou `\i`. A migration incremental é `migrations/037_sprint37_procurement.sql`.
+
+## Schema `production` (Sprint 38)
+O arquivo único `agro360-postgres-full.sql` cria o schema industrial, constraints, FKs, índices, permissões e RLS, sem `\i` ou credenciais. Em PostgreSQL externo execute: `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. O bloco é idempotente para estrutura e registra a versão `3.8.0`; não inclui dados fictícios.

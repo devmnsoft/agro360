@@ -1,0 +1,18 @@
+namespace Agro360.Application.Contracts;
+public sealed record ProductionQuery(string? Search=null,string? Status=null,Guid? LineId=null,DateOnly? From=null,DateOnly? To=null,int Page=1,int PageSize=50);
+public sealed record RecipeItemCommand(Guid MaterialId,decimal Quantity,string Unit,decimal LossPercent);
+public sealed record RecipeCommand(string Code,string Name,Guid FinishedProductId,decimal BaseQuantity,string Unit,decimal ExpectedYield,decimal ExpectedLoss,IReadOnlyList<RecipeItemCommand> Items,string Instructions,Guid? TechnicalResponsibleId,DateOnly? ValidFrom,DateOnly? ValidUntil);
+public sealed record ProductionOrderCommand(Guid PlantId,Guid LineId,Guid FinishedProductId,Guid RecipeVersionId,string PlannedBatch,decimal PlannedQuantity,string Unit,DateTimeOffset PlannedAt,string Priority,Guid ResponsibleId,string DemandOrigin,Guid? SalesOrderId,bool RequiresReservation,string? Notes);
+public sealed record ProductionRecordCommand(Guid OrderId,Guid StepId,Guid OperatorId,Guid LineId,DateTimeOffset StartedAt,DateTimeOffset EndedAt,decimal Produced,decimal Consumed,decimal Loss,decimal Scrap,string? LossReason,string? Notes,string? InputBatch,string OutputBatch,decimal? Temperature,string? EvidenceReference);
+public sealed record MaterialConsumptionCommand(Guid OrderId,Guid MaterialId,Guid StockLotId,decimal Quantity,string Unit,bool ExpiredOverride,string? Justification);
+public sealed record QualityDecisionCommand(Guid OrderId,Guid BatchId,Guid? StepId,string Result,string? Reason,string? ReportReference,string? EvidenceReference);
+public sealed record StoppageCommand(Guid LineId,Guid? OrderId,Guid? EquipmentId,string Type,string Reason,bool Critical,DateTimeOffset StartedAt,DateTimeOffset EndedAt,Guid ResponsibleId,decimal EstimatedImpact,string? CorrectiveAction);
+public interface IIndustrialProductionService
+{
+ Task<dynamic> DashboardAsync(CancellationToken ct); Task<IReadOnlyList<dynamic>> LookupsAsync(string type,CancellationToken ct); Task<IReadOnlyList<dynamic>> RecipesAsync(ProductionQuery q,CancellationToken ct); Task<Guid> CreateRecipeAsync(RecipeCommand x,CancellationToken ct); Task<Guid> VersionRecipeAsync(Guid recipeId,RecipeCommand x,CancellationToken ct); Task ApproveRecipeAsync(Guid versionId,CancellationToken ct);
+ Task<IReadOnlyList<dynamic>> OrdersAsync(ProductionQuery q,CancellationToken ct); Task<dynamic> OrderAsync(Guid id,CancellationToken ct); Task<Guid> CreateOrderAsync(ProductionOrderCommand x,CancellationToken ct); Task ChangeStatusAsync(Guid id,string status,string? reason,CancellationToken ct); Task<Guid> RecordAsync(ProductionRecordCommand x,CancellationToken ct); Task<Guid> ConsumeAsync(MaterialConsumptionCommand x,CancellationToken ct); Task<Guid> QualityAsync(QualityDecisionCommand x,CancellationToken ct); Task<Guid> StopAsync(StoppageCommand x,CancellationToken ct); Task<IReadOnlyList<dynamic>> TraceAsync(string batch,CancellationToken ct); Task<byte[]> ExportAsync(string report,ProductionQuery q,CancellationToken ct);
+}
+public interface IProductionStockGateway { Task ReserveAsync(Guid orderId,CancellationToken ct); Task ConsumeAsync(Guid consumptionId,CancellationToken ct); Task CreateFinishedBatchAsync(Guid batchId,CancellationToken ct); }
+public interface IProductionAlertGateway { Task CriticalStepAsync(Guid orderId,Guid stepId,CancellationToken ct); Task ExcessLossAsync(Guid orderId,decimal quantity,CancellationToken ct); }
+public interface IProductionFinanceGateway { Task RegisterIndustrialCostAsync(Guid orderId,CancellationToken ct); }
+public interface IProductionWorkflowGateway { Task CriticalStoppageAsync(Guid stoppageId,CancellationToken ct); }
