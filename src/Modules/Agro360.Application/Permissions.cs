@@ -80,6 +80,9 @@ public static class Permissions
     public const string SupportRead = "support.read";
     public const string SupportWrite = "support.write";
     public const string SupportManage = "support.manage";
+    public const string SstRead = "sst.read";
+    public const string SstWrite = "sst.write";
+    public const string SstMedicalRead = "sst.medical.read";
 
     public static IReadOnlyCollection<string> Administrator =>
     [
@@ -104,6 +107,6 @@ public static class Permissions
         RuralHrRead, RuralHrWrite, RuralHrSafety, DeploymentRead, DeploymentWrite,
         DocumentsRead, DocumentsUpload, DocumentsDownload, EvidencesValidate, DossiersCreate, DossiersApprove, CertificatesIssue, CertificatesRevoke,
         WorkRead, WorkWrite, WorkApprove, MobileRead, MobileWrite, MobileSync, MobileResolveConflicts, FieldChecklistsManage, PortalManage,
-        SupportRead, SupportWrite, SupportManage
+        SupportRead, SupportWrite, SupportManage, SstRead, SstWrite, SstMedicalRead
     ];
 }

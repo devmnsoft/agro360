@@ -160,3 +160,6 @@ Central de integrações, contrato de API externa, webhooks com tentativas limit
 
 - Central de atendimento, SLA, ajuda, implantação, treinamento, feedback, backlog e release notes.
 - Próxima evolução real: agendamento do verificador de SLA no Worker, calendário de horário útil/feriados e providers externos certificados via outbox.
+
+### Sprint 34 — concluída: fundação SST Rural
+Dashboard, cadastros operacionais, mapa de riscos, entregas de EPI, validade de treinamentos/exames, incidentes, ações e checklists auditáveis. Próximo incremento real: adaptadores transacionais de estoque e providers externos somente mediante contrato/configuração.

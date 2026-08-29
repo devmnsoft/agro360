@@ -87,3 +87,10 @@ Todo registro operacional possui `tenant_id`, RLS e auditoria. Chaves são persi
 - **SUP-06:** notas de treinamento são 1–5 e NPS/feedback 0–10.
 - **SUP-07:** backlog é interno; releases respeitam público e persistem leitura.
 - **SUP-08:** nenhuma tela solicita GUID; seleções relacionais exibem nomes autorizados.
+
+## SST Rural (Sprint 34)
+- Isolamento por tenant e permissões `sst.read`, `sst.write` e `sst.medical.read`.
+- Risco = severidade × probabilidade; nível 16–25 é crítico e gera alerta.
+- Entrega exige trabalhador/EPI ativo, quantidade positiva e datas coerentes.
+- Incidente grave exige investigação; checklist exige respostas/evidências configuradas.
+- Exames limitam-se a controle administrativo, sem laudo clínico detalhado.

@@ -77,3 +77,6 @@ psql "host=db.exemplo port=5432 dbname=agro360 user=agro360 sslmode=require" -v 
 ```
 
 Use secret manager para senha; nunca versionar connection string real. O sistema e a instalação não dependem de Docker. Não gere dump, PDF ou outro binário como parte desta sprint.
+
+## Sprint 34 — SST Rural
+Com PostgreSQL externo acessível, execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. O script cria o schema `sst`, tabelas, constraints, índices, FKs compostas, RLS, permissões e versão `3.4.0`. Não requer Docker e não contém segredo. Faça backup antes de produção.

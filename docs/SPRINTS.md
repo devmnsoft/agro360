@@ -53,3 +53,6 @@ Fundação produtiva multi-tenant para conectores e filas idempotentes, aplicaç
 ## Sprint 33 — Suporte, implantação e Customer Success
 
 Entregue o vertical slice de atendimento multi-tenant: chamados e timeline, transições validadas, política e cálculo de SLA, conhecimento publicável, nove fases de implantação, adoção, NPS/feedback, conversão em backlog, comunicados com leitura e dashboard real resiliente a conjuntos vazios. A interface responsiva consolida as operações sem entrada manual de chaves técnicas.
+
+## Sprint 34 — SST Rural
+Central tenant-safe para trabalhadores, riscos calculados, EPI, treinamentos, exames administrativos mínimos, incidentes, investigação, ações, checklists, alertas, CSV, auditoria e design responsivo. Integrações externas permanecem explicitamente não configuradas sem provider real.
