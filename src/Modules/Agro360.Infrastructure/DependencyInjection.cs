@@ -68,6 +68,7 @@ public static class DependencyInjection
         services.AddScoped<ISupportCustomerSuccessService, SupportCustomerSuccessService>();
         services.AddScoped<ISstService, SstService>();
         services.AddScoped<IFleetService, FleetService>();
+        services.AddScoped<IProcurementService, ProcurementService>();
         return services;
     }
 }
