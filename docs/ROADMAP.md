@@ -167,3 +167,7 @@ Dashboard, cadastros operacionais, mapa de riscos, entregas de EPI, validade de 
 ## Sprint 35 — concluída
 
 Central de Frota e Máquinas, disponibilidade, preventivas/corretivas, ordens de serviço, combustível, componentes, paradas e dimensões de custos. Próxima evolução real: habilitar providers contratados de telemetria/posto/fabricante; nenhum provider fictício foi incluído.
+
+## Sprint 36 — Financeiro e Controladoria
+
+Central financeira real com plano de contas, centros de custo, títulos, baixas e conciliação manual autorizada, orçamento versionado, fluxo de caixa, DRE, rentabilidade, CSV, auditoria, RLS e design executivo responsivo. PostgreSQL é externo por connection string e o full install inclui o schema 3.6.0. Homologar estados vazios, validações, permissões e isolamento por tenant. Nenhum arquivo binário deve ser gerado.

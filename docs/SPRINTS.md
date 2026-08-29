@@ -60,3 +60,7 @@ Central tenant-safe para trabalhadores, riscos calculados, EPI, treinamentos, ex
 ## Sprint 35 — Frota, máquinas e custo operacional
 
 Entregue: modelo multi-tenant completo, regras de ativos/medidores/OS/abastecimento/paradas, API Dapper, dashboard e central web premium, CSV, auditoria, permissões e documentação. Integrações externas permanecem explicitamente não configuradas.
+
+## Sprint 36 — Financeiro e Controladoria
+
+Central financeira real com plano de contas, centros de custo, títulos, baixas e conciliação manual autorizada, orçamento versionado, fluxo de caixa, DRE, rentabilidade, CSV, auditoria, RLS e design executivo responsivo. PostgreSQL é externo por connection string e o full install inclui o schema 3.6.0. Homologar estados vazios, validações, permissões e isolamento por tenant. Nenhum arquivo binário deve ser gerado.
