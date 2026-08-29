@@ -163,3 +163,7 @@ Central de integrações, contrato de API externa, webhooks com tentativas limit
 
 ### Sprint 34 — concluída: fundação SST Rural
 Dashboard, cadastros operacionais, mapa de riscos, entregas de EPI, validade de treinamentos/exames, incidentes, ações e checklists auditáveis. Próximo incremento real: adaptadores transacionais de estoque e providers externos somente mediante contrato/configuração.
+
+## Sprint 35 — concluída
+
+Central de Frota e Máquinas, disponibilidade, preventivas/corretivas, ordens de serviço, combustível, componentes, paradas e dimensões de custos. Próxima evolução real: habilitar providers contratados de telemetria/posto/fabricante; nenhum provider fictício foi incluído.

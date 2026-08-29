@@ -43,3 +43,7 @@ Cards com bordas discretas, fundo verde mineral, badges sem depender apenas de c
 
 ## SST Rural
 Cards escuros calmos com realce verde representam conformidade; vermelho é reservado a criticidade real. Badges exibem nível e validade, tabelas têm overflow responsivo, formulários usam seletores por nome e estados vazios são explicativos. Validar teclado, contraste, 320/768/1440 px, loading discreto e mensagens em `role=status`.
+
+## Padrão premium de Frota
+
+A central de frota usa hero executivo, navegação horizontal acessível, cards densos, anel de disponibilidade, badges semânticos, tabela responsiva, modal nativo, estados de loading/vazio/erro e ações adaptadas a mobile. Verde operacional indica normalidade; alertas críticos usam contraste vermelho sem depender apenas da cor. Formulários preservam foco, labels e validação nativa/backend.

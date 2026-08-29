@@ -132,3 +132,14 @@ Implementação persistente de requisitos configuráveis, especificações versi
 - [ ] Homologar `sst.medical.read`, logs sem saúde/documentos pessoais e download autorizado.
 - [ ] Homologar vazio/loading/erro, teclado, contraste e 320/768/1440 px.
 - [ ] Confirmar que nenhum arquivo binário foi produzido.
+
+## Sprint 35 — homologação Frota
+
+- [ ] Criar/editar ativo e validar código/placa duplicados no mesmo tenant.
+- [ ] Confirmar que dropdowns nunca exibem outro tenant nem pedem GUID.
+- [ ] Bloquear ativo inativo/baixado/vendido e OS crítica; testar conclusão/cancelamento.
+- [ ] Rejeitar periodicidade, peça, custo ou abastecimento inválido e medidor regressivo.
+- [ ] Validar custo idempotente, parada, disponibilidade, alertas, CSV e dashboard vazio.
+- [ ] Homologar permissões `fleet.*`/`maintenance.*`, auditoria e ausência de dados sensíveis em logs.
+- [ ] Testar 320, 768, 1024 e 1440 px, teclado, foco, contraste, loading, erro e empty state.
+- [ ] Confirmar que nenhum arquivo binário novo foi produzido.

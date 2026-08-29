@@ -80,3 +80,13 @@ Use secret manager para senha; nunca versionar connection string real. O sistema
 
 ## Sprint 34 — SST Rural
 Com PostgreSQL externo acessível, execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. O script cria o schema `sst`, tabelas, constraints, índices, FKs compostas, RLS, permissões e versão `3.4.0`. Não requer Docker e não contém segredo. Faça backup antes de produção.
+
+## Banco da Sprint 35
+
+Com PostgreSQL externo disponível, defina `ConnectionStrings__Agro360` e execute:
+
+```bash
+psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
+```
+
+A versão `3.5.0` cria as 21 tabelas `fleet_*`, FKs compostas, checks, unicidade, índices dimensionais, RLS e permissões. O script completo é idempotente e não depende de Docker. Faça backup e execute primeiro em homologação. Arquivos binários não devem ser gerados nesta sprint.

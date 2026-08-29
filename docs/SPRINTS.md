@@ -56,3 +56,7 @@ Entregue o vertical slice de atendimento multi-tenant: chamados e timeline, tran
 
 ## Sprint 34 — SST Rural
 Central tenant-safe para trabalhadores, riscos calculados, EPI, treinamentos, exames administrativos mínimos, incidentes, investigação, ações, checklists, alertas, CSV, auditoria e design responsivo. Integrações externas permanecem explicitamente não configuradas sem provider real.
+
+## Sprint 35 — Frota, máquinas e custo operacional
+
+Entregue: modelo multi-tenant completo, regras de ativos/medidores/OS/abastecimento/paradas, API Dapper, dashboard e central web premium, CSV, auditoria, permissões e documentação. Integrações externas permanecem explicitamente não configuradas.
