@@ -94,3 +94,12 @@ Todo registro operacional possui `tenant_id`, RLS e auditoria. Chaves são persi
 - Entrega exige trabalhador/EPI ativo, quantidade positiva e datas coerentes.
 - Incidente grave exige investigação; checklist exige respostas/evidências configuradas.
 - Exames limitam-se a controle administrativo, sem laudo clínico detalhado.
+
+## Requisitos Sprint 35 — Frota
+
+- Isolamento por tenant em query e RLS; código/placa únicos; relacionamentos por lookup.
+- Ativo inativo/baixado/vendido não recebe operação; OS crítica bloqueia o ativo.
+- Medidores monotônicos, salvo justificativa + permissão + auditoria.
+- Plano com periodicidade positiva; OS concluída/cancelada exige descrição/motivo.
+- Abastecimento positivo, total calculado e custo idempotente; parada calcula disponibilidade.
+- Custos e baixas protegidos por permissões; CSV e dashboard trabalham com dados reais e estado vazio.

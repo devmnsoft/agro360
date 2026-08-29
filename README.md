@@ -296,3 +296,9 @@ A Sprint 33 não admite artefatos binários novos; documentação, exports e evi
 ## Sprint 34 — SST Rural
 
 Acesse `/Sst` para a central de segurança operacional. Para rodar sem Docker, configure `ConnectionStrings__Agro360` com um PostgreSQL externo, execute `psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql` e inicie os hosts com `dotnet run`. Consulte [SST Rural](docs/SST-RURAL.md) e [privacidade ocupacional](docs/SST-PRIVACIDADE.md). Esta sprint não gera nem aceita novos arquivos binários.
+
+## Sprint 35 — Frota e Máquinas
+
+A central `/Fleet` entrega cadastro de ativos e operadores, manutenção preventiva/corretiva, OS, abastecimento, lubrificação, pneus, paradas, disponibilidade, custos e CSV. Consulte [Frota e Máquinas](docs/FROTA-MAQUINAS.md), [Manutenção e OS](docs/MANUTENCAO-OS.md) e [Abastecimento e custos](docs/ABASTECIMENTO-CUSTOS.md).
+
+O sistema roda sem Docker: configure `ConnectionStrings__Agro360` com a connection string do PostgreSQL externo, execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` e use `dotnet run --project src/Hosts/Agro360.Api` / `dotnet run --project src/Hosts/Agro360.Web`. Não gere ou versione arquivos binários nesta sprint.

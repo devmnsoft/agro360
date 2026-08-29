@@ -1,0 +1,16 @@
+@page
+@model Agro360.Web.Pages.Fleet.IndexModel
+@{ ViewData["Title"]="Frota e Máquinas"; }
+@section Head { <link rel="stylesheet" href="~/css/fleet.css" asp-append-version="true" /> }
+<section class="fleet-shell" data-module="fleet">
+ <header class="fleet-hero"><div><span class="eyebrow">OPERAÇÃO · SPRINT 35</span><h1>Frota e Máquinas</h1><p>Disponibilidade, manutenção e custo de cada ativo em uma visão operacional auditável.</p></div><div class="hero-actions"><a class="ghost-button" href="/api/fleet/reports/assets.csv">Exportar CSV</a><button class="primary-button" type="button" data-open="asset">Novo ativo</button></div></header>
+ <nav class="fleet-tabs" aria-label="Áreas da frota">
+  <button class="active" data-view="dashboard">Dashboard</button><button data-view="assets">Ativos</button><button data-view="operators">Operadores</button><button data-view="plans">Preventiva</button><button data-view="requests">Corretiva</button><button data-view="orders">Ordens de serviço</button><button data-view="fuel">Abastecimentos</button><button data-view="lubrication">Lubrificações</button><button data-view="tires">Pneus e componentes</button><button data-view="downtime">Paradas</button><button data-view="costs">Custos</button><button data-view="reports">Relatórios</button>
+ </nav>
+ <div id="fleet-message" class="fleet-message" role="status" hidden></div>
+ <div id="fleet-loading" class="fleet-loading" aria-live="polite"><span></span>Sincronizando dados reais…</div>
+ <section id="fleet-dashboard" class="fleet-view"><div class="metric-grid" id="fleet-metrics"></div><div class="panel-grid"><article class="fleet-panel"><h2>Saúde operacional</h2><div class="availability-ring" id="availability">—</div><p>Disponibilidade consolidada da frota no período.</p></article><article class="fleet-panel"><h2>Alertas prioritários</h2><div id="fleet-alerts" class="empty-state">Nenhum alerta crítico encontrado.</div></article></div></section>
+ <section id="fleet-list" class="fleet-view" hidden><header class="list-tools"><label><span>Buscar</span><input id="fleet-search" type="search" placeholder="Código, placa, ativo ou OS" /></label><label><span>Status</span><select id="fleet-status"><option value="">Todos</option><option>AVAILABLE</option><option>OPERATING</option><option>MAINTENANCE</option><option>UNAVAILABLE</option></select></label><button class="primary-button" id="context-action" type="button">Novo registro</button></header><div class="responsive-table"><table><thead id="fleet-head"></thead><tbody id="fleet-body"></tbody></table></div><div class="empty-state" id="fleet-empty" hidden><strong>Nada por aqui ainda.</strong><span>Use “Novo registro” para iniciar esta área.</span></div></section>
+</section>
+<dialog id="fleet-dialog" class="fleet-dialog"><form id="fleet-form" method="dialog"><header><div><span class="eyebrow" id="form-eyebrow">FROTA</span><h2 id="form-title">Novo ativo</h2></div><button type="button" class="dialog-close" aria-label="Fechar">×</button></header><div id="fleet-fields" class="form-grid"></div><div class="form-error" role="alert"></div><footer><button type="button" class="ghost-button dialog-close">Cancelar</button><button type="submit" class="primary-button">Salvar registro</button></footer></form></dialog>
+@section Scripts { <script src="~/js/fleet.js" asp-append-version="true"></script> }
