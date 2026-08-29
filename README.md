@@ -292,3 +292,7 @@ A central `/Integrations` reúne conectores, aplicações externas, chaves hashe
 A rota `/support` oferece chamados persistentes, SLA, Central de Ajuda, implantação assistida, treinamento, feedback, backlog interno e release notes. Execute sem Docker com PostgreSQL externo definindo `ConnectionStrings__Agro360`, aplique `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` e inicie API/Web conforme [guia sem Docker](docs/getting-started-without-docker.md). Detalhes operacionais estão em [Suporte e Customer Success](docs/SUPPORT-CUSTOMER-SUCCESS.md).
 
 A Sprint 33 não admite artefatos binários novos; documentação, exports e evidências desta entrega são texto/Markdown/CSV.
+
+## Sprint 34 — SST Rural
+
+Acesse `/Sst` para a central de segurança operacional. Para rodar sem Docker, configure `ConnectionStrings__Agro360` com um PostgreSQL externo, execute `psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql` e inicie os hosts com `dotnet run`. Consulte [SST Rural](docs/SST-RURAL.md) e [privacidade ocupacional](docs/SST-PRIVACIDADE.md). Esta sprint não gera nem aceita novos arquivos binários.

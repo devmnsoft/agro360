@@ -1,0 +1,3 @@
+# SST — privacidade e exames ocupacionais
+
+O banco mantém apenas controle administrativo mínimo: trabalhador, tipo, agenda, realização, validade, status, resultado administrativo, restrição resumida autorizada e evidência. Não registre diagnóstico ou laudo detalhado em campos livres. A permissão `sst.medical.read` deve proteger consulta/download ocupacional e auditorias devem registrar acesso sem conteúdo sensível. Logs informam somente operação e identificador técnico, nunca documento pessoal, restrição ou resultado. RLS, filtros Dapper parametrizados e vínculos compostos por tenant impedem acesso cruzado.

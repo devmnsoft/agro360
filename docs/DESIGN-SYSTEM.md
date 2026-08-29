@@ -40,3 +40,6 @@ Use hero calmo, cards responsivos, badges sem depender só de cor, timelines de 
 ## Atendimento premium (Sprint 33)
 
 Cards com bordas discretas, fundo verde mineral, badges sem depender apenas de cor, timelines cronológicas e estados vazios humanizados formam o padrão da central. Formulários usam labels visíveis, foco nativo, mensagens em `role=alert`, grids que colapsam a uma coluna abaixo de 760 px e loading textual discreto. Ações destrutivas pedem motivo em modal; relacionamentos usam seletores pelo nome.
+
+## SST Rural
+Cards escuros calmos com realce verde representam conformidade; vermelho é reservado a criticidade real. Badges exibem nível e validade, tabelas têm overflow responsivo, formulários usam seletores por nome e estados vazios são explicativos. Validar teclado, contraste, 320/768/1440 px, loading discreto e mensagens em `role=status`.

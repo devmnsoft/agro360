@@ -124,3 +124,11 @@ Implementação persistente de requisitos configuráveis, especificações versi
 - [ ] Validar backlog invisível ao usuário externo e leitura de release.
 - [ ] Testar 360, 768, 1024 e 1440 px, teclado e leitor de tela.
 - [ ] Confirmar que nenhum campo solicita GUID e nenhum arquivo binário foi criado.
+
+## Sprint 34 — SST Rural
+- [ ] Validar dropdowns tenant-safe e ausência de ID/GUID manual.
+- [ ] Validar duplicidade de documento/matrícula e bloqueio de EPI para inativo.
+- [ ] Validar risco crítico/alerta, vencimentos, incidente grave/investigação e checklist obrigatório.
+- [ ] Homologar `sst.medical.read`, logs sem saúde/documentos pessoais e download autorizado.
+- [ ] Homologar vazio/loading/erro, teclado, contraste e 320/768/1440 px.
+- [ ] Confirmar que nenhum arquivo binário foi produzido.
