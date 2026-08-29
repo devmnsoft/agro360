@@ -302,3 +302,7 @@ Acesse `/Sst` para a central de segurança operacional. Para rodar sem Docker, c
 A central `/Fleet` entrega cadastro de ativos e operadores, manutenção preventiva/corretiva, OS, abastecimento, lubrificação, pneus, paradas, disponibilidade, custos e CSV. Consulte [Frota e Máquinas](docs/FROTA-MAQUINAS.md), [Manutenção e OS](docs/MANUTENCAO-OS.md) e [Abastecimento e custos](docs/ABASTECIMENTO-CUSTOS.md).
 
 O sistema roda sem Docker: configure `ConnectionStrings__Agro360` com a connection string do PostgreSQL externo, execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` e use `dotnet run --project src/Hosts/Agro360.Api` / `dotnet run --project src/Hosts/Agro360.Web`. Não gere ou versione arquivos binários nesta sprint.
+
+## Sprint 36 — Financeiro e Controladoria
+
+A central `/Finance` entrega caixa, DRE, orçamento e rentabilidade sobre dados reais, com isolamento por tenant e permissões segregadas. Consulte [o guia financeiro](docs/FINANCEIRO-CONTROLADORIA.md). Rode sem Docker configurando `ConnectionStrings__Agro360` para PostgreSQL externo, aplique `database/agro360-postgres-full.sql` com `psql` e execute `dotnet run --project src/Hosts/Agro360.Api` e `dotnet run --project src/Hosts/Agro360.Web`. Não gere arquivos binários para esta sprint.

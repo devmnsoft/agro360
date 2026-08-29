@@ -47,3 +47,7 @@ Cards escuros calmos com realce verde representam conformidade; vermelho é rese
 ## Padrão premium de Frota
 
 A central de frota usa hero executivo, navegação horizontal acessível, cards densos, anel de disponibilidade, badges semânticos, tabela responsiva, modal nativo, estados de loading/vazio/erro e ações adaptadas a mobile. Verde operacional indica normalidade; alertas críticos usam contraste vermelho sem depender apenas da cor. Formulários preservam foco, labels e validação nativa/backend.
+
+## Sprint 36 — Financeiro e Controladoria
+
+Central financeira real com plano de contas, centros de custo, títulos, baixas e conciliação manual autorizada, orçamento versionado, fluxo de caixa, DRE, rentabilidade, CSV, auditoria, RLS e design executivo responsivo. PostgreSQL é externo por connection string e o full install inclui o schema 3.6.0. Homologar estados vazios, validações, permissões e isolamento por tenant. Nenhum arquivo binário deve ser gerado.

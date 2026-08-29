@@ -1,0 +1,19 @@
+@page
+@model Agro360.Web.Pages.Finance.IndexModel
+@{ ViewData["Title"] = "Financeiro e Controladoria"; }
+@section Head { <link rel="stylesheet" href="~/css/finance.css" asp-append-version="true" /> }
+<section class="finance-shell">
+<header class="finance-hero"><div><span class="eyebrow">Sprint 36 · decisão financeira</span><h1>Financeiro <em>&amp;</em> Controladoria</h1><p>Caixa, resultado e rentabilidade agro em uma visão segura, auditável e conectada à operação.</p></div><button id="finance-refresh" type="button" class="finance-primary">Atualizar indicadores</button></header>
+<nav class="finance-tabs" aria-label="Áreas financeiras">
+@foreach (var tab in new[]{("dashboard","Visão executiva"),("payables","Contas a pagar"),("receivables","Contas a receber"),("chart-of-accounts","Plano de contas"),("cost-centers","Centros de custo"),("budgets","Orçamentos"),("cash-flow","Fluxo de caixa"),("dre","DRE gerencial"),("profitability","Rentabilidade"),("audit","Auditoria")}) { <button type="button" data-finance-tab="@tab.Item1">@tab.Item2</button> }
+</nav>
+<section class="finance-metrics" id="finance-metrics" aria-live="polite" aria-busy="true">
+@foreach(var item in new[]{("Receita prevista","expectedRevenue"),("Receita realizada","actualRevenue"),("Despesa prevista","expectedExpense"),("Despesa realizada","actualExpense"),("Saldo previsto","expectedBalance"),("Saldo realizado","actualBalance"),("A pagar vencido","overduePayables"),("A receber vencido","overdueReceivables")}) { <article><small>@item.Item1</small><strong data-metric="@item.Item2">—</strong><span>dados do tenant ativo</span></article> }
+</section>
+<section class="finance-workspace">
+<header class="finance-toolbar"><div><h2 id="finance-title">Visão executiva</h2><p id="finance-subtitle">Dados realizados e previstos, sem conciliação automática.</p></div><div class="finance-filters"><label>De<input id="finance-from" type="date" /></label><label>Até<input id="finance-to" type="date" /></label><label>Buscar<input id="finance-search" type="search" maxlength="120" placeholder="Nome, documento ou código" /></label><button id="finance-export" type="button">Exportar CSV</button></div></header>
+<div id="finance-content" class="finance-content"><div class="finance-loading"><span></span><p>Consultando lançamentos reais…</p></div></div>
+<footer class="finance-pagination"><button id="finance-prev" type="button">Anterior</button><span id="finance-page">Página 1</span><button id="finance-next" type="button">Próxima</button></footer>
+</section>
+</section>
+@section Scripts { <script src="~/js/finance.js" asp-append-version="true" defer></script> }

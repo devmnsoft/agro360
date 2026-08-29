@@ -90,3 +90,7 @@ psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgr
 ```
 
 A versão `3.5.0` cria as 21 tabelas `fleet_*`, FKs compostas, checks, unicidade, índices dimensionais, RLS e permissões. O script completo é idempotente e não depende de Docker. Faça backup e execute primeiro em homologação. Arquivos binários não devem ser gerados nesta sprint.
+
+## Sprint 36 — Financeiro e Controladoria
+
+Central financeira real com plano de contas, centros de custo, títulos, baixas e conciliação manual autorizada, orçamento versionado, fluxo de caixa, DRE, rentabilidade, CSV, auditoria, RLS e design executivo responsivo. PostgreSQL é externo por connection string e o full install inclui o schema 3.6.0. Homologar estados vazios, validações, permissões e isolamento por tenant. Nenhum arquivo binário deve ser gerado.

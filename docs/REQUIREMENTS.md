@@ -103,3 +103,7 @@ Todo registro operacional possui `tenant_id`, RLS e auditoria. Chaves são persi
 - Plano com periodicidade positiva; OS concluída/cancelada exige descrição/motivo.
 - Abastecimento positivo, total calculado e custo idempotente; parada calcula disponibilidade.
 - Custos e baixas protegidos por permissões; CSV e dashboard trabalham com dados reais e estado vazio.
+
+## Sprint 36 — Financeiro e Controladoria
+
+Central financeira real com plano de contas, centros de custo, títulos, baixas e conciliação manual autorizada, orçamento versionado, fluxo de caixa, DRE, rentabilidade, CSV, auditoria, RLS e design executivo responsivo. PostgreSQL é externo por connection string e o full install inclui o schema 3.6.0. Homologar estados vazios, validações, permissões e isolamento por tenant. Nenhum arquivo binário deve ser gerado.
