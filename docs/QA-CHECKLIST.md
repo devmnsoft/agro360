@@ -222,3 +222,21 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 - [ ] Exportar os 12 CSVs vazios e preenchidos com filtros, tenant e permissões.
 - [ ] Conferir loading/empty/error, foco, toque e layout em 360, 768 e 1440 px; nenhum GUID manual.
 - [ ] Executar `dotnet restore`, `dotnet build` e `dotnet test` sem Docker.
+
+
+---
+
+# Checklist QA — Sprint 45
+
+- [ ] restore, build e testes em .NET 10
+- [ ] único super administrador ativo e trilha global
+- [ ] Fazenda Santa Clara: administrador, usuários, perfis e isolamento
+- [ ] login por e-mail/CPF/CNPJ; bloqueios e limite de tentativas
+- [ ] tenant/módulo/permissão bloqueados também por URL direta
+- [ ] cobrança sem duplicidade, total no backend e baixa externa auditada
+- [ ] fallback pt-BR e decimal nas três culturas
+- [ ] ajuda contextual específica nas telas principais
+- [ ] CSV filtrado, autorizado e sem segredo
+- [ ] teclado, mobile, estados vazio/loading/erro
+- [ ] full SQL equivale à sequência de migrations
+- [ ] nenhum binário novo

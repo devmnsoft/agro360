@@ -154,3 +154,12 @@ Toda consulta e mutação internacional deve filtrar `tenant_id`; valores monet�
 - **REQ-FIELD-04:** outbox preserva payload e chave idempotente; conflito não sobrescreve o remoto automaticamente.
 - **REQ-FIELD-05:** localização vem do navegador e pode ficar indisponível; assinatura gerencial não é anunciada como ICP-Brasil.
 - **REQ-FIELD-06:** arquivos exigem conteúdo/storage real, hash e allow-list; relatórios não expõem blob, payload ou documento sensível.
+
+## REQ-SAAS-45 — Plataforma Enterprise
+
+- **REQ-SAAS-01:** no máximo um super administrador global ativo; criação e remoção não pertencem ao tenant.
+- **REQ-SAAS-02:** tenant, perfil, módulo, cobrança e exportação são isolados por contexto, SQL/RLS e autorização de rota.
+- **REQ-SAAS-03:** bloqueio/desbloqueio, suporte, plano, permissão, módulo e baixa externa exigem auditoria e motivo.
+- **REQ-SAAS-04:** login aceita e-mail, CPF e CNPJ normalizados sem revelar existência; senha usa hash forte.
+- **REQ-SAAS-05:** total da cobrança é calculado no backend/banco; pagamento real depende de provider homologado.
+- **REQ-SAAS-06:** telas principais oferecem ajuda contextual e fallback `pt-BR`; cultura rege apresentação, nunca aritmética monetária.
