@@ -164,3 +164,13 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 - [ ] Registrar parada com motivo; validar alerta/workflow configurado.
 - [ ] Conferir rendimento, custo, dashboard vazio, CSV e rastreabilidade completa.
 - [ ] Repetir chamadas com tenant distinto e confirmar ausência/404, RLS e permissões.
+
+## Sprint 39 — Exportação e Trading
+- [x] Migração e SQL completo incluem constraints, FKs e índices por tenant.
+- [x] Total, câmbio e margem calculados com decimal no backend.
+- [x] Cliente bloqueado/reprovado não recebe contrato.
+- [x] Contrato e embarque validam estados, lote e saldo real.
+- [x] API usa permissões específicas e consultas tenant-safe.
+- [x] Dashboard e estados vazios não usam mocks.
+- [x] CSV autorizado aplica filtros do tenant.
+- [ ] Validar restore/build/test em ambiente com .NET SDK 9 (SDK ausente no executor atual).

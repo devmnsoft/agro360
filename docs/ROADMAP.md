@@ -177,3 +177,6 @@ Compras e suprimentos multi-tenant com cadeia auditável da requisição ao rece
 
 ## Sprint 38 — concluída
 PCP e beneficiamento agroindustrial disponíveis do insumo ao lote acabado. Próxima evolução real: conectores contábeis específicos por ERP e telemetria de equipamentos, sem estimativas quando a origem não estiver configurada.
+
+## Sprint 39 — concluída
+Fundação operacional de Exportação e Trading entregue. Próximas evoluções dependem de provedores reais contratados para câmbio e conhecimento de embarque eletrônico.

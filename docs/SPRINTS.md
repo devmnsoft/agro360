@@ -70,3 +70,6 @@ Fornecedores e homologação, catálogo, requisições, cotações comparáveis,
 
 ## Sprint 38 — PCP Agroindustrial
 Entregues estrutura industrial, formulações imutáveis/versionadas, ordens com máquina de estados e histórico, execução, consumo transacional, perdas, lotes, qualidade, paradas, custos, rastreabilidade, dashboard real, CSV, permissões, RLS e testes de regras/arquitetura.
+
+## Sprint 39 — Exportação e Trading
+Módulo internacional tenant-safe com dashboard real, clientes, contratos, documentos, embarques, Incoterms, câmbio manual, custos, compliance, rastreabilidade e CSV.

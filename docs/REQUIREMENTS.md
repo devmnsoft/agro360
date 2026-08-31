@@ -122,3 +122,6 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 - **IND-05:** perdas, refugos, descarte, reprocesso, parada e inspeção exigem seus motivos/evidências aplicáveis.
 - **IND-06:** lote acabado preserva genealogia de origem/destino e bloqueio impede uso comercial/logístico.
 - **IND-07:** dashboard e CSV usam somente registros persistidos e funcionam sem registros.
+
+## REQ-EXP — Exportação e Trading
+Toda consulta e mutação internacional deve filtrar `tenant_id`; valores monetários usam `decimal`; aprovação/cancelamento exigem permissão; embarque depende de contrato aprovado, documentos, qualidade e saldo reais; relatórios CSV não expõem IDs técnicos.

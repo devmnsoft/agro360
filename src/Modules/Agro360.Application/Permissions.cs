@@ -2,6 +2,10 @@ namespace Agro360.Application;
 
 public static class Permissions
 {
+    public const string ExportRead = "export.read";
+    public const string ExportWrite = "export.write";
+    public const string ExportApprove = "export.approve";
+    public const string ExportReports = "export.reports";
     public const string PropertiesRead = "properties.read";
     public const string PropertiesWrite = "properties.write";
     public const string AgricultureRead = "agriculture.read";
@@ -125,6 +129,7 @@ public static class Permissions
         RuralHrRead, RuralHrWrite, RuralHrSafety, DeploymentRead, DeploymentWrite,
         DocumentsRead, DocumentsUpload, DocumentsDownload, EvidencesValidate, DossiersCreate, DossiersApprove, CertificatesIssue, CertificatesRevoke,
         WorkRead, WorkWrite, WorkApprove, MobileRead, MobileWrite, MobileSync, MobileResolveConflicts, FieldChecklistsManage, PortalManage,
-        SupportRead, SupportWrite, SupportManage, SstRead, SstWrite, SstMedicalRead
+        SupportRead, SupportWrite, SupportManage, SstRead, SstWrite, SstMedicalRead,
+        ExportRead, ExportWrite, ExportApprove, ExportReports
     ];
 }
