@@ -183,3 +183,7 @@ Fundação operacional de Exportação e Trading entregue. Próximas evoluções
 
 ### Sprint 40 — entregue
 Módulo Fiscal e Faturamento gerencial completo. Próxima evolução condicionada: homologar provedor fiscal e gestão segura de certificado antes de habilitar emissão SEFAZ/NFS-e.
+
+## Sprint 41 — concluída
+- Inteligência Agro360: painel executivo, governança de indicadores, metas, alertas, riscos, recomendações, auditoria e relatórios rastreáveis.
+- Próximo: conectar fontes adicionais pelo contrato de integração e homologar fórmulas por tenant; provedor externo de IA permanece opcional e não configurado.

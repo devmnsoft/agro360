@@ -320,3 +320,7 @@ A área `/Export` integra clientes internacionais, contratos, documentos, embarq
 ## Sprint 40 — Fiscal e Faturamento
 
 Área operacional em `/Fiscal`, API em `/api/fiscal`, regras gerenciais parametrizadas, faturamento, documentos externos, conferência de compras, integrações de estoque/financeiro, auditoria e CSV. Não há emissão SEFAZ simulada; consulte [a documentação fiscal](docs/FISCAL-BILLING.md).
+
+## Sprint 41 — Inteligência Agro360
+
+Acesse `/inteligencia-agro360` para o Painel 360, indicadores, alertas, regras, riscos, recomendações baseadas em regras, auditoria, metas e CSVs executivos. Não há dados demonstrativos nem IA simulada: ausência de fonte aparece como indisponível. Consulte [`docs/INTELLIGENCE-BI.md`](docs/INTELLIGENCE-BI.md).

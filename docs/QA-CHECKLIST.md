@@ -183,3 +183,13 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 - [ ] Registrar NF-e/NFS-e/CT-e/MDF-e sem simular autorização; exigir motivo em rejeição/cancelamento.
 - [ ] Conferir compra divergente e justificativa; verificar pendências financeira/estoque.
 - [ ] Exportar os onze CSVs com filtros e autorização; testar estados vazios e responsividade.
+
+## Sprint 41 — Inteligência executiva
+- [ ] Painel vazio mostra indisponível e não zero inventado.
+- [ ] Indicador sem fonte válida e percentual fora de 0–100 são rejeitados.
+- [ ] Snapshot de falha preserva histórico e o painel continua disponível.
+- [ ] Alerta crítico não é ignorado sem justificativa; resolução exige comentário.
+- [ ] Recomendação alta/crítica não é rejeitada sem motivo.
+- [ ] Filtros, CSV, detalhes e decisões não atravessam tenant.
+- [ ] Usuário sem `intelligence.strategic` não gerencia indicador estratégico.
+- [ ] Navegação, estados vazio/loading/erro e modal funcionam em 360, 768 e 1440 px.

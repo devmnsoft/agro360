@@ -78,3 +78,7 @@ Módulo internacional tenant-safe com dashboard real, clientes, contratos, docum
 - Operações/séries/regras, faturamentos, documentos gerenciais, conferência de compras e divergências.
 - Integrações transacionais e rastreáveis com estoque e financeiro; emissão externa explicitamente pendente.
 - Dashboard real, workspace responsivo, RBAC, RLS, auditoria e onze relatórios CSV.
+
+## Sprint 41 — Inteligência Executiva Agro e BI Operacional
+
+Painel 360 tenant-safe, indicadores e snapshots históricos, alertas auditáveis, regras parametrizadas, radar de riscos, recomendações determinísticas com confirmação humana, auditoria transversal e exportações CSV. Ausência de dados nunca é apresentada como zero.
