@@ -15,4 +15,15 @@ public sealed class SaasGovernanceRulesTests
     [Fact] public void Onboarding_requires_all_mandatory_steps() => Assert.Throws<InvalidOperationException>(() => SaasGovernanceRules.EnsureOnboardingCanComplete([new(true, false), new(false, false)]));
     [Fact] public void Branding_rejects_unsafe_logo() => Assert.Throws<ArgumentException>(() => SaasGovernanceRules.EnsureBranding("#174C3C", "#102A25", "#D6A84B", "logo.exe", 100));
     [Fact] public void Branding_accepts_valid_palette_and_logo() => SaasGovernanceRules.EnsureBranding("#174C3C", "#102A25", "#D6A84B", "logo.webp", 1024);
+    [Theory]
+    [InlineData("529.982.247-25", "52998224725")]
+    [InlineData("04.252.011/0001-10", "04252011000110")]
+    public void Fiscal_document_is_validated_and_normalized(string input,string expected) => Assert.Equal(expected,SaasGovernanceRules.NormalizeAndValidateDocument(input));
+    [Theory]
+    [InlineData("111.111.111-11")]
+    [InlineData("04.252.011/0001-11")]
+    public void Invalid_fiscal_document_is_rejected(string input) => Assert.Throws<ArgumentException>(()=>SaasGovernanceRules.NormalizeAndValidateDocument(input));
+    [Fact] public void Charge_total_is_calculated_by_backend() => Assert.Equal(105.50m,SaasGovernanceRules.CalculateChargeTotal(100m,10m,4.50m));
+    [Fact] public void Charge_rejects_discount_above_amount() => Assert.Throws<ArgumentException>(()=>SaasGovernanceRules.CalculateChargeTotal(100m,0m,101m));
+    [Fact] public void Unknown_culture_falls_back_to_portuguese() => Assert.Equal("pt-BR",SaasGovernanceRules.ResolveCulture("fr-FR",["pt-BR","en-US","es-ES"]));
 }

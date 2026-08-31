@@ -117,3 +117,7 @@ Execute `database/migrations/042_sprint42_sustainability_esg.sql` depois da Spri
 ## Migration 043 — Campo Mobile PWA
 
 `migrations/043_sprint43_field_mobile.sql`, também incorporada ao full install, cria o schema `field_mobile`, 15 tabelas operacionais, constraints, índices, chaves idempotentes, autoria, RLS forçada e permissões. Aplique em PostgreSQL externo com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/migrations/043_sprint43_field_mobile.sql`. O script não cria usuários, arquivos, GPS, QR ou dados operacionais fictícios.
+
+## Migration 045 — Plataforma SaaS Enterprise
+
+`migrations/045_saas_enterprise.sql`, também incorporada ao full install, cria a camada `platform_*`: super administrador único, tenants/configurações, perfis/permissões, módulos/dependências, planos, cobranças gerenciais, idiomas/traduções/ajuda, auditoria, suporte, saúde e exportações. Aplique em PostgreSQL externo com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/migrations/045_saas_enterprise.sql`. Não há gateway ou pagamento simulado.

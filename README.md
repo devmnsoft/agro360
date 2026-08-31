@@ -331,3 +331,7 @@ A área `/sustentabilidade` reúne conformidade ambiental, indicadores, recursos
 ## Sprint 43 — Campo Mobile PWA
 
 A área `/field` oferece operação responsiva, rascunho IndexedDB, fila idempotente, checklists versionados, evidências reais, ocorrências, QR opaco, localização autorizada e assinatura gerencial. O schema `field_mobile` aplica RLS por tenant e regras de conflito sem sobrescrita automática. Configure PostgreSQL externo por `ConnectionStrings__Agro360`; Docker não é necessário. Consulte [Campo Mobile PWA](docs/FIELD-MOBILE-PWA.md).
+
+## Sprint 45 — Agro360 Enterprise
+
+A plataforma SaaS agora formaliza super administração única MNSOFT, isolamento e governança por tenant, perfis/permissões, módulos contratados, cobrança exclusivamente gerencial, login por e-mail/CPF/CNPJ, culturas `pt-BR`, `en-US` e `es-ES` e ajuda contextual. O PostgreSQL é externo por connection string e não requer Docker. Consulte [`docs/SAAS-PLATFORM.md`](docs/SAAS-PLATFORM.md).

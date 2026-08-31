@@ -11,7 +11,8 @@ public static partial class SaasGovernanceRules
     {
         var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "IMPLEMENTING", "TRIAL", "ACTIVE", "SUSPENDED", "INACTIVE", "CANCELLED"
+            "REGISTERING", "IMPLEMENTING", "TRIAL", "ACTIVE", "SUSPENDED", "BLOCKED",
+            "DELINQUENT", "INACTIVE", "CANCELLED", "CLOSED"
         };
         if (!allowed.Contains(currentStatus) || !allowed.Contains(targetStatus))
             throw new ArgumentException("Status de tenant invalido.");
@@ -19,6 +20,55 @@ public static partial class SaasGovernanceRules
             throw new InvalidOperationException("O tenant ja possui o status solicitado.");
         if (string.IsNullOrWhiteSpace(reason))
             throw new InvalidOperationException("Ativacao, suspensao, inativacao e reativacao exigem motivo.");
+    }
+
+    public static string NormalizeAndValidateDocument(string document)
+    {
+        var value = new string((document ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (value.Length == 11 && IsValidCpf(value) || value.Length == 14 && IsValidCnpj(value)) return value;
+        throw new ArgumentException("CPF/CNPJ inválido.", nameof(document));
+    }
+
+    public static decimal CalculateChargeTotal(decimal baseAmount, decimal additionalAmount, decimal discount)
+    {
+        if (baseAmount < 0 || additionalAmount < 0 || discount < 0)
+            throw new ArgumentOutOfRangeException(nameof(baseAmount), "Valores da cobrança não podem ser negativos.");
+        if (discount > baseAmount + additionalAmount)
+            throw new ArgumentException("O desconto não pode superar o valor da cobrança.", nameof(discount));
+        return decimal.Round(baseAmount + additionalAmount - discount, 2, MidpointRounding.ToEven);
+    }
+
+    public static string ResolveCulture(string? requestedCulture, IEnumerable<string> enabledCultures)
+    {
+        var enabled = enabledCultures.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return !string.IsNullOrWhiteSpace(requestedCulture) && enabled.Contains(requestedCulture) ? requestedCulture : "pt-BR";
+    }
+
+    private static bool IsValidCpf(string value)
+    {
+        if (value.Distinct().Count() == 1) return false;
+        var sum = 0;
+        for (var i = 0; i < 9; i++) sum += (value[i] - '0') * (10 - i);
+        var digit = sum % 11 < 2 ? 0 : 11 - sum % 11;
+        if (digit != value[9] - '0') return false;
+        sum = 0;
+        for (var i = 0; i < 10; i++) sum += (value[i] - '0') * (11 - i);
+        digit = sum % 11 < 2 ? 0 : 11 - sum % 11;
+        return digit == value[10] - '0';
+    }
+
+    private static bool IsValidCnpj(string value)
+    {
+        if (value.Distinct().Count() == 1) return false;
+        int Digit(ReadOnlySpan<char> source, ReadOnlySpan<int> weights)
+        {
+            var sum = 0;
+            for (var i = 0; i < weights.Length; i++) sum += (source[i] - '0') * weights[i];
+            var remainder = sum % 11;
+            return remainder < 2 ? 0 : 11 - remainder;
+        }
+        if (Digit(value, [5,4,3,2,9,8,7,6,5,4,3,2]) != value[12] - '0') return false;
+        return Digit(value, [6,5,4,3,2,9,8,7,6,5,4,3,2]) == value[13] - '0';
     }
 
     public static void EnsureSubscriptionCanStart(bool planActive, DateOnly startsOn, DateOnly? endsOn, decimal price, decimal discount, string? discountReason)

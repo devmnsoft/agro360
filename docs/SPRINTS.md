@@ -92,3 +92,7 @@ Painel 360 tenant-safe, indicadores e snapshots históricos, alertas auditáveis
 ## Sprint 43 — Campo Mobile PWA
 
 Entregues modelo multi-tenant de perfis/atalhos, checklists versionados, execuções, evidências, QR persistido, ocorrências, fila idempotente, conflitos auditáveis, assinatura gerencial, localização autorizada, exportações e PWA mobile-first. Integrações nativas, ICP-Brasil e storage externo permanecem condicionados a providers reais.
+
+## Sprint 45 — Plataforma SaaS Enterprise
+
+Incorporada a evolução não executada da Sprint 44: super administrador único, cadastro e bloqueio de tenants, usuários/perfis tenant-scoped, catálogo e estado de módulos, planos, cobrança gerencial auditada, login por identificador fiscal, fallback de idioma, ajuda contextual e identidade MNSOFT. A migration 045 adiciona constraints, índices, auditoria e RLS.

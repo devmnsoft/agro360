@@ -51,3 +51,10 @@ A central de frota usa hero executivo, navegação horizontal acessível, cards 
 ## Sprint 36 — Financeiro e Controladoria
 
 Central financeira real com plano de contas, centros de custo, títulos, baixas e conciliação manual autorizada, orçamento versionado, fluxo de caixa, DRE, rentabilidade, CSV, auditoria, RLS e design executivo responsivo. PostgreSQL é externo por connection string e o full install inclui o schema 3.6.0. Homologar estados vazios, validações, permissões e isolamento por tenant. Nenhum arquivo binário deve ser gerado.
+
+
+---
+
+# Design System Agro360 / MNSOFT
+
+A interface Enterprise usa superfícies sóbrias, acento verde, hierarquia densa e legível, status sem depender apenas de cor, foco de teclado, estados de carregamento/vazio/erro e tabelas responsivas. A ajuda contextual é recolhível e específica por área. Formulários usam seletores de negócio: GUIDs e chaves estrangeiras nunca são solicitados ao usuário.

@@ -197,3 +197,7 @@ Configurar provedores oficiais de CAR/licenças e certificadoras; concluir adapt
 ## Sprint 43 — concluída
 
 Campo Mobile PWA operacional com outbox local, sincronização idempotente e resolução humana de conflitos. Próximos incrementos reais: homologar storage documental por tenant, provider ICP-Brasil opcional e telemetria/background sync conforme suporte do dispositivo, sem simulação.
+
+## Sprint 45 — concluída
+
+Fundação Enterprise para super administração e área do cliente, autenticação por e-mail/documento, RBAC por tenant, catálogo de módulos, planos/cobrança gerencial, localização inicial e ajuda contextual. Pendências reais: configurar e homologar um provedor antes de qualquer pagamento online, completar traduções do legado e executar testes de integração contra PostgreSQL homologado.
