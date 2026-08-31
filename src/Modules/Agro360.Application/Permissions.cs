@@ -77,6 +77,11 @@ public static class Permissions
     public const string SustainabilityWrite = "sustainability.write";
     public const string SustainabilityApprove = "sustainability.approve";
     public const string SustainabilityReports = "sustainability.reports";
+    public const string MarketplaceRead = "marketplace.read";
+    public const string MarketplaceManage = "marketplace.manage";
+    public const string PartnersManage = "partners.manage";
+    public const string ApiKeysManage = "api-keys.manage";
+    public const string IntegrationsAudit = "integrations.audit";
     public const string IntegrationsRead = "integrations.read";
     public const string IntegrationsWrite = "integrations.write";
     public const string MapsRead = "maps.read";
@@ -136,7 +141,7 @@ public static class Permissions
         RegionalLogisticsWrite, SalesNetworkRead, SalesNetworkWrite, SalesNetworkApprove,
         IntelligenceRead, IntelligenceWrite, IntelligenceStrategic, IntelligenceExport, ComplianceRead, ComplianceWrite, ComplianceApprove, EsgRead, EsgWrite,
         SustainabilityRead, SustainabilityWrite, SustainabilityApprove, SustainabilityReports,
-        IntegrationsRead, IntegrationsWrite, MapsRead, MapsWrite, CooperativeRead, CooperativeWrite, CooperativeApprove,
+        MarketplaceRead, MarketplaceManage, PartnersManage, ApiKeysManage, IntegrationsAudit, IntegrationsRead, IntegrationsWrite, MapsRead, MapsWrite, CooperativeRead, CooperativeWrite, CooperativeApprove,
         RuralHrRead, RuralHrWrite, RuralHrSafety, DeploymentRead, DeploymentWrite,
         DocumentsRead, DocumentsUpload, DocumentsDownload, EvidencesValidate, DossiersCreate, DossiersApprove, CertificatesIssue, CertificatesRevoke,
         WorkRead, WorkWrite, WorkApprove, MobileRead, MobileWrite, MobileSync, MobileResolveConflicts, FieldChecklistsManage, PortalManage,

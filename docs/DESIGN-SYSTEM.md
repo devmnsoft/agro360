@@ -58,3 +58,6 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 # Design System Agro360 / MNSOFT
 
 A interface Enterprise usa superfícies sóbrias, acento verde, hierarquia densa e legível, status sem depender apenas de cor, foco de teclado, estados de carregamento/vazio/erro e tabelas responsivas. A ajuda contextual é recolhível e específica por área. Formulários usam seletores de negócio: GUIDs e chaves estrangeiras nunca são solicitados ao usuário.
+
+## Superfícies de ecossistema
+Marketplace usa cards comerciais operacionais, badges de estado e filtros; parceiros usam linguagem de concessão; APIs usam prefixos, escopos e logs técnicos. Loading, vazio, erro, diálogo e ajuda recolhível são obrigatórios, sem solicitar UUID ao usuário.

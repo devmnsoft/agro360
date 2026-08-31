@@ -201,3 +201,6 @@ Campo Mobile PWA operacional com outbox local, sincronização idempotente e res
 ## Sprint 45 — concluída
 
 Fundação Enterprise para super administração e área do cliente, autenticação por e-mail/documento, RBAC por tenant, catálogo de módulos, planos/cobrança gerencial, localização inicial e ajuda contextual. Pendências reais: configurar e homologar um provedor antes de qualquer pagamento online, completar traduções do legado e executar testes de integração contra PostgreSQL homologado.
+
+## Sprint 46 — concluída
+A plataforma dispõe da fundação operacional do ecossistema SaaS: módulos aprovados, parceiros com escopo/prazo, integrações seguras e catálogo comercial. Próximos conectores somente serão ativados após homologação real do fornecedor e gestão externa de segredos.

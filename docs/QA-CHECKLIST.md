@@ -240,3 +240,10 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 - [ ] teclado, mobile, estados vazio/loading/erro
 - [ ] full SQL equivale à sequência de migrations
 - [ ] nenhum binário novo
+
+# Checklist QA — Sprint 46
+- [ ] Criar módulo, solicitar ativação, aprovar como super administrador e negar rota quando inativo.
+- [ ] Criar/bloquear parceiro, conceder acesso temporário em um tenant e revogar sem afetar outro.
+- [ ] Criar aplicação/chave; confirmar exibição única, somente hash no banco, escopo, rate limit e revogação.
+- [ ] Criar webhook HTTPS; registrar sucesso/falha/retry finito e confirmar que falha não aborta operação.
+- [ ] Validar RLS, auditoria, ações reais, ajuda e pt-BR/en-US/es-ES em todas as áreas novas.

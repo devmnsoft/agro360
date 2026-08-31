@@ -56,6 +56,7 @@ public static class DependencyInjection
         services.AddScoped<IOperationalIntelligenceService, OperationalIntelligenceService>();
         services.AddScoped<IExecutiveIntelligenceService, ExecutiveIntelligenceService>();
         services.AddScoped<ISaasService, SaasService>();
+        services.AddScoped<IEcosystemService, EcosystemService>();
         services.AddScoped<IComplianceService, ComplianceService>();
         services.AddScoped<IEsgService, EsgService>();
         services.AddScoped<ISustainabilityService, SustainabilityService>();

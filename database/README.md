@@ -121,3 +121,6 @@ Execute `database/migrations/042_sprint42_sustainability_esg.sql` depois da Spri
 ## Migration 045 — Plataforma SaaS Enterprise
 
 `migrations/045_saas_enterprise.sql`, também incorporada ao full install, cria a camada `platform_*`: super administrador único, tenants/configurações, perfis/permissões, módulos/dependências, planos, cobranças gerenciais, idiomas/traduções/ajuda, auditoria, suporte, saúde e exportações. Aplique em PostgreSQL externo com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/migrations/045_saas_enterprise.sql`. Não há gateway ou pagamento simulado.
+
+## Sprint 46
+`migrations/046_marketplace_ecosystem.sql` cria catálogo, módulos por tenant, solicitações, parceiros/acessos, apps, hashes de chaves, escopos, logs, webhooks/entregas, documentação, planos e auditoria. Há FKs compostas, checks, índices operacionais e RLS. Execute no PostgreSQL externo com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/migrations/046_marketplace_ecosystem.sql`; nenhum Docker é necessário. Faça backup do cofre separadamente: segredos em texto puro não pertencem ao banco.
