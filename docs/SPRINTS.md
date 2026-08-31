@@ -96,3 +96,5 @@ Entregues modelo multi-tenant de perfis/atalhos, checklists versionados, execuç
 ## Sprint 45 — Plataforma SaaS Enterprise
 
 Incorporada a evolução não executada da Sprint 44: super administrador único, cadastro e bloqueio de tenants, usuários/perfis tenant-scoped, catálogo e estado de módulos, planos, cobrança gerencial auditada, login por identificador fiscal, fallback de idioma, ajuda contextual e identidade MNSOFT. A migration 045 adiciona constraints, índices, auditoria e RLS.
+
+Na revisão integrada, o endpoint de bloqueio foi corrigido para persistir `BLOCKED` (sem confundir bloqueio com suspensão), a troca de plano passou a rejeitar também planos inativos durante a edição e toda ativação/desativação de usuário passou a produzir evento de auditoria no mesmo commit transacional.
