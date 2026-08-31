@@ -324,3 +324,6 @@ A área `/Export` integra clientes internacionais, contratos, documentos, embarq
 ## Sprint 41 — Inteligência Agro360
 
 Acesse `/inteligencia-agro360` para o Painel 360, indicadores, alertas, regras, riscos, recomendações baseadas em regras, auditoria, metas e CSVs executivos. Não há dados demonstrativos nem IA simulada: ausência de fonte aparece como indisponível. Consulte [`docs/INTELLIGENCE-BI.md`](docs/INTELLIGENCE-BI.md).
+
+## Sprint 42 — Sustentabilidade e ESG
+A área `/sustentabilidade` reúne conformidade ambiental, indicadores, recursos, emissões gerenciais, fornecedores, lotes, carbono, auditorias, ações, alertas e CSVs com isolamento por tenant. Consulte [a documentação operacional](docs/SUSTAINABILITY-ESG.md). Não há consulta oficial de CAR nem certificação de carbono configurada; registros manuais são auditáveis e não substituem certificação externa.

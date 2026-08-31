@@ -110,3 +110,6 @@ A migration `migrations/040_sprint40_fiscal_billing.sql` cria o núcleo fiscal, 
 ### Sprint 41
 
 A migration `migrations/041_sprint41_executive_intelligence.sql`, também incorporada ao SQL completo, cria definições/snapshots/metas de KPI, regras e eventos de alerta, riscos, recomendações, auditoria, exportações, preferências, constraints, índices e RLS por tenant.
+
+## Migration 042 — Sustentabilidade e ESG
+Execute `database/migrations/042_sprint42_sustainability_esg.sql` depois da Sprint 41. Ela cria 15 tabelas públicas com RLS forçada, constraints, FKs, índices, autoria e permissões. O mesmo conteúdo integra `agro360-postgres-full.sql`. Fatores ambientais e IDs documentais devem vir de configuração/armazenamento reais; ausência de fator permanece pendente.

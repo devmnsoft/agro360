@@ -82,3 +82,9 @@ Módulo internacional tenant-safe com dashboard real, clientes, contratos, docum
 ## Sprint 41 — Inteligência Executiva Agro e BI Operacional
 
 Painel 360 tenant-safe, indicadores e snapshots históricos, alertas auditáveis, regras parametrizadas, radar de riscos, recomendações determinísticas com confirmação humana, auditoria transversal e exportações CSV. Ausência de dados nunca é apresentada como zero.
+
+## Sprint 42 — Sustentabilidade Agro e ESG
+- Modelo PostgreSQL/RLS para 15 agregados ambientais, dashboard real e 14 CSVs.
+- Cadastro de conformidade por propriedade sem entrada de identificador técnico.
+- Regras determinísticas de área, emissões pendentes sem fator, origem de lote e planos críticos.
+- Interface premium responsiva e documentação de integrações oficiais pendentes.
