@@ -70,6 +70,7 @@ public static class DependencyInjection
         services.AddScoped<IFleetService, FleetService>();
         services.AddScoped<IProcurementService, ProcurementService>();
         services.AddScoped<IIndustrialProductionService, IndustrialProductionService>();
+        services.AddScoped<IExportTradingService, ExportTradingService>();
         return services;
     }
 }

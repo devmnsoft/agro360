@@ -312,3 +312,7 @@ A central `/Procurement` cobre fornecedores, homologação, catálogo, requisiç
 
 ## Sprint 38 — Produção Agroindustrial
 O Agro360 inclui PCP agroindustrial com formulações versionadas, ordens, beneficiamento, apontamentos, consumo transacional, rendimento, perdas, qualidade, paradas, custos e rastreabilidade por lote. A execução local não exige Docker: configure o PostgreSQL externo em `ConnectionStrings__Agro360`, aplique `database/agro360-postgres-full.sql` e inicie API/Web com `dotnet run`. Consulte [o guia industrial](docs/INDUSTRIAL-PRODUCTION.md).
+
+## Sprint 39 — Exportação e Trading
+
+A área `/Export` integra clientes internacionais, contratos, documentos, embarques, câmbio manual, custos, compliance e rastreabilidade. Instale `database/migrations/039_sprint39_export_trading.sql` ou o script completo e configure o PostgreSQL externo em `ConnectionStrings__Agro360`. Consulte [a documentação operacional](docs/EXPORT-TRADING.md).

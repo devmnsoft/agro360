@@ -100,3 +100,6 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 
 ## Schema `production` (Sprint 38)
 O arquivo único `agro360-postgres-full.sql` cria o schema industrial, constraints, FKs, índices, permissões e RLS, sem `\i` ou credenciais. Em PostgreSQL externo execute: `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. O bloco é idempotente para estrutura e registra a versão `3.8.0`; não inclui dados fictícios.
+
+## Sprint 39
+`migrations/039_sprint39_export_trading.sql` cria o schema `export_trading`, Incoterms oficiais, clientes, parceiros, contratos/itens, documentos, embarques/itens, câmbio manual, custos, compliance, rastreabilidade e eventos. O mesmo conteúdo integra `agro360-postgres-full.sql`. Execute em PostgreSQL externo com `scripts/migrate-local.sh`; Docker não é obrigatório.
