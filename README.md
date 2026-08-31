@@ -335,3 +335,7 @@ A área `/field` oferece operação responsiva, rascunho IndexedDB, fila idempot
 ## Sprint 45 — Agro360 Enterprise
 
 A plataforma SaaS agora formaliza super administração única MNSOFT, isolamento e governança por tenant, perfis/permissões, módulos contratados, cobrança exclusivamente gerencial, login por e-mail/CPF/CNPJ, culturas `pt-BR`, `en-US` e `es-ES` e ajuda contextual. O PostgreSQL é externo por connection string e não requer Docker. Consulte [`docs/SAAS-PLATFORM.md`](docs/SAAS-PLATFORM.md).
+
+## Sprint 46 — Marketplace e Ecossistema Agro360
+
+A área autenticada `/ecosystem` reúne marketplace de módulos, parceiros com acesso temporário, aplicações externas, chaves exibidas uma única vez e persistidas por SHA-256, webhooks HTTPS com tentativas finitas, catálogo comercial, documentação do desenvolvedor e auditoria isolada por tenant. A ativação e mudança de plano continuam administrativas: não existe cobrança automática sem provedor homologado. Aplique `database/migrations/046_marketplace_ecosystem.sql` ou o instalador completo em PostgreSQL externo; Docker não é necessário.

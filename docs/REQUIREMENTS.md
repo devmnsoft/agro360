@@ -163,3 +163,9 @@ Toda consulta e mutação internacional deve filtrar `tenant_id`; valores monet�
 - **REQ-SAAS-04:** login aceita e-mail, CPF e CNPJ normalizados sem revelar existência; senha usa hash forte.
 - **REQ-SAAS-05:** total da cobrança é calculado no backend/banco; pagamento real depende de provider homologado.
 - **REQ-SAAS-06:** telas principais oferecem ajuda contextual e fallback `pt-BR`; cultura rege apresentação, nunca aritmética monetária.
+
+## Requisitos Sprint 46
+- Toda leitura/escrita operacional usa o tenant autenticado e RLS; o super administrador é a única superfície global.
+- Chaves e segredos nunca são recuperáveis; escopo, status, expiração e limite são obrigatórios.
+- Parceiros precisam estar ativos e possuir concessão vigente; revogações e ativações são auditadas.
+- Webhooks aceitam HTTPS público, payload mínimo e no máximo dez tentativas, sem afetar a transação principal.
