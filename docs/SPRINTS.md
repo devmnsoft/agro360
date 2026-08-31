@@ -88,3 +88,7 @@ Painel 360 tenant-safe, indicadores e snapshots históricos, alertas auditáveis
 - Cadastro de conformidade por propriedade sem entrada de identificador técnico.
 - Regras determinísticas de área, emissões pendentes sem fator, origem de lote e planos críticos.
 - Interface premium responsiva e documentação de integrações oficiais pendentes.
+
+## Sprint 43 — Campo Mobile PWA
+
+Entregues modelo multi-tenant de perfis/atalhos, checklists versionados, execuções, evidências, QR persistido, ocorrências, fila idempotente, conflitos auditáveis, assinatura gerencial, localização autorizada, exportações e PWA mobile-first. Integrações nativas, ICP-Brasil e storage externo permanecem condicionados a providers reais.

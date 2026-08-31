@@ -5,7 +5,7 @@ namespace Agro360.Domain.Mobile;
 public static class MobileRules
 {
     private static readonly HashSet<string> EntityTypes = new(StringComparer.OrdinalIgnoreCase)
-        { "property", "plot", "animal", "animal-lot", "machine", "stock-item", "stored-lot", "receipt", "certificate" };
+        { "property", "plot", "animal", "animal-lot", "machine", "equipment", "stock-item", "stored-lot", "lot", "receipt", "production-order", "document", "checklist", "certificate" };
 
     public static void ValidateLocation(decimal? latitude, decimal? longitude, decimal? accuracy)
     {

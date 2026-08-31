@@ -207,3 +207,18 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 - [ ] Exercitar 14 CSVs com filtros/permissão/tenant e conteúdo vazio.
 - [ ] Conferir responsividade, estados vazio/loading/erro e dropdown de propriedade sem GUID manual.
 - [ ] Executar `dotnet restore`, `dotnet build` e `dotnet test` sem Docker.
+
+## Sprint 43 — Campo Mobile PWA
+
+- [ ] Aplicar migration 043 em banco limpo/atualizado e validar RLS com dois tenants.
+- [ ] Validar atalhos de cada perfil e bloqueio por URL sem permissão.
+- [ ] Criar checklist com item; bloquear vazio; aprovar e exigir nova versão para alteração.
+- [ ] Executar checklist; bloquear resposta/evidência/observação/assinatura/localização obrigatórias ausentes.
+- [ ] Aprovar evidência; exigir motivo na reprovação e referência real para foto/documento.
+- [ ] Gerar QR de entidade real; rejeitar inexistente, outro tenant, inativo/bloqueado e token inválido.
+- [ ] Bloquear ocorrência crítica sem responsável, resolução sem comentário e cancelamento sem motivo.
+- [ ] Operar offline, recarregar, retentar sem duplicar e preservar falha; resolver conflito com comentário.
+- [ ] Alterar conteúdo assinado e confirmar `CONTENT_CHANGED`; validar coordenadas e recusa de permissão.
+- [ ] Exportar os 12 CSVs vazios e preenchidos com filtros, tenant e permissões.
+- [ ] Conferir loading/empty/error, foco, toque e layout em 360, 768 e 1440 px; nenhum GUID manual.
+- [ ] Executar `dotnet restore`, `dotnet build` e `dotnet test` sem Docker.

@@ -327,3 +327,7 @@ Acesse `/inteligencia-agro360` para o Painel 360, indicadores, alertas, regras, 
 
 ## Sprint 42 — Sustentabilidade e ESG
 A área `/sustentabilidade` reúne conformidade ambiental, indicadores, recursos, emissões gerenciais, fornecedores, lotes, carbono, auditorias, ações, alertas e CSVs com isolamento por tenant. Consulte [a documentação operacional](docs/SUSTAINABILITY-ESG.md). Não há consulta oficial de CAR nem certificação de carbono configurada; registros manuais são auditáveis e não substituem certificação externa.
+
+## Sprint 43 — Campo Mobile PWA
+
+A área `/field` oferece operação responsiva, rascunho IndexedDB, fila idempotente, checklists versionados, evidências reais, ocorrências, QR opaco, localização autorizada e assinatura gerencial. O schema `field_mobile` aplica RLS por tenant e regras de conflito sem sobrescrita automática. Configure PostgreSQL externo por `ConnectionStrings__Agro360`; Docker não é necessário. Consulte [Campo Mobile PWA](docs/FIELD-MOBILE-PWA.md).

@@ -113,3 +113,7 @@ A migration `migrations/041_sprint41_executive_intelligence.sql`, também incorp
 
 ## Migration 042 — Sustentabilidade e ESG
 Execute `database/migrations/042_sprint42_sustainability_esg.sql` depois da Sprint 41. Ela cria 15 tabelas públicas com RLS forçada, constraints, FKs, índices, autoria e permissões. O mesmo conteúdo integra `agro360-postgres-full.sql`. Fatores ambientais e IDs documentais devem vir de configuração/armazenamento reais; ausência de fator permanece pendente.
+
+## Migration 043 — Campo Mobile PWA
+
+`migrations/043_sprint43_field_mobile.sql`, também incorporada ao full install, cria o schema `field_mobile`, 15 tabelas operacionais, constraints, índices, chaves idempotentes, autoria, RLS forçada e permissões. Aplique em PostgreSQL externo com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/migrations/043_sprint43_field_mobile.sql`. O script não cria usuários, arquivos, GPS, QR ou dados operacionais fictícios.
