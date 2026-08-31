@@ -103,3 +103,6 @@ O arquivo único `agro360-postgres-full.sql` cria o schema industrial, constrain
 
 ## Sprint 39
 `migrations/039_sprint39_export_trading.sql` cria o schema `export_trading`, Incoterms oficiais, clientes, parceiros, contratos/itens, documentos, embarques/itens, câmbio manual, custos, compliance, rastreabilidade e eventos. O mesmo conteúdo integra `agro360-postgres-full.sql`. Execute em PostgreSQL externo com `scripts/migrate-local.sh`; Docker não é obrigatório.
+
+## Sprint 40
+A migration `migrations/040_sprint40_fiscal_billing.sql` cria o núcleo fiscal, constraints decimais, chaves compostas de tenant, índices operacionais, auditoria e RLS. O mesmo conteúdo integra `agro360-postgres-full.sql`. Aplique em PostgreSQL externo antes de iniciar a área Fiscal; não há dependência de Docker.

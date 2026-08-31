@@ -6,6 +6,10 @@ public static class Permissions
     public const string ExportWrite = "export.write";
     public const string ExportApprove = "export.approve";
     public const string ExportReports = "export.reports";
+    public const string FiscalRead = "fiscal.read";
+    public const string FiscalWrite = "fiscal.write";
+    public const string FiscalApprove = "fiscal.approve";
+    public const string FiscalReports = "fiscal.reports";
     public const string PropertiesRead = "properties.read";
     public const string PropertiesWrite = "properties.write";
     public const string AgricultureRead = "agriculture.read";
@@ -130,6 +134,7 @@ public static class Permissions
         DocumentsRead, DocumentsUpload, DocumentsDownload, EvidencesValidate, DossiersCreate, DossiersApprove, CertificatesIssue, CertificatesRevoke,
         WorkRead, WorkWrite, WorkApprove, MobileRead, MobileWrite, MobileSync, MobileResolveConflicts, FieldChecklistsManage, PortalManage,
         SupportRead, SupportWrite, SupportManage, SstRead, SstWrite, SstMedicalRead,
-        ExportRead, ExportWrite, ExportApprove, ExportReports
+        ExportRead, ExportWrite, ExportApprove, ExportReports,
+        FiscalRead, FiscalWrite, FiscalApprove, FiscalReports
     ];
 }

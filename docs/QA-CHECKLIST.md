@@ -174,3 +174,12 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 - [x] Dashboard e estados vazios não usam mocks.
 - [x] CSV autorizado aplica filtros do tenant.
 - [ ] Validar restore/build/test em ambiente com .NET SDK 9 (SDK ausente no executor atual).
+
+## Sprint 40 — Fiscal e Faturamento
+- [ ] Aplicar migration 040 em PostgreSQL limpo e validar RLS com dois tenants.
+- [ ] Criar/inativar operação; criar regra decimal; validar conflito e vencimento.
+- [ ] Faturar com cliente/item pesquisável; conferir total backend, parcelas, estoque e serviço.
+- [ ] Bloquear lote bloqueado e saldo insuficiente; confirmar auditoria de usuário/data.
+- [ ] Registrar NF-e/NFS-e/CT-e/MDF-e sem simular autorização; exigir motivo em rejeição/cancelamento.
+- [ ] Conferir compra divergente e justificativa; verificar pendências financeira/estoque.
+- [ ] Exportar os onze CSVs com filtros e autorização; testar estados vazios e responsividade.

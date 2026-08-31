@@ -180,3 +180,6 @@ PCP e beneficiamento agroindustrial disponíveis do insumo ao lote acabado. Pró
 
 ## Sprint 39 — concluída
 Fundação operacional de Exportação e Trading entregue. Próximas evoluções dependem de provedores reais contratados para câmbio e conhecimento de embarque eletrônico.
+
+### Sprint 40 — entregue
+Módulo Fiscal e Faturamento gerencial completo. Próxima evolução condicionada: homologar provedor fiscal e gestão segura de certificado antes de habilitar emissão SEFAZ/NFS-e.

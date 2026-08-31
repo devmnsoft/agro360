@@ -18,6 +18,8 @@ public sealed class LookupService(DatabaseExecutor database, ITenantContext tena
         ["crops"] = "select id,name label,coalesce(description,'') description,case when active then 'ACTIVE' else 'INACTIVE' end status,'{}'::jsonb metadata from agriculture.crops where tenant_id=@TenantId",
         ["crop-seasons"] = "select id,name label,concat(crop,' · ',start_date,' a ',end_date) description,case when status in (1,2) then 'ACTIVE' else 'INACTIVE' end status,jsonb_build_object('propertyId',farm_id) metadata from agriculture.seasons where tenant_id=@TenantId and deleted_at is null",
         ["suppliers"] = "select id,name label,coalesce(document_number,'') description,status,'{}'::jsonb metadata from purchasing.suppliers where tenant_id=@TenantId and deleted_at is null",
+        ["customers"] = "select id,name label,coalesce(tax_document,'') description,status,'{}'::jsonb metadata from crm.customers where tenant_id=@TenantId and deleted_at is null",
+        ["purchase-orders"] = "select id,id::text label,concat(status,' · ',total) description,status,jsonb_build_object('supplierId',supplier_id,'total',total) metadata from purchasing.purchase_orders where tenant_id=@TenantId",
         ["inventory-items"] = "select id,name label,concat(sku,' · ',base_unit) description,'ACTIVE' status,jsonb_build_object('unit',base_unit) metadata from inventory.products where tenant_id=@TenantId and deleted_at is null",
         ["machines"] = "select id,name label,concat(asset_type,' · ',code) description,status,'{}'::jsonb metadata from fleet.assets where tenant_id=@TenantId",
         ["people"] = "select id,name label,email description,status,'{}'::jsonb metadata from identity.users where tenant_id=@TenantId and deleted_at is null",
