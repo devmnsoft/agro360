@@ -138,3 +138,10 @@ Toda consulta e mutação internacional deve filtrar `tenant_id`; valores monet�
 - Fórmulas e fontes são allow-list do backend, usam decimal e preservam snapshots, inclusive erros.
 - Alertas e recomendações exigem justificativas nas transições críticas e geram eventos imutáveis.
 - Dashboard vazio não falha nem inventa valores; relatórios CSV respeitam filtros e registram exportação.
+
+## REQ-SUS — Sustentabilidade e ESG
+- **REQ-SUS-01:** todo registro ambiental é isolado por tenant e auditável.
+- **REQ-SUS-02:** emissões sem fator informado ficam pendentes e nunca recebem valor estimado fictício.
+- **REQ-SUS-03:** áreas, percentuais, decisões, ressalvas e ações obedecem às constraints descritas em `docs/SUSTAINABILITY-ESG.md`.
+- **REQ-SUS-04:** dashboard e CSV consultam dados persistidos e funcionam em base vazia.
+- **REQ-SUS-05:** documento/evidência referencia armazenamento real; metadado não representa arquivo inexistente.

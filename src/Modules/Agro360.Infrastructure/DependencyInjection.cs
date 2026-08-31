@@ -58,6 +58,7 @@ public static class DependencyInjection
         services.AddScoped<ISaasService, SaasService>();
         services.AddScoped<IComplianceService, ComplianceService>();
         services.AddScoped<IEsgService, EsgService>();
+        services.AddScoped<ISustainabilityService, SustainabilityService>();
         services.AddScoped<IIntegrationService, IntegrationService>();
         services.AddScoped<IGeospatialService, GeospatialService>();
         services.AddScoped<ICooperativeService, CooperativeService>();

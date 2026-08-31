@@ -193,3 +193,17 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 - [ ] Filtros, CSV, detalhes e decisões não atravessam tenant.
 - [ ] Usuário sem `intelligence.strategic` não gerencia indicador estratégico.
 - [ ] Navegação, estados vazio/loading/erro e modal funcionam em 360, 768 e 1440 px.
+
+## Sprint 42 — Sustentabilidade e ESG
+- [ ] Aplicar migration 042 em PostgreSQL limpo e atualizado; validar RLS com dois tenants.
+- [ ] Criar conformidade e rejeitar área produtiva maior que total/área negativa.
+- [ ] Validar CAR informado, vencimento documental, reprovação com motivo e aprovação com usuário/data.
+- [ ] Manter indicador sem fonte inválido e percentual entre 0–100; preservar medições.
+- [ ] Confirmar emissão decimal e estado `PENDING_FACTOR` sem fator.
+- [ ] Validar fornecedor crítico bloqueado na integração de compras configurada.
+- [ ] Validar lote sem origem, fazenda bloqueada e ressalva sem justificativa.
+- [ ] Validar projeto certificado somente com documento real; auditoria concluída imutável na aplicação.
+- [ ] Validar responsável em ação crítica, comentário na conclusão, motivo no cancelamento e atraso no dashboard.
+- [ ] Exercitar 14 CSVs com filtros/permissão/tenant e conteúdo vazio.
+- [ ] Conferir responsividade, estados vazio/loading/erro e dropdown de propriedade sem GUID manual.
+- [ ] Executar `dotnet restore`, `dotnet build` e `dotnet test` sem Docker.

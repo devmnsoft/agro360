@@ -187,3 +187,9 @@ Módulo Fiscal e Faturamento gerencial completo. Próxima evolução condicionad
 ## Sprint 41 — concluída
 - Inteligência Agro360: painel executivo, governança de indicadores, metas, alertas, riscos, recomendações, auditoria e relatórios rastreáveis.
 - Próximo: conectar fontes adicionais pelo contrato de integração e homologar fórmulas por tenant; provedor externo de IA permanece opcional e não configurado.
+
+### Concluído — Sprint 42
+Fundação operacional de Sustentabilidade e ESG, governança ambiental multi-tenant, inventário gerencial, rastreabilidade socioambiental e exportações CSV.
+
+### Próximos incrementos reais
+Configurar provedores oficiais de CAR/licenças e certificadoras; concluir adaptadores transacionais de bloqueio em compras/exportação conforme política de cada tenant; integrar upload documental usando o storage configurado.
