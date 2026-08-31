@@ -1,4 +1,4 @@
-const SHELL_CACHE="agro360-shell-v26", LOOKUP_CACHE="agro360-lookups-v26";
+const SHELL_CACHE="agro360-shell-v43", LOOKUP_CACHE="agro360-lookups-v43";
 const SHELL=["/","/field","/css/agro360.css","/css/field.css","/js/agro360.js","/js/field.js","/icons/agro360.svg","/manifest.webmanifest"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(SHELL_CACHE).then(c=>c.addAll(SHELL)));self.skipWaiting()});
 self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>![SHELL_CACHE,LOOKUP_CACHE].includes(k)).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));

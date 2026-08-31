@@ -145,3 +145,12 @@ Toda consulta e mutação internacional deve filtrar `tenant_id`; valores monet�
 - **REQ-SUS-03:** áreas, percentuais, decisões, ressalvas e ações obedecem às constraints descritas em `docs/SUSTAINABILITY-ESG.md`.
 - **REQ-SUS-04:** dashboard e CSV consultam dados persistidos e funcionam em base vazia.
 - **REQ-SUS-05:** documento/evidência referencia armazenamento real; metadado não representa arquivo inexistente.
+
+## REQ-FIELD-43 — Campo Mobile
+
+- **REQ-FIELD-01:** consultas, atalhos, mutações e CSV aplicam tenant, RLS e permissão de rota.
+- **REQ-FIELD-02:** checklist aprovado é imutável; conclusão exige resposta, evidência, observação, assinatura e localização configuradas.
+- **REQ-FIELD-03:** QR referencia entidade persistida e usa token opaco; outro tenant ou entidade bloqueada não é aberto.
+- **REQ-FIELD-04:** outbox preserva payload e chave idempotente; conflito não sobrescreve o remoto automaticamente.
+- **REQ-FIELD-05:** localização vem do navegador e pode ficar indisponível; assinatura gerencial não é anunciada como ICP-Brasil.
+- **REQ-FIELD-06:** arquivos exigem conteúdo/storage real, hash e allow-list; relatórios não expõem blob, payload ou documento sensível.

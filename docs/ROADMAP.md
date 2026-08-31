@@ -193,3 +193,7 @@ Fundação operacional de Sustentabilidade e ESG, governança ambiental multi-te
 
 ### Próximos incrementos reais
 Configurar provedores oficiais de CAR/licenças e certificadoras; concluir adaptadores transacionais de bloqueio em compras/exportação conforme política de cada tenant; integrar upload documental usando o storage configurado.
+
+## Sprint 43 — concluída
+
+Campo Mobile PWA operacional com outbox local, sincronização idempotente e resolução humana de conflitos. Próximos incrementos reais: homologar storage documental por tenant, provider ICP-Brasil opcional e telemetria/background sync conforme suporte do dispositivo, sem simulação.

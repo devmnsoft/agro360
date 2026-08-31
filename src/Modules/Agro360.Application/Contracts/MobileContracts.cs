@@ -18,7 +18,7 @@ public sealed record FieldOccurrenceCommand(
     [Required, RegularExpression("LOW|MEDIUM|HIGH|CRITICAL")] string Severity,
     [Required, StringLength(160, MinimumLength=3)] string Title,
     [Required, StringLength(2000, MinimumLength=5)] string Description,
-    string? EntityType, Guid? EntityId, decimal? Latitude, decimal? Longitude, DateTimeOffset OccurredAt);
+    string? EntityType, Guid? EntityId, Guid? ResponsibleId, decimal? Latitude, decimal? Longitude, DateTimeOffset OccurredAt);
 public sealed record FieldCheckinCommand(
     [Required, MaxLength(40)] string OperationType, string? EntityType, Guid? EntityId,
     decimal? Latitude, decimal? Longitude, decimal? Accuracy,
