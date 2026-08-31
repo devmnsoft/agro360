@@ -316,3 +316,7 @@ O Agro360 inclui PCP agroindustrial com formulações versionadas, ordens, benef
 ## Sprint 39 — Exportação e Trading
 
 A área `/Export` integra clientes internacionais, contratos, documentos, embarques, câmbio manual, custos, compliance e rastreabilidade. Instale `database/migrations/039_sprint39_export_trading.sql` ou o script completo e configure o PostgreSQL externo em `ConnectionStrings__Agro360`. Consulte [a documentação operacional](docs/EXPORT-TRADING.md).
+
+## Sprint 40 — Fiscal e Faturamento
+
+Área operacional em `/Fiscal`, API em `/api/fiscal`, regras gerenciais parametrizadas, faturamento, documentos externos, conferência de compras, integrações de estoque/financeiro, auditoria e CSV. Não há emissão SEFAZ simulada; consulte [a documentação fiscal](docs/FISCAL-BILLING.md).

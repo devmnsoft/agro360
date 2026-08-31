@@ -71,6 +71,10 @@ public static class DependencyInjection
         services.AddScoped<IProcurementService, ProcurementService>();
         services.AddScoped<IIndustrialProductionService, IndustrialProductionService>();
         services.AddScoped<IExportTradingService, ExportTradingService>();
+        services.AddScoped<FiscalIntegrationAdapter>();
+        services.AddScoped<IFiscalStockIntegration>(p => p.GetRequiredService<FiscalIntegrationAdapter>());
+        services.AddScoped<IFiscalFinancialIntegration>(p => p.GetRequiredService<FiscalIntegrationAdapter>());
+        services.AddScoped<IFiscalService, FiscalService>();
         return services;
     }
 }

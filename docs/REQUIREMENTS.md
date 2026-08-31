@@ -125,3 +125,10 @@ Central financeira real com plano de contas, centros de custo, títulos, baixas 
 
 ## REQ-EXP — Exportação e Trading
 Toda consulta e mutação internacional deve filtrar `tenant_id`; valores monetários usam `decimal`; aprovação/cancelamento exigem permissão; embarque depende de contrato aprovado, documentos, qualidade e saldo reais; relatórios CSV não expõem IDs técnicos.
+
+## RF-FISCAL — Sprint 40
+- RF-FIS-01: isolar operações, regras, faturamentos, documentos e relatórios por tenant.
+- RF-FIS-02: calcular totais com decimal no backend e rejeitar itens/descontos/percentuais inválidos.
+- RF-FIS-03: bloquear operação inativa, lote bloqueado/saldo insuficiente e conflitos de regra vigente.
+- RF-FIS-04: integrar estoque/financeiro com contratos reais e estados pendentes auditáveis.
+- RF-FIS-05: jamais representar emissão/autorização governamental sem resposta de provedor configurado.

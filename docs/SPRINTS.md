@@ -73,3 +73,8 @@ Entregues estrutura industrial, formulações imutáveis/versionadas, ordens com
 
 ## Sprint 39 — Exportação e Trading
 Módulo internacional tenant-safe com dashboard real, clientes, contratos, documentos, embarques, Incoterms, câmbio manual, custos, compliance, rastreabilidade e CSV.
+
+## Sprint 40 — Fiscal Agro e Faturamento (concluída)
+- Operações/séries/regras, faturamentos, documentos gerenciais, conferência de compras e divergências.
+- Integrações transacionais e rastreáveis com estoque e financeiro; emissão externa explicitamente pendente.
+- Dashboard real, workspace responsivo, RBAC, RLS, auditoria e onze relatórios CSV.
