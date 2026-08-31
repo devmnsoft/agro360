@@ -132,3 +132,9 @@ Toda consulta e mutação internacional deve filtrar `tenant_id`; valores monet�
 - RF-FIS-03: bloquear operação inativa, lote bloqueado/saldo insuficiente e conflitos de regra vigente.
 - RF-FIS-04: integrar estoque/financeiro com contratos reais e estados pendentes auditáveis.
 - RF-FIS-05: jamais representar emissão/autorização governamental sem resposta de provedor configurado.
+
+## REQ-INT-41 — Inteligência Agro360
+- Toda consulta e mutação deve aplicar tenant no SQL e RLS; indicadores estratégicos exigem permissão adicional.
+- Fórmulas e fontes são allow-list do backend, usam decimal e preservam snapshots, inclusive erros.
+- Alertas e recomendações exigem justificativas nas transições críticas e geram eventos imutáveis.
+- Dashboard vazio não falha nem inventa valores; relatórios CSV respeitam filtros e registram exportação.
