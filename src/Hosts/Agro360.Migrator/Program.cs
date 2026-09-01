@@ -39,7 +39,7 @@ try
 
     await EnsureHistoryAsync(connection).ConfigureAwait(false);
     var applied = (await connection.QueryAsync<AppliedMigration>(
-        "select version, name, checksum from platform.schema_migrations order by version;").ConfigureAwait(false))
+        "select version, name, checksum from agro360.platform_schema_migrations order by version;").ConfigureAwait(false))
         .ToDictionary(item => item.Version, StringComparer.Ordinal);
     var migrations = files.Select(file => Migration.Load(file)).ToArray();
     ValidateChecksums(migrations, applied);
@@ -77,12 +77,12 @@ finally { await Log.CloseAndFlushAsync().ConfigureAwait(false); }
 
 static async Task EnsureHistoryAsync(NpgsqlConnection connection) => await connection.ExecuteAsync(
     """
-    create schema if not exists platform;
-    create table if not exists platform.schema_migrations (
+    create schema if not exists agro360;
+    create table if not exists agro360.platform_schema_migrations (
       version varchar(160) primary key, name varchar(260) not null default '',
       checksum varchar(64) not null, applied_at timestamptz not null default now()
     );
-    alter table platform.schema_migrations add column if not exists name varchar(260) not null default '';
+    alter table agro360.platform_schema_migrations add column if not exists name varchar(260) not null default '';
     """).ConfigureAwait(false);
 
 static void ValidateChecksums(IEnumerable<Migration> migrations, IReadOnlyDictionary<string, AppliedMigration> applied)
@@ -100,7 +100,7 @@ static async Task MigrateAsync(NpgsqlConnection connection, Migration[] migratio
         // Releia o histórico depois de adquirir o lock. Assim, um processo que
         // aguardou outro migrator não tenta reaplicar migrations recém-concluídas.
         var applied = (await connection.QueryAsync<AppliedMigration>(
-            "select version, name, checksum from platform.schema_migrations order by version;").ConfigureAwait(false))
+            "select version, name, checksum from agro360.platform_schema_migrations order by version;").ConfigureAwait(false))
             .ToDictionary(item => item.Version, StringComparer.Ordinal);
         ValidateChecksums(migrations, applied);
         foreach (var migration in migrations.Where(item => !applied.ContainsKey(item.Version)))
@@ -108,7 +108,7 @@ static async Task MigrateAsync(NpgsqlConnection connection, Migration[] migratio
             Log.Information("Aplicando {Migration}...", migration.Name);
             await using var transaction = await connection.BeginTransactionAsync().ConfigureAwait(false);
             await connection.ExecuteAsync(migration.Sql, transaction: transaction, commandTimeout: 300).ConfigureAwait(false);
-            await connection.ExecuteAsync("insert into platform.schema_migrations(version,name,checksum) values (@Version,@Name,@Checksum);", migration, transaction).ConfigureAwait(false);
+            await connection.ExecuteAsync("insert into agro360.platform_schema_migrations(version,name,checksum) values (@Version,@Name,@Checksum);", migration, transaction).ConfigureAwait(false);
             await transaction.CommitAsync().ConfigureAwait(false);
         }
     }

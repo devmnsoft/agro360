@@ -23,7 +23,7 @@ public sealed class PropertyService(DatabaseExecutor database, ITenantContext te
             var organizationExists = await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
                 """
                 select exists(
-                    select 1 from organization.organizations
+                    select 1 from agro360.organization_organizations
                     where id = @OrganizationId and tenant_id = @TenantId and deleted_at is null
                 );
                 """,
@@ -37,7 +37,7 @@ public sealed class PropertyService(DatabaseExecutor database, ITenantContext te
 
             await connection.ExecuteAsync(new CommandDefinition(
                 """
-                insert into geo.farms
+                insert into agro360.geo_farms
                     (id, tenant_id, organization_id, name, state, total_area_ha,
                      registration_number, car_number, created_at, created_by, version)
                 values
@@ -94,7 +94,7 @@ public sealed class PropertyService(DatabaseExecutor database, ITenantContext te
         return database.InTenantTransactionAsync(async (connection, transaction) =>
         {
             var farmExists = await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
-                "select exists(select 1 from geo.farms where id = @FarmId and tenant_id = @TenantId and deleted_at is null);",
+                "select exists(select 1 from agro360.geo_farms where id = @FarmId and tenant_id = @TenantId and deleted_at is null);",
                 new { command.FarmId, tenantContext.TenantId },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -105,7 +105,7 @@ public sealed class PropertyService(DatabaseExecutor database, ITenantContext te
 
             await connection.ExecuteAsync(new CommandDefinition(
                 """
-                insert into geo.fields
+                insert into agro360.geo_fields
                     (id, tenant_id, farm_id, name, area_ha, boundary, created_at, created_by, version)
                 values
                     (@Id, @TenantId, @FarmId, @Name, @AreaHa,
@@ -152,7 +152,7 @@ public sealed class PropertyService(DatabaseExecutor database, ITenantContext te
             using var grid = await connection.QueryMultipleAsync(new CommandDefinition(
                 """
                 select count(*)
-                from geo.farms
+                from agro360.geo_farms
                 where tenant_id = @TenantId
                   and deleted_at is null
                   and (@Search is null or name ilike '%' || @Search || '%');
@@ -160,7 +160,7 @@ public sealed class PropertyService(DatabaseExecutor database, ITenantContext te
                 select id, organization_id as OrganizationId, name, state,
                        total_area_ha as TotalAreaHa, registration_number as RegistrationNumber,
                        car_number as CarNumber, version
-                from geo.farms
+                from agro360.geo_farms
                 where tenant_id = @TenantId
                   and deleted_at is null
                   and (@Search is null or name ilike '%' || @Search || '%')
@@ -193,13 +193,13 @@ public sealed class PropertyService(DatabaseExecutor database, ITenantContext te
         {
             using var grid = await connection.QueryMultipleAsync(new CommandDefinition(
                 """
-                select count(*) from geo.fields
+                select count(*) from agro360.geo_fields
                 where tenant_id = @TenantId and farm_id = @FarmId and deleted_at is null;
 
                 select id, farm_id as FarmId, name, area_ha as AreaHa,
                        case when boundary is null then null else boundary::text end as BoundaryGeoJson,
                        version
-                from geo.fields
+                from agro360.geo_fields
                 where tenant_id = @TenantId and farm_id = @FarmId and deleted_at is null
                 order by name
                 limit @PageSize offset @Offset;

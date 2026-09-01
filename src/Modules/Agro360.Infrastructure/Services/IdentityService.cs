@@ -28,7 +28,7 @@ public sealed class IdentityService(
         return database.InSystemTransactionAsync(async (connection, transaction) =>
         {
             var tenantCount = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
-                "select count(*) from tenancy.tenants;",
+                "select count(*) from agro360.tenancy_tenants;",
                 transaction: transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
             if (tenantCount > 0)
@@ -38,7 +38,7 @@ public sealed class IdentityService(
 
             await connection.ExecuteAsync(new CommandDefinition(
                 """
-                insert into tenancy.tenants
+                insert into agro360.tenancy_tenants
                     (id, name, slug, timezone_id, status, created_at, version)
                 values
                     (@Id, @Name, @Slug, @TimeZoneId, @Status, now(), 1);
@@ -62,30 +62,30 @@ public sealed class IdentityService(
 
             await connection.ExecuteAsync(new CommandDefinition(
                 """
-                insert into organization.organizations
+                insert into agro360.organization_organizations
                     (id, tenant_id, type, name, legal_name, created_at, version)
                 values
                     (@Id, @TenantId, 'ECONOMIC_GROUP', @Name, @Name, now(), 1);
 
-                insert into identity.users
+                insert into agro360.identity_users
                     (id, tenant_id, name, email, password_hash, status, created_at, version)
                 values
                     (@UserId, @TenantId, @AdminName, lower(@Email), @PasswordHash, 'ACTIVE', now(), 1);
 
-                insert into identity.roles
+                insert into agro360.identity_roles
                     (id, tenant_id, code, name, is_system, created_at)
                 values
                     (@RoleId, @TenantId, 'tenant-administrator', 'Administrador do tenant', false, now());
 
-                insert into identity.user_roles (tenant_id, user_id, role_id)
+                insert into agro360.identity_user_roles (tenant_id, user_id, role_id)
                 values (@TenantId, @UserId, @RoleId);
 
-                insert into identity.role_permissions (tenant_id, role_id, permission_id)
+                insert into agro360.identity_role_permissions (tenant_id, role_id, permission_id)
                 select @TenantId, @RoleId, id
-                from identity.permissions
+                from agro360.identity_permissions
                 where code = any(@Permissions);
 
-                insert into audit.logs
+                insert into agro360.audit_logs
                     (id, tenant_id, user_id, action, entity_type, entity_id, after_data, occurred_at)
                 values
                     (@AuditId, @TenantId, @UserId, 'bootstrap', 'Tenant', @TenantId,
@@ -120,7 +120,7 @@ public sealed class IdentityService(
             throw new ForbiddenException("Credenciais inválidas ou tenant indisponível.");
         var tenant = await database.InSystemTransactionAsync(async (connection, transaction) =>
             await connection.QuerySingleOrDefaultAsync<TenantLookup>(new CommandDefinition(
-                "select id, status from tenancy.tenants where slug = lower(@Slug);",
+                "select id, status from agro360.tenancy_tenants where slug = lower(@Slug);",
                 new { command.TenantSlug },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
@@ -135,17 +135,17 @@ public sealed class IdentityService(
             var user = await connection.QuerySingleOrDefaultAsync<UserLookup>(new CommandDefinition(
                 """
                 select id, tenant_id as TenantId, name, email, password_hash as PasswordHash
-                from identity.users u
+                from agro360.identity_users u
                 where u.tenant_id = @TenantId
                   and (u.email = lower(@Identifier)
                        or u.normalized_document = @NormalizedIdentifier
                        or (@NormalizedIdentifier <> '' and exists (
-                           select 1 from saas.organizations o
+                           select 1 from agro360.saas_organizations o
                            where o.tenant_id = u.tenant_id
                              and o.document = @NormalizedIdentifier
                              and u.id in (
-                               select ur.user_id from identity.user_roles ur
-                               join identity.roles r on r.id=ur.role_id and r.tenant_id=ur.tenant_id
+                               select ur.user_id from agro360.identity_user_roles ur
+                               join agro360.identity_roles r on r.id=ur.role_id and r.tenant_id=ur.tenant_id
                                where ur.tenant_id=u.tenant_id and r.code='tenant-administrator'))))
                   and u.status = 'ACTIVE'
                   and u.deleted_at is null;
@@ -176,9 +176,9 @@ public sealed class IdentityService(
             var user = await connection.QuerySingleOrDefaultAsync<UserLookup>(new CommandDefinition(
                 """
                 select u.id, u.tenant_id as TenantId, u.name, u.email, u.password_hash as PasswordHash
-                from identity.refresh_tokens rt
-                join identity.users u on u.id = rt.user_id and u.tenant_id = rt.tenant_id
-                join tenancy.tenants t on t.id = rt.tenant_id
+                from agro360.identity_refresh_tokens rt
+                join agro360.identity_users u on u.id = rt.user_id and u.tenant_id = rt.tenant_id
+                join agro360.tenancy_tenants t on t.id = rt.tenant_id
                 where rt.tenant_id = @TenantId
                   and rt.token_hash = @TokenHash
                   and rt.revoked_at is null
@@ -199,7 +199,7 @@ public sealed class IdentityService(
 
             await connection.ExecuteAsync(new CommandDefinition(
                 """
-                update identity.refresh_tokens
+                update agro360.identity_refresh_tokens
                 set revoked_at = now()
                 where tenant_id = @TenantId and token_hash = @TokenHash and revoked_at is null;
                 """,
@@ -220,10 +220,10 @@ public sealed class IdentityService(
         var permissions = (await connection.QueryAsync<string>(new CommandDefinition(
             """
             select distinct p.code
-            from identity.user_roles ur
-            join identity.role_permissions rp
+            from agro360.identity_user_roles ur
+            join agro360.identity_role_permissions rp
               on rp.role_id = ur.role_id and rp.tenant_id = ur.tenant_id
-            join identity.permissions p on p.id = rp.permission_id
+            join agro360.identity_permissions p on p.id = rp.permission_id
             where ur.tenant_id = @TenantId and ur.user_id = @UserId
             order by p.code;
             """,
@@ -235,7 +235,7 @@ public sealed class IdentityService(
         var refreshExpiresAt = clock.UtcNow.AddDays(14);
         await connection.ExecuteAsync(new CommandDefinition(
             """
-            insert into identity.refresh_tokens
+            insert into agro360.identity_refresh_tokens
                 (id, tenant_id, user_id, token_hash, expires_at, created_at)
             values
                 (@Id, @TenantId, @UserId, @TokenHash, @ExpiresAt, now());

@@ -23,21 +23,21 @@ public sealed class GlobalSearchService(DatabaseExecutor database, ITenantContex
                     select 'FARM' as EntityType, id as EntityId, name as Title,
                            state as Subtitle, '/properties/' || id as Route,
                            similarity(name, @Query) as Rank
-                    from geo.farms
+                    from agro360.geo_farms
                     where tenant_id = @TenantId and deleted_at is null and name % @Query
 
                     union all
 
                     select 'FIELD', id, name, area_ha || ' ha', '/fields/' || id,
                            similarity(name, @Query)
-                    from geo.fields
+                    from agro360.geo_fields
                     where tenant_id = @TenantId and deleted_at is null and name % @Query
 
                     union all
 
                     select 'ANIMAL', id, tag, concat(species, ' · ', breed), '/livestock/animals/' || id,
                            greatest(similarity(tag, @Query), similarity(coalesce(rfid, ''), @Query))
-                    from livestock.animals
+                    from agro360.livestock_animals
                     where tenant_id = @TenantId and deleted_at is null
                       and (tag % @Query or coalesce(rfid, '') % @Query)
 
@@ -45,7 +45,7 @@ public sealed class GlobalSearchService(DatabaseExecutor database, ITenantContex
 
                     select 'PRODUCT', id, name, concat(sku, ' · ', category), '/inventory/products/' || id,
                            greatest(similarity(name, @Query), similarity(sku, @Query))
-                    from inventory.products
+                    from agro360.inventory_products
                     where tenant_id = @TenantId and deleted_at is null
                       and (name % @Query or sku % @Query)
 
@@ -53,7 +53,7 @@ public sealed class GlobalSearchService(DatabaseExecutor database, ITenantContex
 
                     select 'SEASON', id, name, crop, '/agriculture/seasons/' || id,
                            greatest(similarity(name, @Query), similarity(crop, @Query))
-                    from agriculture.seasons
+                    from agro360.agriculture_seasons
                     where tenant_id = @TenantId and deleted_at is null
                       and (name % @Query or crop % @Query)
                 ) results
@@ -83,7 +83,7 @@ public sealed class TraceabilityService(DatabaseExecutor database, ITenantContex
             var rootExists = await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
                 """
                 select exists(
-                    select 1 from traceability.nodes
+                    select 1 from agro360.traceability_nodes
                     where tenant_id = @TenantId and entity_type = @EntityType and entity_id = @EntityId
                 );
                 """,
@@ -99,7 +99,7 @@ public sealed class TraceabilityService(DatabaseExecutor database, ITenantContex
                 """
                 with recursive graph_nodes as (
                     select n.id, 0 as level, array[n.id] as path
-                    from traceability.nodes n
+                    from agro360.traceability_nodes n
                     where n.tenant_id = @TenantId and n.entity_type = @EntityType and n.entity_id = @EntityId
 
                     union all
@@ -108,7 +108,7 @@ public sealed class TraceabilityService(DatabaseExecutor database, ITenantContex
                            g.level + 1,
                            g.path || case when e.from_node_id = g.id then e.to_node_id else e.from_node_id end
                     from graph_nodes g
-                    join traceability.edges e
+                    join agro360.traceability_edges e
                       on e.tenant_id = @TenantId
                      and (e.from_node_id = g.id or e.to_node_id = g.id)
                     where g.level < @Depth
@@ -117,13 +117,13 @@ public sealed class TraceabilityService(DatabaseExecutor database, ITenantContex
                     select distinct id from graph_nodes
                 )
                 select n.id, n.entity_type as EntityType, n.entity_id as EntityId, n.label
-                from traceability.nodes n
+                from agro360.traceability_nodes n
                 join distinct_nodes d on d.id = n.id
                 where n.tenant_id = @TenantId;
 
                 with recursive graph_nodes as (
                     select n.id, 0 as level, array[n.id] as path
-                    from traceability.nodes n
+                    from agro360.traceability_nodes n
                     where n.tenant_id = @TenantId and n.entity_type = @EntityType and n.entity_id = @EntityId
 
                     union all
@@ -132,7 +132,7 @@ public sealed class TraceabilityService(DatabaseExecutor database, ITenantContex
                            g.level + 1,
                            g.path || case when e.from_node_id = g.id then e.to_node_id else e.from_node_id end
                     from graph_nodes g
-                    join traceability.edges e
+                    join agro360.traceability_edges e
                       on e.tenant_id = @TenantId
                      and (e.from_node_id = g.id or e.to_node_id = g.id)
                     where g.level < @Depth
@@ -142,7 +142,7 @@ public sealed class TraceabilityService(DatabaseExecutor database, ITenantContex
                 )
                 select distinct e.id, e.from_node_id as FromNodeId, e.to_node_id as ToNodeId,
                        e.relation_type as RelationType, e.created_at as CreatedAt
-                from traceability.edges e
+                from agro360.traceability_edges e
                 join distinct_nodes f on f.id = e.from_node_id
                 join distinct_nodes t on t.id = e.to_node_id
                 where e.tenant_id = @TenantId;

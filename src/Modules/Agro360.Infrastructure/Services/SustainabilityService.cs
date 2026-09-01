@@ -33,12 +33,12 @@ public sealed class SustainabilityService(DatabaseExecutor db, ITenantContext te
     public Task<IReadOnlyList<EnvironmentalComplianceListItem>> CompliancesAsync(string? status,CancellationToken ct) => db.InTenantTransactionAsync(async(c,t) =>
         (IReadOnlyList<EnvironmentalComplianceListItem>)(await c.QueryAsync<EnvironmentalComplianceListItem>("""
         select x.id,f.name farmname,x.producer_name producername,x.total_area totalarea,x.productive_area productivearea,x.status,x.risk,x.license_valid_until licensevaliduntil
-        from sustainability_environmental_compliances x join geo.farms f on f.tenant_id=x.tenant_id and f.id=x.farm_id
+        from sustainability_environmental_compliances x join agro360.geo_farms f on f.tenant_id=x.tenant_id and f.id=x.farm_id
         where x.tenant_id=@TenantId and x.deleted_at is null and (@Status is null or x.status=@Status) order by f.name
         """,new { tenant.TenantId, Status=status },t)).AsList(),ct);
 
     public Task<IReadOnlyList<SustainabilityFarmOption>> FarmsAsync(string? search,CancellationToken ct) => db.InTenantTransactionAsync(async(c,t) =>
-        (IReadOnlyList<SustainabilityFarmOption>)(await c.QueryAsync<SustainabilityFarmOption>("select id,name from geo.farms where tenant_id=@TenantId and deleted_at is null and (@Search is null or name ilike '%'||@Search||'%') order by name limit 50",new { tenant.TenantId,Search=string.IsNullOrWhiteSpace(search)?null:search.Trim() },t)).AsList(),ct);
+        (IReadOnlyList<SustainabilityFarmOption>)(await c.QueryAsync<SustainabilityFarmOption>("select id,name from agro360.geo_farms where tenant_id=@TenantId and deleted_at is null and (@Search is null or name ilike '%'||@Search||'%') order by name limit 50",new { tenant.TenantId,Search=string.IsNullOrWhiteSpace(search)?null:search.Trim() },t)).AsList(),ct);
 
     public Task<Guid> SaveComplianceAsync(EnvironmentalComplianceCommand x,CancellationToken ct)
     {
@@ -48,7 +48,7 @@ public sealed class SustainabilityService(DatabaseExecutor db, ITenantContext te
             var changed=await c.ExecuteAsync("""
             insert into sustainability_environmental_compliances(id,tenant_id,farm_id,producer_name,total_area,productive_area,preservation_area,app_area,legal_reserve_area,car_number,car_status,environmental_license,license_valid_until,issuing_agency,georeferenced,status,risk,notes,created_by,updated_by)
             select @Id,@TenantId,@FarmId,@ProducerName,@TotalArea,@ProductiveArea,@PreservationArea,@AppArea,@LegalReserveArea,@CarNumber,@CarStatus,@EnvironmentalLicense,@LicenseValidUntil,@IssuingAgency,@Georeferenced,@Status,@Risk,@Notes,@UserId,@UserId
-            where exists(select 1 from geo.farms where tenant_id=@TenantId and id=@FarmId and deleted_at is null)
+            where exists(select 1 from agro360.geo_farms where tenant_id=@TenantId and id=@FarmId and deleted_at is null)
             """,new { Id=id,tenant.TenantId,tenant.UserId,x.FarmId,x.ProducerName,x.TotalArea,x.ProductiveArea,x.PreservationArea,x.AppArea,x.LegalReserveArea,x.CarNumber,x.CarStatus,x.EnvironmentalLicense,x.LicenseValidUntil,x.IssuingAgency,x.Georeferenced,x.Status,x.Risk,x.Notes },t);
             if(changed==0) throw new KeyNotFoundException("Propriedade não encontrada neste tenant.");
             return id;

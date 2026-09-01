@@ -43,7 +43,7 @@ public sealed class DatabaseExecutor(IDbConnectionFactory connectionFactory, ITe
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
             var tenantStatus = await connection.ExecuteScalarAsync<short?>(new CommandDefinition(
-                "select status from tenancy.tenants where id = @TenantId and deleted_at is null;",
+                "select status from agro360.tenancy_tenants where id = @TenantId and deleted_at is null;",
                 new { TenantId = tenantId },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);

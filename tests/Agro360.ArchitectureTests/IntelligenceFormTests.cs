@@ -13,7 +13,7 @@ public sealed class IntelligenceFormTests
  {
    var root=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../"));
    var sql=File.ReadAllText(Path.Combine(root,"database/agro360-postgres-full.sql"));
-   Assert.Contains("Sprint 13",sql); Assert.Contains("create schema if not exists intelligence",sql);
+   Assert.Contains("Sprint 13",sql); Assert.Contains("create schema if not exists agro360",sql);
    Assert.DoesNotContain("\\i ",sql,StringComparison.OrdinalIgnoreCase);
  }
 }

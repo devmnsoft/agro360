@@ -33,7 +33,7 @@ public sealed class RegionalLogisticsController(ISprint10Service service):Contro
 public sealed class SalesNetworkController(ISprint10Service service):ControllerBase
 {
  [HttpGet("partners"),Authorize(Policy=Permissions.SalesNetworkRead)] public Task<IReadOnlyList<dynamic>> Partners(CancellationToken ct)=>service.PartnersAsync(ct);
- [HttpPost("partners"),Authorize(Policy=Permissions.SalesNetworkWrite)] public async Task<IActionResult> Partner(PartnerCommand x,CancellationToken ct)=>Created("api/sales-network/partners",new{id=await service.AddPartnerAsync(x,ct)});
+ [HttpPost("partners"),Authorize(Policy=Permissions.SalesNetworkWrite)] public async Task<IActionResult> Partner(SalesNetworkPartnerCommand x,CancellationToken ct)=>Created("api/sales-network/partners",new{id=await service.AddPartnerAsync(x,ct)});
  [HttpPost("commission-rules"),Authorize(Policy=Permissions.SalesNetworkWrite)] public async Task<IActionResult> Rule(CommissionRuleCommand x,CancellationToken ct)=>Created("api/sales-network/commission-rules",new{id=await service.AddCommissionRuleAsync(x,ct)});
  [HttpPost("splits/calculate"),Authorize(Policy=Permissions.SalesNetworkWrite)] public async Task<IActionResult> Calculate(SplitCalculationCommand x,CancellationToken ct)=>Ok(await service.CalculateSplitAsync(x,ct));
  [HttpPost("splits/{id:guid}/approve"),Authorize(Policy=Permissions.SalesNetworkApprove)] public async Task<IActionResult> Approve(Guid id,CancellationToken ct){await service.ApproveSplitAsync(id,ct);return NoContent();}

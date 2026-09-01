@@ -15,7 +15,7 @@ public sealed class DatabaseFoundationTests
         var extensions = (await connection.QueryAsync<string>(
             "select extname from pg_extension where extname = any(array['postgis','pg_trgm','unaccent','pgcrypto']) order by extname;"))
             .ToArray();
-        var migrations = await connection.ExecuteScalarAsync<int>("select count(*) from platform.schema_migrations;");
+        var migrations = await connection.ExecuteScalarAsync<int>("select count(*) from agro360.platform_schema_migrations;");
 
         Assert.Equal(["pg_trgm", "pgcrypto", "postgis", "unaccent"], extensions);
         Assert.True(migrations >= 4);
@@ -71,9 +71,9 @@ public sealed class DatabaseFoundationTests
     {
         await using var connection = new NpgsqlConnection(GetRequiredConnectionString());
         await connection.OpenAsync(TestContext.Current.CancellationToken);
-        var units = await connection.ExecuteScalarAsync<int>("select count(*) from platform.units;");
-        var permissions = await connection.ExecuteScalarAsync<int>("select count(*) from identity.permissions;");
-        var modules = await connection.ExecuteScalarAsync<int>("select count(*) from platform.modules;");
+        var units = await connection.ExecuteScalarAsync<int>("select count(*) from agro360.platform_units;");
+        var permissions = await connection.ExecuteScalarAsync<int>("select count(*) from agro360.identity_permissions;");
+        var modules = await connection.ExecuteScalarAsync<int>("select count(*) from agro360.platform_modules;");
 
         Assert.True(units >= 12);
         Assert.True(permissions >= 13);

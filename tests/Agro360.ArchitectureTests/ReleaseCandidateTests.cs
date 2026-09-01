@@ -11,7 +11,7 @@ public sealed class ReleaseCandidateTests
         Assert.DoesNotContain("\\i ", sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Host=", sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Password=", sql, StringComparison.OrdinalIgnoreCase);
-        foreach (var marker in new[] { "platform.schema_versions", "agriculture.field_operations", "livestock.animals", "storage.receipts", "traceability.lots", "compliance.product_rules", "rural_hr.people", "2.0.0-rc.1" })
+        foreach (var marker in new[] { "agro360.platform_schema_versions", "agro360.agriculture_field_operations", "agro360.livestock_animals", "agro360.storage_receipts", "agro360.traceability_lots", "agro360.compliance_product_rules", "agro360.rural_hr_people", "2.0.0-rc.1" })
             Assert.Contains(marker, sql, StringComparison.OrdinalIgnoreCase);
     }
 

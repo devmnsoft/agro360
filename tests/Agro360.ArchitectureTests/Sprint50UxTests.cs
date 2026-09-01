@@ -12,5 +12,5 @@ public sealed class Sprint50UxTests
     [Fact] public void Confirmation_only_replays_the_real_action_after_confirmation()
     { var js=Read("src/Hosts/Agro360.Web/wwwroot/js/forms.js"); Assert.Contains("data-confirm-action",js); Assert.Contains("target.click()",js); Assert.Contains("reason.value.trim().length<3",js); }
     [Fact] public void Database_has_tenant_scoped_ui_catalog_and_audit()
-    { var sql=Read("database/migrations/050_ui_quality.sql"); foreach(var table in new[]{"contextual_help","message_templates","form_validation_rules","action_confirmations","page_events","validation_audit","report_exports"}) Assert.Contains(table,sql); Assert.Contains("enable row level security",sql); Assert.Contains("platform.current_tenant_id()",sql); }
+    { var sql=Read("database/migrations/050_ui_quality.sql"); foreach(var table in new[]{"contextual_help","message_templates","form_validation_rules","action_confirmations","page_events","validation_audit","report_exports"}) Assert.Contains(table,sql); Assert.Contains("enable row level security",sql); Assert.Contains("agro360.platform_current_tenant_id()",sql); }
 }
