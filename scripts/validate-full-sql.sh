@@ -11,4 +11,11 @@ done
 if rg -ni '^\s*create schema( if not exists)?\s+(identity|finance|audit|workflow|inventory|platform|tenancy|operations|support|public)\b' "$file"; then
   echo "ERRO: instalador cria namespace legado" >&2; exit 1
 fi
+schema_declarations="$(rg -io '^[[:space:]]*create schema( if not exists)?[[:space:]]+[a-z_][a-z0-9_]*' "$file" | tr '[:upper:]' '[:lower:]' | sed -E 's/^[[:space:]]*create schema( if not exists)?[[:space:]]+//')"
+if [[ "$schema_declarations" != "agro360" ]]; then
+  echo "ERRO: o instalador deve declarar exclusivamente CREATE SCHEMA IF NOT EXISTS agro360" >&2; exit 1
+fi
+if rg -ni '\busing\s+gist\s*\(' "$file"; then
+  echo "ERRO: o instalador não deve usar GiST; colunas JSONB devem usar GIN" >&2; exit 1
+fi
 echo "SQL consolidado validado: $file"

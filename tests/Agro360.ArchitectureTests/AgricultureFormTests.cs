@@ -3,7 +3,7 @@ namespace Agro360.ArchitectureTests;
 public sealed class AgricultureFormTests
 {
     [Fact]
-    public void Agriculture_page_never_exposes_a_typed_technical_identifier()
+    public void AgriculturePageNeverExposesATypedTechnicalIdentifier()
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         var html = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/Pages/Agriculture/Index.cshtml"));
@@ -14,7 +14,7 @@ public sealed class AgricultureFormTests
     }
 
     [Fact]
-    public void Full_sql_is_standalone()
+    public void FullSqlIsStandalone()
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         var sql = File.ReadAllText(Path.Combine(root, "database/agro360-postgres-full.sql"));

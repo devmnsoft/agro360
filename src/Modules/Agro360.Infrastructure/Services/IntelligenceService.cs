@@ -47,7 +47,8 @@ public sealed class IntelligenceService(DatabaseExecutor database, ITenantContex
           (select count(*) from agro360.storage_lots l where l.tenant_id=@TenantId and l.status='BLOCKED') nonconforming_lots,
           (select count(*) from agro360.regional_logistics_trips x where x.tenant_id=@TenantId and x.status not in ('COMPLETED','CANCELLED') and x.planned_start<now()+interval '24 hours') risky_trips
         """;
-        var x = await c.QuerySingleAsync(sql,p,t);
+        var command = new CommandDefinition(sql, p, t, cancellationToken: ct);
+        var x = await c.QuerySingleAsync(command);
         decimal revenue=Convert.ToDecimal(x.revenue), expense=Convert.ToDecimal(x.expense), cost=Convert.ToDecimal(x.cost), hectares=Convert.ToDecimal(x.hectares); int animals=Convert.ToInt32(x.animals);
         return (IReadOnlyList<IndicatorResult>)new IndicatorResult[] {
           I("revenue","Receita no período","Financeiro",revenue,"BRL","Recebimentos baixados no período"), I("expense","Despesa no período","Financeiro",expense,"BRL","Pagamentos baixados no período"),

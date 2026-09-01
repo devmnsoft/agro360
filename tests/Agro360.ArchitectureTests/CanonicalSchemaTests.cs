@@ -7,7 +7,7 @@ public sealed class CanonicalSchemaTests
     private static string Sql => File.ReadAllText(Path.Combine(Root(), "database", "agro360-postgres-full.sql"));
 
     [Fact]
-    public void Installer_creates_only_the_canonical_schema()
+    public void InstallerCreatesOnlyTheCanonicalSchema()
     {
         var declarations = Regex.Matches(Sql, @"create\s+schema\s+if\s+not\s+exists\s+([a-z_][a-z0-9_]*)", RegexOptions.IgnoreCase)
             .Select(match => match.Groups[1].Value).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -16,7 +16,7 @@ public sealed class CanonicalSchemaTests
     }
 
     [Fact]
-    public void Every_static_table_declaration_is_schema_qualified()
+    public void EveryStaticTableDeclarationIsSchemaQualified()
     {
         Assert.DoesNotMatch(new Regex(@"create\s+table\s+if\s+not\s+exists\s+(?!agro360\.)", RegexOptions.IgnoreCase), Sql);
     }
