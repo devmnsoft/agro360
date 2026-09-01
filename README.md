@@ -351,3 +351,7 @@ Governança persistente e isolada por tenant: importação CSV pré-validada, qu
 ## Sprint 49 — Workflows inteligentes
 
 A Central de Processos em `/Work` reúne tarefas, aprovações, notificações internas, outbox honesta, agenda, SLA e automações tenant-safe. A migration `049_workflow_automation.sql` adiciona versões, eventos, templates localizados, escalonamentos e execuções idempotentes. Consulte `docs/WORKFLOWS.md`, `docs/NOTIFICATIONS.md` e `docs/SLA-AUTOMATION.md`.
+
+## Sprint 50 — qualidade transversal de UX
+
+A camada global de formulários adiciona validação acessível por campo e resumo, estado de envio, confirmação funcional para ações sensíveis e ajuda contextual compacta. O backend dispõe de validação canônica para CPF/CNPJ, e-mail, decimal por cultura e datas. O schema `ui` guarda conteúdo traduzível, catálogo de mensagens, regras, confirmações e eventos com RLS por tenant. Consulte `docs/UX-FORMS-VALIDATION.md` e `docs/CONTEXTUAL-HELP.md`.

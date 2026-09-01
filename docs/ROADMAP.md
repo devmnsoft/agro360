@@ -215,3 +215,7 @@ Governança persistente e isolada por tenant: importação CSV pré-validada, qu
 
 ## Sprint 49 — concluída
 Fundação de workflows versionados, tarefas operacionais, aprovação segregada, templates localizados, outbox, SLA, agenda e automações idempotentes. Pendência real: homologar provedores externos antes de habilitar entrega de e-mail/WhatsApp.
+
+## Sprint 50 — formulários e ajuda contextual
+
+Validação backend continua sendo a fonte da verdade; a interface oferece resumo e erros por campo, loading, confirmação com consequência real e motivo nas ações definidas pela regra. Ajuda curta é recolhível e localizada em pt-BR, en-US e es-ES. Configurações e eventos de UX usam o schema `ui`, auditoria e RLS por tenant. Detalhes: `docs/UX-FORMS-VALIDATION.md` e `docs/CONTEXTUAL-HELP.md`.

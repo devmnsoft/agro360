@@ -135,3 +135,7 @@ Governança persistente e isolada por tenant: importação CSV pré-validada, qu
 
 ## Sprint 49
 `migrations/049_workflow_automation.sql` evolui a operação com versões/eventos de workflow, comentários/evidências, templates e outbox, SLA/escalonamentos, agenda e automações idempotentes. O conteúdo está incorporado no SQL completo. Provedores externos continuam não configurados até homologação real.
+
+## Sprint 50 — formulários e ajuda contextual
+
+Validação backend continua sendo a fonte da verdade; a interface oferece resumo e erros por campo, loading, confirmação com consequência real e motivo nas ações definidas pela regra. Ajuda curta é recolhível e localizada em pt-BR, en-US e es-ES. Configurações e eventos de UX usam o schema `ui`, auditoria e RLS por tenant. Detalhes: `docs/UX-FORMS-VALIDATION.md` e `docs/CONTEXTUAL-HELP.md`.

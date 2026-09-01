@@ -113,3 +113,7 @@ Governança persistente e isolada por tenant: importação CSV pré-validada, qu
 ## Sprint 49 — Workflows inteligentes
 
 Motor versionado e auditável para etapas, tarefas, aprovações, notificações, agenda, SLA/escalonamentos e automações declarativas. A central responsiva mantém ajuda contextual, isolamento por tenant e outbox sem simulação de envio.
+
+## Sprint 50 — formulários e ajuda contextual
+
+Validação backend continua sendo a fonte da verdade; a interface oferece resumo e erros por campo, loading, confirmação com consequência real e motivo nas ações definidas pela regra. Ajuda curta é recolhível e localizada em pt-BR, en-US e es-ES. Configurações e eventos de UX usam o schema `ui`, auditoria e RLS por tenant. Detalhes: `docs/UX-FORMS-VALIDATION.md` e `docs/CONTEXTUAL-HELP.md`.
