@@ -184,3 +184,7 @@ Governança persistente e isolada por tenant: importação CSV pré-validada, qu
 - **WF-03:** processos, agenda, SLA e notificações são isolados por tenant e permissão.
 - **WF-04:** comunicação externa sem provedor permanece `PENDING_NOT_CONFIGURED` na outbox.
 - **WF-05:** automações são declarativas, idempotentes e não aceitam SQL da interface.
+
+## Sprint 50 — formulários e ajuda contextual
+
+Validação backend continua sendo a fonte da verdade; a interface oferece resumo e erros por campo, loading, confirmação com consequência real e motivo nas ações definidas pela regra. Ajuda curta é recolhível e localizada em pt-BR, en-US e es-ES. Configurações e eventos de UX usam o schema `ui`, auditoria e RLS por tenant. Detalhes: `docs/UX-FORMS-VALIDATION.md` e `docs/CONTEXTUAL-HELP.md`.

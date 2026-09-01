@@ -14,6 +14,7 @@
     <link rel="manifest" href="~/manifest.webmanifest" />
     <link rel="icon" href="~/icons/agro360.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="~/css/agro360.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/forms.css" asp-append-version="true" />
     @await RenderSectionAsync("Head", required: false)
 </head>
 <body>
@@ -128,7 +129,24 @@
     </div>
 
     <div class="toast-region" id="toast-region" aria-live="polite"></div>
+    <dialog class="action-confirmation" id="action-confirmation" aria-labelledby="confirmation-title" aria-describedby="confirmation-consequence">
+        <form method="dialog" id="confirmation-form">
+            <span class="eyebrow" data-confirmation-kind>Ação sensível</span>
+            <h2 id="confirmation-title">Confirme a operação</h2>
+            <p id="confirmation-consequence"></p>
+            <label id="confirmation-reason-field" hidden>Justificativa <span aria-hidden="true">*</span>
+                <textarea id="confirmation-reason" maxlength="1000"></textarea>
+                <small>Informe um motivo objetivo; ele será enviado ao endpoint e registrado na auditoria.</small>
+                <span class="field-validation" id="confirmation-reason-error" role="alert"></span>
+            </label>
+            <div class="form-actions">
+                <button type="submit" value="cancel" class="secondary-button">Voltar sem alterar</button>
+                <button type="submit" value="confirm" class="danger-button" id="confirmation-submit">Confirmar ação</button>
+            </div>
+        </form>
+    </dialog>
     <script src="~/js/agro360.js" asp-append-version="true" defer></script>
+    <script src="~/js/forms.js" asp-append-version="true" defer></script>
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

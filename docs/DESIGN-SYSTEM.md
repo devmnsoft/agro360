@@ -68,3 +68,7 @@ A plataforma integra CRM, pipeline, propostas com total no backend, contratos Sa
 
 ## Sprint 49 — Central de Processos
 A central usa navegação por abas, badges de prioridade/prazo, timeline auditável e painel recolhível **Como usar esta tela**. Controles permanecem legíveis em mobile, estados vazios não inventam dados e ações destrutivas pedem motivo.
+
+## Sprint 50 — formulários e ajuda contextual
+
+Validação backend continua sendo a fonte da verdade; a interface oferece resumo e erros por campo, loading, confirmação com consequência real e motivo nas ações definidas pela regra. Ajuda curta é recolhível e localizada em pt-BR, en-US e es-ES. Configurações e eventos de UX usam o schema `ui`, auditoria e RLS por tenant. Detalhes: `docs/UX-FORMS-VALIDATION.md` e `docs/CONTEXTUAL-HELP.md`.
