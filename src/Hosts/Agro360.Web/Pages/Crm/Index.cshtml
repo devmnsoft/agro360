@@ -1,0 +1,22 @@
+@page "/crm"
+@model Agro360.Web.Pages.Crm.IndexModel
+@{ViewData["Title"]="CRM e Ciclo do Cliente";}
+@section Head {<link rel="stylesheet" href="~/css/crm.css" asp-append-version="true" />}
+<section class="crm-shell" data-view="@Model.ViewName">
+ <header class="crm-hero"><div><span class="eyebrow">MNSOFT · Receita e relacionamento</span><h1>CRM &amp; Ciclo do Cliente</h1><p>Venda, implantação, atendimento e retenção com dados reais e isolamento por tenant.</p></div><button class="crm-primary" data-action="new-lead">＋ Novo lead</button></header>
+ <details class="screen-help"><summary>Como usar esta tela</summary><p>Consulte o funil autorizado para o seu perfil. Cadastre leads sem duplicar CPF/CNPJ ou e-mail, avance oportunidades informando o motivo de perda e use propostas aceitas para formalizar contratos. Campos marcados com * são obrigatórios; clientes veem somente sua implantação, contrato e suporte.</p></details>
+ <nav class="crm-nav" aria-label="Ciclo do cliente"><button data-tab="dashboard">Visão geral</button><button data-tab="leads">Leads</button><button data-tab="pipeline">Funil comercial</button><button data-tab="proposals">Propostas</button><button data-tab="contracts">Contratos</button><button data-tab="implementation">Implantação</button><button data-tab="support">Suporte</button><button data-tab="success">Customer Success</button><button data-tab="knowledge">Conhecimento</button></nav>
+ <div id="crm-status" class="crm-status" role="status">Carregando dados reais…</div>
+ <section class="crm-kpis" id="crm-kpis"></section>
+ <section class="crm-panel" id="dashboard"><div class="panel-title"><h2>Pipeline executivo</h2><span>Valores em BRL · cálculo no backend</span></div><div class="pipeline" id="pipeline-board"></div></section>
+ <section class="crm-panel" id="leads"><div class="panel-title"><h2>Leads e empresas interessadas</h2><button data-action="new-lead">Novo lead</button></div><label class="crm-search">Pesquisar<input id="lead-search" placeholder="Nome, empresa ou e-mail" /></label><div class="data-list" id="lead-list"></div></section>
+ <section class="crm-panel" id="pipeline"><div class="panel-title"><h2>Oportunidades e próximos passos</h2><button data-action="new-opportunity">Nova oportunidade</button></div><div class="pipeline" id="opportunity-list"></div></section>
+ <section class="crm-panel" id="proposals"><div class="panel-title"><h2>Propostas comerciais</h2><button data-action="new-proposal">Nova proposta</button></div><p>Totais, descontos e validade são validados no servidor. A exportação suportada é CSV/HTML; não há PDF ou assinatura ICP-Brasil simulados.</p><div class="data-list" id="proposal-list"></div></section>
+ <section class="crm-panel" id="contracts"><div class="panel-title"><h2>Contratos SaaS</h2></div><div class="timeline" id="contract-list"></div></section>
+ <section class="crm-panel" id="implementation"><div class="panel-title"><h2>Implantação assistida</h2><a href="/support">Abrir checklist</a></div><div class="empty-state">Cadastro inicial → tenant → usuários → módulos → dados → treinamento → validação → go-live → pós-go-live. O go-live é bloqueado enquanto houver etapa obrigatória pendente.</div></section>
+ <section class="crm-panel" id="support"><div class="panel-title"><h2>Suporte e SLA</h2><a href="/support">Gerenciar chamados</a></div><div class="empty-state">Chamados, mensagens, evidências e histórico usam a central real de suporte isolada por tenant.</div></section>
+ <section class="crm-panel" id="success"><div class="panel-title"><h2>Saúde do cliente</h2></div><p class="formula">Score transparente = 40 + 60% da adoção − chamados críticos − cobranças vencidas − detrator NPS.</p><div class="health-grid" id="health-list"></div></section>
+ <section class="crm-panel" id="knowledge"><div class="panel-title"><h2>Base de conhecimento multilíngue</h2><a href="/support">Gerenciar artigos</a></div><div class="empty-state">Artigos publicados respeitam idioma e público; conteúdo interno nunca é exibido ao cliente.</div></section>
+</section>
+<dialog id="crm-dialog"><form method="dialog" id="crm-form"><header><h2 id="crm-form-title">Novo registro</h2><button value="cancel" aria-label="Fechar">×</button></header><div id="crm-fields"></div><footer><button value="cancel">Cancelar</button><button class="crm-primary" value="default" id="crm-save">Salvar</button></footer><p id="crm-form-error" role="alert"></p></form></dialog>
+@section Scripts {<script src="~/js/crm.js" asp-append-version="true" defer></script>}

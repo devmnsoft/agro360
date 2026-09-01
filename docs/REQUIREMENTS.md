@@ -169,3 +169,7 @@ Toda consulta e mutação internacional deve filtrar `tenant_id`; valores monet�
 - Chaves e segredos nunca são recuperáveis; escopo, status, expiração e limite são obrigatórios.
 - Parceiros precisam estar ativos e possuir concessão vigente; revogações e ativações são auditadas.
 - Webhooks aceitam HTTPS público, payload mínimo e no máximo dez tentativas, sem afetar a transação principal.
+
+## Sprint 47 — CRM e ciclo do cliente
+
+A plataforma integra CRM, pipeline, propostas com total no backend, contratos SaaS, implantação assistida, suporte/SLA, saúde explicável, conhecimento e portal isolado. As novas rotas exigem permissões específicas, as tabelas usam auditoria/RLS por tenant e toda comunicação sem provedor permanece pendente na outbox. A experiência responsiva usa funil, timeline, badges e o componente recolhível **Como usar esta tela**. Consulte `docs/CRM-COMMERCIAL.md`, `docs/CUSTOMER-SUCCESS.md`, `docs/SUPPORT.md` e a migração `047_crm_customer_lifecycle.sql`.

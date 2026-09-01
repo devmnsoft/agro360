@@ -124,3 +124,7 @@ Execute `database/migrations/042_sprint42_sustainability_esg.sql` depois da Spri
 
 ## Sprint 46
 `migrations/046_marketplace_ecosystem.sql` cria catálogo, módulos por tenant, solicitações, parceiros/acessos, apps, hashes de chaves, escopos, logs, webhooks/entregas, documentação, planos e auditoria. Há FKs compostas, checks, índices operacionais e RLS. Execute no PostgreSQL externo com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/migrations/046_marketplace_ecosystem.sql`; nenhum Docker é necessário. Faça backup do cofre separadamente: segredos em texto puro não pertencem ao banco.
+
+## Sprint 47 — CRM e ciclo do cliente
+
+A plataforma integra CRM, pipeline, propostas com total no backend, contratos SaaS, implantação assistida, suporte/SLA, saúde explicável, conhecimento e portal isolado. As novas rotas exigem permissões específicas, as tabelas usam auditoria/RLS por tenant e toda comunicação sem provedor permanece pendente na outbox. A experiência responsiva usa funil, timeline, badges e o componente recolhível **Como usar esta tela**. Consulte `docs/CRM-COMMERCIAL.md`, `docs/CUSTOMER-SUCCESS.md`, `docs/SUPPORT.md` e a migração `047_crm_customer_lifecycle.sql`.

@@ -339,3 +339,7 @@ A plataforma SaaS agora formaliza super administração única MNSOFT, isolament
 ## Sprint 46 — Marketplace e Ecossistema Agro360
 
 A área autenticada `/ecosystem` reúne marketplace de módulos, parceiros com acesso temporário, aplicações externas, chaves exibidas uma única vez e persistidas por SHA-256, webhooks HTTPS com tentativas finitas, catálogo comercial, documentação do desenvolvedor e auditoria isolada por tenant. A ativação e mudança de plano continuam administrativas: não existe cobrança automática sem provedor homologado. Aplique `database/migrations/046_marketplace_ecosystem.sql` ou o instalador completo em PostgreSQL externo; Docker não é necessário.
+
+## Sprint 47 — CRM e ciclo do cliente
+
+A plataforma integra CRM, pipeline, propostas com total no backend, contratos SaaS, implantação assistida, suporte/SLA, saúde explicável, conhecimento e portal isolado. As novas rotas exigem permissões específicas, as tabelas usam auditoria/RLS por tenant e toda comunicação sem provedor permanece pendente na outbox. A experiência responsiva usa funil, timeline, badges e o componente recolhível **Como usar esta tela**. Consulte `docs/CRM-COMMERCIAL.md`, `docs/CUSTOMER-SUCCESS.md`, `docs/SUPPORT.md` e a migração `047_crm_customer_lifecycle.sql`.
