@@ -4,7 +4,7 @@ create extension if not exists unaccent;
 
 -- Namespace canônico da plataforma. Os contextos de módulo abaixo permanecem
 -- qualificados para evitar consultas ambíguas durante a migração incremental.
-create schema if not exists agro360;
+CREATE SCHEMA IF NOT EXISTS agro360;
 
 create table if not exists agro360.platform_units (
     code varchar(16) primary key,

@@ -8,14 +8,29 @@ O arquivo `agro360-postgres-full.sql` é o instalador canônico, único e autoco
 - extensões `pgcrypto`, `pg_trgm` e `unaccent` disponíveis;
 - uma conta com autorização para `CREATE EXTENSION` e `CREATE SCHEMA` na primeira instalação.
 
-## Restaurar em um banco limpo
+## Executar em um banco limpo
+
+O projeto **não usa nem aceita arquivos binários de banco de dados** (`.backup`, `.dump`, `.tar`, `.zip`, `.bak` ou equivalentes). A entrega principal e restaurável é somente o script SQL em texto puro `database/agro360-postgres-full.sql`.
+
+O arquivo `.sql` **não deve ser restaurado com `pg_restore`**. `pg_restore` é destinado aos formatos de arquivo produzidos pelo `pg_dump`; este instalador deve ser executado pelo `psql` ou pelo Query Tool do pgAdmin.
+
+Crie antes um banco PostgreSQL vazio chamado `agro360` e execute, a partir da raiz do projeto:
 
 ```bash
-createdb agro360
-psql -v ON_ERROR_STOP=1 -d agro360 -f database/agro360-postgres-full.sql
+psql -h localhost -p 5432 -U postgres -d agro360 -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
 ```
 
-O comando usa o usuário e o host configurados pelo próprio ambiente PostgreSQL (`PGHOST`, `PGUSER`, `.pgpass` etc.); o arquivo não fixa credenciais.
+A opção `ON_ERROR_STOP=1` é obrigatória na validação: o script principal precisa concluir sem qualquer erro. Host, porta e usuário podem ser ajustados ao ambiente, sem editar nem adicionar credenciais ao arquivo SQL.
+
+### Execução pelo pgAdmin
+
+1. Crie o banco `agro360`.
+2. Abra o banco no pgAdmin.
+3. Abra o **Query Tool**.
+4. Carregue `database/agro360-postgres-full.sql`.
+5. Execute o script completo.
+
+Não use a opção **Restore** do pgAdmin para esse arquivo, pois ela aciona o fluxo de `pg_restore` em vez de executar o SQL texto.
 
 ## Acesso inicial (somente Development/local)
 
