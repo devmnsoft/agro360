@@ -347,3 +347,7 @@ A plataforma integra CRM, pipeline, propostas com total no backend, contratos Sa
 ## Sprint 48 — Governança, Migração, LGPD e Performance
 
 Governança persistente e isolada por tenant: importação CSV pré-validada, qualidade de dados, exportação gerencial segura, solicitações LGPD, auditoria avançada, sessões e telemetria de performance. A migração `048_data_governance.sql` cria constraints, FKs, índices e RLS. Consulte `docs/DATA-GOVERNANCE.md`, `docs/IMPORT-MIGRATION.md`, `docs/LGPD-SECURITY.md` e `docs/PERFORMANCE.md`.
+
+## Sprint 49 — Workflows inteligentes
+
+A Central de Processos em `/Work` reúne tarefas, aprovações, notificações internas, outbox honesta, agenda, SLA e automações tenant-safe. A migration `049_workflow_automation.sql` adiciona versões, eventos, templates localizados, escalonamentos e execuções idempotentes. Consulte `docs/WORKFLOWS.md`, `docs/NOTIFICATIONS.md` e `docs/SLA-AUTOMATION.md`.
