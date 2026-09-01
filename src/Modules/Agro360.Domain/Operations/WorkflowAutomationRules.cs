@@ -36,6 +36,7 @@ public static partial class WorkflowAutomationRules
         if (!AutomationTriggers.Contains(trigger?.Trim().ToUpperInvariant())) throw new DomainException("Gatilho de automação inválido.", "automation.trigger_invalid");
         if (!AutomationActions.Contains(action?.Trim().ToUpperInvariant())) throw new DomainException("Ação de automação inválida.", "automation.action_invalid");
         if (SqlToken().IsMatch(conditionJson ?? string.Empty)) throw new DomainException("Condições não aceitam SQL.", "automation.sql_forbidden");
+        if (string.IsNullOrWhiteSpace(conditionJson)) throw new DomainException("Condição JSON inválida.", "automation.condition_invalid");
         try { using var json = JsonDocument.Parse(conditionJson); if (json.RootElement.ValueKind != JsonValueKind.Object) throw new JsonException(); }
         catch (JsonException) { throw new DomainException("Condição JSON inválida.", "automation.condition_invalid"); }
         if (active && conditionJson.Trim() == "{}") throw new DomainException("Automação ativa exige condição configurada.", "automation.condition_required");

@@ -13,6 +13,8 @@ public sealed class WorkflowAutomationRulesTests
     [Fact] public void Active_automation_requires_condition()=>Assert.Throws<DomainException>(()=>WorkflowAutomationRules.ValidateAutomation("TASK_COMPLETED","CREATE_ALERT","{}",true));
     [Fact] public void Automation_rejects_arbitrary_sql()=>Assert.Throws<DomainException>(()=>WorkflowAutomationRules.ValidateAutomation("TASK_COMPLETED","CREATE_ALERT","{\"x\":\"drop table users\"}",false));
     [Fact] public void Automation_accepts_valid_condition()=>WorkflowAutomationRules.ValidateAutomation("TASK_COMPLETED","CREATE_ALERT","{\"status\":\"COMPLETED\"}",true);
+    [Theory, InlineData(null), InlineData(""), InlineData("   "), InlineData("not-json"), InlineData("[]")]
+    public void Automation_rejects_missing_or_invalid_json(string? condition)=>Assert.Throws<DomainException>(()=>WorkflowAutomationRules.ValidateAutomation("TASK_COMPLETED","CREATE_ALERT",condition!,false));
     [Fact] public void Template_rejects_unknown_variable()=>Assert.Throws<DomainException>(()=>WorkflowAutomationRules.ValidateTemplate("EMAIL","Prazo","Olá {{secret}}",["user.name"]));
     [Fact] public void Template_rejects_unsafe_html()=>Assert.Throws<DomainException>(()=>WorkflowAutomationRules.ValidateTemplate("EMAIL","Prazo","<script>alert(1)</script>",[]));
 }

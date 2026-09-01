@@ -2,6 +2,10 @@ create extension if not exists pgcrypto;
 create extension if not exists pg_trgm;
 create extension if not exists unaccent;
 
+-- Namespace canônico da plataforma. Os contextos de módulo abaixo permanecem
+-- qualificados para evitar consultas ambíguas durante a migração incremental.
+create schema if not exists agro360;
+
 create schema if not exists platform;
 create schema if not exists identity;
 create schema if not exists tenancy;

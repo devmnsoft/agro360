@@ -11,4 +11,6 @@ public sealed class PortalRulesTests
  [Fact] public void Quote_requires_positive_quantity()=>Assert.Throws<DomainException>(()=>PortalRules.Quote([(Guid.NewGuid(),0)]));
  [Fact] public void Request_requires_a_useful_description()=>Assert.Throws<DomainException>(()=>PortalRules.Request("Ajuda","curta"));
  [Theory,InlineData("PRODUCER"),InlineData("SUPPLIER"),InlineData("TRANSPORTER"),InlineData("EXTERNAL_AUDITOR")] public void External_profiles_are_supported(string profile)=>Assert.Equal(profile,PortalRules.Profile(profile));
+ [Theory,InlineData("USER@EXAMPLE.COM","user@example.com"),InlineData(" user@example.com ","user@example.com")]
+ public void Email_comparison_is_case_insensitive_and_result_is_normalized(string input,string expected)=>Assert.Equal(expected,PortalRules.Email(input));
 }
