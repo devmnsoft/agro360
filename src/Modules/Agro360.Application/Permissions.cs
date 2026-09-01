@@ -122,6 +122,11 @@ public static class Permissions
     public const string SstRead = "sst.read";
     public const string SstWrite = "sst.write";
     public const string SstMedicalRead = "sst.medical.read";
+    public const string GovernanceRead = "governance.read";
+    public const string GovernanceWrite = "governance.write";
+    public const string GovernanceExport = "governance.export";
+    public const string LgpdManage = "lgpd.manage";
+    public const string SecuritySessions = "security.sessions";
 
     public static IReadOnlyCollection<string> Administrator =>
     [
@@ -151,6 +156,7 @@ public static class Permissions
         WorkRead, WorkWrite, WorkApprove, MobileRead, MobileWrite, MobileSync, MobileResolveConflicts, FieldChecklistsManage, PortalManage,
         SupportRead, SupportWrite, SupportManage, SstRead, SstWrite, SstMedicalRead,
         ExportRead, ExportWrite, ExportApprove, ExportReports,
-        FiscalRead, FiscalWrite, FiscalApprove, FiscalReports
+        FiscalRead, FiscalWrite, FiscalApprove, FiscalReports,
+        GovernanceRead, GovernanceWrite, GovernanceExport, LgpdManage, SecuritySessions
     ];
 }
