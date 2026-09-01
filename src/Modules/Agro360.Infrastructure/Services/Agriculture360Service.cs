@@ -26,7 +26,7 @@ public sealed class LookupService(DatabaseExecutor database, ITenantContext tena
         ["cost-centers"] = "select id,name label,concat(code,' · ',kind) description,case when active then 'ACTIVE' else 'INACTIVE' end status,'{}'::jsonb metadata from agro360.finance_cost_centers where tenant_id=@TenantId",
         ["livestock-batches"] = "select id,name label,concat(species,' · ',category) description,case when active then 'ACTIVE' else 'INACTIVE' end status,jsonb_build_object('headCount',head_count) metadata from agro360.livestock_herds where tenant_id=@TenantId",
         ["storage-lots"] = "select id,code label,concat(current_balance,' disponível') description,status,jsonb_build_object('productId',product_id,'balance',current_balance) metadata from agro360.storage_lots where tenant_id=@TenantId",
-        ["routes"] = "select id,name label,concat(code,' · ',modal) description,'ACTIVE' status,jsonb_build_object('estimatedMinutes',estimated_minutes) metadata from regional_logistics.routes where tenant_id=@TenantId"
+        ["routes"] = "select id,name label,concat(code,' · ',modal) description,'ACTIVE' status,jsonb_build_object('estimatedMinutes',estimated_minutes) metadata from agro360.regional_logistics_routes where tenant_id=@TenantId"
     };
 
     public Task<PagedResult<LookupItem>> SearchAsync(string resource, string? search, bool includeInactive, int page, int pageSize, CancellationToken cancellationToken)
