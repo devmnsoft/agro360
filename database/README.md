@@ -1,146 +1,70 @@
-# Banco portátil Agro 360
+# PostgreSQL — Agro360
 
-## Sprint 31
+O arquivo `agro360-postgres-full.sql` é o instalador canônico, único e autocontido do Agro360. Ele cria exclusivamente o schema `agro360`, incluindo tabelas, chaves estrangeiras, constraints, índices, views, funções, triggers, catálogos e dados mínimos de inicialização. Não depende de Docker, migrations externas, `\\i`, caminhos locais ou dados de conexão embutidos.
 
-O script completo cria as 17 estruturas de inteligência, constraints, índices e RLS. Em PostgreSQL externo execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. A aplicação lê `ConnectionStrings__Agro360`; container não é obrigatório.
+## Pré-requisitos
 
-PostgreSQL 14+ é suportado. PostGIS, `pgcrypto`, `pg_trgm` e `unaccent` são requeridos pelos recursos atuais; um administrador deve disponibilizá-los quando o usuário da aplicação não puder executar `CREATE EXTENSION`.
+- PostgreSQL 15 ou superior;
+- extensões `pgcrypto`, `pg_trgm` e `unaccent` disponíveis;
+- uma conta com autorização para `CREATE EXTENSION` e `CREATE SCHEMA` na primeira instalação.
 
-## Instalador canônico da Release Candidate
-
-`agro360-postgres-full.sql` é o artefato único, completo e não segmentado. Execute-o em um banco vazio com `psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql` ou carregue o arquivo integralmente no pgAdmin/DBeaver. Ele não contém `\\i`, conexão, proprietário ou credencial fixa.
-
-Antes da publicação, rode `./scripts/validate-full-sql.sh`. A instalação registra `2.0.0-rc.1` em `platform.schema_versions`. Scripts históricos permanecem para auditoria, mas não são pré-requisitos do instalador canônico.
-
-- `bootstrap/`: exemplos administrativos sem credenciais;
-- `migrations/`: histórico imutável consumido pelo Migrator;
-- `seeds/`: dados opcionais, selecionados explicitamente;
-- `releases/v0.2.0/`: instalador autônomo para `psql`, pgAdmin ou DBeaver;
-- `maintenance/`: diagnóstico, backup e restauração nativos.
-
-Instalação recomendada: `dotnet run --project src/Hosts/Agro360.Migrator -- migrate`. Alternativamente execute `agro360-v0.2.0-full-install.sql` no banco vazio. No pgAdmin abra Query Tool, carregue o arquivo e execute; no DBeaver use **SQL Editor > Open SQL Script** e execute o script inteiro. Não use a conexão de produção para seeds de Development/Homologation.
-
-## Sprint 21 e dados demonstrativos
-
-`agro360-postgres-full.sql` continua sendo o instalador único e completo do schema. Execute-o com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. Para uma apresentação comercial, carregue depois `database/seed-demo.sql`; o seed é idempotente e separado apenas por ser opcional. Não há dependência de Docker nem extensões fora da distribuição PostgreSQL (`pgcrypto`, `pg_trgm`, `unaccent`).
-
-## Banco da Sprint 22
-A migration `migrations/021_sprint22_commercial_crm.sql` cria CRM e comercial com chaves compostas por tenant, constraints, índices, RLS e eventos de integração. Ela já está incorporada integralmente a `agro360-postgres-full.sql`; o instalador completo não usa `\\i` nem depende de Docker ou credenciais fixas:
-```bash
-psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql
-```
-O split persistido é um controle interno e não movimenta recursos bancários.
-
-## Sprint 23
-As tabelas do schema `documents` e os 17 tipos documentais estão incluídos no arquivo completo. Aplique sem Docker: `psql "$AGRO360_CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. O script não contém host, usuário ou senha e não usa `\i`. Arquivos são externos ao PostgreSQL e configurados por `Storage__RootPath`.
-
-## Sprint 24
-
-`migrations/022_sprint24_work_management.sql` cria o schema `operations`; ele já está incorporado em `agro360-postgres-full.sql` (sem `\\i`). Para PostgreSQL externo: `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. A connection string é fornecida pelo ambiente, sem host, usuário ou senha embutidos. O script inclui constraints, FKs, índices, RLS, workflows iniciais e o avaliador determinístico de estoque, financeiro e SLA.
-
-## Sprint 25
-
-`agro360-postgres-full.sql` inclui BI, relatórios, mapas, preferências e auditoria visual. Em PostgreSQL externo, configure `ConnectionStrings__Agro360`, execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql` e valide com `scripts/validate-full-sql.sh`. A migration incremental é `database/migrations/023_sprint25_bi_reports_maps_design.sql`. Docker não é necessário.
-
-## Sprint 26
-
-O script completo cria `field_operations`, amplia as tabelas `mobile` e instala constraints, índices e RLS da operação de campo. Execute o arquivo integral contra PostgreSQL externo com `psql "$ConnectionStrings__Postgres" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`; ele é idempotente para a evolução documentada.
-
-## Instalação Sprint 27 em PostgreSQL externo
-
-Defina uma connection string externa (por exemplo, `export ConnectionStrings__Agro360='Host=db.exemplo;Port=5432;Database=agro360;Username=agro360;Password=***;SSL Mode=Require'`) e execute:
+## Restaurar em um banco limpo
 
 ```bash
-psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
+createdb agro360
+psql -v ON_ERROR_STOP=1 -d agro360 -f database/agro360-postgres-full.sql
 ```
 
-O bloco `2.7.0` cria o schema `portal`, chaves, checks, índices e RLS, além dos nove perfis e termo inicial para tenants existentes. Execute o script completo em banco vazio; para tenants criados depois, o onboarding deve provisionar perfis/termo antes de emitir convites.
+O comando usa o usuário e o host configurados pelo próprio ambiente PostgreSQL (`PGHOST`, `PGUSER`, `.pgpass` etc.); o arquivo não fixa credenciais.
 
-## Sprint 28
+## Acesso inicial (somente Development/local)
 
-O bloco `2.8.0` do instalador completo cria o schema `quality`, 25 tabelas multi-tenant, constraints de estados/limites, índices operacionais e RLS. Execute em PostgreSQL externo com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. Limites agroindustriais e referências normativas são cadastrados pelo tenant; o script não inventa normas.
+- **Tenant:** `agro360-platform`
+- **Plataforma:** `MNSOFT / Agro360 Platform`
+- **Nome:** `Super Administrador MNSOFT`
+- **Login/e-mail:** `superadmin@mnsoft.com.br`
+- **Documento:** `18.160.057/0001-13` (`CNPJ`)
+- **Perfil:** `SUPER_ADMIN`
+- **Senha inicial:** `Admin@123456`
+- **Status:** Ativo
 
-## Sprint 29 — SaaS
+> **Atenção:** esta senha é exclusivamente para desenvolvimento/local. O usuário é criado com `must_change_password = true`; troque-a no primeiro acesso e nunca reutilize essa credencial em produção.
 
-O bloco `2.9.0` cria o catalogo SaaS de features/limites/permissoes e tabelas de status, assinatura, cobranca, consumo, override, onboarding, branding e auditoria, com FKs, checks, indices e RLS tenant-scoped. Em PostgreSQL externo execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. Nao ha banco embutido nem dependencia obrigatoria de Docker.
+A senha não é armazenada em texto puro. O instalador contém somente um hash `PBKDF2-HMAC-SHA512`, com 210.000 iterações, salt de 16 bytes e chave de 32 bytes, compatível com `Agro360.Infrastructure.Security.PasswordHasher` — o mesmo componente usado no login.
 
-## Sprint 30
-A migration `migrations/030_sprint30_integrations_fiscal.sql` também integra o instalador completo. Em PostgreSQL externo execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. Ela cria schemas/tabelas, FKs compostas, checks, índices e RLS multi-tenant para integrações, API, webhooks, jobs e fiscal. Segredos são apenas referências; faça backup do cofre separadamente.
+## Validações depois da restauração
 
-## Sprint 33
+```sql
+-- Deve listar somente agro360 entre schemas da aplicação.
+select schema_name from information_schema.schemata
+where schema_name in ('identity','finance','audit','workflow','inventory','platform','tenancy');
 
-O script integral cria o schema `support`, suas 26 tabelas, FKs, constraints, índices, RLS e permissões. Em PostgreSQL externo:
+-- Deve retornar zero.
+select count(*) from information_schema.tables where table_schema = 'public';
+
+-- Inventário e FKs do schema canônico.
+select count(*) from information_schema.tables where table_schema = 'agro360';
+select count(*) from information_schema.table_constraints
+where constraint_schema = 'agro360' and constraint_type = 'FOREIGN KEY';
+
+-- Confirma o bootstrap sem revelar o hash.
+select u.name,u.email,u.normalized_document,u.document_type,u.status,
+       u.must_change_password,r.code as profile,t.name as tenant
+from agro360.identity_users u
+join agro360.identity_user_roles ur on ur.tenant_id=u.tenant_id and ur.user_id=u.id
+join agro360.identity_roles r on r.tenant_id=ur.tenant_id and r.id=ur.role_id
+join agro360.tenancy_tenants t on t.id=u.tenant_id
+where u.email='superadmin@mnsoft.com.br';
+```
+
+Antes de publicar, execute também `./scripts/validate-full-sql.sh`, `dotnet restore`, `dotnet build --no-restore` e `dotnet test --no-build`.
+
+## Seed operacional opcional de desenvolvimento
+
+Depois da instalação principal, carregue a Fazenda Santa Clara, talhões, safra, usuário exemplo e estoque inicial com:
 
 ```bash
-export ConnectionStrings__Agro360='Host=db.exemplo;Port=5432;Database=agro360;Username=agro360;Password=...;SSL Mode=Require'
-psql "host=db.exemplo port=5432 dbname=agro360 user=agro360 sslmode=require" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
+psql -v ON_ERROR_STOP=1 -d agro360 -f database/agro360-postgres-seed-dev.sql
 ```
 
-Use secret manager para senha; nunca versionar connection string real. O sistema e a instalação não dependem de Docker. Não gere dump, PDF ou outro binário como parte desta sprint.
-
-## Sprint 34 — SST Rural
-Com PostgreSQL externo acessível, execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. O script cria o schema `sst`, tabelas, constraints, índices, FKs compostas, RLS, permissões e versão `3.4.0`. Não requer Docker e não contém segredo. Faça backup antes de produção.
-
-## Banco da Sprint 35
-
-Com PostgreSQL externo disponível, defina `ConnectionStrings__Agro360` e execute:
-
-```bash
-psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
-```
-
-A versão `3.5.0` cria as 21 tabelas `fleet_*`, FKs compostas, checks, unicidade, índices dimensionais, RLS e permissões. O script completo é idempotente e não depende de Docker. Faça backup e execute primeiro em homologação. Arquivos binários não devem ser gerados nesta sprint.
-
-## Sprint 36 — Financeiro e Controladoria
-
-Central financeira real com plano de contas, centros de custo, títulos, baixas e conciliação manual autorizada, orçamento versionado, fluxo de caixa, DRE, rentabilidade, CSV, auditoria, RLS e design executivo responsivo. PostgreSQL é externo por connection string e o full install inclui o schema 3.6.0. Homologar estados vazios, validações, permissões e isolamento por tenant. Nenhum arquivo binário deve ser gerado.
-
-## Sprint 37
-`agro360-postgres-full.sql` inclui o schema `procurement` 3.7.0. Execute em PostgreSQL externo com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. Não há host, usuário, senha ou `\i`. A migration incremental é `migrations/037_sprint37_procurement.sql`.
-
-## Schema `production` (Sprint 38)
-O arquivo único `agro360-postgres-full.sql` cria o schema industrial, constraints, FKs, índices, permissões e RLS, sem `\i` ou credenciais. Em PostgreSQL externo execute: `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. O bloco é idempotente para estrutura e registra a versão `3.8.0`; não inclui dados fictícios.
-
-## Sprint 39
-`migrations/039_sprint39_export_trading.sql` cria o schema `export_trading`, Incoterms oficiais, clientes, parceiros, contratos/itens, documentos, embarques/itens, câmbio manual, custos, compliance, rastreabilidade e eventos. O mesmo conteúdo integra `agro360-postgres-full.sql`. Execute em PostgreSQL externo com `scripts/migrate-local.sh`; Docker não é obrigatório.
-
-## Sprint 40
-A migration `migrations/040_sprint40_fiscal_billing.sql` cria o núcleo fiscal, constraints decimais, chaves compostas de tenant, índices operacionais, auditoria e RLS. O mesmo conteúdo integra `agro360-postgres-full.sql`. Aplique em PostgreSQL externo antes de iniciar a área Fiscal; não há dependência de Docker.
-
-### Sprint 41
-
-A migration `migrations/041_sprint41_executive_intelligence.sql`, também incorporada ao SQL completo, cria definições/snapshots/metas de KPI, regras e eventos de alerta, riscos, recomendações, auditoria, exportações, preferências, constraints, índices e RLS por tenant.
-
-## Migration 042 — Sustentabilidade e ESG
-Execute `database/migrations/042_sprint42_sustainability_esg.sql` depois da Sprint 41. Ela cria 15 tabelas públicas com RLS forçada, constraints, FKs, índices, autoria e permissões. O mesmo conteúdo integra `agro360-postgres-full.sql`. Fatores ambientais e IDs documentais devem vir de configuração/armazenamento reais; ausência de fator permanece pendente.
-
-## Migration 043 — Campo Mobile PWA
-
-`migrations/043_sprint43_field_mobile.sql`, também incorporada ao full install, cria o schema `field_mobile`, 15 tabelas operacionais, constraints, índices, chaves idempotentes, autoria, RLS forçada e permissões. Aplique em PostgreSQL externo com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/migrations/043_sprint43_field_mobile.sql`. O script não cria usuários, arquivos, GPS, QR ou dados operacionais fictícios.
-
-## Migration 045 — Plataforma SaaS Enterprise
-
-`migrations/045_saas_enterprise.sql`, também incorporada ao full install, cria a camada `platform_*`: super administrador único, tenants/configurações, perfis/permissões, módulos/dependências, planos, cobranças gerenciais, idiomas/traduções/ajuda, auditoria, suporte, saúde e exportações. Aplique em PostgreSQL externo com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/migrations/045_saas_enterprise.sql`. Não há gateway ou pagamento simulado.
-
-## Sprint 46
-`migrations/046_marketplace_ecosystem.sql` cria catálogo, módulos por tenant, solicitações, parceiros/acessos, apps, hashes de chaves, escopos, logs, webhooks/entregas, documentação, planos e auditoria. Há FKs compostas, checks, índices operacionais e RLS. Execute no PostgreSQL externo com `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/migrations/046_marketplace_ecosystem.sql`; nenhum Docker é necessário. Faça backup do cofre separadamente: segredos em texto puro não pertencem ao banco.
-
-## Sprint 47 — CRM e ciclo do cliente
-
-A plataforma integra CRM, pipeline, propostas com total no backend, contratos SaaS, implantação assistida, suporte/SLA, saúde explicável, conhecimento e portal isolado. As novas rotas exigem permissões específicas, as tabelas usam auditoria/RLS por tenant e toda comunicação sem provedor permanece pendente na outbox. A experiência responsiva usa funil, timeline, badges e o componente recolhível **Como usar esta tela**. Consulte `docs/CRM-COMMERCIAL.md`, `docs/CUSTOMER-SUCCESS.md`, `docs/SUPPORT.md` e a migração `047_crm_customer_lifecycle.sql`.
-
-## Sprint 48 — Governança, Migração, LGPD e Performance
-
-Governança persistente e isolada por tenant: importação CSV pré-validada, qualidade de dados, exportação gerencial segura, solicitações LGPD, auditoria avançada, sessões e telemetria de performance. A migração `048_data_governance.sql` cria constraints, FKs, índices e RLS. Consulte `docs/DATA-GOVERNANCE.md`, `docs/IMPORT-MIGRATION.md`, `docs/LGPD-SECURITY.md` e `docs/PERFORMANCE.md`.
-
-## Sprint 49
-`migrations/049_workflow_automation.sql` evolui a operação com versões/eventos de workflow, comentários/evidências, templates e outbox, SLA/escalonamentos, agenda e automações idempotentes. O conteúdo está incorporado no SQL completo. Provedores externos continuam não configurados até homologação real.
-
-## Sprint 50 — formulários e ajuda contextual
-
-Validação backend continua sendo a fonte da verdade; a interface oferece resumo e erros por campo, loading, confirmação com consequência real e motivo nas ações definidas pela regra. Ajuda curta é recolhível e localizada em pt-BR, en-US e es-ES. Configurações e eventos de UX usam o schema `ui`, auditoria e RLS por tenant. Detalhes: `docs/UX-FORMS-VALIDATION.md` e `docs/CONTEXTUAL-HELP.md`.
-
-## Instalador único `agro360`
-Sem Docker, crie um banco PostgreSQL vazio, exporte a conexão da sua ferramenta e rode `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. O arquivo não usa `\i`, credenciais ou caminhos locais e todos os objetos fixos usam `agro360.<prefixo_do_modulo>_<objeto>`. Valide que nenhum namespace legado foi criado com: `select schema_name from information_schema.schemata where schema_name in ('platform','identity','tenancy','finance','fleet','audit');` (resultado esperado: zero linhas).
-
-O Super Administrador é provisionado pelo bootstrap usando `AGRO360_SUPERADMIN_INITIAL_PASSWORD` e o `PasswordHasher` PBKDF2-SHA512 da aplicação, nunca texto puro. Identidade: **Super Administrador MNSOFT**, `superadmin@mnsoft.com.br`, CNPJ `18.160.057/0001-13`, perfil `SUPER_ADMIN`, status Ativo e troca obrigatória no primeiro login. Produção exige a variável; somente Development admite uma senha inicial explicitamente configurada.
+Esse arquivo é opcional; `agro360-postgres-full.sql` sozinho já deixa a plataforma inicializável.
