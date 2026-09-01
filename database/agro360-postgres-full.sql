@@ -2609,14 +2609,20 @@ create table if not exists agro360.platform_super_admins (
 );
 create unique index if not exists ux_platform_single_active_super_admin on agro360.platform_super_admins ((active)) where active and deleted_at is null;
 
--- Bootstrap idempotente do Super Administrador. A senha inicial deve ser
--- substituída no primeiro acesso (Agro360@ChangeMe!).
+-- Bootstrap idempotente do Super Administrador local. O hash abaixo e PBKDF2-SHA512
+-- (210.000 iteracoes), exatamente o formato aceito por Infrastructure.PasswordHasher.
+-- A credencial de desenvolvimento Admin@123456 deve ser trocada no primeiro acesso.
+alter table agro360.identity_users add column if not exists document_type varchar(10);
+alter table agro360.identity_users add column if not exists must_change_password boolean not null default false;
+select set_config('app.tenant_id','00000000-0000-0000-0000-000000000001',false);
 insert into agro360.tenancy_tenants(id,name,slug,status,plan_code)
-values ('00000000-0000-0000-0000-000000000001','Agro360 Platform','agro360-platform',1,'ENTERPRISE')
+values ('00000000-0000-0000-0000-000000000001','MNSOFT / Agro360 Platform','agro360-platform',1,'ENTERPRISE')
 on conflict(id) do update set name=excluded.name, status=excluded.status;
 insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status)
-values ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','Super Administrador','superadmin@agro360.local',crypt('Agro360@ChangeMe!',gen_salt('bf')),'ACTIVE')
-on conflict(id) do update set tenant_id=excluded.tenant_id,name=excluded.name,email=excluded.email,status='ACTIVE';
+values ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','Super Administrador MNSOFT','superadmin@mnsoft.com.br','pbkdf2-sha512$210000$QWdybzM2ME1OU09GVCEh$hiccVEYBSwMAvQ4i85qQ+EN09O0fKa7TGmXfJyqHrGQ=','ACTIVE')
+on conflict(id) do update set tenant_id=excluded.tenant_id,name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,status='ACTIVE';
+update agro360.identity_users set normalized_document='18160057000113',document_type='CNPJ',must_change_password=true
+where id='00000000-0000-0000-0000-000000000002';
 insert into agro360.identity_roles(id,tenant_id,code,name,is_system)
 values ('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000001','SUPER_ADMIN','Super Administrador',true)
 on conflict(id) do update set name=excluded.name,is_system=true;
@@ -2880,3 +2886,97 @@ begin
         end if;
     end loop;
 end $$;
+
+-- ============================================================================
+-- Bootstrap inicial restauravel (Development/local)
+-- ============================================================================
+begin;
+select set_config('app.tenant_id','00000000-0000-0000-0000-000000000001',true);
+
+create table if not exists agro360.platform_system_parameters (
+    key varchar(120) primary key,
+    value jsonb not null,
+    description varchar(300) not null,
+    is_secret boolean not null default false,
+    updated_at timestamptz not null default now()
+);
+
+create table if not exists agro360.platform_status_catalog (
+    domain varchar(80) not null,
+    code varchar(40) not null,
+    name varchar(120) not null,
+    sort_order integer not null default 0,
+    active boolean not null default true,
+    primary key (domain, code)
+);
+
+create table if not exists agro360.platform_menu_items (
+    id uuid primary key default gen_random_uuid(),
+    parent_id uuid references agro360.platform_menu_items(id),
+    module_code varchar(80) not null references agro360.platform_modules(code),
+    code varchar(80) not null unique,
+    label varchar(120) not null,
+    route varchar(200) not null,
+    icon varchar(80),
+    permission_code varchar(120) references agro360.identity_permissions(code),
+    sort_order integer not null default 0,
+    active boolean not null default true
+);
+create index if not exists ix_platform_menu_parent_order on agro360.platform_menu_items(parent_id,sort_order) where active;
+
+insert into agro360.platform_system_parameters(key,value,description) values
+ ('system.name','"Agro360"','Nome público da aplicação.'),
+ ('system.owner','"MNSOFT"','Empresa responsável pela plataforma.'),
+ ('system.default_culture','"pt-BR"','Cultura padrão.'),
+ ('system.default_timezone','"America/Sao_Paulo"','Fuso horário padrão.'),
+ ('security.password_change_first_login','true','Exige troca da senha inicial.'),
+ ('security.password_minimum_length','12','Tamanho mínimo de senha.'),
+ ('security.login_max_attempts','5','Tentativas antes do bloqueio.'),
+ ('dashboard.refresh_seconds','60','Intervalo padrão do dashboard.')
+on conflict(key) do update set value=excluded.value,description=excluded.description,updated_at=now();
+
+insert into agro360.platform_status_catalog(domain,code,name,sort_order) values
+ ('USER','INVITED','Convidado',10),('USER','ACTIVE','Ativo',20),('USER','LOCKED','Bloqueado',30),('USER','DISABLED','Inativo',40),
+ ('TENANT','ACTIVE','Ativo',10),('TENANT','SUSPENDED','Suspenso',20),('TENANT','BLOCKED','Bloqueado',30),
+ ('WORKFLOW','DRAFT','Rascunho',10),('WORKFLOW','ACTIVE','Ativo',20),('WORKFLOW','COMPLETED','Concluído',30),('WORKFLOW','CANCELLED','Cancelado',40),
+ ('ORDER','DRAFT','Rascunho',10),('ORDER','APPROVED','Aprovado',20),('ORDER','RECEIVED','Recebido',30),('ORDER','CANCELLED','Cancelado',40)
+on conflict(domain,code) do update set name=excluded.name,sort_order=excluded.sort_order,active=true;
+
+insert into agro360.platform_saas_plans(id,code,name,description,user_limit,property_limit,module_limit,storage_limit_mb,multilingual,features,monthly_price,annual_price,active) values
+ ('10000000-0000-0000-0000-000000000001','ESSENTIAL','Essencial','Operação rural inicial',5,2,6,512,false,'["core","inventory"]',199.00,1990.00,true),
+ ('10000000-0000-0000-0000-000000000002','PROFESSIONAL','Profissional','Gestão rural integrada',25,10,20,5120,true,'["core","inventory","finance","bi"]',599.00,5990.00,true),
+ ('10000000-0000-0000-0000-000000000003','ENTERPRISE','Enterprise','Plataforma completa',1000,1000,1000,102400,true,'["all"]',0,0,true)
+on conflict(code) do update set name=excluded.name,description=excluded.description,active=true;
+
+insert into agro360.platform_tenants(id,legal_name,trade_name,normalized_document,customer_type,primary_segment,primary_email,legal_contact,plan_id,status)
+values ('00000000-0000-0000-0000-000000000001','MNSOFT Tecnologia Ltda','MNSOFT / Agro360 Platform','18160057000113','PLATFORM','SOFTWARE','contato@mnsoft.com.br','Super Administrador MNSOFT','10000000-0000-0000-0000-000000000003','ACTIVE')
+on conflict(id) do update set legal_name=excluded.legal_name,trade_name=excluded.trade_name,plan_id=excluded.plan_id,status='ACTIVE';
+
+insert into agro360.platform_tenant_settings(tenant_id,language,currency,time_zone,preferences)
+values ('00000000-0000-0000-0000-000000000001','pt-BR','BRL','America/Sao_Paulo','{"firstLoginPasswordChange":true}')
+on conflict(tenant_id) do update set preferences=excluded.preferences,updated_at=now();
+
+-- Cliente mínimo de demonstração; os dados operacionais ficam no seed opcional.
+insert into agro360.tenancy_tenants(id,name,slug,status,plan_code)
+values ('20000000-0000-0000-0000-000000000001','Cliente Exemplo Agro360','cliente-exemplo',1,'ESSENTIAL')
+on conflict(id) do update set name=excluded.name,status=excluded.status;
+insert into agro360.platform_tenants(id,legal_name,trade_name,normalized_document,customer_type,primary_segment,primary_email,legal_contact,plan_id,status)
+values ('20000000-0000-0000-0000-000000000001','Cliente Exemplo Desenvolvimento Ltda','Cliente Exemplo Agro360','00000000000191','RURAL_PRODUCER','AGRICULTURE','dev@example.local','Responsável Desenvolvimento','10000000-0000-0000-0000-000000000001','ACTIVE')
+on conflict(id) do update set trade_name=excluded.trade_name,plan_id=excluded.plan_id,status='ACTIVE';
+
+-- O SUPER_ADMIN recebe também permissões adicionadas depois do bloco Sprint 45.
+insert into agro360.identity_role_permissions(tenant_id,role_id,permission_id)
+select '00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000003',id
+from agro360.identity_permissions on conflict do nothing;
+
+insert into agro360.platform_menu_items(module_code,code,label,route,icon,permission_code,sort_order)
+select m.code,m.code, m.name, '/' || replace(lower(m.code),'.','/'), 'grid',
+       (select p.code from agro360.identity_permissions p where p.module=m.name order by p.code limit 1),
+       row_number() over(order by m.phase,m.name)::int
+from agro360.platform_modules m
+on conflict(code) do update set label=excluded.label,route=excluded.route,active=true;
+
+insert into agro360.platform_schema_versions(version,description)
+values('5.1.0','Bootstrap restaurável MNSOFT, catálogos, parâmetros, menus e Super Administrador')
+on conflict(version) do nothing;
+commit;
