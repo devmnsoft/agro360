@@ -177,3 +177,10 @@ A plataforma integra CRM, pipeline, propostas com total no backend, contratos Sa
 ## Sprint 48 — Governança, Migração, LGPD e Performance
 
 Governança persistente e isolada por tenant: importação CSV pré-validada, qualidade de dados, exportação gerencial segura, solicitações LGPD, auditoria avançada, sessões e telemetria de performance. A migração `048_data_governance.sql` cria constraints, FKs, índices e RLS. Consulte `docs/DATA-GOVERNANCE.md`, `docs/IMPORT-MIGRATION.md`, `docs/LGPD-SECURITY.md` e `docs/PERFORMANCE.md`.
+
+## Requisitos Sprint 49
+- **WF-01:** fluxo ativo é imutável e ativação exige etapa.
+- **WF-02:** evidência, comentário, cancelamento, reabertura e reprovação respeitam obrigatoriedade e auditoria.
+- **WF-03:** processos, agenda, SLA e notificações são isolados por tenant e permissão.
+- **WF-04:** comunicação externa sem provedor permanece `PENDING_NOT_CONFIGURED` na outbox.
+- **WF-05:** automações são declarativas, idempotentes e não aceitam SQL da interface.

@@ -263,3 +263,12 @@ Governança persistente e isolada por tenant: importação CSV pré-validada, qu
 - [ ] Recusa LGPD e mudança de achado exigem justificativa.
 - [ ] Usuário/tenant bloqueado, módulo inativo e rota sem permissão retornam 403.
 - [ ] Paginação limita 100 registros e consultas usam parâmetros e índices.
+
+## Sprint 49 — Workflows
+- [ ] Criar, versionar e iniciar fluxo; bloquear ativação sem etapa e edição da versão ativa.
+- [ ] Exigir comentário/evidência, motivo de cancelamento/reabertura/reprovação e impedir autoaprovação segregada.
+- [ ] Validar tarefa atrasada, alerta/escalonamento crítico e agenda no fuso do tenant.
+- [ ] Persistir notificação interna e `PENDING_NOT_CONFIGURED` para canal externo sem provider.
+- [ ] Validar template nos três idiomas, variável desconhecida e HTML inseguro.
+- [ ] Bloquear automação inválida/SQL e confirmar idempotência por chave.
+- [ ] Testar API/Dapper com PostgreSQL, RLS entre tenants, super admin e ajuda contextual em mobile.

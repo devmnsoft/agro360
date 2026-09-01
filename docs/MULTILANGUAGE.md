@@ -8,3 +8,6 @@ A central oferece pt-BR, en-US e es-ES e persiste a cultura escolhida. Títulos,
 ## Sprint 47 — CRM e ciclo do cliente
 
 A plataforma integra CRM, pipeline, propostas com total no backend, contratos SaaS, implantação assistida, suporte/SLA, saúde explicável, conhecimento e portal isolado. As novas rotas exigem permissões específicas, as tabelas usam auditoria/RLS por tenant e toda comunicação sem provedor permanece pendente na outbox. A experiência responsiva usa funil, timeline, badges e o componente recolhível **Como usar esta tela**. Consulte `docs/CRM-COMMERCIAL.md`, `docs/CUSTOMER-SUCCESS.md`, `docs/SUPPORT.md` e a migração `047_crm_customer_lifecycle.sql`.
+
+## Sprint 49 — processos
+Templates persistidos aceitam apenas `pt-BR`, `en-US` e `es-ES`, com fallback controlado. Textos de ajuda e estados das novas telas devem usar recursos localizáveis; payload externo resolve primeiro o idioma preferido do usuário.
