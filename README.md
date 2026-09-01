@@ -355,3 +355,6 @@ A Central de Processos em `/Work` reúne tarefas, aprovações, notificações i
 ## Sprint 50 — qualidade transversal de UX
 
 A camada global de formulários adiciona validação acessível por campo e resumo, estado de envio, confirmação funcional para ações sensíveis e ajuda contextual compacta. O backend dispõe de validação canônica para CPF/CNPJ, e-mail, decimal por cultura e datas. O schema `ui` guarda conteúdo traduzível, catálogo de mensagens, regras, confirmações e eventos com RLS por tenant. Consulte `docs/UX-FORMS-VALIDATION.md` e `docs/CONTEXTUAL-HELP.md`.
+
+## Instalação PostgreSQL sem Docker (schema canônico)
+Configure `ConnectionStrings__Agro360` para um PostgreSQL externo e execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. O instalador cria exclusivamente o schema `agro360`; os módulos são preservados por prefixos (`identity_users`, `finance_payables`, etc.). A senha inicial do administrador nunca pertence ao SQL: defina `AGRO360_SUPERADMIN_INITIAL_PASSWORD` antes do bootstrap seguro da aplicação. Em produção não há senha padrão; em Development uma senha configurada continua exigindo troca no primeiro acesso.

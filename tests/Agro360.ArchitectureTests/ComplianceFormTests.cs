@@ -5,7 +5,7 @@ public sealed class ComplianceFormTests
  {
    var root=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../"));
    var html=File.ReadAllText(Path.Combine(root,"src/Hosts/Agro360.Web/Pages/Compliance/Index.cshtml"));
-   var js=File.ReadAllText(Path.Combine(root,"src/Hosts/Agro360.Web/wwwroot/js/compliance.js"));
+   var js=File.ReadAllText(Path.Combine(root,"src/Hosts/Agro360.Web/wwwroot/js/agro360.compliance_js"));
    Assert.DoesNotContain("ID técnico",html+js,StringComparison.OrdinalIgnoreCase); Assert.Contains("data-resource",js); Assert.Contains("reportValidity",js); Assert.Contains("Carregando",js); Assert.Contains("Nenhum registro",js);
  }
  [Fact] public void Public_certificate_route_is_constrained_and_anonymous()

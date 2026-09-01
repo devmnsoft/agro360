@@ -25,7 +25,7 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
         {
             await connection.ExecuteAsync(new CommandDefinition(
                 """
-                insert into agriculture.seasons
+                insert into agro360.agriculture_seasons
                     (id, tenant_id, farm_id, name, crop, start_date, end_date, status,
                      planned_area_ha, expected_yield_per_ha, created_at, created_by, version)
                 values
@@ -96,7 +96,7 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
         {
             using var grid = await connection.QueryMultipleAsync(new CommandDefinition(
                 """
-                select count(*) from agriculture.seasons
+                select count(*) from agro360.agriculture_seasons
                 where tenant_id = @TenantId and deleted_at is null
                   and (@FarmId is null or farm_id = @FarmId);
 
@@ -107,7 +107,7 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
                        planned_area_ha as PlannedAreaHa,
                        expected_yield_per_ha as ExpectedYieldPerHa,
                        version
-                from agriculture.seasons
+                from agro360.agriculture_seasons
                 where tenant_id = @TenantId and deleted_at is null
                   and (@FarmId is null or farm_id = @FarmId)
                 order by start_date desc, name
@@ -161,15 +161,15 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
 
         if (areaHa > season.FieldAreaHa)
         {
-            throw new DomainException("A área plantada excede a área do talhão.", "agriculture.area_exceeds_field");
+            throw new DomainException("A área plantada excede a área do talhão.", "agro360.agriculture_area_exceeds_field");
         }
 
         var overlap = await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
             """
             select exists(
                 select 1
-                from agriculture.field_operations o
-                join agriculture.seasons s on s.id = o.season_id and s.tenant_id = o.tenant_id
+                from agro360.agriculture_field_operations o
+                join agro360.agriculture_seasons s on s.id = o.season_id and s.tenant_id = o.tenant_id
                 where o.tenant_id = @TenantId
                   and o.field_id = @FieldId
                   and o.operation_type = 'PLANTING'
@@ -192,7 +192,7 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
         {
             throw new ConflictException(
                 "O talhão já possui plantio incompatível no mesmo período.",
-                "agriculture.field_season_overlap");
+                "agro360.agriculture_field_season_overlap");
         }
 
         var balance = await LockBalanceAsync(
@@ -203,12 +203,12 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
             cancellationToken).ConfigureAwait(false);
         if (balance is null || balance.Available - balance.Reserved < seedQuantity)
         {
-            throw new ConflictException("Estoque de sementes insuficiente.", "inventory.insufficient_stock");
+            throw new ConflictException("Estoque de sementes insuficiente.", "agro360.inventory_insufficient_stock");
         }
 
         if (!string.Equals(balance.Unit, seedUnit, StringComparison.OrdinalIgnoreCase))
         {
-            throw new DomainException("A unidade da semente difere do saldo armazenado.", "inventory.unit_mismatch");
+            throw new DomainException("A unidade da semente difere do saldo armazenado.", "agro360.inventory_unit_mismatch");
         }
 
         var operationId = Guid.CreateVersion7();
@@ -229,7 +229,7 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
 
         await connection.ExecuteAsync(new CommandDefinition(
             """
-            insert into inventory.stock_movements
+            insert into agro360.inventory_stock_movements
                 (id, tenant_id, warehouse_id, product_id, movement_type, quantity, unit,
                  unit_cost, total_cost, reference_type, reference_id, notes, idempotency_key,
                  balance_after, average_cost_after, balance_version, occurred_at, created_by)
@@ -238,21 +238,21 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
                  @UnitCost, @TotalCost, 'FIELD_OPERATION', @OperationId, @Notes, @MovementIdempotencyKey,
                  @BalanceAfter, @AverageCost, @BalanceVersion, @ExecutedAt, @CreatedBy);
 
-            insert into agriculture.field_operations
+            insert into agro360.agriculture_field_operations
                 (id, tenant_id, farm_id, field_id, season_id, operation_type, status,
                  area_ha, quantity, unit, executed_at, notes, idempotency_key, created_at, created_by, version)
             values
                 (@OperationId, @TenantId, @FarmId, @FieldId, @SeasonId, 'PLANTING', 'COMPLETED',
                  @AreaHa, @Quantity, @Unit, @ExecutedAt, @Notes, @IdempotencyKey, now(), @CreatedBy, 1);
 
-            insert into cost.entries
+            insert into agro360.cost_entries
                 (id, tenant_id, farm_id, season_id, field_id, source_type, source_id,
                  category, amount, currency, occurred_on, created_at, created_by)
             values
                 (@CostEntryId, @TenantId, @FarmId, @SeasonId, @FieldId, 'STOCK_MOVEMENT', @MovementId,
                  'SEEDS', @TotalCost, 'BRL', cast(@ExecutedAt as date), now(), @CreatedBy);
 
-            update agriculture.seasons
+            update agro360.agriculture_seasons
             set status = 2, updated_at = now(), updated_by = @CreatedBy, version = version + 1
             where id = @SeasonId and tenant_id = @TenantId;
             """,
@@ -347,7 +347,7 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
 
         var productUnit = await connection.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
             """
-            select base_unit from inventory.products
+            select base_unit from agro360.inventory_products
             where id = @ProductId and tenant_id = @TenantId and deleted_at is null;
             """,
             new { ProductId = command.HarvestedProductId, tenantContext.TenantId },
@@ -356,18 +356,18 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
             ?? throw new NotFoundException("Produto colhido", command.HarvestedProductId);
         if (!string.Equals(productUnit, unit, StringComparison.OrdinalIgnoreCase))
         {
-            throw new DomainException("A unidade colhida difere da unidade base do produto.", "inventory.unit_mismatch");
+            throw new DomainException("A unidade colhida difere da unidade base do produto.", "agro360.inventory_unit_mismatch");
         }
 
         var costSummary = await connection.QuerySingleAsync<HarvestCostRow>(new CommandDefinition(
             """
             select
                 (select coalesce(sum(c.amount), 0)
-                 from cost.entries c
+                 from agro360.cost_entries c
                  where c.tenant_id = @TenantId and c.season_id = @SeasonId) as TotalCost,
                 (select coalesce(sum(m.total_cost), 0)
-                 from inventory.stock_movements m
-                 join agriculture.field_operations o
+                 from agro360.inventory_stock_movements m
+                 join agro360.agriculture_field_operations o
                    on o.id = m.reference_id and o.tenant_id = m.tenant_id
                  where m.tenant_id = @TenantId
                    and o.season_id = @SeasonId
@@ -398,7 +398,7 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
             };
             await connection.ExecuteAsync(new CommandDefinition(
                 """
-                insert into inventory.stock_balances
+                insert into agro360.inventory_stock_balances
                     (id, tenant_id, warehouse_id, product_id, unit, available, reserved, minimum,
                      average_cost, created_at, updated_at, version)
                 values
@@ -435,7 +435,7 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
         var costEntryId = Guid.CreateVersion7();
         await connection.ExecuteAsync(new CommandDefinition(
             """
-            insert into inventory.stock_movements
+            insert into agro360.inventory_stock_movements
                 (id, tenant_id, warehouse_id, product_id, movement_type, quantity, unit,
                  unit_cost, total_cost, lot_number, reference_type, reference_id, idempotency_key,
                  balance_after, average_cost_after, balance_version, occurred_at, created_by)
@@ -444,14 +444,14 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
                  @UnitCost, @AllocatedCost, @LotNumber, 'FIELD_OPERATION', @OperationId, @MovementIdempotencyKey,
                  @BalanceAfter, @AverageCostAfter, @BalanceVersion, @ExecutedAt, @CreatedBy);
 
-            insert into agriculture.field_operations
+            insert into agro360.agriculture_field_operations
                 (id, tenant_id, farm_id, field_id, season_id, operation_type, status,
                  quantity, unit, executed_at, idempotency_key, created_at, created_by, version)
             values
                 (@OperationId, @TenantId, @FarmId, @FieldId, @SeasonId, 'HARVEST', 'COMPLETED',
                  @Quantity, @Unit, @ExecutedAt, @IdempotencyKey, now(), @CreatedBy, 1);
 
-            insert into cost.entries
+            insert into agro360.cost_entries
                 (id, tenant_id, farm_id, season_id, field_id, source_type, source_id,
                  category, amount, currency, occurred_on, created_at, created_by)
             values
@@ -526,8 +526,8 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
             select s.id as SeasonId, s.farm_id as FarmId, s.name as SeasonName, s.crop,
                    s.start_date as StartDate, s.end_date as EndDate, s.status,
                    f.id as FieldId, f.name as FieldName, f.area_ha as FieldAreaHa
-            from agriculture.seasons s
-            join geo.fields f on f.id = @FieldId and f.farm_id = s.farm_id and f.tenant_id = s.tenant_id
+            from agro360.agriculture_seasons s
+            join agro360.geo_fields f on f.id = @FieldId and f.farm_id = s.farm_id and f.tenant_id = s.tenant_id
             where s.id = @SeasonId and s.tenant_id = @TenantId
               and s.deleted_at is null and f.deleted_at is null
             for update of s;
@@ -535,7 +535,7 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
             new { SeasonId = seasonId, FieldId = fieldId, tenantContext.TenantId },
             transaction,
             cancellationToken: cancellationToken)).ConfigureAwait(false)
-        ?? throw new ConflictException("Safra e talhão não pertencem à mesma fazenda.", "agriculture.season_field_mismatch");
+        ?? throw new ConflictException("Safra e talhão não pertencem à mesma fazenda.", "agro360.agriculture_season_field_mismatch");
 
     private Task<BalanceRow?> LockBalanceAsync(
         NpgsqlConnection connection,
@@ -546,7 +546,7 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
         connection.QuerySingleOrDefaultAsync<BalanceRow>(new CommandDefinition(
             """
             select id, unit, available, reserved, average_cost as AverageCost, version
-            from inventory.stock_balances
+            from agro360.inventory_stock_balances
             where tenant_id = @TenantId and warehouse_id = @WarehouseId and product_id = @ProductId
             for update;
             """,
@@ -565,7 +565,7 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
     {
         var affected = await connection.ExecuteAsync(new CommandDefinition(
             """
-            update inventory.stock_balances
+            update agro360.inventory_stock_balances
             set available = @Available, average_cost = @AverageCost,
                 updated_at = now(), version = @Version
             where id = @Id and tenant_id = @TenantId and version = @ExpectedVersion;
@@ -602,9 +602,9 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
             """
             select o.id as OperationId, c.id as CostEntryId, m.id as StockMovementId,
                    c.amount as CostAmount, o.status
-            from agriculture.field_operations o
-            join inventory.stock_movements m on m.reference_id = o.id and m.tenant_id = o.tenant_id
-            join cost.entries c
+            from agro360.agriculture_field_operations o
+            join agro360.inventory_stock_movements m on m.reference_id = o.id and m.tenant_id = o.tenant_id
+            join agro360.cost_entries c
               on c.tenant_id = o.tenant_id
              and (c.source_id = o.id or c.source_id = m.id)
             where o.tenant_id = @TenantId and o.idempotency_key = @IdempotencyKey;
@@ -664,7 +664,7 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
         CancellationToken cancellationToken) =>
         connection.ExecuteScalarAsync<Guid>(new CommandDefinition(
             """
-            insert into traceability.nodes
+            insert into agro360.traceability_nodes
                 (id, tenant_id, entity_type, entity_id, label, created_at)
             values
                 (@Id, @TenantId, @EntityType, @EntityId, @Label, now())
@@ -693,7 +693,7 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
         {
             await connection.ExecuteAsync(new CommandDefinition(
                 """
-                insert into traceability.edges
+                insert into agro360.traceability_edges
                     (id, tenant_id, from_node_id, to_node_id, relation_type, created_at)
                 values
                     (@Id, @TenantId, @From, @To, @Relation, now())

@@ -16,7 +16,7 @@ public sealed class CommercialService(DatabaseExecutor database, ITenantContext 
         {
             throw new DomainException(
                 "A fatia atual aceita venda de CROP ou ANIMAL.",
-                "commercial.product_type_not_supported");
+                "agro360.commercial_product_type_not_supported");
         }
 
         if (productType == "ANIMAL"
@@ -24,7 +24,7 @@ public sealed class CommercialService(DatabaseExecutor database, ITenantContext 
         {
             throw new DomainException(
                 "A venda de animal individual exige quantidade 1 e unidade 'head'.",
-                "commercial.invalid_individual_animal_quantity");
+                "agro360.commercial_invalid_individual_animal_quantity");
         }
 
         var sale = Sale.Create(
@@ -46,9 +46,9 @@ public sealed class CommercialService(DatabaseExecutor database, ITenantContext 
                     """
                     select s.id as SaleId, r.id as ReceivableId, s.total_amount as TotalAmount,
                            s.currency, s.status, n.id as TraceabilityNodeId
-                    from commercial.sales s
-                    join finance.receivables r on r.sale_id = s.id and r.tenant_id = s.tenant_id
-                    join traceability.nodes n on n.entity_id = s.id and n.entity_type = 'SALE' and n.tenant_id = s.tenant_id
+                    from agro360.commercial_sales s
+                    join agro360.finance_receivables r on r.sale_id = s.id and r.tenant_id = s.tenant_id
+                    join agro360.traceability_nodes n on n.entity_id = s.id and n.entity_type = 'SALE' and n.tenant_id = s.tenant_id
                     where s.tenant_id = @TenantId and s.idempotency_key = @IdempotencyKey;
                     """,
                     new { tenantContext.TenantId, command.IdempotencyKey },
@@ -65,13 +65,13 @@ public sealed class CommercialService(DatabaseExecutor database, ITenantContext 
             {
                 if (!command.WarehouseId.HasValue)
                 {
-                    throw new DomainException("A venda de produto colhido exige o depósito de origem.", "commercial.warehouse_required");
+                    throw new DomainException("A venda de produto colhido exige o depósito de origem.", "agro360.commercial_warehouse_required");
                 }
 
                 var balance = await connection.QuerySingleOrDefaultAsync<BalanceRow>(new CommandDefinition(
                     """
                     select id, unit, available, reserved, average_cost as AverageCost, version
-                    from inventory.stock_balances
+                    from agro360.inventory_stock_balances
                     where tenant_id = @TenantId and warehouse_id = @WarehouseId and product_id = @ProductId
                     for update;
                     """,
@@ -83,21 +83,21 @@ public sealed class CommercialService(DatabaseExecutor database, ITenantContext 
                     },
                     transaction,
                     cancellationToken: cancellationToken)).ConfigureAwait(false)
-                    ?? throw new ConflictException("Produto sem saldo para venda.", "inventory.insufficient_stock");
+                    ?? throw new ConflictException("Produto sem saldo para venda.", "agro360.inventory_insufficient_stock");
                 if (!string.Equals(balance.Unit, command.Unit, StringComparison.OrdinalIgnoreCase))
                 {
-                    throw new DomainException("A unidade da venda difere do estoque.", "inventory.unit_mismatch");
+                    throw new DomainException("A unidade da venda difere do estoque.", "agro360.inventory_unit_mismatch");
                 }
 
                 if (balance.Available - balance.Reserved < command.Quantity)
                 {
-                    throw new ConflictException("Saldo disponível insuficiente para venda.", "inventory.insufficient_stock");
+                    throw new ConflictException("Saldo disponível insuficiente para venda.", "agro360.inventory_insufficient_stock");
                 }
 
                 var newBalance = balance.Available - command.Quantity;
                 var affected = await connection.ExecuteAsync(new CommandDefinition(
                     """
-                    update inventory.stock_balances
+                    update agro360.inventory_stock_balances
                     set available = @NewBalance, updated_at = now(), version = version + 1
                     where id = @Id and tenant_id = @TenantId and version = @Version;
                     """,
@@ -118,7 +118,7 @@ public sealed class CommercialService(DatabaseExecutor database, ITenantContext 
                 stockMovementId = Guid.CreateVersion7();
                 await connection.ExecuteAsync(new CommandDefinition(
                     """
-                    insert into inventory.stock_movements
+                    insert into agro360.inventory_stock_movements
                         (id, tenant_id, warehouse_id, product_id, movement_type, quantity, unit,
                          unit_cost, total_cost, reference_type, reference_id, idempotency_key,
                          balance_after, average_cost_after, balance_version, occurred_at, created_by)
@@ -153,7 +153,7 @@ public sealed class CommercialService(DatabaseExecutor database, ITenantContext 
                 var animal = await connection.QuerySingleOrDefaultAsync<AnimalSaleRow>(new CommandDefinition(
                     """
                     select status, withdrawal_until as WithdrawalUntil, version
-                    from livestock.animals
+                    from agro360.livestock_animals
                     where id = @AnimalId and tenant_id = @TenantId and farm_id = @FarmId and deleted_at is null
                     for update;
                     """,
@@ -163,7 +163,7 @@ public sealed class CommercialService(DatabaseExecutor database, ITenantContext 
                     ?? throw new NotFoundException("Animal", command.OriginId);
                 if (animal.Status != 1)
                 {
-                    throw new ConflictException("Somente animal ativo pode ser vendido.", "livestock.animal_not_active");
+                    throw new ConflictException("Somente animal ativo pode ser vendido.", "agro360.livestock_animal_not_active");
                 }
 
                 var saleDate = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -171,12 +171,12 @@ public sealed class CommercialService(DatabaseExecutor database, ITenantContext 
                 {
                     throw new ConflictException(
                         $"O animal está em carência sanitária até {animal.WithdrawalUntil:dd/MM/yyyy}.",
-                        "livestock.withdrawal_period_active");
+                        "agro360.livestock_withdrawal_period_active");
                 }
 
                 var affected = await connection.ExecuteAsync(new CommandDefinition(
                     """
-                    update livestock.animals
+                    update agro360.livestock_animals
                     set status = 3, updated_at = now(), updated_by = @UserId, version = version + 1
                     where id = @AnimalId and tenant_id = @TenantId and version = @Version;
                     """,
@@ -198,7 +198,7 @@ public sealed class CommercialService(DatabaseExecutor database, ITenantContext 
             var receivableId = Guid.CreateVersion7();
             await connection.ExecuteAsync(new CommandDefinition(
                 """
-                insert into commercial.sales
+                insert into agro360.commercial_sales
                     (id, tenant_id, farm_id, product_type, origin_id, warehouse_id,
                      quantity, unit, unit_price, total_amount, currency, buyer_name,
                      buyer_document, due_date, status, idempotency_key, confirmed_at,
@@ -209,7 +209,7 @@ public sealed class CommercialService(DatabaseExecutor database, ITenantContext 
                      @BuyerDocument, @DueDate, 'CONFIRMED', @IdempotencyKey, now(),
                      now(), @CreatedBy, 1);
 
-                insert into finance.receivables
+                insert into agro360.finance_receivables
                     (id, tenant_id, farm_id, sale_id, description, amount, currency,
                      due_date, status, created_at, created_by, version)
                 values
@@ -256,7 +256,7 @@ public sealed class CommercialService(DatabaseExecutor database, ITenantContext 
                 cancellationToken).ConfigureAwait(false);
             await connection.ExecuteAsync(new CommandDefinition(
                 """
-                insert into traceability.edges
+                insert into agro360.traceability_edges
                     (id, tenant_id, from_node_id, to_node_id, relation_type, created_at)
                 values
                     (@Id, @TenantId, @OriginNodeId, @SaleNodeId, 'SOLD_IN', now())
@@ -308,7 +308,7 @@ public sealed class CommercialService(DatabaseExecutor database, ITenantContext 
         CancellationToken cancellationToken) =>
         connection.ExecuteScalarAsync<Guid>(new CommandDefinition(
             """
-            insert into traceability.nodes (id, tenant_id, entity_type, entity_id, label, created_at)
+            insert into agro360.traceability_nodes (id, tenant_id, entity_type, entity_id, label, created_at)
             values (@Id, @TenantId, @EntityType, @EntityId, @Label, now())
             on conflict (tenant_id, entity_type, entity_id)
             do update set label = excluded.label

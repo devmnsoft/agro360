@@ -6,7 +6,7 @@ public sealed record WeighReceiptCommand(decimal GrossWeight,decimal Tare);
 public sealed record ClassificationCommand(decimal Moisture,decimal Impurity,decimal Damaged,decimal Burnt,decimal Broken,decimal? Green,decimal? HectoliterWeight,decimal? Protein,decimal? Acidity,decimal Temperature,string Report,string? Notes);
 public sealed record QualityParameterCommand(Guid ProductId,string Name,decimal? WarningValue,decimal? RejectValue,decimal DiscountPercent,bool Active);
 public sealed record TransferLotCommand(Guid DestinationStructureId,decimal Quantity,string? Notes,bool AllowOverflow=false);
-public sealed record ReasonCommand(string Reason);
+public sealed record StorageReasonCommand(string Reason);
 public sealed record ProcessingOrderCommand(Guid InputLotId,Guid OutputProductId,decimal InputQuantity,string Process,decimal Cost,string? Responsible,string? Notes);
 public sealed record CompleteProcessingCommand(decimal OutputQuantity,decimal TechnicalLoss,string? Justification);
 public sealed record ShipmentCommand(string Number,Guid? ContractId,string Customer,Guid ProductId,Guid LotId,decimal RequestedQuantity,string Destination,string? Carrier,string? Driver,string? Vehicle,string? Plate);

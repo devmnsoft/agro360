@@ -139,3 +139,8 @@ Governança persistente e isolada por tenant: importação CSV pré-validada, qu
 ## Sprint 50 — formulários e ajuda contextual
 
 Validação backend continua sendo a fonte da verdade; a interface oferece resumo e erros por campo, loading, confirmação com consequência real e motivo nas ações definidas pela regra. Ajuda curta é recolhível e localizada em pt-BR, en-US e es-ES. Configurações e eventos de UX usam o schema `ui`, auditoria e RLS por tenant. Detalhes: `docs/UX-FORMS-VALIDATION.md` e `docs/CONTEXTUAL-HELP.md`.
+
+## Instalador único `agro360`
+Sem Docker, crie um banco PostgreSQL vazio, exporte a conexão da sua ferramenta e rode `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. O arquivo não usa `\i`, credenciais ou caminhos locais e todos os objetos fixos usam `agro360.<prefixo_do_modulo>_<objeto>`. Valide que nenhum namespace legado foi criado com: `select schema_name from information_schema.schemata where schema_name in ('platform','identity','tenancy','finance','fleet','audit');` (resultado esperado: zero linhas).
+
+O Super Administrador é provisionado pelo bootstrap usando `AGRO360_SUPERADMIN_INITIAL_PASSWORD` e o `PasswordHasher` PBKDF2-SHA512 da aplicação, nunca texto puro. Identidade: **Super Administrador MNSOFT**, `superadmin@mnsoft.com.br`, CNPJ `18.160.057/0001-13`, perfil `SUPER_ADMIN`, status Ativo e troca obrigatória no primeiro login. Produção exige a variável; somente Development admite uma senha inicial explicitamente configurada.

@@ -17,30 +17,30 @@ public sealed class DashboardService(
             var row = await connection.QuerySingleAsync<DashboardRow>(new CommandDefinition(
                 """
                 select
-                    (select count(*) from geo.farms f
+                    (select count(*) from agro360.geo_farms f
                         where f.tenant_id = @TenantId and f.deleted_at is null
                           and (@FarmId is null or f.id = @FarmId)) as Farms,
-                    (select coalesce(sum(f.total_area_ha), 0) from geo.farms f
+                    (select coalesce(sum(f.total_area_ha), 0) from agro360.geo_farms f
                         where f.tenant_id = @TenantId and f.deleted_at is null
                           and (@FarmId is null or f.id = @FarmId)) as TotalAreaHa,
-                    (select count(*) from agriculture.seasons s
+                    (select count(*) from agro360.agriculture_seasons s
                         where s.tenant_id = @TenantId and s.status = 2 and s.deleted_at is null
                           and (@FarmId is null or s.farm_id = @FarmId)) as ActiveSeasons,
-                    (select count(*) from livestock.animals a
+                    (select count(*) from agro360.livestock_animals a
                         where a.tenant_id = @TenantId and a.status = 1 and a.deleted_at is null
                           and (@FarmId is null or a.farm_id = @FarmId)) as ActiveAnimals,
                     (select coalesce(sum(b.available * b.average_cost), 0)
-                        from inventory.stock_balances b
-                        join inventory.warehouses w on w.id = b.warehouse_id and w.tenant_id = b.tenant_id
+                        from agro360.inventory_stock_balances b
+                        join agro360.inventory_warehouses w on w.id = b.warehouse_id and w.tenant_id = b.tenant_id
                         where b.tenant_id = @TenantId
                           and (@FarmId is null or w.farm_id = @FarmId)) as InventoryValue,
-                    (select coalesce(sum(r.amount - r.paid_amount), 0) from finance.receivables r
+                    (select coalesce(sum(r.amount - r.paid_amount), 0) from agro360.finance_receivables r
                         where r.tenant_id = @TenantId and r.status in ('OPEN', 'OVERDUE')
                           and (@FarmId is null or r.farm_id = @FarmId)) as Receivables,
-                    (select coalesce(sum(c.amount), 0) from cost.entries c
+                    (select coalesce(sum(c.amount), 0) from agro360.cost_entries c
                         where c.tenant_id = @TenantId
                           and (@FarmId is null or c.farm_id = @FarmId)) as OperationalCosts,
-                    (select count(*) from notification.alerts n
+                    (select count(*) from agro360.notification_alerts n
                         where n.tenant_id = @TenantId and n.status = 'OPEN' and n.severity in ('HIGH', 'CRITICAL')
                           and (@FarmId is null or n.farm_id = @FarmId)) as CriticalAlerts;
                 """,
@@ -54,9 +54,9 @@ public sealed class DashboardService(
                     select o.id, 'AGRICULTURE' as Module, o.operation_type as Type,
                            concat(o.operation_type, ' · ', f.name) as Description,
                            c.amount as Amount, o.executed_at as OccurredAt, o.status
-                    from agriculture.field_operations o
-                    join geo.fields f on f.id = o.field_id and f.tenant_id = o.tenant_id
-                    left join cost.entries c on c.source_id = o.id and c.tenant_id = o.tenant_id
+                    from agro360.agriculture_field_operations o
+                    join agro360.geo_fields f on f.id = o.field_id and f.tenant_id = o.tenant_id
+                    left join agro360.cost_entries c on c.source_id = o.id and c.tenant_id = o.tenant_id
                     where o.tenant_id = @TenantId and (@FarmId is null or o.farm_id = @FarmId)
 
                     union all
@@ -64,15 +64,15 @@ public sealed class DashboardService(
                     select e.id, 'LIVESTOCK', e.event_type,
                            concat(e.event_type, ' · animal ', a.tag), e.cost_amount,
                            e.created_at, 'COMPLETED'
-                    from livestock.animal_events e
-                    join livestock.animals a on a.id = e.animal_id and a.tenant_id = e.tenant_id
+                    from agro360.livestock_animal_events e
+                    join agro360.livestock_animals a on a.id = e.animal_id and a.tenant_id = e.tenant_id
                     where e.tenant_id = @TenantId and (@FarmId is null or a.farm_id = @FarmId)
 
                     union all
 
                     select s.id, 'COMMERCIAL', 'SALE', concat('Venda · ', s.buyer_name),
                            s.total_amount, s.created_at, s.status
-                    from commercial.sales s
+                    from agro360.commercial_sales s
                     where s.tenant_id = @TenantId and (@FarmId is null or s.farm_id = @FarmId)
                 ) recent
                 order by OccurredAt desc

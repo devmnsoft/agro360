@@ -28,7 +28,7 @@ public sealed class IntegrationsController(IIntegrationService service,ILogger<I
  [HttpPost("api/imports/{id:guid}/confirm"),Authorize(Policy=Permissions.IntegrationsWrite)]public Task<IActionResult> Confirm(Guid id,CancellationToken ct)=>Action(()=>service.ConfirmImportAsync(id,ct),"confirm import");
  [HttpGet("api/exports")]public async Task<IActionResult> Export([FromQuery]string entity,CancellationToken ct)=>File(await service.ExportAsync(entity,ct),"text/csv; charset=utf-8",$"{entity}.csv");
  [HttpGet("api/fiscal-documents")]public Task<object> Documents(CancellationToken ct)=>service.FiscalDocumentsAsync(ct);
- [HttpPost("api/fiscal-documents"),Authorize(Policy=Permissions.IntegrationsWrite)]public Task<IActionResult> Document(FiscalDocumentCommand x,CancellationToken ct)=>Created(()=>service.AddFiscalDocumentAsync(x,ct),"api/fiscal-documents");
+ [HttpPost("api/fiscal-documents"),Authorize(Policy=Permissions.IntegrationsWrite)]public Task<IActionResult> Document(IntegrationFiscalDocumentCommand x,CancellationToken ct)=>Created(()=>service.AddFiscalDocumentAsync(x,ct),"api/fiscal-documents");
  [HttpGet("api/iot/devices")]public Task<object> Devices(CancellationToken ct)=>service.DevicesAsync(ct);
  [HttpPost("api/iot/devices"),Authorize(Policy=Permissions.IntegrationsWrite)]public async Task<IActionResult> Device(DeviceCommand x,CancellationToken ct)=>Ok(await service.AddDeviceAsync(x,ct));
  [HttpPost("api/iot/readings"),AllowAnonymous]public async Task<IActionResult> Reading(ReadingCommand x,CancellationToken ct)=>Accepted(new{id=await Boundary("ingest reading",()=>service.AddReadingAsync(x,ct))});

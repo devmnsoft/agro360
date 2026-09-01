@@ -24,7 +24,7 @@ public sealed class InventoryService(DatabaseExecutor database, ITenantContext t
         {
             await connection.ExecuteAsync(new CommandDefinition(
                 """
-                insert into inventory.products
+                insert into agro360.inventory_products
                     (id, tenant_id, sku, name, category, base_unit, requires_lot, is_perishable,
                      created_at, created_by, version)
                 values
@@ -71,7 +71,7 @@ public sealed class InventoryService(DatabaseExecutor database, ITenantContext t
         {
             await connection.ExecuteAsync(new CommandDefinition(
                 """
-                insert into inventory.warehouses
+                insert into agro360.inventory_warehouses
                     (id, tenant_id, farm_id, code, name, type, created_at, created_by, version)
                 values
                     (@Id, @TenantId, @FarmId, @Code, @Name, @Type, now(), @CreatedBy, 1);
@@ -124,16 +124,16 @@ public sealed class InventoryService(DatabaseExecutor database, ITenantContext t
             using var grid = await connection.QueryMultipleAsync(new CommandDefinition(
                 """
                 select count(*)
-                from inventory.stock_balances b
-                join inventory.products p on p.id = b.product_id and p.tenant_id = b.tenant_id
+                from agro360.inventory_stock_balances b
+                join agro360.inventory_products p on p.id = b.product_id and p.tenant_id = b.tenant_id
                 where b.tenant_id = @TenantId
                   and (@Search is null or p.name ilike '%' || @Search || '%' or p.sku ilike '%' || @Search || '%');
 
                 select b.warehouse_id as WarehouseId, b.product_id as ProductId,
                        p.sku, p.name as ProductName, b.unit, b.available, b.reserved,
                        b.minimum, b.average_cost as AverageCost, b.version
-                from inventory.stock_balances b
-                join inventory.products p on p.id = b.product_id and p.tenant_id = b.tenant_id
+                from agro360.inventory_stock_balances b
+                join agro360.inventory_products p on p.id = b.product_id and p.tenant_id = b.tenant_id
                 where b.tenant_id = @TenantId
                   and (@Search is null or p.name ilike '%' || @Search || '%' or p.sku ilike '%' || @Search || '%')
                 order by p.name
@@ -171,7 +171,7 @@ public sealed class InventoryService(DatabaseExecutor database, ITenantContext t
             var existing = await connection.QuerySingleOrDefaultAsync<StockMovementResult>(new CommandDefinition(
                 """
                 select id as MovementId, balance_after as NewBalance, average_cost_after as AverageCost, balance_version as Version
-                from inventory.stock_movements
+                from agro360.inventory_stock_movements
                 where tenant_id = @TenantId and idempotency_key = @IdempotencyKey;
                 """,
                 new { tenantContext.TenantId, command.IdempotencyKey },
@@ -186,7 +186,7 @@ public sealed class InventoryService(DatabaseExecutor database, ITenantContext t
         var product = await connection.QuerySingleOrDefaultAsync<ProductRuleRow>(new CommandDefinition(
             """
             select base_unit as BaseUnit, requires_lot as RequiresLot, is_perishable as IsPerishable
-            from inventory.products
+            from agro360.inventory_products
             where id = @ProductId and tenant_id = @TenantId and deleted_at is null;
             """,
             new { command.ProductId, tenantContext.TenantId },
@@ -196,23 +196,23 @@ public sealed class InventoryService(DatabaseExecutor database, ITenantContext t
 
         if (!string.Equals(product.BaseUnit, unit, StringComparison.OrdinalIgnoreCase))
         {
-            throw new DomainException("A unidade informada difere da unidade base do produto.", "inventory.unit_mismatch");
+            throw new DomainException("A unidade informada difere da unidade base do produto.", "agro360.inventory_unit_mismatch");
         }
 
         if (product.RequiresLot && string.IsNullOrWhiteSpace(command.LotNumber))
         {
-            throw new DomainException("Este produto exige número de lote.", "inventory.lot_required");
+            throw new DomainException("Este produto exige número de lote.", "agro360.inventory_lot_required");
         }
 
         if (product.IsPerishable && !command.ExpiresOn.HasValue)
         {
-            throw new DomainException("Este produto exige data de validade.", "inventory.expiration_required");
+            throw new DomainException("Este produto exige data de validade.", "agro360.inventory_expiration_required");
         }
 
         var balance = await connection.QuerySingleOrDefaultAsync<BalanceRow>(new CommandDefinition(
             """
             select id, available, reserved, average_cost as AverageCost, version
-            from inventory.stock_balances
+            from agro360.inventory_stock_balances
             where tenant_id = @TenantId and warehouse_id = @WarehouseId and product_id = @ProductId
             for update;
             """,
@@ -224,7 +224,7 @@ public sealed class InventoryService(DatabaseExecutor database, ITenantContext t
         {
             if (!isReceipt)
             {
-                throw new ConflictException("Não existe saldo para o produto solicitado.", "inventory.insufficient_stock");
+                throw new ConflictException("Não existe saldo para o produto solicitado.", "agro360.inventory_insufficient_stock");
             }
 
             balance = new BalanceRow
@@ -237,7 +237,7 @@ public sealed class InventoryService(DatabaseExecutor database, ITenantContext t
             };
             await connection.ExecuteAsync(new CommandDefinition(
                 """
-                insert into inventory.stock_balances
+                insert into agro360.inventory_stock_balances
                     (id, tenant_id, warehouse_id, product_id, unit, available, reserved, minimum,
                      average_cost, created_at, updated_at, version)
                 values
@@ -268,7 +268,7 @@ public sealed class InventoryService(DatabaseExecutor database, ITenantContext t
         {
             if (balance.Available - balance.Reserved < quantity)
             {
-                throw new ConflictException("Saldo disponível insuficiente; estoque negativo não é permitido.", "inventory.insufficient_stock");
+                throw new ConflictException("Saldo disponível insuficiente; estoque negativo não é permitido.", "agro360.inventory_insufficient_stock");
             }
 
             newBalance = balance.Available - quantity;
@@ -278,7 +278,7 @@ public sealed class InventoryService(DatabaseExecutor database, ITenantContext t
         var newVersion = balance.Version + 1;
         var updated = await connection.ExecuteAsync(new CommandDefinition(
             """
-            update inventory.stock_balances
+            update agro360.inventory_stock_balances
             set available = @NewBalance,
                 average_cost = @NewAverageCost,
                 updated_at = now(),
@@ -304,7 +304,7 @@ public sealed class InventoryService(DatabaseExecutor database, ITenantContext t
         var movementId = Guid.CreateVersion7();
         await connection.ExecuteAsync(new CommandDefinition(
             """
-            insert into inventory.stock_movements
+            insert into agro360.inventory_stock_movements
                 (id, tenant_id, warehouse_id, product_id, movement_type, quantity, unit,
                  unit_cost, total_cost, lot_number, expires_on, reference_type, reference_id,
                  notes, idempotency_key, balance_after, average_cost_after, balance_version,

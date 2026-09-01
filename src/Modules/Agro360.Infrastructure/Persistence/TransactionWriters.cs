@@ -23,7 +23,7 @@ internal static class TransactionWriters
         CancellationToken cancellationToken) =>
         connection.ExecuteAsync(new CommandDefinition(
             """
-            insert into audit.logs
+            insert into agro360.audit_logs
                 (id, tenant_id, user_id, action, entity_type, entity_id, before_data, after_data, occurred_at)
             values
                 (@Id, @TenantId, @UserId, @Action, @EntityType, @EntityId, cast(@BeforeData as jsonb), cast(@AfterData as jsonb), now());
@@ -52,7 +52,7 @@ internal static class TransactionWriters
         CancellationToken cancellationToken) =>
         connection.ExecuteAsync(new CommandDefinition(
             """
-            insert into platform.outbox_messages
+            insert into agro360.platform_outbox_messages
                 (id, tenant_id, event_type, aggregate_id, payload, occurred_at, attempts, correlation_id)
             values
                 (@Id, @TenantId, @EventType, @AggregateId, cast(@Payload as jsonb), now(), 0, @CorrelationId);

@@ -89,7 +89,7 @@ public sealed partial class OutboxWorker(
             .OpenConnectionAsync(cancellationToken)
             .ConfigureAwait(false);
         var tenants = (await connection.QueryAsync<Guid>(new CommandDefinition(
-            "select id from tenancy.tenants where status in (1, 2) order by created_at;",
+            "select id from agro360.tenancy_tenants where status in (1, 2) order by created_at;",
             cancellationToken: cancellationToken)).ConfigureAwait(false)).ToArray();
 
         foreach (var tenantId in tenants)
@@ -117,7 +117,7 @@ public sealed partial class OutboxWorker(
                 select id, tenant_id as TenantId, event_type as EventType,
                        aggregate_id as AggregateId, payload::text as Payload,
                        occurred_at as OccurredAt, attempts, correlation_id as CorrelationId
-                from platform.outbox_messages
+                from agro360.platform_outbox_messages
                 where tenant_id = @TenantId
                   and processed_at is null
                   and dead_lettered_at is null
@@ -137,7 +137,7 @@ public sealed partial class OutboxWorker(
                     await publisher.PublishAsync(message, cancellationToken).ConfigureAwait(false);
                     await connection.ExecuteAsync(new CommandDefinition(
                         """
-                        update platform.outbox_messages
+                        update agro360.platform_outbox_messages
                         set processed_at = now(), attempts = attempts + 1,
                             last_attempt_at = now(), last_error = null
                         where id = @Id and tenant_id = @TenantId;
@@ -151,7 +151,7 @@ public sealed partial class OutboxWorker(
                     LogPublishFailure(logger, message.Id, message.TenantId, message.Attempts + 1, exception.GetType().Name);
                     await connection.ExecuteAsync(new CommandDefinition(
                         """
-                        update platform.outbox_messages
+                        update agro360.platform_outbox_messages
                         set attempts = attempts + 1,
                             last_attempt_at = now(),
                             last_error = left(@Error, 2000),
