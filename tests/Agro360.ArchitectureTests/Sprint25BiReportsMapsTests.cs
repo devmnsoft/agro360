@@ -5,7 +5,7 @@ public sealed class Sprint25BiReportsMapsTests
     private static readonly string Root = FindRoot();
 
     [Fact]
-    public void Database_defines_tenant_scoped_bi_and_geo_foundation()
+    public void DatabaseDefinesTenantScopedBiAndGeoFoundation()
     {
         var sql = File.ReadAllText(Path.Combine(Root, "database/migrations/023_sprint25_bi_reports_maps_design.sql"));
         foreach (var table in new[] { "saved_filters", "dashboard_widgets", "report_definitions", "report_exports", "geo_locations", "geo_areas", "geo_routes", "geo_route_points", "geo_layers", "user_dashboard_preferences", "ui_audit_events" })
@@ -16,7 +16,7 @@ public sealed class Sprint25BiReportsMapsTests
     }
 
     [Fact]
-    public void Reports_page_has_real_filtered_csv_flow_and_empty_state()
+    public void ReportsPageHasRealFilteredCsvFlowAndEmptyState()
     {
         var view = File.ReadAllText(Path.Combine(Root, "src/Hosts/Agro360.Web/Pages/Reports/Index.cshtml"));
         var script = File.ReadAllText(Path.Combine(Root, "src/Hosts/Agro360.Web/wwwroot/js/reports.js"));
