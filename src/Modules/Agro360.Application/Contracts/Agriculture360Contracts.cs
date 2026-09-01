@@ -51,9 +51,9 @@ public interface ILookupService
 
 public interface IAgriculture360Service
 {
-    Task<PagedResult<AgricultureRecord>> ListAsync(string module, int page, int pageSize, CancellationToken cancellationToken);
-    Task<AgricultureRecord> CreateAsync(string module, AgricultureCommand command, CancellationToken cancellationToken);
-    Task<AgricultureRecord> UpdateAsync(string module, Guid id, AgricultureCommand command, CancellationToken cancellationToken);
-    Task<AgricultureRecord> TransitionAsync(string module, Guid id, string action, AgricultureCommand? command, CancellationToken cancellationToken);
+    Task<PagedResult<AgricultureRecord>> ListAsync(string moduleCode, int page, int pageSize, CancellationToken cancellationToken);
+    Task<AgricultureRecord> CreateAsync(string moduleCode, AgricultureCommand command, CancellationToken cancellationToken);
+    Task<AgricultureRecord> UpdateAsync(string moduleCode, Guid id, AgricultureCommand command, CancellationToken cancellationToken);
+    Task<AgricultureRecord> TransitionAsync(string moduleCode, Guid id, string action, AgricultureCommand? command, CancellationToken cancellationToken);
     Task<AgricultureDashboard> DashboardAsync(CancellationToken cancellationToken);
 }
