@@ -202,7 +202,7 @@ create table if not exists agro360.geo_fields (
     constraint ck_fields_area check (area_ha > 0)
 );
 
-create index if not exists ix_fields_boundary on agro360.geo_fields using gist (boundary);
+create index if not exists ix_fields_boundary on agro360.geo_fields using gin (boundary);
 create index if not exists ix_fields_name_trgm on agro360.geo_fields using gin (name gin_trgm_ops);
 
 create table if not exists agro360.agriculture_seasons (
