@@ -61,3 +61,7 @@ A interface Enterprise usa superfícies sóbrias, acento verde, hierarquia densa
 
 ## Superfícies de ecossistema
 Marketplace usa cards comerciais operacionais, badges de estado e filtros; parceiros usam linguagem de concessão; APIs usam prefixos, escopos e logs técnicos. Loading, vazio, erro, diálogo e ajuda recolhível são obrigatórios, sem solicitar UUID ao usuário.
+
+## Sprint 47 — CRM e ciclo do cliente
+
+A plataforma integra CRM, pipeline, propostas com total no backend, contratos SaaS, implantação assistida, suporte/SLA, saúde explicável, conhecimento e portal isolado. As novas rotas exigem permissões específicas, as tabelas usam auditoria/RLS por tenant e toda comunicação sem provedor permanece pendente na outbox. A experiência responsiva usa funil, timeline, badges e o componente recolhível **Como usar esta tela**. Consulte `docs/CRM-COMMERCIAL.md`, `docs/CUSTOMER-SUCCESS.md`, `docs/SUPPORT.md` e a migração `047_crm_customer_lifecycle.sql`.

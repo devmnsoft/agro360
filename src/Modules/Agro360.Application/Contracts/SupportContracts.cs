@@ -11,7 +11,7 @@ public sealed record SupportEvent(Guid Id,string EventType,string? Description,s
 public sealed record SlaPolicy(Guid Id,string Name,string? Plan,string? ContractType,string? Category,string Priority,string Severity,int FirstResponseMinutes,int ResolutionMinutes,bool PauseWaitingCustomer,bool Active);
 public sealed record SlaPolicyCommand([Required,MaxLength(120)]string Name,[MaxLength(80)]string? Plan,[MaxLength(80)]string? ContractType,[MaxLength(60)]string? Category,[Required]string Priority,[Required]string Severity,[Range(1,525600)]int FirstResponseMinutes,[Range(1,525600)]int ResolutionMinutes,bool PauseWaitingCustomer,bool Active);
 public sealed record KnowledgeArticle(Guid Id,string Slug,string Title,string Type,string? Module,string Audience,string Status,int Views,int Helpful,int NotHelpful,DateTimeOffset? PublishedAt);
-public sealed record ArticleCommand([Required,MaxLength(180)]string Title,[Required,MaxLength(20000)]string Content,[Required,MaxLength(40)]string Type,[MaxLength(80)]string? Module,[Required,MaxLength(40)]string Audience,bool Global);
+public sealed record ArticleCommand([Required,MaxLength(180)]string Title,[Required,MaxLength(20000)]string Content,[Required,MaxLength(40)]string Type,[MaxLength(80)]string? Module,[Required,MaxLength(40)]string Audience,[Required,MaxLength(10)]string Language,bool Global);
 public sealed record ArticleFeedbackCommand(bool Helpful);
 public sealed record ImplementationProject(Guid Id,string Name,string TenantName,string Status,DateOnly StartsOn,DateOnly DueOn,int Progress,int OpenRisks);
 public sealed record ImplementationCommand([Required]Guid TenantId,[Required,MaxLength(160)]string Name,[Required]DateOnly StartsOn,[Required]DateOnly DueOn,Guid? OwnerId);
