@@ -13,7 +13,9 @@ public sealed class IntelligenceController(IIntelligenceService service):Control
  [HttpPost("reports/run")] public Task<ReportResult> Run([FromQuery]string id,[FromBody]IntelligenceFilter f,CancellationToken ct)=>service.RunReportAsync(id,f,ct);
  [HttpGet("reports/{id}/export/csv")] public async Task<IActionResult> Csv(string id,[FromQuery]IntelligenceFilter f,CancellationToken ct)=>File(await service.ExportCsvAsync(id,f,ct),"text/csv; charset=utf-8",$"{id}.csv");
  [HttpGet("alerts")] public Task<IReadOnlyList<AlertResult>> Alerts([FromQuery]string? status,CancellationToken ct)=>service.GetAlertsAsync(status,ct);
- [HttpPost("alerts/{id:guid}/{action:regex(^resolve|snooze|ignore$)}"),Authorize(Policy=Permissions.IntelligenceWrite)] public async Task<IActionResult> Alert(Guid id,string action,AlertAction x,CancellationToken ct){await service.ActOnAlertAsync(id,action,x,ct);return NoContent();}
+ [HttpPost("alerts/{id:guid}/resolve"),Authorize(Policy=Permissions.IntelligenceWrite)] public async Task<IActionResult> ResolveAlert(Guid id,AlertAction x,CancellationToken ct){await service.ActOnAlertAsync(id,"resolve",x,ct);return NoContent();}
+ [HttpPost("alerts/{id:guid}/snooze"),Authorize(Policy=Permissions.IntelligenceWrite)] public async Task<IActionResult> SnoozeAlert(Guid id,AlertAction x,CancellationToken ct){await service.ActOnAlertAsync(id,"snooze",x,ct);return NoContent();}
+ [HttpPost("alerts/{id:guid}/ignore"),Authorize(Policy=Permissions.IntelligenceWrite)] public async Task<IActionResult> IgnoreAlert(Guid id,AlertAction x,CancellationToken ct){await service.ActOnAlertAsync(id,"ignore",x,ct);return NoContent();}
  [HttpGet("executive-dashboard")] public Task<ExecutiveDashboard> Dashboard([FromQuery]IntelligenceFilter f,CancellationToken ct)=>service.GetExecutiveDashboardAsync(f,ct);
  [HttpGet("forecasts")] public Task<IReadOnlyList<ForecastResult>> Forecasts([FromQuery]IntelligenceFilter f,CancellationToken ct)=>service.GetForecastsAsync(f,ct);
  [HttpPost("assistant/query")] public Task<AssistantAnswer> Ask(AssistantQuery q,CancellationToken ct)=>service.AskAsync(q,ct);

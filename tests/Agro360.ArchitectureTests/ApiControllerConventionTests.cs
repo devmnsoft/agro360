@@ -33,6 +33,31 @@ public sealed class ApiControllerConventionTests
             Assert.DoesNotMatch(@"\bpartial\s+class\s+\w+Controller\s*\(", source);
     }
 
+    [Fact]
+    public void AttributeRoutesDoNotUseReservedMvcParametersOrUnbalancedBraces()
+    {
+        foreach (var source in Sources())
+        {
+            foreach (Match attribute in Regex.Matches(source, @"\[(?:Route|Http(?:Get|Post|Put|Patch|Delete))\(""([^""]*)""\)"))
+            {
+                var template = attribute.Groups[1].Value;
+
+                Assert.DoesNotMatch(@"\{(?:action|controller)(?=[:}?])", template.ToLowerInvariant());
+                Assert.Equal(template.Count(character => character == '{'), template.Count(character => character == '}'));
+            }
+        }
+    }
+
+    [Fact]
+    public void ComplianceLotTransitionsUseExplicitRoutes()
+    {
+        var source = File.ReadAllText(Path.Combine(Controllers, "ComplianceControllers.cs"));
+
+        Assert.Contains("lots/{id:guid}/block", source);
+        Assert.Contains("lots/{id:guid}/unblock", source);
+        Assert.DoesNotContain("lots/{id:guid}/{", source);
+    }
+
     private static IEnumerable<string> Sources() =>
         Directory.EnumerateFiles(Controllers, "*.cs").Select(File.ReadAllText);
 }
