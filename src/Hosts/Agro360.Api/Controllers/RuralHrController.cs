@@ -20,5 +20,5 @@ public sealed class RuralHrController(IRuralHrService service,ILogger<RuralHrCon
  [HttpGet("dashboard")]public Task<RuralHrDashboard> Dashboard(CancellationToken ct)=>service.DashboardAsync(ct);
  [HttpGet("{resource}/export")]public async Task<IActionResult> Export(string resource,CancellationToken ct)=>File(await service.ExportAsync(Kind(resource),ct),"text/csv",$"{resource}.csv");
  private static string Kind(string resource)=>Kinds.TryGetValue(resource,out var kind)?kind:throw new KeyNotFoundException("Recurso de RH Rural não encontrado.");
- private async Task<IActionResult> Boundary(Func<Task<IActionResult>> operation){try{return await operation();}catch(Exception ex){logger.LogError(ex,"Critical Rural HR API boundary failed");throw;}}
+ private async Task<IActionResult> Boundary(Func<Task<IActionResult>> operation){try{return await operation();}catch(Exception ex){ApiLogMessages.RuralHrBoundaryFailed(logger,ex);throw;}}
 }

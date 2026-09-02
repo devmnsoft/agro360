@@ -34,8 +34,8 @@ public sealed class ComplianceController(IComplianceService service,ILogger<Comp
  [HttpGet("dashboard")] public Task<ComplianceDashboard> Dashboard(CancellationToken ct)=>service.DashboardAsync(ct);
  private async Task<IActionResult>Create(Func<Task<Guid>> operation,string route){var id=await Boundary("create",operation);return Created($"api/compliance/{route}/{id}",new{id});}
  private async Task<IActionResult>Update(Func<Task<Guid>> operation){await Boundary("update",operation);return NoContent();}
- private async Task<T> Boundary<T>(string operation,Func<Task<T>> action){try{return await action();}catch(Exception exception){logger.LogError(exception,"Compliance boundary failed: {Operation}",operation);throw;}}
- private async Task Boundary(string operation,Func<Task> action){try{await action();}catch(Exception exception){logger.LogError(exception,"Compliance boundary failed: {Operation}",operation);throw;}}
+ private async Task<T> Boundary<T>(string operation,Func<Task<T>> action){try{return await action();}catch(Exception exception){ApiLogMessages.ComplianceBoundaryFailed(logger,operation,exception);throw;}}
+ private async Task Boundary(string operation,Func<Task> action){try{await action();}catch(Exception exception){ApiLogMessages.ComplianceBoundaryFailed(logger,operation,exception);throw;}}
 }
 
 [ApiController,Route("api/esg"),Authorize(Policy=Permissions.EsgRead)]

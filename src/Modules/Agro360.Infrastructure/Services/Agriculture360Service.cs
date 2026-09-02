@@ -10,7 +10,7 @@ namespace Agro360.Infrastructure.Services;
 
 public sealed class LookupService(DatabaseExecutor database, ITenantContext tenant) : ILookupService
 {
-    private static readonly IReadOnlyDictionary<string, string> Sources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, string> Sources = new(StringComparer.OrdinalIgnoreCase)
     {
         ["properties"] = "select id,name label,concat_ws(' · ',municipality,state) description,'ACTIVE' status,'{}'::jsonb metadata from agro360.geo_farms where tenant_id=@TenantId and deleted_at is null",
         ["production-areas"] = "select id,name label,area_ha||' ha' description,'ACTIVE' status,jsonb_build_object('farmId',farm_id,'areaHa',area_ha) metadata from agro360.geo_fields where tenant_id=@TenantId and deleted_at is null",

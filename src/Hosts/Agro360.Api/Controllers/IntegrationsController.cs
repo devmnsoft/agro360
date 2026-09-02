@@ -40,6 +40,6 @@ public sealed class IntegrationsController(IIntegrationService service,ILogger<I
  [HttpGet("api/integrations/dashboard")]public Task<IntegrationDashboard> Dashboard(CancellationToken ct)=>service.DashboardAsync(ct);
  private async Task<IActionResult> Created(Func<Task<Guid>> op,string route){var id=await Boundary("create",op);return base.Created(route+"/"+id,new{id});}
  private async Task<IActionResult> Action(Func<Task> op,string name){await Boundary(name,op);return NoContent();}
- private async Task<T> Boundary<T>(string operation,Func<Task<T>> op){try{return await op();}catch(Exception ex){logger.LogError(ex,"Integration boundary failed: {Operation}",operation);throw;}}
- private async Task Boundary(string operation,Func<Task> op){try{await op();}catch(Exception ex){logger.LogError(ex,"Integration boundary failed: {Operation}",operation);throw;}}
+ private async Task<T> Boundary<T>(string operation,Func<Task<T>> op){try{return await op();}catch(Exception ex){ApiLogMessages.IntegrationBoundaryFailed(logger,operation,ex);throw;}}
+ private async Task Boundary(string operation,Func<Task> op){try{await op();}catch(Exception ex){ApiLogMessages.IntegrationBoundaryFailed(logger,operation,ex);throw;}}
 }
