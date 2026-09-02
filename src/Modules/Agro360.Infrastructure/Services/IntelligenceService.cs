@@ -121,12 +121,12 @@ public sealed class IntelligenceService : IIntelligenceService
 
     public Task<AssistantAnswer> AskAsync(AssistantQuery query,CancellationToken ct)=>Guard("assistant",()=>_database.InTenantTransactionAsync(async(c,t)=>
     {
-      var text=query.Question.Trim().ToLowerInvariant(); string intent,sql,answer,action;
-      if(text.Contains("conta")&&text.Contains("venc")){intent="DUE_ACCOUNTS";sql="select supplier_name name,balance amount,due_on date,status from agro360.finance_payables where tenant_id=@TenantId and status in ('OPEN','PARTIAL') and due_on<=current_date+7 order by due_on limit 50";answer="Contas a pagar vencidas ou com vencimento nos próximos 7 dias.";action="Priorize as contas vencidas e valide disponibilidade de caixa.";}
-      else if(text.Contains("estoque")||text.Contains("mínimo")||text.Contains("minimo")){intent="LOW_STOCK";sql="select p.name,b.available,b.minimum,b.unit from agro360.inventory_stock_balances b join agro360.inventory_products p on p.id=b.product_id where b.tenant_id=@TenantId and b.available<=b.minimum order by b.available/b.minimum nulls first limit 50";answer="Itens cujo saldo disponível atingiu ou ficou abaixo do mínimo.";action="Revise consumo e abra cotação para itens críticos.";}
-      else if(text.Contains("manuten")){intent="MAINTENANCE";sql="select a.name,m.description,m.status,coalesce(m.scheduled_for,m.next_review_date) due_on from agro360.fleet_maintenance_orders m join agro360.fleet_assets a on a.id=m.asset_id where m.tenant_id=@TenantId and m.status not in ('COMPLETED','CANCELLED') and coalesce(m.scheduled_for,m.next_review_date)<=current_date+30 order by due_on limit 50";answer="Máquinas com manutenção vencida ou prevista em 30 dias.";action="Programe a parada antes do limite operacional.";}
-      else if(text.Contains("viage")||text.Contains("rota")){intent="TRIP_RISK";sql="select number,planned_start,status from agro360.regional_logistics_trips where tenant_id=@TenantId and status not in ('COMPLETED','CANCELLED') and planned_start<=now()+interval '24 hours' order by planned_start limit 50";answer="Viagens abertas dentro da janela crítica de 24 horas.";action="Confirme veículo, rota e janela operacional.";}
-      else if(text.Contains("lote")||text.Contains("conform")){intent="NONCONFORMING_LOTS";sql="select code,current_balance,status,block_reason from agro360.storage_lots where tenant_id=@TenantId and status='BLOCKED' order by formed_at limit 50";answer="Lotes bloqueados por pendência de conformidade.";action="Revise o motivo do bloqueio e registre a tratativa.";}
+      var text=query.Question.Trim(); string intent,sql,answer,action;
+      if(text.Contains("conta",StringComparison.OrdinalIgnoreCase)&&text.Contains("venc",StringComparison.OrdinalIgnoreCase)){intent="DUE_ACCOUNTS";sql="select supplier_name name,balance amount,due_on date,status from agro360.finance_payables where tenant_id=@TenantId and status in ('OPEN','PARTIAL') and due_on<=current_date+7 order by due_on limit 50";answer="Contas a pagar vencidas ou com vencimento nos próximos 7 dias.";action="Priorize as contas vencidas e valide disponibilidade de caixa.";}
+      else if(text.Contains("estoque",StringComparison.OrdinalIgnoreCase)||text.Contains("mínimo",StringComparison.OrdinalIgnoreCase)||text.Contains("minimo",StringComparison.OrdinalIgnoreCase)){intent="LOW_STOCK";sql="select p.name,b.available,b.minimum,b.unit from agro360.inventory_stock_balances b join agro360.inventory_products p on p.id=b.product_id where b.tenant_id=@TenantId and b.available<=b.minimum order by b.available/b.minimum nulls first limit 50";answer="Itens cujo saldo disponível atingiu ou ficou abaixo do mínimo.";action="Revise consumo e abra cotação para itens críticos.";}
+      else if(text.Contains("manuten",StringComparison.OrdinalIgnoreCase)){intent="MAINTENANCE";sql="select a.name,m.description,m.status,coalesce(m.scheduled_for,m.next_review_date) due_on from agro360.fleet_maintenance_orders m join agro360.fleet_assets a on a.id=m.asset_id where m.tenant_id=@TenantId and m.status not in ('COMPLETED','CANCELLED') and coalesce(m.scheduled_for,m.next_review_date)<=current_date+30 order by due_on limit 50";answer="Máquinas com manutenção vencida ou prevista em 30 dias.";action="Programe a parada antes do limite operacional.";}
+      else if(text.Contains("viage",StringComparison.OrdinalIgnoreCase)||text.Contains("rota",StringComparison.OrdinalIgnoreCase)){intent="TRIP_RISK";sql="select number,planned_start,status from agro360.regional_logistics_trips where tenant_id=@TenantId and status not in ('COMPLETED','CANCELLED') and planned_start<=now()+interval '24 hours' order by planned_start limit 50";answer="Viagens abertas dentro da janela crítica de 24 horas.";action="Confirme veículo, rota e janela operacional.";}
+      else if(text.Contains("lote",StringComparison.OrdinalIgnoreCase)||text.Contains("conform",StringComparison.OrdinalIgnoreCase)){intent="NONCONFORMING_LOTS";sql="select code,current_balance,status,block_reason from agro360.storage_lots where tenant_id=@TenantId and status='BLOCKED' order by formed_at limit 50";answer="Lotes bloqueados por pendência de conformidade.";action="Revise o motivo do bloqueio e registre a tratativa.";}
       else {intent="RISK_SUMMARY";sql="select type,severity,title,status,detected_at from agro360.intelligence_alerts where tenant_id=@TenantId and status='OPEN' order by detected_at desc limit 20";answer="Resumo dos riscos abertos encontrados na operação.";action="Trate primeiro alertas críticos e de alta severidade.";}
       var data=(await c.QueryAsync(new CommandDefinition(sql,new{_tenant.TenantId},t,cancellationToken:ct))).Cast<IDictionary<string,object?>>().Select(x=>(IReadOnlyDictionary<string,object?>)new Dictionary<string,object?>(x)).ToArray();
       return new AssistantAnswer(intent,data.Length==0?$"{answer} Nenhum registro foi encontrado.":$"{answer} {data.Length} registro(s) encontrado(s).",[action],data);
@@ -136,14 +136,14 @@ public sealed class IntelligenceService : IIntelligenceService
     {
         const string dashboardSql = """
         select id, name, description, shared_roles SharedRoles
-        from agro360.intelligence_custom_dashboards
+        from agro360.ai_dashboards
         where tenant_id = @TenantId
         order by name
         """;
         const string widgetSql = """
         select id, dashboard_id DashboardId, indicator_code IndicatorCode,
                farm_id FarmId, season_id SeasonId, position as Order, size
-        from agro360.intelligence_dashboard_widgets
+        from agro360.ai_dashboard_widgets
         where tenant_id = @TenantId
         order by position
         """;
@@ -165,12 +165,14 @@ public sealed class IntelligenceService : IIntelligenceService
     public Task<Guid> SaveDashboardAsync(Guid? id, DashboardCommand command, Guid userId, CancellationToken ct) =>
         Guard("save-dashboard", () => _database.InTenantTransactionAsync(async (connection, transaction) =>
         {
+            if (id == Guid.Empty)
+                throw new ArgumentException("Identificador do painel inválido.", nameof(id));
             if (string.IsNullOrWhiteSpace(command.Name) || userId == Guid.Empty)
                 throw new ArgumentException("Nome e usuário são obrigatórios.");
 
             var dashboardId = id ?? Guid.NewGuid();
             const string sql = """
-            insert into agro360.intelligence_custom_dashboards
+            insert into agro360.ai_dashboards
                 (id, tenant_id, name, description, shared_roles, created_by)
             values
                 (@Id, @TenantId, @Name, @Description, @Roles, @UserId)
@@ -179,7 +181,7 @@ public sealed class IntelligenceService : IIntelligenceService
                 description = excluded.description,
                 shared_roles = excluded.shared_roles,
                 updated_at = now()
-            where agro360.intelligence_custom_dashboards.tenant_id = @TenantId
+            where agro360.ai_dashboards.tenant_id = @TenantId
             """;
             var parameters = new
             {
@@ -197,15 +199,17 @@ public sealed class IntelligenceService : IIntelligenceService
     public Task<Guid> AddWidgetAsync(Guid dashboardId, WidgetCommand command, CancellationToken ct) =>
         Guard("add-widget", () => _database.InTenantTransactionAsync(async (connection, transaction) =>
         {
-            if (!AllowedIndicators.Contains(command.IndicatorCode))
+            if (dashboardId == Guid.Empty)
+                throw new ArgumentException("Identificador do painel inválido.", nameof(dashboardId));
+            if (string.IsNullOrWhiteSpace(command.IndicatorCode) || !AllowedIndicators.Contains(command.IndicatorCode))
                 throw new ArgumentException("Indicador não permitido.");
 
             var widgetId = Guid.NewGuid();
             const string sql = """
-            insert into agro360.intelligence_dashboard_widgets
+            insert into agro360.ai_dashboard_widgets
                 (id, tenant_id, dashboard_id, indicator_code, farm_id, season_id, position, size)
             select @WidgetId, @TenantId, id, @IndicatorCode, @FarmId, @SeasonId, @Order, @Size
-            from agro360.intelligence_custom_dashboards
+            from agro360.ai_dashboards
             where id = @DashboardId
               and tenant_id = @TenantId
             """;
@@ -231,8 +235,13 @@ public sealed class IntelligenceService : IIntelligenceService
     public Task DeleteWidgetAsync(Guid dashboardId, Guid widgetId, CancellationToken ct) =>
         Guard("delete-widget", () => _database.InTenantTransactionAsync(async (connection, transaction) =>
         {
+            if (dashboardId == Guid.Empty)
+                throw new ArgumentException("Identificador do painel inválido.", nameof(dashboardId));
+            if (widgetId == Guid.Empty)
+                throw new ArgumentException("Identificador do widget inválido.", nameof(widgetId));
+
             const string sql = """
-            delete from agro360.intelligence_dashboard_widgets
+            delete from agro360.ai_dashboard_widgets
             where id = @WidgetId
               and dashboard_id = @DashboardId
               and tenant_id = @TenantId
@@ -254,12 +263,19 @@ public sealed class IntelligenceService : IIntelligenceService
     private static void Validate(IntelligenceFilter f){if(f.From.HasValue&&f.To.HasValue&&f.From>f.To)throw new ArgumentException("Data inicial deve ser anterior à final.");if(f.From.HasValue&&f.To.HasValue&&f.To.Value.DayNumber-f.From.Value.DayNumber>3660)throw new ArgumentException("Período máximo é de 10 anos.");}
     private async Task<T> Guard<T>(string operation,Func<Task<T>> work){try{return await work();}catch(Exception ex){_logger.LogError(ex,"Falha na fronteira de inteligência {Operation} para tenant {TenantId}",operation,_tenant.TenantId);throw;}}
     private async Task Guard(string operation,Func<Task> work){try{await work();}catch(Exception ex){_logger.LogError(ex,"Falha na fronteira de inteligência {Operation} para tenant {TenantId}",operation,_tenant.TenantId);throw;}}
-    private static string EscapeCsvField(string value)
+    private static string EscapeCsvField(string? value)
     {
-        if (!value.ContainsAny(',', '"', '\r', '\n'))
-            return value;
+        if (string.IsNullOrEmpty(value))
+            return string.Empty;
 
-        return $"\"{value.Replace("\"", "\"\"")}\"";
+        var escaped = value.Replace("\"", "\"\"", StringComparison.Ordinal);
+
+        return escaped.Contains(',', StringComparison.Ordinal)
+            || escaped.Contains('"', StringComparison.Ordinal)
+            || escaped.Contains('\n', StringComparison.Ordinal)
+            || escaped.Contains('\r', StringComparison.Ordinal)
+                ? $"\"{escaped}\""
+                : escaped;
     }
     private static string ReportSql(string id)=>id switch
     {
