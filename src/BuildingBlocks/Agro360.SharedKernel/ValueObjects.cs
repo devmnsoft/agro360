@@ -55,8 +55,3 @@ public readonly record struct Quantity
 
     public string Unit { get; }
 }
-
-public sealed record PagedResult<T>(IReadOnlyCollection<T> Items, int Page, int PageSize, long Total)
-{
-    public int TotalPages => PageSize == 0 ? 0 : (int)Math.Ceiling((double)Total / PageSize);
-}
