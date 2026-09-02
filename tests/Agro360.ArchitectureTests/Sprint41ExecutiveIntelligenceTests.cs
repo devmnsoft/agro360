@@ -7,7 +7,7 @@ public sealed class Sprint41ExecutiveIntelligenceTests
     [Fact] public void FullSqlHasGovernedTenantSafeIntelligenceStructures()
     {
         var sql=File.ReadAllText(Path.Combine(Root,"database/agro360-postgres-full.sql"));
-        foreach(var table in new[]{"intelligence_kpi_definitions","intelligence_kpi_snapshots","intelligence_kpi_targets","intelligence_alert_rules","intelligence_alerts","intelligence_alert_events","intelligence_risks","intelligence_recommendations","intelligence_recommendation_events","intelligence_audit_events","intelligence_report_exports","intelligence_user_preferences"}) Assert.Contains($"create table if not exists {table}",sql,StringComparison.OrdinalIgnoreCase);
+        foreach(var table in new[]{"intelligence_kpi_definitions","intelligence_kpi_snapshots","intelligence_kpi_targets","intelligence_alert_rules","intelligence_alerts","intelligence_alert_events","intelligence_risks","intelligence_recommendations","intelligence_recommendation_events","intelligence_audit_events","intelligence_report_exports","intelligence_user_preferences"}) Assert.Contains($"create table if not exists agro360.{table}",sql,StringComparison.OrdinalIgnoreCase);
         Assert.Contains("force row level security",sql,StringComparison.OrdinalIgnoreCase);
         Assert.Contains("target between 0 and 100",sql,StringComparison.OrdinalIgnoreCase);
     }
