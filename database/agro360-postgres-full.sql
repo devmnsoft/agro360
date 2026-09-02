@@ -1365,12 +1365,12 @@ create index if not exists ix_intelligence_alert_queue on agro360.intelligence_a
 create table if not exists agro360.intelligence_alert_audit(
  id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),alert_id uuid not null references agro360.intelligence_alerts(id),
  action varchar(12) not null,acted_by uuid not null,acted_at timestamptz not null,reason varchar(500));
-create table if not exists agro360.intelligence_custom_dashboards(
+create table if not exists agro360.ai_dashboards(
  id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),name varchar(120) not null,description varchar(500),
  shared_roles text[] not null default '{}',created_by uuid not null,created_at timestamptz not null default now(),updated_at timestamptz,
  unique(tenant_id,name));
-create table if not exists agro360.intelligence_dashboard_widgets(
- id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),dashboard_id uuid not null references agro360.intelligence_custom_dashboards(id) on delete cascade,
+create table if not exists agro360.ai_dashboard_widgets(
+ id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),dashboard_id uuid not null references agro360.ai_dashboards(id) on delete cascade,
  indicator_code varchar(80) not null,farm_id uuid,season_id uuid,position integer not null default 0,size varchar(10) not null check(size in('SMALL','MEDIUM','LARGE')),
  unique(dashboard_id,position));
 create table if not exists agro360.intelligence_report_runs(
