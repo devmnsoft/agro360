@@ -50,5 +50,5 @@ public sealed class EsgController(IEsgService service):ControllerBase
 [ApiController,Route("api/public/compliance"),AllowAnonymous]
 public sealed class PublicComplianceController(IComplianceService service):ControllerBase
 {
- [HttpGet("certificates/{certificate:regex(^[A-Fa-f0-9]{20}$)}")]public async Task<IActionResult>Verify(string certificate,CancellationToken ct){var result=await service.PublicDossierAsync(certificate,ct);return result is null?NotFound():Ok(result);}
+ [HttpGet("certificates/{certificate:regex(^[A-Fa-f0-9]{{20}}$)}")]public async Task<IActionResult>Verify(string certificate,CancellationToken ct){var result=await service.PublicDossierAsync(certificate,ct);return result is null?NotFound():Ok(result);}
 }

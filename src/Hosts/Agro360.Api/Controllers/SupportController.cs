@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Agro360.Application;
 using Agro360.Application.Contracts;
@@ -18,7 +19,7 @@ public sealed class SupportController(ISupportCustomerSuccessService service,ILo
  [HttpPost("tickets/{id:guid}/transition"),Authorize(Policy=Permissions.SupportWrite)] public Task<IActionResult> Transition(Guid id,TicketTransition x,CancellationToken ct)=>NoContent("ticket-transition",()=>service.TransitionTicketAsync(id,x,ct));
  [HttpPost("tickets/{id:guid}/comments"),Authorize(Policy=Permissions.SupportWrite)] public Task<IActionResult> Comment(Guid id,TicketCommentCommand x,CancellationToken ct)=>NoContent("ticket-comment",()=>service.CommentAsync(id,x,ct));
  [HttpGet("tickets/{id:guid}/events")] public Task<IReadOnlyList<SupportEvent>> Events(Guid id,CancellationToken ct)=>service.EventsAsync(id,ct);
- [HttpGet("tickets.csv")] public async Task<IActionResult> Csv(CancellationToken ct){var rows=await service.TicketsAsync(null,null,null,1,10000,ct);var csv=new StringBuilder("codigo;titulo;categoria;prioridade;severidade;status;abertura;prazo_resolucao\n");foreach(var x in rows)csv.AppendLine($"{Cell(x.PublicCode)};{Cell(x.Title)};{Cell(x.Category)};{x.Priority};{x.Severity};{x.Status};{x.OpenedAt:O};{x.ResolutionDueAt:O}");return File(Encoding.UTF8.GetBytes(csv.ToString()),"text/csv; charset=utf-8","chamados.csv");}
+ [HttpGet("tickets.csv")] public async Task<IActionResult> Csv(CancellationToken ct){var rows=await service.TicketsAsync(null,null,null,1,10000,ct);var csv=new StringBuilder("codigo;titulo;categoria;prioridade;severidade;status;abertura;prazo_resolucao\n");foreach(var x in rows)csv.AppendLine(CultureInfo.InvariantCulture,$"{Cell(x.PublicCode)};{Cell(x.Title)};{Cell(x.Category)};{x.Priority};{x.Severity};{x.Status};{x.OpenedAt:O};{x.ResolutionDueAt:O}");return File(Encoding.UTF8.GetBytes(csv.ToString()),"text/csv; charset=utf-8","chamados.csv");}
  [HttpGet("sla")] public Task<IReadOnlyList<SlaPolicy>> Sla(CancellationToken ct)=>service.SlaAsync(ct);
  [HttpPost("sla"),Authorize(Policy=Permissions.SupportManage)] public Task<IActionResult> Sla(SlaPolicyCommand x,CancellationToken ct)=>Created("sla",()=>service.SaveSlaAsync(x,ct));
  [HttpGet("articles")] public Task<IReadOnlyList<KnowledgeArticle>> Articles(string? search,[FromQuery(Name="module")] string? moduleCode,bool publicOnly=true,CancellationToken ct=default)=>service.ArticlesAsync(search,moduleCode,publicOnly,ct);
