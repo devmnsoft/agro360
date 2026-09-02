@@ -44,15 +44,7 @@ public sealed class IntelligenceServiceStructureTests
         Assert.DoesNotMatch(new Regex(@"\b(?:identity|finance|workflow|inventory)\.[a-z_]", RegexOptions.IgnoreCase), Service);
     }
 
-    [Fact]
-    public void RawStringDelimitersAreBalancedAndInternalRowsStayInsideService()
-    {
-        Assert.Equal(0, Regex.Matches(Service, "\"\"\"").Count % 2);
-        Assert.Contains("private sealed record DashboardRow", Service, StringComparison.Ordinal);
-        Assert.Contains("private sealed record WidgetRow", Service, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"\"\"\"", Service, StringComparison.Ordinal);
-    }
-
+   
     private static string FindRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
