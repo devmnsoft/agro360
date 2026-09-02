@@ -1,6 +1,5 @@
 using System.Text.RegularExpressions;
-using Agro360.Application.Contracts;
-using Agro360.Infrastructure.Services;
+using Agro360.Application.Contracts; 
 
 namespace Agro360.ArchitectureTests;
 
