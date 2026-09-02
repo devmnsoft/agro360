@@ -87,11 +87,11 @@ public sealed class IntelligenceService : IIntelligenceService
     {
         var report = await RunReportAsync(id, filter, ct);
         var csv = new StringBuilder();
-        csv.AppendLine(string.Join(',', report.Columns.Select(EscapeCsvField)));
+        csv.AppendLine(string.Join(",", report.Columns.Select(EscapeCsvField)));
 
         foreach (var row in report.Rows)
         {
-            csv.AppendLine(string.Join(',', report.Columns.Select(column =>
+            csv.AppendLine(string.Join(",", report.Columns.Select(column =>
                 EscapeCsvField(Convert.ToString(row.GetValueOrDefault(column), CultureInfo.InvariantCulture) ?? string.Empty))));
         }
 
@@ -103,20 +103,43 @@ public sealed class IntelligenceService : IIntelligenceService
     public async Task<ExecutiveDashboard> GetExecutiveDashboardAsync(IntelligenceFilter filter,CancellationToken ct)=>new(await GetIndicatorsAsync(filter,ct),(await GetAlertsAsync("OPEN",ct)).Take(8).ToArray(),await GetForecastsAsync(filter,ct),_clock.UtcNow);
     public Task<IReadOnlyList<ForecastResult>> GetForecastsAsync(IntelligenceFilter filter,CancellationToken ct)=>Guard("forecasts",()=>_database.InTenantTransactionAsync(async(c,t)=>
     {
-      Validate(filter); var p=Params(filter); var stock=(await c.QueryAsync("""select p.name,b.available,coalesce(avg(case when m.type='OUT' then m.quantity end),0) consumption from agro360.inventory_stock_balances b join agro360.inventory_products p on p.id=b.product_id left join agro360.inventory_stock_movements m on m.tenant_id=b.tenant_id and m.product_id=b.product_id and m.occurred_at>=now()-interval '30 days' where b.tenant_id=@TenantId group by p.name,b.available""",p,t)).ToArray();
-      var rupture=stock.Where(x=>(decimal)x.consumption>0).Select(x=>new{Days=(decimal)x.available/((decimal)x.consumption/30m),Name=(string)x.name,Available=(decimal)x.available,Consumption=(decimal)x.consumption}).OrderBy(x=>x.Days).FirstOrDefault();
-      var maintenance=await c.QueryFirstOrDefaultAsync("select count(*) total from agro360.fleet_maintenance_orders where tenant_id=@TenantId and status not in ('COMPLETED','CANCELLED') and coalesce(scheduled_for,next_review_date)<=current_date+30",p,t);
+      Validate(filter);
+      var p=Params(filter);
+      const string stockSql = """
+        select p.name, b.available,
+               coalesce(avg(case when m.type = 'OUT' then m.quantity end), 0) consumption
+        from agro360.inventory_stock_balances b
+        join agro360.inventory_products p on p.id = b.product_id
+        left join agro360.inventory_stock_movements m
+          on m.tenant_id = b.tenant_id
+         and m.product_id = b.product_id
+         and m.occurred_at >= now() - interval '30 days'
+        where b.tenant_id = @TenantId
+        group by p.name, b.available
+        """;
+      var stock=(await c.QueryAsync(new CommandDefinition(stockSql,p,t,cancellationToken:ct))).ToArray();
+      var rupture=stock
+          .Select(x => new { Name = (string)x.name, Available = ToDecimal(x.available), Consumption = ToDecimal(x.consumption) })
+          .Where(x => x.Consumption > 0)
+          .Select(x => new { Days = x.Available / (x.Consumption / 30m), x.Name, x.Available, x.Consumption })
+          .OrderBy(x=>x.Days)
+          .FirstOrDefault();
+      var maintenance=await c.QuerySingleAsync<CountRow>(new CommandDefinition(
+          "select count(*) Total from agro360.fleet_maintenance_orders where tenant_id=@TenantId and status not in ('COMPLETED','CANCELLED') and coalesce(scheduled_for,next_review_date)<=current_date+30",
+          p,t,cancellationToken:ct));
       var payable=await c.ExecuteScalarAsync<decimal>("select coalesce(sum(balance),0) from agro360.finance_payables where tenant_id=@TenantId and status in ('OPEN','PARTIAL') and due_on between current_date and current_date+30",p,t);
       var receivable=await c.ExecuteScalarAsync<decimal>("select coalesce(sum(balance),0) from agro360.finance_receivables where tenant_id=@TenantId and status in ('OPEN','PARTIAL') and due_on between current_date and current_date+30",p,t);
-      var operational=await c.QuerySingleAsync("""select
-        (select count(*) from agro360.inventory_stock_lots where tenant_id=@TenantId and quantity>0 and expires_on<=current_date+30) expiring,
-        (select count(*) from agro360.agriculture_field_operations where tenant_id=@TenantId and status not in ('COMPLETED','CANCELLED') and executed_at<now()) activities,
-        (select count(*) from agro360.storage_lots where tenant_id=@TenantId and status='BLOCKED') lots,
-        (select count(*) from agro360.regional_logistics_trips where tenant_id=@TenantId and status not in ('COMPLETED','CANCELLED') and planned_start<=now()+interval '24 hours') trips
-        """,p,t);
-      var list=new List<ForecastResult>{new("stock-rupture",rupture is null?"INSUFFICIENT_DATA":rupture.Days<=30?"RISK":"NORMAL",rupture?.Days,"days",rupture is null?"Não há saídas suficientes nos últimos 30 dias para calcular consumo.":"Saldo atual dividido pelo consumo médio diário dos últimos 30 dias.",rupture is null?new Dictionary<string,object?>():new(){["product"]=rupture.Name,["available"]=rupture.Available,["consumption30Days"]=rupture.Consumption}),new("payables-30-days","CALCULATED",payable,"BRL","Soma dos saldos de contas a pagar com vencimento nos próximos 30 dias.",new Dictionary<string,object?>{{"windowDays",30}}),new("receivables-30-days","CALCULATED",receivable,"BRL","Soma dos saldos de contas a receber com vencimento nos próximos 30 dias.",new Dictionary<string,object?>{{"windowDays",30}}),new("maintenance-30-days","CALCULATED",(decimal)maintenance.total,"orders","Ordens abertas com revisão prevista nos próximos 30 dias.",new Dictionary<string,object?>{{"windowDays",30}})};
-      list.AddRange([new("product-expiration","CALCULATED",Convert.ToDecimal(operational.expiring),"lots","Lotes de estoque com saldo e vencimento nos próximos 30 dias.",new Dictionary<string,object?>{{"windowDays",30}}),new("late-activities","CALCULATED",Convert.ToDecimal(operational.activities),"activities","Atividades abertas cuja data planejada já passou.",new Dictionary<string,object?>()),new("nonconforming-lots","CALCULATED",Convert.ToDecimal(operational.lots),"lots","Lotes atualmente bloqueados por não conformidade.",new Dictionary<string,object?>()),new("trip-window-risk","CALCULATED",Convert.ToDecimal(operational.trips),"trips","Viagens abertas com início planejado dentro de 24 horas.",new Dictionary<string,object?>{{"windowHours",24}})]);
-      return (IReadOnlyList<ForecastResult>)list;
+      const string operationalSql = """
+        select
+          (select count(*) from agro360.inventory_stock_lots where tenant_id = @TenantId and quantity > 0 and expires_on <= current_date + 30) expiring,
+          (select count(*) from agro360.agriculture_field_operations where tenant_id = @TenantId and status not in ('COMPLETED','CANCELLED') and executed_at < now()) activities,
+          (select count(*) from agro360.storage_lots where tenant_id = @TenantId and status = 'BLOCKED') lots,
+          (select count(*) from agro360.regional_logistics_trips where tenant_id = @TenantId and status not in ('COMPLETED','CANCELLED') and planned_start <= now() + interval '24 hours') trips
+        """;
+      var operational=await c.QuerySingleAsync(new CommandDefinition(operationalSql,p,t,cancellationToken:ct));
+      var forecasts=new List<ForecastResult>{new("stock-rupture",rupture is null?"INSUFFICIENT_DATA":rupture.Days<=30?"RISK":"NORMAL",rupture?.Days,"days",rupture is null?"Não há saídas suficientes nos últimos 30 dias para calcular consumo.":"Saldo atual dividido pelo consumo médio diário dos últimos 30 dias.",rupture is null?new Dictionary<string,object?>():new(){["product"]=rupture.Name,["available"]=rupture.Available,["consumption30Days"]=rupture.Consumption}),new("payables-30-days","CALCULATED",payable,"BRL","Soma dos saldos de contas a pagar com vencimento nos próximos 30 dias.",new Dictionary<string,object?>{{"windowDays",30}}),new("receivables-30-days","CALCULATED",receivable,"BRL","Soma dos saldos de contas a receber com vencimento nos próximos 30 dias.",new Dictionary<string,object?>{{"windowDays",30}}),new("maintenance-30-days","CALCULATED",maintenance.Total,"orders","Ordens abertas com revisão prevista nos próximos 30 dias.",new Dictionary<string,object?>{{"windowDays",30}})};
+      forecasts.AddRange([new("product-expiration","CALCULATED",ToDecimal(operational.expiring),"lots","Lotes de estoque com saldo e vencimento nos próximos 30 dias.",new Dictionary<string,object?>{{"windowDays",30}}),new("late-activities","CALCULATED",ToDecimal(operational.activities),"activities","Atividades abertas cuja data planejada já passou.",new Dictionary<string,object?>()),new("nonconforming-lots","CALCULATED",ToDecimal(operational.lots),"lots","Lotes atualmente bloqueados por não conformidade.",new Dictionary<string,object?>()),new("trip-window-risk","CALCULATED",ToDecimal(operational.trips),"trips","Viagens abertas com início planejado dentro de 24 horas.",new Dictionary<string,object?>{{"windowHours",24}})]);
+      return (IReadOnlyList<ForecastResult>)forecasts;
     },ct));
 
     public Task<AssistantAnswer> AskAsync(AssistantQuery query,CancellationToken ct)=>Guard("assistant",()=>_database.InTenantTransactionAsync(async(c,t)=>
@@ -203,6 +226,8 @@ public sealed class IntelligenceService : IIntelligenceService
                 throw new ArgumentException("Identificador do painel inválido.", nameof(dashboardId));
             if (string.IsNullOrWhiteSpace(command.IndicatorCode) || !AllowedIndicators.Contains(command.IndicatorCode))
                 throw new ArgumentException("Indicador não permitido.");
+            if (!AllowedWidgetSizes.Contains(command.Size))
+                throw new ArgumentException("Tamanho do widget inválido.", nameof(command));
 
             var widgetId = Guid.NewGuid();
             const string sql = """
@@ -256,13 +281,25 @@ public sealed class IntelligenceService : IIntelligenceService
         }, ct));
 
     private static readonly HashSet<string> AllowedIndicators=["revenue","expense","margin","cost-per-hectare","cost-per-animal","critical-stock","late-activities","overdue-maintenance","pending-receipts","late-shipments","certificates","nonconforming-lots","risky-trips"];
+    private static readonly HashSet<string> AllowedWidgetSizes = new(StringComparer.Ordinal) { "SMALL", "MEDIUM", "LARGE" };
     private sealed record DashboardRow(Guid Id,string Name,string? Description,string[] SharedRoles);
     private sealed record WidgetRow(Guid Id,Guid DashboardId,string IndicatorCode,Guid? FarmId,Guid? SeasonId,int Order,string Size);
+    private sealed record CountRow(long Total);
     private static IndicatorResult I(string c,string n,string category,decimal value,string unit,string explanation)=>new(c,n,category,value,unit,explanation);
     private object Params(IntelligenceFilter f)=>new{_tenant.TenantId,From=f.From??_clock.Today.AddMonths(-1),To=f.To??_clock.Today,FarmId=f.FarmId,SeasonId=f.SeasonId,Status=string.IsNullOrWhiteSpace(f.Status)?null:f.Status};
     private static void Validate(IntelligenceFilter f){if(f.From.HasValue&&f.To.HasValue&&f.From>f.To)throw new ArgumentException("Data inicial deve ser anterior à final.");if(f.From.HasValue&&f.To.HasValue&&f.To.Value.DayNumber-f.From.Value.DayNumber>3660)throw new ArgumentException("Período máximo é de 10 anos.");}
     private async Task<T> Guard<T>(string operation,Func<Task<T>> work){try{return await work();}catch(Exception ex){_logger.LogError(ex,"Falha na fronteira de inteligência {Operation} para tenant {TenantId}",operation,_tenant.TenantId);throw;}}
     private async Task Guard(string operation,Func<Task> work){try{await work();}catch(Exception ex){_logger.LogError(ex,"Falha na fronteira de inteligência {Operation} para tenant {TenantId}",operation,_tenant.TenantId);throw;}}
+    private static decimal ToDecimal(object? value) => value switch
+    {
+        null => 0m,
+        decimal number => number,
+        double number when double.IsFinite(number) => Convert.ToDecimal(number),
+        int number => number,
+        long number => number,
+        string text when decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var number) => number,
+        _ => throw new InvalidCastException($"O valor do tipo {value?.GetType().Name ?? "null"} não pode ser convertido para decimal.")
+    };
     private static string EscapeCsvField(string? value)
     {
         if (string.IsNullOrEmpty(value))
