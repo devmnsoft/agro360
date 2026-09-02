@@ -33,5 +33,8 @@ public sealed class EcosystemService(DatabaseExecutor db,ITenantContext tenant,I
  private Task<object>Rows(string sql,CancellationToken ct)=>Tx(async(c,t)=>(object)(await c.QueryAsync(sql,new{tenant.TenantId},t)).ToArray(),ct);
  private Task Update(string sql,Guid id,string reason,Guid actor,CancellationToken ct)=>Tx(async(c,t)=>{var n=await c.ExecuteAsync(sql,new{Id=id,tenant.TenantId,Reason=reason,Actor=actor},t);if(n==0)throw new KeyNotFoundException("Registro ativo não encontrado.");},ct);
  private async Task<T>Tx<T>(Func<Npgsql.NpgsqlConnection,Npgsql.NpgsqlTransaction,Task<T>> work,CancellationToken ct){try{return await db.InTenantTransactionAsync(work,ct);}catch(Exception ex){InfrastructureLogMessages.EcosystemFailed(log,tenant.TenantId,ex);throw;}}
- private async Task Tx(Func<Npgsql.NpgsqlConnection,Npgsql.NpgsqlTransaction,Task> work,CancellationToken ct)=>await Tx(async(c,t)=>{await work(c,t);return true;},ct);
+ private async Task Tx(Func<Npgsql.NpgsqlConnection,Npgsql.NpgsqlTransaction,Task> work,CancellationToken ct)
+ {
+  await Tx(async(c,t)=>{await work(c,t);return true;},ct);
+ }
 }

@@ -29,7 +29,7 @@ public sealed class FiscalServiceSafetyTests
         Assert.DoesNotContain(new string('<', 7), source, StringComparison.Ordinal);
         Assert.DoesNotContain(new string('=', 7), source, StringComparison.Ordinal);
         Assert.DoesNotContain(new string('>', 7), source, StringComparison.Ordinal);
-        Assert.DoesNotMatch(new Regex(@"CommandDefinition\s*\(\s*\"\"\"", RegexOptions.CultureInvariant), source);
+        Assert.DoesNotMatch(new Regex("CommandDefinition\\s*\\(\\s*\"\"\"", RegexOptions.CultureInvariant), source);
         Assert.Contains("const string sql = \"\"\"", source, StringComparison.Ordinal);
         Assert.Contains("new CommandDefinition(\n                sql,", source, StringComparison.Ordinal);
     }
