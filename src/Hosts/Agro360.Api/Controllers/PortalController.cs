@@ -27,7 +27,7 @@ public sealed class PortalController(IPortalService service):ControllerBase
  [HttpGet("marketplace")] public Task<IReadOnlyList<MarketplaceListing>> Marketplace([FromQuery]MarketplaceFilter filter,CancellationToken ct)=>service.MarketplaceAsync(filter,ct);
  [HttpPost("marketplace/quotes")] public async Task<IActionResult> Quote(CreateQuoteCommand command,CancellationToken ct){var id=await service.RequestQuoteAsync(command,ct);return Created($"api/portal/marketplace/quotes/{id}",new{id});}
  [HttpGet("requests")] public Task<IReadOnlyList<PortalRequestRow>> Requests(CancellationToken ct)=>service.RequestsAsync(ct);
- [HttpPost("requests")] public async Task<IActionResult> Request(PortalRequestCommand command,CancellationToken ct){var id=await service.CreateRequestAsync(command,ct);return Created($"api/portal/requests/{id}",new{id});}
+ [HttpPost("requests")] public async Task<IActionResult> SubmitPortalRequest(PortalRequestCommand command,CancellationToken ct){var id=await service.CreateRequestAsync(command,ct);return Created($"api/portal/requests/{id}",new{id});}
  [HttpPost("announcements/{id:guid}/read")] public async Task<IActionResult> Read(Guid id,CancellationToken ct){await service.MarkAnnouncementReadAsync(id,ct);return NoContent();}
 }
 public sealed record PortalReason(string Reason);

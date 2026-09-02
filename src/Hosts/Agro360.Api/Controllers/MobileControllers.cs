@@ -17,11 +17,18 @@ public sealed class MobileController(IMobileService service) : ControllerBase
     [HttpPost("checkins"), Authorize(Policy=Permissions.MobileWrite)] public async Task<IActionResult> Checkin(FieldCheckinCommand command,CancellationToken ct)=>Created("api/mobile/dashboard",new{id=await service.AddCheckinAsync(command,ct)});
 }
 
-[ApiController, Route("api/evidences"), Authorize(Policy=Permissions.MobileRead)]
-public sealed class EvidencesController(IMobileService service):ControllerBase
+[ApiController, Route("api/mobile/evidences"), Authorize(Policy=Permissions.MobileRead)]
+public sealed class MobileEvidencesController : ControllerBase
 {
-    [HttpGet] public Task<IReadOnlyList<dynamic>> Get(CancellationToken ct)=>service.EvidencesAsync(ct);
-    [HttpPost, Authorize(Policy=Permissions.MobileWrite), RequestSizeLimit(10_500_000)] public async Task<IActionResult> Post(MobileEvidenceCommand command,CancellationToken ct)=>Created("api/evidences",new{id=await service.AddEvidenceAsync(command,ct)});
+    private readonly IMobileService _mobileService;
+
+    public MobileEvidencesController(IMobileService mobileService)
+    {
+        _mobileService = mobileService;
+    }
+
+    [HttpGet] public Task<IReadOnlyList<dynamic>> Get(CancellationToken ct)=>_mobileService.EvidencesAsync(ct);
+    [HttpPost, Authorize(Policy=Permissions.MobileWrite), RequestSizeLimit(10_500_000)] public async Task<IActionResult> Post(MobileEvidenceCommand command,CancellationToken ct)=>Created("api/mobile/evidences",new{id=await _mobileService.AddEvidenceAsync(command,ct)});
 }
 
 [ApiController, Route("api/geolocation/events"), Authorize(Policy=Permissions.MobileRead)]
