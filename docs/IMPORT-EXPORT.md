@@ -1,2 +1,3 @@
 # Importação e exportação
-Envie CSV UTF-8, escolha a entidade e faça o mapeamento por código, documento, nome ou chave de negócio — nunca por GUID digitado. O preview registra cada linha, obrigatórios, duplicidade natural e erros; apenas válidas seguem para confirmação. Jobs grandes expõem progresso e erros podem ser exportados em CSV. Exportações CSV preservam cabeçalhos mesmo vazias, respeitam tenant/permissão e são auditadas. XLSX/PDF só são habilitados quando biblioteca/infraestrutura real estiver instalada.
+
+O fluxo CSV é upload (`POST /api/imports`), validação (`/{id}/validate`), revisão dos erros por linha e confirmação atômica (`/{id}/confirm`). Tipos: produtores, propriedades, talhões, fornecedores, estoque, animais, máquinas e clientes. Arquivos inválidos nunca são confirmados. `GET /api/exports?entity=properties` entrega CSV UTF-8; produtores e clientes também são aceitos.

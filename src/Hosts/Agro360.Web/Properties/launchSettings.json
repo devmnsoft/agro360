@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "Agro360.Web": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:49703;http://localhost:49704"
+    }
+  }
+}

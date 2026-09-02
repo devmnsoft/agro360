@@ -1,120 +1,23 @@
-# Arquitetura do Agro 360
+# Arquitetura
 
-## Decisão principal
+O repositório aplica Clean Architecture por dependências: `Domain` contém regras e não referencia persistência; `Application` define contratos e abstrações; `Infrastructure` implementa acesso PostgreSQL com Dapper; os hosts API, Web, Worker e Migrator compõem e orquestram o processo.
 
-O produto nasce como monólito modular orientado a domínio. As fronteiras são mantidas no código, contratos e schemas do PostgreSQL; a extração para serviços distribuídos só ocorrerá quando volume, isolamento operacional ou cadência independente justificarem o custo.
+Toda conexão é criada por `IDbConnectionFactory`. Serviços de infraestrutura usam queries parametrizadas e transações explícitas para gravações críticas. O tenant autenticado é propagado pelo contexto e protegido adicionalmente por Row-Level Security. A API centraliza correlação, tenant e respostas de exceção em middleware, mantendo controllers sem regras de domínio.
 
-```mermaid
-flowchart TD
-    Web[Web / PWA] --> API[API REST v1]
-    Mobile[Mobile Offline] --> API
-    API --> App[Application Contracts]
-    App --> Domain[Domain Rules]
-    Infra[Infrastructure / Dapper] --> App
-    Infra --> PG[(PostgreSQL + PostGIS)]
-    API --> Infra
-    Worker[Outbox Worker] --> PG
-    Migrator[Migrator] --> PG
-```
+SQL de evolução vive somente em `database/migrations`; seeds são separados de schema e releases consolidados são artefatos portáveis. Decisões e limites detalhados continuam em `ARCHITECTURE.md` e `MODULE-CATALOG.md`.
 
-## Regra de dependência
+## Fatia operacional da Sprint 6
 
-- `Domain` conhece apenas `SharedKernel`.
-- `Application` conhece Domain, contratos e abstrações.
-- `Infrastructure` implementa contratos de Application e conhece Dapper/Npgsql.
-- Hosts compõem dependências; não contêm regra de negócio.
-- Web chama a API e não acessa PostgreSQL.
-- Mobile mantém Local Outbox e sincroniza pela API.
+`OperationalRules` mantém invariantes puras no Domain. Contratos/DTOs e `IOperationsService` ficam em Application. A implementação Infrastructure coordena Dapper, transações PostgreSQL, bloqueio pessimista, RLS e auditoria; controllers apenas traduzem HTTP e autorização. O arquivo SQL único e as migrações usam constraints como segunda linha de defesa.
 
-Testes de arquitetura impedem `Domain → Infrastructure`, `Domain → Web` e `Application → Hosts`.
+## Slice Pecuária 360
 
-## Módulos e schemas
+Os contratos ficam em Application, regras invariantes no Domain e a orquestração transacional/Dapper em Infrastructure. O controller apenas traduz HTTP. Baixas sanitárias e nutricionais bloqueiam saldo, atualizam estoque e gravam o evento na mesma transação; todas as escritas críticas usam a trilha de auditoria compartilhada. O dashboard possui serviço e query consolidada próprios.
 
-| Fronteira | Schema principal | Responsabilidade |
-|---|---|---|
-| Platform | `platform`, `tenancy`, `identity`, `organization` | tenant, acesso, módulos, Outbox |
-| Properties | `geo` | propriedades, talhões e gêmeo digital |
-| Agriculture | `agriculture`, `agronomy`, `precision_agriculture` | safra, planejamento e operações |
-| Livestock | `livestock`, `pasture`, `dairy` | animal, lote, sanidade e desempenho |
-| Inventory | `inventory`, `warehouse` | produtos, depósitos, saldos e lotes |
-| Fleet | `fleet` | ativos, telemetria, manutenção e combustível |
-| Finance | `finance`, `cost` | recebíveis e motor universal de custos |
-| Commercial | `commercial`, `purchasing` | compra, venda e contratos |
-| Logistics | `logistics` | carga e torre de controle |
-| Traceability | `traceability` | AgroGraph e cadeia de custódia |
-| Documents | `documents` | metadados GED e armazenamento externo |
-| Sustainability | `environment` | compliance, ESG e carbono |
-| People | `hr` | RH rural e segurança do trabalho |
-| Automation | `workflow`, `notification` | workflow, regras e alertas |
-| Intelligence | `analytics`, `ai`, `iot`, `integration` | BI, IA, IoT e adapters |
-| Audit | `audit` | trilha imutável de ações |
+## Contextos Finance e Commercial (Sprint 8)
 
-## Multi-tenancy
+Contratos permanecem em Application; regras puras em Domain; serviços Dapper parametrizados em Infrastructure; controllers somente adaptam HTTP. Escritas financeiras são transacionais, filtradas por tenant e persistem auditoria. PostgreSQL aplica constraints, índices e RLS como defesa adicional.
 
-Hierarquia: Tenant → Grupo Econômico → Empresa/Unidade → Fazenda → Área Operacional.
+## Armazenagem e logística (Sprint 9)
 
-Defesa em profundidade:
-
-1. `tenant_id` obrigatório em toda tabela operacional;
-2. contexto construído exclusivamente a partir da claim JWT;
-3. todas as transações executam `set_config('app.tenant_id', ..., true)`;
-4. Row-Level Security habilitado e forçado;
-5. chaves estrangeiras compostas evitam vínculos entre tenants;
-6. auditoria registra tenant e usuário;
-7. teste de integração verifica cobertura RLS.
-
-Em produção o usuário da aplicação deve ser não-superusuário. O usuário de migração deve ser separado e não deve ser reutilizado pela API.
-
-## Persistência e transação
-
-- Dapper é usado explicitamente nas fronteiras de infraestrutura.
-- `DatabaseExecutor` abre conexão e transação, configura tenant, traduz erros PostgreSQL e garante rollback.
-- Operações críticas escrevem domínio, estoque, custo, financeiro, auditoria e Outbox antes do `COMMIT`.
-- Eventos externos só saem pelo Outbox Worker após o commit.
-- `numeric(18,4)` ou precisão superior é usado para dinheiro e medidas; `double` não é aceito.
-- entidades críticas usam `version` e atualização condicional.
-- exclusão operacional usa `deleted_at`; eventos históricos são cancelados/estornados.
-
-## Identificadores
-
-- UUIDv7 é criado na aplicação para ordenação temporal e operação offline.
-- `code bigint identity` serve apenas como código humano.
-- códigos de negócio nunca são chave primária.
-
-## Tratamento de erros
-
-Não existe `try/catch` vazio. O tratamento global converte erros em Problem Details. `try/catch` explícito fica nas fronteiras de banco, worker, arquivos, integrações e sincronização.
-
-| Exceção | HTTP | Código |
-|---|---:|---|
-| `ValidationException` | 422 | `validation_error` |
-| `NotFoundException` | 404 | `resource_not_found` |
-| `ConflictException` | 409 | `business_conflict` |
-| `ForbiddenException` | 403 | `forbidden` |
-| `DomainException` | 422 | `business_rule` |
-| falha desconhecida | 500 | `internal_error` |
-
-## Offline-first
-
-```mermaid
-flowchart LR
-    UI[App MAUI] --> SQLite[(SQLite)]
-    SQLite --> LocalOutbox[Local Outbox]
-    LocalOutbox --> Sync[Sync Engine]
-    Sync --> API[API]
-    API --> PG[(PostgreSQL)]
-```
-
-Financeiro, estoque, sanidade e permissões sempre exigem revisão humana quando existe conflito de versão. Eventos anexáveis podem usar merge automático; cadastros não críticos usam servidor prioritário por padrão.
-
-## Observabilidade
-
-- Serilog estruturado em todos os hosts;
-- correlation ID aceito/gerado em `X-Correlation-ID`;
-- health checks de processo e PostgreSQL;
-- campos mínimos: tenant, usuário, módulo, ação, entidade, request e duração;
-- OpenTelemetry, métricas Prometheus e storage S3 entram na sprint de hardening sem alterar contratos de domínio.
-
-## Definition of Done
-
-Uma funcionalidade só fecha quando Domain, Application, Infrastructure, migração, API, UI, permissão, validação, auditoria, logging, exceções e testes estão conectados. Tabela ou tela isolada não significa módulo concluído.
+Regras determinísticas residem em Domain; contratos e comandos em Application; implementações Dapper em Infrastructure; controllers apenas traduzem HTTP. Descarga, transferência, processamento e despacho usam funções PostgreSQL transacionais para manter lote, capacidade, contrato e rastreabilidade atômicos. Todas as tabelas e queries operacionais aplicam `tenant_id`.

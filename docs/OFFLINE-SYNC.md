@@ -1,7 +1,5 @@
-# Sincronização offline controlada
+# Sincronização offline
 
-O cliente mantém uma outbox no IndexedDB, sem senha ou token. Cada comando possui chave de idempotência, identificador temporário, tipo, payload, horário local, tentativas e estado. Ao sincronizar, `POST /api/mobile/sync` valida novamente usuário, tenant, permissão, tipo e payload dentro da transação do tenant.
+A fila local `agro360-offline-v1` contém somente comandos operacionais, com `idempotencyKey`, `temporaryId`, tipo, payload e horário. Tokens não são armazenados no cache do service worker. `POST /api/mobile/sync` cria um lote e valida tenant, usuário e dispositivo. A restrição única `(tenant_id,user_id,idempotency_key)` impede duplicação; o mapeamento temporário/definitivo permite relacionar registros posteriores.
 
-Estados persistidos no servidor: `PENDING`, `SYNCING`, `SYNCED`, `FAILED`, `CONFLICT` e `CANCELLED`. Reenvios retornam `ALREADY_PROCESSED` sem materializar novamente a entidade. Erros permanecem na fila do aparelho; use **Tentar novamente**. Conflitos nunca usam “último a salvar ganha”: devem ser resolvidos por usuário autorizado, preservando versões cliente/servidor em `mobile.sync_conflicts`.
-
-Operações suportadas nesta entrega: manejo rápido agrícola/pecuário/estoque/logística, ocorrência, check-in e evidência. Arquivos continuam sujeitos ao limite de 10 MB e à lista segura de MIME. O service worker não intercepta POST nem armazena respostas privadas.
+Falhas parciais retornam os itens processados e preservam os demais. Erros e conflitos têm tabelas próprias e jamais causam exclusão. Para tentar novamente, abra **Campo Mobile** e toque em **Sincronizar**. Em conflito, compare as versões cliente/servidor, escolha a resolução autorizada e reenvie; a decisão deve ser auditada. Catálogos são atualizados online e a última cópia autorizada é usada offline.
