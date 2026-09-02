@@ -54,12 +54,29 @@ public sealed class InfrastructureQualityGuardTests
     }
 
     [Fact]
-    public void RawStringDelimitersInServicesMustBeBalanced()
+    public void RawStringDelimitersInSourcesAndTestsMustBeBalanced()
     {
-        foreach (var file in Directory.EnumerateFiles(ServicesRoot, "*.cs"))
+        foreach (var file in SourceFiles().Where(path => Path.GetExtension(path) is ".cs" or ".cshtml"))
         {
             var delimiters = Regex.Matches(File.ReadAllText(file), "\"\"\"", RegexOptions.CultureInvariant).Count;
             Assert.True(delimiters % 2 == 0, $"Raw string não balanceada em {Path.GetFileName(file)}.");
+        }
+    }
+
+    [Fact]
+    public void JsonDocumentParsingMustHandleMalformedInput()
+    {
+        foreach (var file in SourceFiles().Where(path => Path.GetExtension(path) == ".cs"))
+        {
+            var source = File.ReadAllText(file);
+            foreach (Match parse in Regex.Matches(source, @"JsonDocument\.Parse\s*\(", RegexOptions.CultureInvariant))
+            {
+                var methodWindowStart = Math.Max(0, parse.Index - 500);
+                var methodWindowLength = Math.Min(source.Length - methodWindowStart, 1_000);
+                var methodWindow = source.Substring(methodWindowStart, methodWindowLength);
+                Assert.True(methodWindow.Contains("try", StringComparison.Ordinal) || file.EndsWith("GeoJsonRules.cs", StringComparison.Ordinal),
+                    $"JsonDocument.Parse sem tratamento de entrada inválida em {Path.GetFileName(file)}.");
+            }
         }
     }
 
