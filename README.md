@@ -53,6 +53,35 @@ dotnet run --project src/Hosts/Agro360.Worker
 dotnet run --project src/Hosts/Agro360.Web
 ```
 
+### Portas da API em desenvolvimento
+
+O único perfil de inicialização da API, `Agro360.Api`, usa
+`http://localhost:5046` e `https://localhost:7046`. O Visual Studio e o comando
+`dotnet run --project src/Hosts/Agro360.Api/Agro360.Api.csproj` usam esse perfil
+por padrão. O documento OpenAPI fica disponível em
+`https://localhost:7046/openapi/v1.json` durante o desenvolvimento.
+
+Para trocar a porta apenas na execução atual, sem alterar arquivos versionados,
+informe `--urls` (esse argumento prevalece sobre o perfil):
+
+```bash
+dotnet run --project src/Hosts/Agro360.Api/Agro360.Api.csproj --urls "http://localhost:5046"
+```
+
+No Windows, se uma porta estiver ocupada, identifique o processo antes de
+encerrá-lo:
+
+```powershell
+Get-NetTCPConnection -LocalPort 5046 | Select-Object LocalAddress,LocalPort,State,OwningProcess
+Get-Process -Id <PID>
+# Somente se for uma instância antiga ou presa do Agro360:
+Stop-Process -Id <PID> -Force
+```
+
+Em CMD, use `netstat -ano | findstr :5046` e depois, somente após conferir o
+processo, `taskkill /PID <PID> /F`. Evite iniciar simultaneamente a API pelo
+Visual Studio e pelo terminal; pare a instância anterior antes de iniciar outra.
+
 ## Instalação do banco
 
 O instalador canônico da release candidate pode ser aplicado diretamente pela mesma connection string usada pela aplicação:
