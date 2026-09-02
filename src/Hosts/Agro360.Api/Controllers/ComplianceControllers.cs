@@ -47,8 +47,13 @@ public sealed class EsgController(IEsgService service):ControllerBase
  [HttpPost("carbon"),Authorize(Policy=Permissions.EsgWrite)]public async Task<IActionResult>Carbon(CarbonCommand x,CancellationToken ct){var id=await service.AddCarbonAsync(x,ct);return Created($"api/esg/carbon/{id}",new{id});}
 }
 
-[ApiController,Route("api/public/compliance"),AllowAnonymous]
-public sealed class PublicComplianceController(IComplianceService service):ControllerBase
+[ApiController, Route("api/public/compliance"), AllowAnonymous]
+public sealed class PublicComplianceController(IComplianceService service) : ControllerBase
 {
- [HttpGet("certificates/{certificate:regex(^[A-Fa-f0-9]{{20}}$)}")]public async Task<IActionResult>Verify(string certificate,CancellationToken ct){var result=await service.PublicDossierAsync(certificate,ct);return result is null?NotFound():Ok(result);}
+    [HttpGet("certificates/{certificate:regex(^[[A-Fa-f0-9]]{{20}}$)}")]
+    public async Task<IActionResult> Verify(string certificate, CancellationToken ct)
+    {
+        var result = await service.PublicDossierAsync(certificate, ct);
+        return result is null ? NotFound() : Ok(result);
+    }
 }
