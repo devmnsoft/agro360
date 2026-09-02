@@ -17,7 +17,7 @@ public sealed class MapsController(IGeospatialService service,ILogger<MapsContro
  [HttpGet("api/maps/exports/geojson")]public async Task<IActionResult> Export([FromQuery]string? entityType,CancellationToken ct)=>File(System.Text.Encoding.UTF8.GetBytes(await service.ExportAsync(entityType,ct)),"application/geo+json","agro360.geojson");
  [HttpGet("api/maps/dashboard")]public Task<GeoDashboard> Dashboard(CancellationToken ct)=>service.DashboardAsync(ct);
  private async Task<IActionResult> Created(Func<Task<Guid>> op,string route){var id=await Boundary("create feature",op);return base.Created($"{route}/{id}",new{id});}
- private async Task<T> Boundary<T>(string operation,Func<Task<T>> op){try{return await op();}catch(Exception ex){logger.LogError(ex,"Geospatial boundary failed: {Operation}",operation);throw;}}
+ private async Task<T> Boundary<T>(string operation,Func<Task<T>> op){try{return await op();}catch(Exception ex){ApiLogMessages.GeospatialBoundaryFailed(logger,operation,ex);throw;}}
 }
 
 [ApiController,Route("api/geospatial"),Authorize(Policy=Permissions.MapsRead)]
@@ -31,5 +31,5 @@ public sealed class GeospatialController(IGeospatialService service,ILogger<Geos
  [HttpPost("occurrences"),Authorize(Policy=Permissions.MapsWrite)]public async Task<IActionResult> Occurrence(OccurrenceCommand x,CancellationToken ct){var id=await Boundary("occurrence",()=>service.AddOccurrenceAsync(x,ct));return Created($"api/geospatial/occurrences/{id}",new{id});}
  [HttpPost("route-segments"),Authorize(Policy=Permissions.MapsWrite)]public async Task<IActionResult> Segment(RouteSegmentCommand x,CancellationToken ct){var id=await Boundary("route segment",()=>service.AddRouteSegmentAsync(x,ct));return Created($"api/geospatial/route-segments/{id}",new{id});}
  private static string Resolve(string route)=>EntityRoutes.TryGetValue(route,out var type)?type:throw new KeyNotFoundException("Recurso geoespacial desconhecido.");
- private async Task<T> Boundary<T>(string operation,Func<Task<T>> op){try{return await op();}catch(Exception ex){logger.LogError(ex,"Geospatial boundary failed: {Operation}",operation);throw;}}
+ private async Task<T> Boundary<T>(string operation,Func<Task<T>> op){try{return await op();}catch(Exception ex){ApiLogMessages.GeospatialBoundaryFailed(logger,operation,ex);throw;}}
 }

@@ -40,16 +40,16 @@ public sealed class SustainabilityService(DatabaseExecutor db, ITenantContext te
     public Task<IReadOnlyList<SustainabilityFarmOption>> FarmsAsync(string? search,CancellationToken ct) => db.InTenantTransactionAsync(async(c,t) =>
         (IReadOnlyList<SustainabilityFarmOption>)(await c.QueryAsync<SustainabilityFarmOption>("select id,name from agro360.geo_farms where tenant_id=@TenantId and deleted_at is null and (@Search is null or name ilike '%'||@Search||'%') order by name limit 50",new { tenant.TenantId,Search=string.IsNullOrWhiteSpace(search)?null:search.Trim() },t)).AsList(),ct);
 
-    public Task<Guid> SaveComplianceAsync(EnvironmentalComplianceCommand x,CancellationToken ct)
+    public Task<Guid> SaveComplianceAsync(EnvironmentalComplianceCommand command,CancellationToken ct)
     {
-        SustainabilityRules.ValidateAreas(x.TotalArea,x.ProductiveArea,x.PreservationArea,x.AppArea,x.LegalReserveArea);
+        SustainabilityRules.ValidateAreas(command.TotalArea,command.ProductiveArea,command.PreservationArea,command.AppArea,command.LegalReserveArea);
         return db.InTenantTransactionAsync(async(c,t) => {
             var id=Guid.NewGuid();
             var changed=await c.ExecuteAsync("""
             insert into agro360.sustainability_environmental_compliances(id,tenant_id,farm_id,producer_name,total_area,productive_area,preservation_area,app_area,legal_reserve_area,car_number,car_status,environmental_license,license_valid_until,issuing_agency,georeferenced,status,risk,notes,created_by,updated_by)
             select @Id,@TenantId,@FarmId,@ProducerName,@TotalArea,@ProductiveArea,@PreservationArea,@AppArea,@LegalReserveArea,@CarNumber,@CarStatus,@EnvironmentalLicense,@LicenseValidUntil,@IssuingAgency,@Georeferenced,@Status,@Risk,@Notes,@UserId,@UserId
             where exists(select 1 from agro360.geo_farms where tenant_id=@TenantId and id=@FarmId and deleted_at is null)
-            """,new { Id=id,tenant.TenantId,tenant.UserId,x.FarmId,x.ProducerName,x.TotalArea,x.ProductiveArea,x.PreservationArea,x.AppArea,x.LegalReserveArea,x.CarNumber,x.CarStatus,x.EnvironmentalLicense,x.LicenseValidUntil,x.IssuingAgency,x.Georeferenced,x.Status,x.Risk,x.Notes },t);
+            """,new { Id=id,tenant.TenantId,tenant.UserId,command.FarmId,command.ProducerName,command.TotalArea,command.ProductiveArea,command.PreservationArea,command.AppArea,command.LegalReserveArea,command.CarNumber,command.CarStatus,command.EnvironmentalLicense,command.LicenseValidUntil,command.IssuingAgency,command.Georeferenced,command.Status,command.Risk,command.Notes },t);
             if(changed==0) throw new KeyNotFoundException("Propriedade não encontrada neste tenant.");
             return id;
         },ct);

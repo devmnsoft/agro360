@@ -288,8 +288,8 @@ public sealed class IntelligenceService : IIntelligenceService
     private static IndicatorResult I(string c,string n,string category,decimal value,string unit,string explanation)=>new(c,n,category,value,unit,explanation);
     private object Params(IntelligenceFilter f)=>new{_tenant.TenantId,From=f.From??_clock.Today.AddMonths(-1),To=f.To??_clock.Today,FarmId=f.FarmId,SeasonId=f.SeasonId,Status=string.IsNullOrWhiteSpace(f.Status)?null:f.Status};
     private static void Validate(IntelligenceFilter f){if(f.From.HasValue&&f.To.HasValue&&f.From>f.To)throw new ArgumentException("Data inicial deve ser anterior à final.");if(f.From.HasValue&&f.To.HasValue&&f.To.Value.DayNumber-f.From.Value.DayNumber>3660)throw new ArgumentException("Período máximo é de 10 anos.");}
-    private async Task<T> Guard<T>(string operation,Func<Task<T>> work){try{return await work();}catch(Exception ex){_logger.LogError(ex,"Falha na fronteira de inteligência {Operation} para tenant {TenantId}",operation,_tenant.TenantId);throw;}}
-    private async Task Guard(string operation,Func<Task> work){try{await work();}catch(Exception ex){_logger.LogError(ex,"Falha na fronteira de inteligência {Operation} para tenant {TenantId}",operation,_tenant.TenantId);throw;}}
+    private async Task<T> Guard<T>(string operation,Func<Task<T>> work){try{return await work();}catch(Exception ex){InfrastructureLogMessages.IntelligenceFailed(_logger,operation,_tenant.TenantId,ex);throw;}}
+    private async Task Guard(string operation,Func<Task> work){try{await work();}catch(Exception ex){InfrastructureLogMessages.IntelligenceFailed(_logger,operation,_tenant.TenantId,ex);throw;}}
     private static decimal ToDecimal(object? value) => value switch
     {
         null => 0m,

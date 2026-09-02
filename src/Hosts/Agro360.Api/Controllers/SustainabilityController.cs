@@ -21,7 +21,7 @@ public sealed class SustainabilityController(ISustainabilityService service, ILo
     public async Task<IActionResult> CreateCompliance(EnvironmentalComplianceCommand command,CancellationToken ct)
     {
         try { var id=await service.SaveComplianceAsync(command,ct); return Created($"api/sustainability/environmental-compliances/{id}",new{id}); }
-        catch(Exception exception) { logger.LogError(exception,"Falha ao cadastrar conformidade ambiental."); throw; }
+        catch(Exception exception) { ApiLogMessages.SustainabilityRegistrationFailed(logger,exception); throw; }
     }
 
     [HttpGet("reports/{report}.csv"), Authorize(Policy=Permissions.SustainabilityReports)]

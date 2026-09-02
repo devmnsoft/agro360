@@ -41,7 +41,7 @@ public sealed class SupportController(ISupportCustomerSuccessService service,ILo
  [HttpPost("releases"),Authorize(Policy=Permissions.SupportManage)] public Task<IActionResult> Release(ReleaseNoteCommand x,CancellationToken ct)=>Created("releases",()=>service.CreateReleaseAsync(x,ct));
  [HttpPost("releases/{id:guid}/publish"),Authorize(Policy=Permissions.SupportManage)] public Task<IActionResult> PublishRelease(Guid id,CancellationToken ct)=>NoContent("release-publish",()=>service.PublishReleaseAsync(id,ct));
  [HttpPost("releases/{id:guid}/read")] public Task<IActionResult> ReadRelease(Guid id,CancellationToken ct)=>NoContent("release-read",()=>service.ReadReleaseAsync(id,ct));
- private async Task<IActionResult> Created(string route,Func<Task<Guid>> action){try{var id=await action();return Created($"/api/support/{route}/{id}",new{id});}catch(Exception ex){logger.LogError(ex,"Support operation failed: {Operation}",route);throw;}}
- private async Task<IActionResult> NoContent(string operation,Func<Task> action){try{await action();return NoContent();}catch(Exception ex){logger.LogError(ex,"Support operation failed: {Operation}",operation);throw;}}
+ private async Task<IActionResult> Created(string route,Func<Task<Guid>> action){try{var id=await action();return Created($"/api/support/{route}/{id}",new{id});}catch(Exception ex){ApiLogMessages.SupportOperationFailed(logger,route,ex);throw;}}
+ private async Task<IActionResult> NoContent(string operation,Func<Task> action){try{await action();return NoContent();}catch(Exception ex){ApiLogMessages.SupportOperationFailed(logger,operation,ex);throw;}}
  private static string Cell(string value)=>$"\"{value.Replace("\"","\"\"")}\"";
 }
