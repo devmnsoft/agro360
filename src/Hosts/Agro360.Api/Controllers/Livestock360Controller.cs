@@ -8,7 +8,7 @@ namespace Agro360.Api.Controllers;
 [ApiController, Authorize]
 public sealed class Livestock360Controller(ILivestock360Service service, ILivestockService animals) : ControllerBase
 {
- [HttpGet("api/livestock/animals"),Authorize(Policy=Permissions.LivestockRead)] public Task<Agro360.SharedKernel.PagedResult<AnimalDto>> Animals(Guid? farmId,int page=1,int pageSize=25,string? search=null,CancellationToken ct=default)=>animals.ListAnimalsAsync(farmId,page,pageSize,search,ct);
+ [HttpGet("api/livestock/animals"),Authorize(Policy=Permissions.LivestockRead)] public Task<PagedResult<AnimalDto>> Animals(Guid? farmId,int page=1,int pageSize=25,string? search=null,CancellationToken ct=default)=>animals.ListAnimalsAsync(farmId,page,pageSize,search,ct);
  [HttpPost("api/livestock/animals"),Authorize(Policy=Permissions.LivestockWrite)] public async Task<IActionResult> Animal(RegisterAnimalCommand x,CancellationToken ct){var a=await animals.RegisterAnimalAsync(x,ct);return Created($"/api/livestock/animals/{a.Id}",a);}
  [HttpGet("api/livestock/animals/{id:guid}"),Authorize(Policy=Permissions.LivestockRead)] public async Task<IActionResult> Animal(Guid id,CancellationToken ct)=>await service.GetAnimalAsync(id,ct) is {} a?Ok(a):NotFound();
  [HttpPut("api/livestock/animals/{id:guid}"),Authorize(Policy=Permissions.LivestockWrite)] public Task<dynamic> Animal(Guid id,RegisterAnimalCommand x,CancellationToken ct)=>service.UpdateAnimalAsync(id,x,ct);

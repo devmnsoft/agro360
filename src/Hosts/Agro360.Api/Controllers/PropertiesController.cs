@@ -1,6 +1,5 @@
 using Agro360.Application;
 using Agro360.Application.Contracts;
-using Agro360.SharedKernel;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
