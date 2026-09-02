@@ -83,7 +83,20 @@ public sealed class IntelligenceService : IIntelligenceService
         var sql = ReportSql(id); var rows=(await c.QueryAsync(new CommandDefinition(sql,Params(filter),t,cancellationToken:ct))).Cast<IDictionary<string,object?>>().Select(x=>(IReadOnlyDictionary<string,object?>)new Dictionary<string,object?>(x,StringComparer.OrdinalIgnoreCase)).ToArray();
         return new ReportResult(id,rows.FirstOrDefault()?.Keys.ToArray() ?? [],rows,rows.Length);
     },ct));
-    public async Task<byte[]> ExportCsvAsync(string id, IntelligenceFilter filter, CancellationToken ct) { var r=await RunReportAsync(id,filter,ct); var b=new StringBuilder(); b.AppendLine(string.Join(';',r.Columns.Select(Csv))); foreach(var row in r.Rows)b.AppendLine(string.Join(';',r.Columns.Select(x=>Csv(Convert.ToString(row.GetValueOrDefault(x),CultureInfo.InvariantCulture)??"")))); return Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(b.ToString())).ToArray(); }
+    public async Task<byte[]> ExportCsvAsync(string id, IntelligenceFilter filter, CancellationToken ct)
+    {
+        var report = await RunReportAsync(id, filter, ct);
+        var csv = new StringBuilder();
+        csv.AppendLine(string.Join(',', report.Columns.Select(EscapeCsvField)));
+
+        foreach (var row in report.Rows)
+        {
+            csv.AppendLine(string.Join(',', report.Columns.Select(column =>
+                EscapeCsvField(Convert.ToString(row.GetValueOrDefault(column), CultureInfo.InvariantCulture) ?? string.Empty))));
+        }
+
+        return Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv.ToString())).ToArray();
+    }
 
     public Task<IReadOnlyList<AlertResult>> GetAlertsAsync(string? status,CancellationToken ct)=>Guard("alerts",()=>_database.InTenantTransactionAsync(async(c,t)=>(IReadOnlyList<AlertResult>)(await c.QueryAsync<AlertResult>("select id,type,severity,title,status,detected_at DetectedAt,snoozed_until SnoozedUntil from agro360.intelligence_alerts where tenant_id=@TenantId and (@Status is null or status=@Status) order by case severity when 'CRITICAL' then 0 when 'HIGH' then 1 else 2 end,detected_at desc limit 200",new{_tenant.TenantId,Status=status},t)).ToArray(),ct));
     public Task ActOnAlertAsync(Guid id,string action,AlertAction command,CancellationToken ct)=>Guard("alert-action",()=>_database.InTenantTransactionAsync(async(c,t)=>{var status=action switch{"resolve"=>"RESOLVED","ignore"=>"IGNORED","snooze"=>"SNOOZED",_=>throw new ArgumentException("Ação inválida.")}; if(command.UserId==Guid.Empty)throw new ArgumentException("Usuário é obrigatório."); if(status=="SNOOZED"&&(command.Until is null||command.Until<=_clock.UtcNow))throw new ArgumentException("Adiamento deve ser futuro."); var n=await c.ExecuteAsync("update agro360.intelligence_alerts set status=@Status,resolved_by=@UserId,resolved_at=now(),snoozed_until=@Until,resolution_reason=@Reason where id=@Id and tenant_id=@TenantId and status in ('OPEN','SNOOZED')",new{id,_tenant.TenantId,status,command.UserId,command.Until,command.Reason},t);if(n==0)throw new KeyNotFoundException("Alerta não encontrado ou já encerrado.");await c.ExecuteAsync("insert into agro360.intelligence_alert_audit(id,tenant_id,alert_id,action,acted_by,acted_at,reason) values(gen_random_uuid(),@TenantId,@Id,@Status,@UserId,now(),@Reason)",new{id,_tenant.TenantId,status,command.UserId,command.Reason},t);},ct));
@@ -149,9 +162,89 @@ public sealed class IntelligenceService : IIntelligenceService
                 .Select(widget => new DashboardWidget(widget.Id, widget.IndicatorCode, widget.FarmId, widget.SeasonId, widget.Order, widget.Size))
                 .ToArray())).ToArray();
     }, ct));
-    public Task<Guid> SaveDashboardAsync(Guid? id,DashboardCommand command,Guid userId,CancellationToken ct)=>Guard("save-dashboard",()=>_database.InTenantTransactionAsync(async(c,t)=>{if(string.IsNullOrWhiteSpace(command.Name)||userId==Guid.Empty)throw new ArgumentException("Nome e usuário são obrigatórios.");var key=id??Guid.NewGuid();await c.ExecuteAsync("insert into agro360.intelligence_custom_dashboards(id,tenant_id,name,description,shared_roles,created_by) values(@Id,@TenantId,@Name,@Description,@Roles,@UserId) on conflict(id) do update set name=excluded.name,description=excluded.description,shared_roles=excluded.shared_roles,updated_at=now() where agro360.intelligence_custom_dashboards.tenant_id=@TenantId",new{Id=key,_tenant.TenantId,Name=command.Name.Trim(),command.Description,Roles=command.SharedRoles?.ToArray()??[],UserId=userId},t);return key;},ct));
-    public Task<Guid> AddWidgetAsync(Guid dashboardId,WidgetCommand command,CancellationToken ct)=>Guard("add-widget",()=>_database.InTenantTransactionAsync(async(c,t)=>{if(!AllowedIndicators.Contains(command.IndicatorCode))throw new ArgumentException("Indicador não permitido.");var id=Guid.NewGuid();var n=await c.ExecuteAsync("insert into agro360.intelligence_dashboard_widgets(id,tenant_id,dashboard_id,indicator_code,farm_id,season_id,position,size) select @Id,@TenantId,id,@IndicatorCode,@FarmId,@SeasonId,@Order,@Size from agro360.intelligence_custom_dashboards where id=@DashboardId and tenant_id=@TenantId",new{id,_tenant.TenantId,dashboardId,command.IndicatorCode,command.FarmId,command.SeasonId,command.Order,command.Size},t);if(n==0)throw new KeyNotFoundException("Painel não encontrado.");return id;},ct));
-    public Task DeleteWidgetAsync(Guid dashboardId,Guid widgetId,CancellationToken ct)=>Guard("delete-widget",()=>_database.InTenantTransactionAsync(async(c,t)=>{var n=await c.ExecuteAsync("delete from agro360.intelligence_dashboard_widgets where id=@WidgetId and dashboard_id=@DashboardId and tenant_id=@TenantId",new{widgetId,dashboardId,_tenant.TenantId},t);if(n==0)throw new KeyNotFoundException("Widget não encontrado.");},ct));
+    public Task<Guid> SaveDashboardAsync(Guid? id, DashboardCommand command, Guid userId, CancellationToken ct) =>
+        Guard("save-dashboard", () => _database.InTenantTransactionAsync(async (connection, transaction) =>
+        {
+            if (string.IsNullOrWhiteSpace(command.Name) || userId == Guid.Empty)
+                throw new ArgumentException("Nome e usuário são obrigatórios.");
+
+            var dashboardId = id ?? Guid.NewGuid();
+            const string sql = """
+            insert into agro360.intelligence_custom_dashboards
+                (id, tenant_id, name, description, shared_roles, created_by)
+            values
+                (@Id, @TenantId, @Name, @Description, @Roles, @UserId)
+            on conflict (id) do update
+            set name = excluded.name,
+                description = excluded.description,
+                shared_roles = excluded.shared_roles,
+                updated_at = now()
+            where agro360.intelligence_custom_dashboards.tenant_id = @TenantId
+            """;
+            var parameters = new
+            {
+                Id = dashboardId,
+                _tenant.TenantId,
+                Name = command.Name.Trim(),
+                command.Description,
+                Roles = command.SharedRoles?.ToArray() ?? [],
+                UserId = userId
+            };
+            await connection.ExecuteAsync(new CommandDefinition(sql, parameters, transaction, cancellationToken: ct));
+            return dashboardId;
+        }, ct));
+
+    public Task<Guid> AddWidgetAsync(Guid dashboardId, WidgetCommand command, CancellationToken ct) =>
+        Guard("add-widget", () => _database.InTenantTransactionAsync(async (connection, transaction) =>
+        {
+            if (!AllowedIndicators.Contains(command.IndicatorCode))
+                throw new ArgumentException("Indicador não permitido.");
+
+            var widgetId = Guid.NewGuid();
+            const string sql = """
+            insert into agro360.intelligence_dashboard_widgets
+                (id, tenant_id, dashboard_id, indicator_code, farm_id, season_id, position, size)
+            select @WidgetId, @TenantId, id, @IndicatorCode, @FarmId, @SeasonId, @Order, @Size
+            from agro360.intelligence_custom_dashboards
+            where id = @DashboardId
+              and tenant_id = @TenantId
+            """;
+            var parameters = new
+            {
+                WidgetId = widgetId,
+                _tenant.TenantId,
+                DashboardId = dashboardId,
+                command.IndicatorCode,
+                command.FarmId,
+                command.SeasonId,
+                command.Order,
+                command.Size
+            };
+            var affected = await connection.ExecuteAsync(
+                new CommandDefinition(sql, parameters, transaction, cancellationToken: ct));
+            if (affected == 0)
+                throw new KeyNotFoundException("Painel não encontrado.");
+
+            return widgetId;
+        }, ct));
+
+    public Task DeleteWidgetAsync(Guid dashboardId, Guid widgetId, CancellationToken ct) =>
+        Guard("delete-widget", () => _database.InTenantTransactionAsync(async (connection, transaction) =>
+        {
+            const string sql = """
+            delete from agro360.intelligence_dashboard_widgets
+            where id = @WidgetId
+              and dashboard_id = @DashboardId
+              and tenant_id = @TenantId
+            """;
+            var affected = await connection.ExecuteAsync(new CommandDefinition(
+                sql,
+                new { WidgetId = widgetId, DashboardId = dashboardId, _tenant.TenantId },
+                transaction,
+                cancellationToken: ct));
+            if (affected == 0)
+                throw new KeyNotFoundException("Widget não encontrado.");
+        }, ct));
 
     private static readonly HashSet<string> AllowedIndicators=["revenue","expense","margin","cost-per-hectare","cost-per-animal","critical-stock","late-activities","overdue-maintenance","pending-receipts","late-shipments","certificates","nonconforming-lots","risky-trips"];
     private sealed record DashboardRow(Guid Id,string Name,string? Description,string[] SharedRoles);
@@ -161,7 +254,13 @@ public sealed class IntelligenceService : IIntelligenceService
     private static void Validate(IntelligenceFilter f){if(f.From.HasValue&&f.To.HasValue&&f.From>f.To)throw new ArgumentException("Data inicial deve ser anterior à final.");if(f.From.HasValue&&f.To.HasValue&&f.To.Value.DayNumber-f.From.Value.DayNumber>3660)throw new ArgumentException("Período máximo é de 10 anos.");}
     private async Task<T> Guard<T>(string operation,Func<Task<T>> work){try{return await work();}catch(Exception ex){_logger.LogError(ex,"Falha na fronteira de inteligência {Operation} para tenant {TenantId}",operation,_tenant.TenantId);throw;}}
     private async Task Guard(string operation,Func<Task> work){try{await work();}catch(Exception ex){_logger.LogError(ex,"Falha na fronteira de inteligência {Operation} para tenant {TenantId}",operation,_tenant.TenantId);throw;}}
-    private static string Csv(string x)=>$"\"{x.Replace("\"","\"\"")}\"";
+    private static string EscapeCsvField(string value)
+    {
+        if (!value.ContainsAny(',', '"', '\r', '\n'))
+            return value;
+
+        return $"\"{value.Replace("\"", "\"\"")}\"";
+    }
     private static string ReportSql(string id)=>id switch
     {
       "current-stock"=>"select p.sku,p.name,w.name warehouse,b.available,b.reserved,b.minimum,b.unit,b.average_cost from agro360.inventory_stock_balances b join agro360.inventory_products p on p.id=b.product_id join agro360.inventory_warehouses w on w.id=b.warehouse_id where b.tenant_id=@TenantId and (@FarmId is null or w.farm_id=@FarmId) order by p.name",
