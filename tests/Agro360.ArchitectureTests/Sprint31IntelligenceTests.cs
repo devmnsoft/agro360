@@ -9,7 +9,7 @@ public sealed class Sprint31IntelligenceTests
     {
         var sql = File.ReadAllText(Path.Combine(Root, "database/agro360-postgres-full.sql"));
         string[] tables = ["intelligence_rules", "intelligence_rule_executions", "intelligence_recommendations", "intelligence_recommendation_events", "intelligence_recommendation_sources", "intelligence_scores", "intelligence_score_factors", "intelligence_score_history", "intelligence_anomalies", "intelligence_anomaly_events", "intelligence_priority_items", "intelligence_assistant_sessions", "intelligence_assistant_messages", "intelligence_assistant_sources", "intelligence_feedback", "intelligence_provider_settings", "intelligence_query_logs"];
-        foreach (var table in tables) Assert.Contains($"intelligence.{table}", sql, StringComparison.OrdinalIgnoreCase);
+        foreach (var table in tables) Assert.Contains($"agro360.{table}", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("enable row level security", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("overall_score between 0 and 100", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("credential_reference", sql, StringComparison.OrdinalIgnoreCase);
