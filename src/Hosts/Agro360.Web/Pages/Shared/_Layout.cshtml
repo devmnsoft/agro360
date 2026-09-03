@@ -18,6 +18,7 @@
     <link rel="icon" href="~/icons/agro360.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="~/css/agro360.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/forms.css" asp-append-version="true" />
+    @await RenderSectionAsync("Styles", required: false)
     @await RenderSectionAsync("Head", required: false)
 </head>
 <body>
