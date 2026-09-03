@@ -3009,13 +3009,15 @@ insert into agro360.platform_tenant_settings(tenant_id,language,currency,time_zo
 values ('30000000-0000-0000-0000-000000000001','pt-BR','BRL','America/Belem','{"firstLoginPasswordChange":true,"guidedHelp":true}')
 on conflict(tenant_id) do update set language='pt-BR',currency='BRL',time_zone='America/Belem',preferences=excluded.preferences,updated_at=now();
 select set_config('app.tenant_id','30000000-0000-0000-0000-000000000001',true);
-insert into agro360.organization_organizations(id,tenant_id,type,name,legal_name,document_number,created_by)
-values ('30000000-0000-0000-0000-000000000002','30000000-0000-0000-0000-000000000001','ECONOMIC_GROUP','Fazenda Santa Clara','Fazenda Santa Clara Ltda','11222333000181','30000000-0000-0000-0000-000000000003')
-on conflict(id) do update set name=excluded.name,legal_name=excluded.legal_name,document_number=excluded.document_number,deleted_at=null,updated_at=now();
 -- PBKDF2-SHA512, 210.000 iterações e salt de 16 bytes, no formato de PasswordHasher.
 insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,normalized_document,document_type,must_change_password,created_by)
 values ('30000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000001','Administrador Santa Clara','admin@santaclara.agro360.local','pbkdf2-sha512$210000$QWdybzM2MFNhbnRhQ2xhcmE=$Gc4ZyXeYAKAq7rf+P7O54grYZXxdXGcpqvwmTKiQnsk=','ACTIVE','52998224725','CPF',true,'30000000-0000-0000-0000-000000000003')
 on conflict(id) do update set name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,status='ACTIVE',normalized_document=excluded.normalized_document,document_type='CPF',must_change_password=true,deleted_at=null,updated_at=now();
+-- A organização referencia o usuário criador; por isso deve ser criada somente
+-- depois do usuário para manter a restauração compatível com FKs imediatas.
+insert into agro360.organization_organizations(id,tenant_id,type,name,legal_name,document_number,created_by)
+values ('30000000-0000-0000-0000-000000000002','30000000-0000-0000-0000-000000000001','ECONOMIC_GROUP','Fazenda Santa Clara','Fazenda Santa Clara Ltda','11222333000181','30000000-0000-0000-0000-000000000003')
+on conflict(id) do update set name=excluded.name,legal_name=excluded.legal_name,document_number=excluded.document_number,deleted_at=null,updated_at=now();
 insert into agro360.identity_roles(id,tenant_id,code,name,is_system)
 values ('30000000-0000-0000-0000-000000000004','30000000-0000-0000-0000-000000000001','tenant-administrator','Administrador do Cliente',true)
 on conflict(id) do update set name='Administrador do Cliente',is_system=true;
