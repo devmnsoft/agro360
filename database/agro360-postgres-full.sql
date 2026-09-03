@@ -2997,6 +2997,42 @@ insert into agro360.platform_tenant_settings(tenant_id,language,currency,time_zo
 values ('00000000-0000-0000-0000-000000000001','pt-BR','BRL','America/Sao_Paulo','{"firstLoginPasswordChange":true}')
 on conflict(tenant_id) do update set preferences=excluded.preferences,updated_at=now();
 
+-- Cliente de homologação funcional da sprint de UX. O CNPJ e o CPF são fictícios,
+-- matematicamente válidos e reservados exclusivamente ao desenvolvimento interno.
+insert into agro360.tenancy_tenants(id,name,slug,timezone_id,status,plan_code)
+values ('30000000-0000-0000-0000-000000000001','Fazenda Santa Clara','santa-clara','America/Belem',1,'PROFESSIONAL')
+on conflict(id) do update set name=excluded.name,slug=excluded.slug,timezone_id=excluded.timezone_id,status=1,plan_code='PROFESSIONAL',deleted_at=null,updated_at=now();
+insert into agro360.platform_tenants(id,legal_name,trade_name,normalized_document,customer_type,primary_segment,country,state,city,primary_email,legal_contact,plan_id,default_language,status)
+values ('30000000-0000-0000-0000-000000000001','Fazenda Santa Clara Ltda','Fazenda Santa Clara','11222333000181','RURAL_PRODUCER','AGRICULTURE','BR','PA','Belém','admin@santaclara.agro360.local','Administrador Santa Clara','10000000-0000-0000-0000-000000000002','pt-BR','ACTIVE')
+on conflict(id) do update set legal_name=excluded.legal_name,trade_name=excluded.trade_name,normalized_document=excluded.normalized_document,country='BR',state='PA',city='Belém',primary_email=excluded.primary_email,plan_id=excluded.plan_id,default_language='pt-BR',status='ACTIVE',deleted_at=null,updated_at=now();
+insert into agro360.platform_tenant_settings(tenant_id,language,currency,time_zone,preferences)
+values ('30000000-0000-0000-0000-000000000001','pt-BR','BRL','America/Belem','{"firstLoginPasswordChange":true,"guidedHelp":true}')
+on conflict(tenant_id) do update set language='pt-BR',currency='BRL',time_zone='America/Belem',preferences=excluded.preferences,updated_at=now();
+select set_config('app.tenant_id','30000000-0000-0000-0000-000000000001',true);
+insert into agro360.organization_organizations(id,tenant_id,type,name,legal_name,document_number,created_by)
+values ('30000000-0000-0000-0000-000000000002','30000000-0000-0000-0000-000000000001','ECONOMIC_GROUP','Fazenda Santa Clara','Fazenda Santa Clara Ltda','11222333000181','30000000-0000-0000-0000-000000000003')
+on conflict(id) do update set name=excluded.name,legal_name=excluded.legal_name,document_number=excluded.document_number,deleted_at=null,updated_at=now();
+-- PBKDF2-SHA512, 210.000 iterações e salt de 16 bytes, no formato de PasswordHasher.
+insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,normalized_document,document_type,must_change_password,created_by)
+values ('30000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000001','Administrador Santa Clara','admin@santaclara.agro360.local','pbkdf2-sha512$210000$QWdybzM2MFNhbnRhQ2xhcmE=$Gc4ZyXeYAKAq7rf+P7O54grYZXxdXGcpqvwmTKiQnsk=','ACTIVE','52998224725','CPF',true,'30000000-0000-0000-0000-000000000003')
+on conflict(id) do update set name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,status='ACTIVE',normalized_document=excluded.normalized_document,document_type='CPF',must_change_password=true,deleted_at=null,updated_at=now();
+insert into agro360.identity_roles(id,tenant_id,code,name,is_system)
+values ('30000000-0000-0000-0000-000000000004','30000000-0000-0000-0000-000000000001','tenant-administrator','Administrador do Cliente',true)
+on conflict(id) do update set name='Administrador do Cliente',is_system=true;
+insert into agro360.identity_user_roles(tenant_id,user_id,role_id)
+values ('30000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000004')
+on conflict do nothing;
+insert into agro360.identity_role_permissions(tenant_id,role_id,permission_id)
+select '30000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000004',id
+from agro360.identity_permissions
+on conflict do nothing;
+insert into agro360.platform_profiles(id,tenant_id,name,is_template,active,created_by)
+values ('30000000-0000-0000-0000-000000000005','30000000-0000-0000-0000-000000000001','Administrador do Cliente',false,true,'30000000-0000-0000-0000-000000000003')
+on conflict(id) do update set name=excluded.name,active=true,deleted_at=null,updated_at=now();
+insert into agro360.platform_user_profiles(tenant_id,user_id,profile_id,is_primary,created_by)
+values ('30000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000005',true,'30000000-0000-0000-0000-000000000003')
+on conflict do nothing;
+
 -- Cliente mínimo de desenvolvimento; os dados operacionais ficam no seed opcional.
 insert into agro360.tenancy_tenants(id,name,slug,status,plan_code)
 values ('20000000-0000-0000-0000-000000000001','Agro360 Demonstração','demo',1,'ESSENTIAL')

@@ -18,10 +18,17 @@ Todo formulário deve:
 - apresentar exemplo sem usar valor real sensível;
 - usar autocomplete/dropdown pesquisável para relacionamentos, nunca caixa de GUID;
 - mostrar validação junto ao campo e resumo no topo.
+- desabilitar o envio enquanto a requisição estiver ativa e restaurar o botão também em falhas de rede;
+- aplicar máscaras apenas na apresentação, enviando documentos, telefone, CEP, moeda e quantidade normalizados para o backend;
+- usar data ISO no transporte e data localizada na interface, sem inferir fuso silenciosamente.
+
+Os formulários prioritários são login, tenant, usuário, perfil, fazenda, talhão, rebanho/lote, estoque, compra/fornecedor, pedido, produção, financeiro, documento e relatório. Novas telas devem reutilizar as primitivas de `forms.css` e o componente global de mensagens, em vez de criar comportamento isolado.
 
 ## Feedback e ações críticas
 
 Sucesso, erro, alerta e sessão expirada usam mensagens humanas com próxima ação. Erros da API podem mostrar `traceId`, nunca stack trace. Excluir, cancelar, bloquear, reprovar, encerrar, mudar status crítico e revogar acesso usam modal de confirmação; justificativa é obrigatória quando a regra exigir.
+
+Permissão negada, registro inexistente e módulo não contratado são estados orientativos, não falhas genéricas: informe por que a ação não está disponível e indique administrador, plano ou contexto que pode resolvê-la.
 
 ## Fluxo consistente
 
