@@ -1,6 +1,6 @@
 @inject IConfiguration Configuration
 @{
-    var apiBaseUrl = Configuration["ApiBaseUrl"] ?? "http://localhost:8081";
+    var apiBaseUrl = Configuration["ApiBaseUrl"] ?? "https://localhost:7081";
 }
 <!doctype html>
 <html lang="pt-BR" data-theme="dark">
@@ -112,7 +112,7 @@
             <h2 id="login-title">Sua operação em uma única visão.</h2>
             <p>Entre no tenant da sua empresa para acessar dados autorizados.</p>
             <label>Tenant<input name="tenantSlug" autocomplete="organization" placeholder="ex.: fazenda-boa-vista" required /></label>
-            <label>E-mail, CPF ou CNPJ<input name="identifier" autocomplete="username" placeholder="voce@empresa.com.br ou documento" required /></label>
+            <label>E-mail<input name="email" type="email" autocomplete="username" placeholder="voce@empresa.com.br" required /></label>
             <label>Senha<input name="password" type="password" autocomplete="current-password" required /></label>
             <button class="primary-button" type="submit"><span>Entrar no Agro 360</span><svg><use href="#i-arrow" /></svg></button>
             <div class="form-message" id="login-message" role="alert"></div>

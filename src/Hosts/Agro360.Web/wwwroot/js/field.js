@@ -1,5 +1,5 @@
 (() => { "use strict";
-const apiBase=window.AGRO360_API||"http://localhost:8081", dbName="agro360-field-v43"; let lookups=[];
+const apiBase=window.AGRO360_API||"https://localhost:7081", dbName="agro360-field-v43"; let lookups=[];
 const $=s=>document.querySelector(s), toast=m=>{const e=$("#toast");e.textContent=m;e.style.display="block";setTimeout(()=>e.style.display="none",4000)};
 const escapeHtml=value=>{const node=document.createElement("span");node.textContent=value??"";return node.innerHTML};
 function database(){return new Promise((resolve,reject)=>{const request=indexedDB.open(dbName,1);request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains("outbox")){const store=db.createObjectStore("outbox",{keyPath:"temporaryId"});store.createIndex("status","status")}};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)})}
