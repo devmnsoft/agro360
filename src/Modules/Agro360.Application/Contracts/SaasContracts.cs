@@ -19,6 +19,12 @@ public sealed record DeviceSummary(Guid Id, string Name, string Platform, DateTi
 public sealed record NotificationSummary(Guid Id, string Type, string Priority, string Title, string Message, string? Route, DateTimeOffset CreatedAt, DateTimeOffset? ReadAt, DateTimeOffset? ArchivedAt, bool RequiresAction);
 public sealed record OrganizationSettings(string OrganizationName, string UnitSystem, string Currency, string TimeZone, string MainCulture, string[] MainActivities, string StockParameters, string FinanceParameters, string TraceabilityParameters, string ComplianceParameters, string[] NotificationPreferences);
 public sealed record UpgradeRequestCommand(Guid RequestedPlanId, string Reason);
+public sealed record BillingChargeSummary(Guid Id, Guid TenantId, string TenantName, string PlanName, DateOnly Competence, DateOnly DueOn, decimal Amount, string Status, string? Notes, DateOnly? PaidOn);
+public sealed record BillingChargeCommand(Guid TenantId, Guid SubscriptionId, DateOnly Competence, DateOnly DueOn, decimal Amount, string? Notes);
+public sealed record BillingStatusCommand(string Status, string Reason);
+public sealed record FeatureFlagSummary(Guid Id, string Code, string Name, string Description, bool PlanEnabled, bool? TenantEnabled, string EffectiveOrigin, DateTimeOffset? ExpiresAt);
+public sealed record FeatureOverrideCommand(Guid TenantId, Guid FeatureId, bool Enabled, string Reason, DateTimeOffset? ExpiresAt);
+public sealed record SaasAuditSummary(Guid Id, Guid? TenantId, string? TenantName, Guid ActorId, string Action, string EntityType, Guid? EntityId, string? Reason, DateTimeOffset CreatedAt);
 
 public interface ISaasService
 {
@@ -32,4 +38,7 @@ public interface ISaasService
     Task<IReadOnlyList<SessionSummary>> GetSessionsAsync(CancellationToken ct); Task RevokeSessionAsync(Guid id, Guid actorId, CancellationToken ct); Task<IReadOnlyList<DeviceSummary>> GetDevicesAsync(CancellationToken ct); Task RevokeDeviceAsync(Guid id, Guid actorId, CancellationToken ct);
     Task<IReadOnlyList<NotificationSummary>> GetNotificationsAsync(string? type, string? priority, CancellationToken ct); Task ChangeNotificationAsync(Guid id, string action, CancellationToken ct);
     Task<OrganizationSettings> GetSettingsAsync(CancellationToken ct); Task UpdateSettingsAsync(OrganizationSettings settings, Guid actorId, CancellationToken ct);
+    Task<IReadOnlyList<BillingChargeSummary>> GetChargesAsync(CancellationToken ct); Task<Guid> CreateChargeAsync(BillingChargeCommand command, Guid actorId, CancellationToken ct); Task ChangeChargeStatusAsync(Guid id, BillingStatusCommand command, Guid actorId, CancellationToken ct);
+    Task<IReadOnlyList<FeatureFlagSummary>> GetFeatureFlagsAsync(Guid tenantId, CancellationToken ct); Task SetFeatureOverrideAsync(FeatureOverrideCommand command, Guid actorId, CancellationToken ct);
+    Task<IReadOnlyList<SaasAuditSummary>> GetAuditAsync(Guid? tenantId, CancellationToken ct);
 }

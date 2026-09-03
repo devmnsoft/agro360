@@ -2030,7 +2030,7 @@ alter table agro360.saas_plans add column if not exists deleted_at timestamptz;
 
 create table if not exists agro360.saas_tenant_status_events(
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id), previous_status varchar(20) not null,
- new_status varchar(20) not null check(new_status in('IMPLEMENTING','TRIAL','ACTIVE','SUSPENDED','INACTIVE','CANCELLED')),
+ new_status varchar(20) not null check(new_status in('IMPLEMENTING','TRIAL','ACTIVE','SUSPENDED','BLOCKED','INACTIVE','CANCELLED')),
  reason varchar(1000) not null check(length(trim(reason))>=5), created_at timestamptz not null default now(), created_by uuid not null);
 create index if not exists ix_saas_tenant_status_events on agro360.saas_tenant_status_events(tenant_id,created_at desc);
 
@@ -2065,7 +2065,7 @@ create index if not exists ix_saas_subscription_events on agro360.saas_subscript
 create table if not exists agro360.saas_billing_charges(
  id uuid primary key default gen_random_uuid(), tenant_id uuid not null references agro360.tenancy_tenants(id), subscription_id uuid not null references agro360.saas_subscriptions(id),
  competence date not null check(competence=date_trunc('month',competence)::date), due_on date not null, amount numeric(14,2) not null check(amount>0),
- status varchar(20) not null default 'OPEN' check(status in('OPEN','ISSUED','PAID','OVERDUE','CANCELLED')), paid_on date, payment_method varchar(80),
+ status varchar(20) not null default 'OPEN' check(status in('OPEN','ISSUED','PAID','OVERDUE','CANCELLED','NEGOTIATING')), paid_on date, payment_method varchar(80),
  external_reference varchar(160), notes varchar(2000), cancellation_reason varchar(1000), created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
  created_by uuid not null, updated_by uuid, deleted_at timestamptz, check(status<>'PAID' or paid_on is not null),
  check(status<>'CANCELLED' or length(trim(coalesce(cancellation_reason,'')))>=5));
