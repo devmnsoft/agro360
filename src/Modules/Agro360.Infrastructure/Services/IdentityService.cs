@@ -27,13 +27,14 @@ public sealed class IdentityService(
 
         return database.InSystemTransactionAsync(async (connection, transaction) =>
         {
-            var tenantCount = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
-                "select count(*) from agro360.tenancy_tenants;",
+            var tenantAlreadyExists = await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
+                "select exists(select 1 from agro360.tenancy_tenants where slug = @Slug);",
+                new { Slug = tenant.Slug },
                 transaction: transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
-            if (tenantCount > 0)
+            if (tenantAlreadyExists)
             {
-                throw new ForbiddenException("O bootstrap só pode ser executado no banco sem tenants.");
+                throw new ForbiddenException("Já existe uma organização com este identificador.");
             }
 
             await connection.ExecuteAsync(new CommandDefinition(

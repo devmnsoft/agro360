@@ -1,7 +1,7 @@
 @inject IConfiguration Configuration
 @inject IWebHostEnvironment HostEnvironment
 @{
-    var apiBaseUrl = Configuration["ApiBaseUrl"] ?? "https://localhost:7081";
+    var apiBaseUrl = Configuration["ApiBaseUrl"] ?? "http://localhost:8081";
     var environmentName = HostEnvironment.IsDevelopment() ? "Desenvolvimento"
         : HostEnvironment.IsStaging() ? "Homologação" : "Produção";
 }
@@ -127,6 +127,7 @@
             <label>Senha<input name="password" type="password" autocomplete="current-password" minlength="12" required /></label>
             <button class="primary-button" type="submit"><span>Entrar no Agro 360</span><svg><use href="#i-arrow" /></svg></button>
             <button class="connection-button" id="test-api-connection" type="button"><i></i><span>Testar conexão com a API</span></button>
+            <a class="swagger-link" href="@($"{apiBaseUrl.TrimEnd('/')}/swagger")" target="_blank" rel="noopener noreferrer">Abrir documentação Swagger ↗</a>
             <div class="form-message" id="login-message" role="alert" aria-live="assertive"></div>
             <small>Agro360 by MNSOFT · Sessão criptografada e isolada por cliente.</small>
         </form>

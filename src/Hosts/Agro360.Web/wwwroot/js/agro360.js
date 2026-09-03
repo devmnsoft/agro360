@@ -1,7 +1,8 @@
 (() => {
     "use strict";
 
-    const apiBase = document.querySelector('meta[name="api-base"]')?.content?.replace(/\/$/, "") ?? "https://localhost:7081";
+    const apiBase = document.querySelector('meta[name="api-base"]')?.content?.replace(/\/$/, "") ?? "http://localhost:8081";
+    const apiUnavailableMessage = "Não foi possível conectar à API. Confirme se a Agro360.Api está rodando em http://localhost:8081 e abra http://localhost:8081/swagger.";
     const storageKeys = { session: "agro360.session", theme: "agro360.theme" };
     const state = { session: readJson(storageKeys.session), searchTimer: 0, selectedSearch: -1 };
     const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -85,10 +86,8 @@
         event.preventDefault();
         const form = event.currentTarget;
         const button = form.querySelector('button[type="submit"]');
-        const message = element("login-message");
         button.disabled = true;
         button.querySelector("span").textContent = "Validando acesso...";
-        message.textContent = "";
         try {
             if (!form.checkValidity()) {
                 form.reportValidity();
@@ -116,9 +115,8 @@
             await loadDashboard();
         } catch (error) {
             const detail = error instanceof TypeError
-                ? "Não foi possível conectar à API. Verifique se a Agro360.Api está rodando em https://localhost:7081 e se o Swagger abre corretamente."
+                ? apiUnavailableMessage
                 : error.message;
-            message.textContent = detail;
             error instanceof TypeError
                 ? toastError("API indisponível", detail)
                 : toastError("Não foi possível entrar", detail);
@@ -138,7 +136,7 @@
             toastSuccess("API conectada", "A Agro360.Api e o banco de dados estão disponíveis.");
         } catch (error) {
             const detail = error instanceof TypeError
-                ? "Não foi possível conectar à API. Verifique se a Agro360.Api está rodando em https://localhost:7081 e se o Swagger abre corretamente."
+                ? apiUnavailableMessage
                 : error.message;
             toastError("Falha na conexão", detail);
         } finally {
@@ -362,6 +360,7 @@
     const toastSuccess = (title, detail) => showToast("success", title, detail);
     const toastWarning = (title, detail) => showToast("warning", title, detail);
     const toastError = (title, detail) => showToast("error", title, detail);
+    const toastInfo = (title, detail) => showToast("info", title, detail);
     const toast = (title, detail, error = false) => error ? toastError(title, detail) : toastSuccess(title, detail);
 
     function confirmDialog(title, message, confirmText = "Confirmar", cancelText = "Cancelar") {
@@ -374,7 +373,7 @@
         return new Promise(resolve => dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true }));
     }
 
-    Object.assign(window, { toastSuccess, toastWarning, toastError, confirmDialog });
+    Object.assign(window, { toastSuccess, toastWarning, toastError, toastInfo, confirmDialog });
 
     function setText(id, value) { element(id).textContent = value; }
     function escapeHtml(value) { const span = document.createElement("span"); span.textContent = String(value ?? ""); return span.innerHTML; }
