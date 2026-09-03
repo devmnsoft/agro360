@@ -1,5 +1,5 @@
 -- Dados demonstrativos opcionais. Execute somente em Development/local, depois do full install.
--- Não contém senha em texto puro; o usuário exemplo usa hash PBKDF2 da credencial dev documentada.
+-- Não contém senha em texto puro; o usuário demo usa hash PBKDF2 da credencial dev documentada.
 begin;
 select set_config('app.tenant_id','20000000-0000-0000-0000-000000000001',true);
 
@@ -7,8 +7,8 @@ insert into agro360.organization_organizations(id,tenant_id,type,name,legal_name
 values ('20000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001','ECONOMIC_GROUP','Grupo Santa Clara','Fazenda Santa Clara Ltda','00000000000191')
 on conflict(id) do nothing;
 insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,normalized_document,document_type,must_change_password)
-values ('20000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000001','Administrador Santa Clara','admin.santaclara@example.local','pbkdf2-sha512$210000$QWdybzM2ME1OU09GVCEh$hiccVEYBSwMAvQ4i85qQ+EN09O0fKa7TGmXfJyqHrGQ=','ACTIVE','00000000000191','CNPJ',true)
-on conflict(id) do nothing;
+values ('20000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000001','Administrador Agro360','admin@agro360.local','pbkdf2-sha512$210000$QWdybzM2MERlbW9TZWVkIQ==$4VCMfY7wCNXW1YUuFkEKSgVnzQbUIYI0ThMD8anitDQ=','ACTIVE','00000000000191','CNPJ',true)
+on conflict(id) do update set name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,status='ACTIVE',deleted_at=null;
 insert into agro360.identity_roles(id,tenant_id,code,name,is_system)
 values ('20000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000001','tenant-administrator','Administrador do tenant',true)
 on conflict(id) do nothing;

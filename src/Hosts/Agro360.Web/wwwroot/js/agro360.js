@@ -82,15 +82,31 @@
 
     function hideLogin() { loginModal.hidden = true; }
 
+    function validateLoginForm(form) {
+        const messages = {
+            tenantSlug: "Informe o identificador da sua organização.",
+            email: "Informe um e-mail válido.",
+            password: "A senha deve ter pelo menos 12 caracteres."
+        };
+        let valid = true;
+        for (const input of form.querySelectorAll("input[required]")) {
+            const fieldValid = input.checkValidity();
+            input.setAttribute("aria-invalid", String(!fieldValid));
+            element(`${input.name}-error`).textContent = fieldValid ? "" : messages[input.name];
+            valid &&= fieldValid;
+        }
+        return valid;
+    }
+
     async function login(event) {
         event.preventDefault();
         const form = event.currentTarget;
         const button = form.querySelector('button[type="submit"]');
         button.disabled = true;
+        form.setAttribute("aria-busy", "true");
         button.querySelector("span").textContent = "Validando acesso...";
         try {
-            if (!form.checkValidity()) {
-                form.reportValidity();
+            if (!validateLoginForm(form)) {
                 throw new Error("Preencha Cliente/Organização, e-mail e senha para continuar.");
             }
             const data = Object.fromEntries(new FormData(form));
@@ -122,6 +138,7 @@
                 : toastError("Não foi possível entrar", detail);
         } finally {
             button.disabled = false;
+            form.setAttribute("aria-busy", "false");
             button.querySelector("span").textContent = "Entrar no Agro 360";
         }
     }
@@ -133,7 +150,12 @@
         try {
             const response = await fetch(`${apiBase}/health`, { headers: { Accept: "application/json" } });
             if (!response.ok) throw new Error(`A API respondeu com status ${response.status}. Verifique a conexão com o banco.`);
-            toastSuccess("API conectada", "A Agro360.Api e o banco de dados estão disponíveis.");
+            const swagger = await fetch(`${apiBase}/swagger/v1/swagger.json`, { headers: { Accept: "application/json" } });
+            if (!swagger.ok) {
+                toastWarning("Swagger inacessível", `A API está online, mas o Swagger respondeu com status ${swagger.status}.`);
+                return;
+            }
+            toastSuccess("API e Swagger conectados", "A Agro360.Api, o banco de dados e a documentação estão disponíveis.");
         } catch (error) {
             const detail = error instanceof TypeError
                 ? apiUnavailableMessage
@@ -392,6 +414,9 @@
         if (savedTheme) document.documentElement.dataset.theme = savedTheme;
         renderUser();
         element("login-form").addEventListener("submit", login);
+        element("login-form").addEventListener("input", event => {
+            if (event.target.matches("input[required]")) validateLoginForm(event.currentTarget);
+        });
         element("test-api-connection").addEventListener("click", testApiConnection);
         element("logout-button").addEventListener("click", logout);
         element("search-trigger").addEventListener("click", openPalette);

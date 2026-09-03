@@ -2957,13 +2957,26 @@ insert into agro360.platform_tenant_settings(tenant_id,language,currency,time_zo
 values ('00000000-0000-0000-0000-000000000001','pt-BR','BRL','America/Sao_Paulo','{"firstLoginPasswordChange":true}')
 on conflict(tenant_id) do update set preferences=excluded.preferences,updated_at=now();
 
--- Cliente mínimo de demonstração; os dados operacionais ficam no seed opcional.
+-- Cliente mínimo de desenvolvimento; os dados operacionais ficam no seed opcional.
 insert into agro360.tenancy_tenants(id,name,slug,status,plan_code)
-values ('20000000-0000-0000-0000-000000000001','Cliente Exemplo Agro360','cliente-exemplo',1,'ESSENTIAL')
-on conflict(id) do update set name=excluded.name,status=excluded.status;
+values ('20000000-0000-0000-0000-000000000001','Agro360 Demonstração','demo',1,'ESSENTIAL')
+on conflict(id) do update set name=excluded.name,slug=excluded.slug,status=excluded.status;
 insert into agro360.platform_tenants(id,legal_name,trade_name,normalized_document,customer_type,primary_segment,primary_email,legal_contact,plan_id,status)
-values ('20000000-0000-0000-0000-000000000001','Cliente Exemplo Desenvolvimento Ltda','Cliente Exemplo Agro360','00000000000191','RURAL_PRODUCER','AGRICULTURE','dev@example.local','Responsável Desenvolvimento','10000000-0000-0000-0000-000000000001','ACTIVE')
+values ('20000000-0000-0000-0000-000000000001','Agro360 Demonstração Ltda','Agro360 Demonstração','00000000000191','RURAL_PRODUCER','AGRICULTURE','admin@agro360.local','Administrador Agro360','10000000-0000-0000-0000-000000000001','ACTIVE')
 on conflict(id) do update set trade_name=excluded.trade_name,plan_id=excluded.plan_id,status='ACTIVE';
+select set_config('app.tenant_id','20000000-0000-0000-0000-000000000001',true);
+-- Hash PBKDF2-SHA512 (210.000 iterações) da credencial local documentada TroqueAgora!123.
+insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,must_change_password)
+values ('20000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000001','Administrador Agro360','admin@agro360.local','pbkdf2-sha512$210000$QWdybzM2MERlbW9TZWVkIQ==$4VCMfY7wCNXW1YUuFkEKSgVnzQbUIYI0ThMD8anitDQ=','ACTIVE',true)
+on conflict(id) do update set name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,status='ACTIVE',deleted_at=null;
+insert into agro360.identity_roles(id,tenant_id,code,name,is_system)
+values ('20000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000001','tenant-administrator','Administrador do tenant',true)
+on conflict(id) do update set name=excluded.name,is_system=true;
+insert into agro360.identity_user_roles(tenant_id,user_id,role_id)
+values ('20000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000004') on conflict do nothing;
+insert into agro360.identity_role_permissions(tenant_id,role_id,permission_id)
+select '20000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000004',id
+from agro360.identity_permissions on conflict do nothing;
 
 -- O SUPER_ADMIN recebe também permissões adicionadas depois do bloco Sprint 45.
 insert into agro360.identity_role_permissions(tenant_id,role_id,permission_id)
