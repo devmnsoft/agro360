@@ -18,6 +18,9 @@ public sealed class LoginExperienceTests
         Assert.Contains("identity_role_permissions", service);
         Assert.Contains("tokenService.Create", service);
         Assert.Contains("set last_login_at = now()", service);
+        Assert.Contains("u.normalized_document = @Identifier", service);
+        Assert.Contains("document.Length is not (11 or 14)", service);
+        Assert.Contains("ck_identity_users_normalized_document", Read("database/agro360-postgres-full.sql"));
     }
 
     [Fact]
@@ -45,5 +48,6 @@ public sealed class LoginExperienceTests
         foreach (var function in new[] { "toastSuccess", "toastWarning", "toastError", "confirmDialog" }) Assert.Contains(function, client);
         Assert.Contains("/health", client);
         Assert.Contains("Fechar mensagem", client);
+        Assert.Contains("E-mail, CPF ou CNPJ", layout);
     }
 }

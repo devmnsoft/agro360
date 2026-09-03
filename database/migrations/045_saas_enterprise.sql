@@ -3,6 +3,12 @@ create schema if not exists platform;
 
 alter table identity.users add column if not exists normalized_document varchar(14);
 create unique index if not exists ux_identity_users_tenant_document on identity.users(tenant_id, normalized_document) where normalized_document is not null and deleted_at is null;
+do $$ begin
+ if not exists (select 1 from pg_constraint where conname='ck_identity_users_normalized_document' and conrelid='identity.users'::regclass) then
+  alter table identity.users add constraint ck_identity_users_normalized_document
+   check (normalized_document is null or normalized_document ~ '^[0-9]{11}([0-9]{3})?$');
+ end if;
+end $$;
 
 create table if not exists platform_super_admins (
  id uuid primary key default gen_random_uuid(), user_id uuid not null unique, active boolean not null default true,
