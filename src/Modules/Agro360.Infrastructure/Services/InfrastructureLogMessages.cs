@@ -48,4 +48,12 @@ internal static partial class InfrastructureLogMessages
     internal static partial void UserLimitExceeded(ILogger logger, Guid tenantId);
     [LoggerMessage(1022, LogLevel.Error, "Falha SaaS {Operation} no tenant {TenantId}")]
     internal static partial void SaasFailed(ILogger logger, string operation, Guid tenantId, Exception exception);
+    [LoggerMessage(1023, LogLevel.Information, "Refresh iniciado. TenantId: {TenantId}; UserId: {UserId}; TraceId: {TraceId}; Origem: {Origin}")]
+    internal static partial void RefreshStarted(ILogger logger, Guid? tenantId, Guid? userId, string traceId, string origin);
+    [LoggerMessage(1024, LogLevel.Warning, "Refresh rejeitado. Motivo: {Reason}; TenantId: {TenantId}; UserId: {UserId}; TraceId: {TraceId}; Origem: {Origin}")]
+    internal static partial void RefreshRejected(ILogger logger, string reason, Guid? tenantId, Guid? userId, string traceId, string origin);
+    [LoggerMessage(1025, LogLevel.Information, "Refresh concluído. TenantId: {TenantId}; UserId: {UserId}; ExpiraEm: {ExpiresAt}; TokenRotacionado: {Rotated}; TraceId: {TraceId}")]
+    internal static partial void RefreshSucceeded(ILogger logger, Guid tenantId, Guid userId, DateTimeOffset expiresAt, bool rotated, string traceId);
+    [LoggerMessage(1026, LogLevel.Error, "Falha no dashboard pecuário do tenant {TenantId}")]
+    internal static partial void LivestockDashboardFailed(ILogger logger, Guid tenantId, Exception exception);
 }

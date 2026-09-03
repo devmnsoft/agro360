@@ -100,6 +100,11 @@ public sealed class ForbiddenException(string message)
 {
 }
 
+public sealed class AuthenticationException(string message, string code = "authentication_required")
+    : DomainException(message, code)
+{
+}
+
 public sealed class PersistenceException(string message, Exception innerException)
     : Exception(message, innerException)
 {
