@@ -21,7 +21,8 @@ public sealed partial class ExceptionHandlingMiddleware(RequestDelegate next, IL
     {
         var (status, type, title) = exception switch
         {
-            ValidationException => (StatusCodes.Status422UnprocessableEntity, "validation_error", "Dados inválidos"),
+            AuthenticationException => (StatusCodes.Status401Unauthorized, "authentication_required", "Autenticação necessária"),
+            ValidationException => (StatusCodes.Status400BadRequest, "validation_error", "Dados inválidos"),
             NotFoundException => (StatusCodes.Status404NotFound, "resource_not_found", "Recurso não encontrado"),
             ConflictException => (StatusCodes.Status409Conflict, "business_conflict", "Conflito de negócio"),
             ForbiddenException => (StatusCodes.Status403Forbidden, "forbidden", "Acesso negado"),

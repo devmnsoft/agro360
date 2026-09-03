@@ -392,9 +392,14 @@ create table if not exists agro360.livestock_herds (
     tenant_id uuid not null references agro360.tenancy_tenants(id),
     farm_id uuid not null,
     name varchar(120) not null,
-    purpose varchar(40) not null,
+    species varchar(40) not null,
+    category varchar(60) not null,
+    head_count integer not null default 0 check (head_count >= 0),
+    status varchar(20) not null default 'ACTIVE' check (status in ('ACTIVE', 'INACTIVE')),
     created_at timestamptz not null default now(),
     created_by uuid not null,
+    updated_at timestamptz null,
+    updated_by uuid null,
     deleted_at timestamptz null,
     version bigint not null default 1,
     constraint uq_herds_tenant_id unique (tenant_id, id),
@@ -402,6 +407,35 @@ create table if not exists agro360.livestock_herds (
         references agro360.geo_farms(tenant_id, id),
     constraint uq_herds_farm_name unique (tenant_id, farm_id, name)
 );
+
+-- Converge instalações anteriores que divergiam entre `active`, `purpose` e soft delete.
+alter table agro360.livestock_herds add column if not exists species varchar(40);
+alter table agro360.livestock_herds add column if not exists category varchar(60);
+alter table agro360.livestock_herds add column if not exists head_count integer not null default 0;
+alter table agro360.livestock_herds add column if not exists status varchar(20) not null default 'ACTIVE';
+alter table agro360.livestock_herds add column if not exists updated_at timestamptz;
+alter table agro360.livestock_herds add column if not exists updated_by uuid;
+alter table agro360.livestock_herds add column if not exists deleted_at timestamptz;
+do $$
+begin
+    if exists (
+        select 1 from information_schema.columns
+        where table_schema = 'agro360' and table_name = 'livestock_herds' and column_name = 'active'
+    ) then
+        execute 'update agro360.livestock_herds set status = case when active then ''ACTIVE'' else ''INACTIVE'' end';
+        execute 'alter table agro360.livestock_herds drop column active';
+    end if;
+    if exists (
+        select 1 from information_schema.columns
+        where table_schema = 'agro360' and table_name = 'livestock_herds' and column_name = 'purpose'
+    ) then
+        execute 'update agro360.livestock_herds set species = coalesce(species, purpose), category = coalesce(category, purpose)';
+        execute 'alter table agro360.livestock_herds alter column purpose drop not null';
+    end if;
+end $$;
+update agro360.livestock_herds set species = coalesce(species, 'BOVINE'), category = coalesce(category, 'GENERAL');
+alter table agro360.livestock_herds alter column species set not null;
+alter table agro360.livestock_herds alter column category set not null;
 
 create table if not exists agro360.livestock_animals (
     id uuid primary key,
@@ -1214,7 +1248,7 @@ alter table agro360.livestock_animals add constraint ck_animals_weight check(cur
 create unique index if not exists ux_animals_tenant_tag on agro360.livestock_animals(tenant_id,lower(tag)) where deleted_at is null;
 create unique index if not exists ux_animals_tenant_rfid on agro360.livestock_animals(tenant_id,lower(rfid)) where rfid is not null and deleted_at is null;
 
-create table if not exists agro360.livestock_herds(id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),farm_id uuid not null references agro360.geo_farms(id),name varchar(120) not null,species varchar(40) not null,category varchar(60) not null,head_count integer not null default 0 check(head_count>=0),active boolean not null default true,created_at timestamptz not null default now(),created_by uuid not null,updated_at timestamptz,updated_by uuid,unique(tenant_id,name));
+-- livestock_herds is defined canonically above; do not redefine it with divergent columns.
 create table if not exists agro360.livestock_pastures(id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),farm_id uuid not null references agro360.geo_farms(id),name varchar(120) not null,area_hectares numeric(14,4) not null check(area_hectares>0),forage_type varchar(100) not null,status varchar(20) not null check(status in('AVAILABLE','IN_USE','RESTING','DEGRADED','RENOVATION','INACTIVE','DISPONIVEL','EM_USO','EM_DESCANSO','DEGRADADA','EM_REFORMA','INATIVA')),created_at timestamptz not null default now(),created_by uuid not null,updated_at timestamptz,updated_by uuid,unique(tenant_id,farm_id,name));
 create table if not exists agro360.livestock_paddocks(id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),pasture_id uuid not null references agro360.livestock_pastures(id),name varchar(120) not null,area_hectares numeric(14,4) not null check(area_hectares>0),capacity_au numeric(14,2) not null check(capacity_au>=0),status varchar(20) not null,rest_days integer not null default 0 check(rest_days>=0),occupation_days integer not null default 0 check(occupation_days>=0),entry_height_cm numeric(10,2),exit_height_cm numeric(10,2),forage_mass_kg_ha numeric(14,2),last_occupied_at timestamptz,last_released_at timestamptz,created_at timestamptz not null default now(),created_by uuid not null,updated_at timestamptz,updated_by uuid,unique(tenant_id,pasture_id,name));
 do $$ begin if not exists(select 1 from pg_constraint where conname='fk_animals_paddock') then alter table agro360.livestock_animals add constraint fk_animals_paddock foreign key(paddock_id) references agro360.livestock_paddocks(id); end if; end $$;

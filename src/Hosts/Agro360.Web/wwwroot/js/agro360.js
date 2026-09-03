@@ -4,7 +4,7 @@
     const apiBase = document.querySelector('meta[name="api-base"]')?.content?.replace(/\/$/, "") ?? "http://localhost:8081";
     const apiUnavailableMessage = "Não foi possível conectar à API. Confirme se a Agro360.Api está rodando em http://localhost:8081 e abra http://localhost:8081/swagger.";
     const storageKeys = { session: "agro360.session", theme: "agro360.theme" };
-    const state = { session: readJson(storageKeys.session), searchTimer: 0, selectedSearch: -1 };
+    const state = { session: readJson(storageKeys.session), searchTimer: 0, selectedSearch: -1, refreshPromise: null, refreshStopped: false };
     const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
     const number = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
     const relativeTime = new Intl.RelativeTimeFormat("pt-BR", { numeric: "auto" });
@@ -19,8 +19,15 @@
 
     function persistSession(session) {
         state.session = session;
-        if (session) localStorage.setItem(storageKeys.session, JSON.stringify(session));
-        else localStorage.removeItem(storageKeys.session);
+        if (session) {
+            localStorage.setItem(storageKeys.session, JSON.stringify(session));
+            state.refreshStopped = false;
+        } else {
+            localStorage.removeItem(storageKeys.session);
+            localStorage.removeItem("agro360.accessToken");
+            localStorage.removeItem("agro360.access_token");
+            sessionStorage.clear();
+        }
         renderUser();
     }
 
@@ -40,7 +47,7 @@
         headers.set("X-Timezone", Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Belem");
         const response = await fetch(`${apiBase}${path}`, { ...options, headers });
 
-        if (response.status === 401 && retry && state.session?.refreshToken) {
+        if (response.status === 401 && retry && !state.refreshStopped && state.session?.refreshToken) {
             const refreshed = await refreshSession();
             if (refreshed) return api(path, options, false);
         }
@@ -60,6 +67,14 @@
     }
 
     async function refreshSession() {
+        if (state.refreshStopped || !state.session?.refreshToken) return false;
+        if (state.refreshPromise) return state.refreshPromise;
+        state.refreshPromise = performRefresh();
+        try { return await state.refreshPromise; }
+        finally { state.refreshPromise = null; }
+    }
+
+    async function performRefresh() {
         try {
             const response = await fetch(`${apiBase}/api/v1/auth/refresh`, {
                 method: "POST",
@@ -70,9 +85,10 @@
             persistSession(await response.json());
             return true;
         } catch {
+            state.refreshStopped = true;
             persistSession(null);
             showLogin();
-            toastWarning("Sessão expirada", "Entre novamente para continuar com segurança.");
+            toastWarning("Sessão expirada", "Sua sessão expirou. Faça login novamente.");
             return false;
         }
     }

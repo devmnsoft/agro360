@@ -2,11 +2,15 @@ using Agro360.Application.Abstractions;
 using Agro360.Multitenancy;
 using Agro360.SharedKernel;
 using Dapper;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace Agro360.Infrastructure.Persistence;
 
-public sealed class DatabaseExecutor(IDbConnectionFactory connectionFactory, ITenantContext tenantContext)
+public sealed partial class DatabaseExecutor(
+    IDbConnectionFactory connectionFactory,
+    ITenantContext tenantContext,
+    ILogger<DatabaseExecutor> logger)
 {
     public async Task InTenantTransactionAsync(
         Func<NpgsqlConnection, NpgsqlTransaction, Task> action,
@@ -59,11 +63,15 @@ public sealed class DatabaseExecutor(IDbConnectionFactory connectionFactory, ITe
         catch (PostgresException exception)
         {
             await SafeRollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
+            LogPostgresFailure(logger, exception.SqlState, exception.MessageText, SafeDiagnostic(exception.Detail),
+                SafeDiagnostic(exception.Hint), exception.ColumnName, exception.TableName, exception.ConstraintName,
+                exception.SchemaName, tenantId, "tenant-transaction", exception);
             throw Translate(exception);
         }
         catch (NpgsqlException exception)
         {
             await SafeRollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
+            LogCommunicationFailure(logger, tenantId, "tenant-transaction", exception);
             throw new PersistenceException("Falha de comunicação com o PostgreSQL.", exception);
         }
         catch
@@ -91,11 +99,15 @@ public sealed class DatabaseExecutor(IDbConnectionFactory connectionFactory, ITe
         catch (PostgresException exception)
         {
             await SafeRollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
+            LogPostgresFailure(logger, exception.SqlState, exception.MessageText, SafeDiagnostic(exception.Detail),
+                SafeDiagnostic(exception.Hint), exception.ColumnName, exception.TableName, exception.ConstraintName,
+                exception.SchemaName, null, "system-transaction", exception);
             throw Translate(exception);
         }
         catch (NpgsqlException exception)
         {
             await SafeRollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
+            LogCommunicationFailure(logger, null, "system-transaction", exception);
             throw new PersistenceException("Falha de comunicação com o PostgreSQL.", exception);
         }
         catch
@@ -135,4 +147,20 @@ public sealed class DatabaseExecutor(IDbConnectionFactory connectionFactory, ITe
             // A conexão original já falhou; o erro de rollback não substitui a causa raiz.
         }
     }
+
+    private static string? SafeDiagnostic(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Contains("Key (", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("password", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("token", StringComparison.OrdinalIgnoreCase)) return null;
+        return value.Length <= 512 ? value : value[..512];
+    }
+
+    [LoggerMessage(2001, LogLevel.Error, "Falha PostgreSQL. SqlState: {SqlState}; MessageText: {MessageText}; Detail: {Detail}; Hint: {Hint}; ColumnName: {ColumnName}; TableName: {TableName}; ConstraintName: {ConstraintName}; SchemaName: {SchemaName}; TenantId: {TenantId}; Operation: {Operation}")]
+    private static partial void LogPostgresFailure(ILogger logger, string sqlState, string messageText,
+        string? detail, string? hint, string? columnName, string? tableName, string? constraintName,
+        string? schemaName, Guid? tenantId, string operation, Exception exception);
+
+    [LoggerMessage(2002, LogLevel.Error, "Falha de comunicação PostgreSQL. TenantId: {TenantId}; Operation: {Operation}")]
+    private static partial void LogCommunicationFailure(ILogger logger, Guid? tenantId, string operation, Exception exception);
 }

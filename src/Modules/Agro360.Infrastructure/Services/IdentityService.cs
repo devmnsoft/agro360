@@ -1,4 +1,5 @@
 using System.Net.Mail;
+using System.Diagnostics;
 using Agro360.Application;
 using Agro360.Application.Abstractions;
 using Agro360.Application.Contracts;
@@ -6,6 +7,7 @@ using Agro360.Domain.Tenancy;
 using Agro360.Infrastructure.Persistence;
 using Agro360.SharedKernel;
 using Dapper;
+using Microsoft.Extensions.Logging;
 
 namespace Agro360.Infrastructure.Services;
 
@@ -13,7 +15,8 @@ public sealed class IdentityService(
     DatabaseExecutor database,
     IPasswordHasher passwordHasher,
     ITokenService tokenService,
-    IClock clock) : IIdentityService
+    IClock clock,
+    ILogger<IdentityService> logger) : IIdentityService
 {
     public Task<BootstrapResult> BootstrapAsync(BootstrapCommand command, CancellationToken cancellationToken)
     {
@@ -132,7 +135,7 @@ public sealed class IdentityService(
 
         if (tenant is null)
         {
-            throw new ForbiddenException("Cliente/organização não encontrado.");
+            throw new AuthenticationException("Cliente/organização inválido.", "tenant_invalid");
         }
 
         if (tenant.Status is 3 or 4 or 5)
@@ -144,12 +147,11 @@ public sealed class IdentityService(
         {
             var user = await connection.QuerySingleOrDefaultAsync<UserLookup>(new CommandDefinition(
                 """
-                select id, tenant_id as TenantId, name, email, password_hash as PasswordHash
+                select id, tenant_id as TenantId, name, email, password_hash as PasswordHash,
+                       status, deleted_at as DeletedAt
                 from agro360.identity_users u
                 where u.tenant_id = @TenantId
-                  and u.email = lower(@Email)
-                  and u.status = 'ACTIVE'
-                  and u.deleted_at is null;
+                  and u.email = lower(@Email);
                 """,
                 new { TenantId = tenant.Id, Email = email },
                 transaction,
@@ -157,27 +159,76 @@ public sealed class IdentityService(
 
             if (user is null)
             {
-                throw new ForbiddenException("Usuário inexistente ou inativo para esta organização.");
+                throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
+            }
+
+            if (user.DeletedAt is not null || !string.Equals(user.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ForbiddenException(user.Status is "BLOCKED" or "LOCKED"
+                    ? "Usuário bloqueado. Contate o suporte."
+                    : "Usuário inativo. Contate o suporte.");
             }
 
             if (!passwordHasher.Verify(command.Password, user.PasswordHash))
             {
-                throw new ForbiddenException("Senha incorreta.");
+                throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
             }
 
             return await IssueTokensAsync(connection, transaction, user, cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    public Task<AuthenticationResult> RefreshAsync(RefreshTokenCommand command, CancellationToken cancellationToken)
+    public async Task<AuthenticationResult> RefreshAsync(RefreshTokenCommand command, CancellationToken cancellationToken)
     {
+        const string origin = "api/v1/auth/refresh";
+        var traceId = Activity.Current?.TraceId.ToString() ?? "unavailable";
+        if (string.IsNullOrWhiteSpace(command.RefreshToken))
+        {
+            InfrastructureLogMessages.RefreshStarted(logger, null, null, traceId, origin);
+            RejectRefresh("token ausente", null, null, traceId, origin);
+        }
+
         if (!TryReadTenantId(command.RefreshToken, out var tenantId))
         {
-            throw new ForbiddenException("Refresh token inválido.");
+            InfrastructureLogMessages.RefreshStarted(logger, null, null, traceId, origin);
+            RejectRefresh("token inválido", null, null, traceId, origin);
         }
 
         var tokenHash = tokenService.HashRefreshToken(command.RefreshToken);
-        return database.InTenantTransactionAsync(tenantId, async (connection, transaction) =>
+        var lookup = await database.InSystemTransactionAsync(async (connection, transaction) =>
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                "select set_config('app.tenant_id', @TenantId, true);",
+                new { TenantId = tenantId.ToString() }, transaction, cancellationToken: cancellationToken));
+            return await connection.QuerySingleOrDefaultAsync<RefreshTokenLookup>(new CommandDefinition(
+                """
+                select rt.tenant_id as "TenantId", rt.user_id as "UserId",
+                       rt.expires_at as "ExpiresAt", rt.revoked_at as "RevokedAt",
+                       u.status as "UserStatus", u.deleted_at as "UserDeletedAt",
+                       t.status as "TenantStatus", t.deleted_at as "TenantDeletedAt"
+                from agro360.identity_refresh_tokens rt
+                left join agro360.identity_users u
+                  on u.tenant_id = rt.tenant_id and u.id = rt.user_id
+                left join agro360.tenancy_tenants t on t.id = rt.tenant_id
+                where rt.token_hash = @TokenHash
+                order by rt.created_at desc
+                limit 1;
+                """,
+                new { TokenHash = tokenHash }, transaction, cancellationToken: cancellationToken));
+        },
+            cancellationToken).ConfigureAwait(false);
+
+        InfrastructureLogMessages.RefreshStarted(logger, lookup?.TenantId ?? tenantId, lookup?.UserId, traceId, origin);
+        if (lookup is null) RejectRefresh("token não encontrado", tenantId, null, traceId, origin);
+        if (lookup!.TenantId != tenantId) RejectRefresh("tenant divergente", tenantId, lookup.UserId, traceId, origin);
+        if (lookup.RevokedAt is not null) RejectRefresh("token revogado", tenantId, lookup.UserId, traceId, origin);
+        if (lookup.ExpiresAt <= clock.UtcNow) RejectRefresh("token expirado", tenantId, lookup.UserId, traceId, origin);
+        if (lookup.UserDeletedAt is not null || !string.Equals(lookup.UserStatus, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+            RejectRefresh(lookup.UserStatus is "BLOCKED" or "LOCKED" ? "usuário bloqueado" : "usuário inativo", tenantId, lookup.UserId, traceId, origin);
+        if (lookup.TenantDeletedAt is not null || lookup.TenantStatus is not (1 or 2))
+            RejectRefresh("tenant divergente", tenantId, lookup.UserId, traceId, origin);
+
+        var result = await database.InTenantTransactionAsync(tenantId, async (connection, transaction) =>
         {
             var user = await connection.QuerySingleOrDefaultAsync<UserLookup>(new CommandDefinition(
                 """
@@ -187,11 +238,8 @@ public sealed class IdentityService(
                 join agro360.tenancy_tenants t on t.id = rt.tenant_id
                 where rt.tenant_id = @TenantId
                   and rt.token_hash = @TokenHash
-                  and rt.revoked_at is null
-                  and rt.expires_at > now()
-                  and u.status = 'ACTIVE'
-                  and u.deleted_at is null
-                  and t.status in (1, 2)
+                  and rt.revoked_at is null and rt.expires_at > now()
+                  and u.status = 'ACTIVE' and u.deleted_at is null and t.status in (1, 2)
                 for update of rt;
                 """,
                 new { TenantId = tenantId, TokenHash = tokenHash },
@@ -200,7 +248,7 @@ public sealed class IdentityService(
 
             if (user is null)
             {
-                throw new ForbiddenException("Refresh token inválido ou expirado.");
+                RejectRefresh("token revogado ou alterado concorrentemente", tenantId, lookup.UserId, traceId, origin);
             }
 
             await connection.ExecuteAsync(new CommandDefinition(
@@ -213,8 +261,16 @@ public sealed class IdentityService(
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-            return await IssueTokensAsync(connection, transaction, user, cancellationToken).ConfigureAwait(false);
-        }, cancellationToken);
+            return await IssueTokensAsync(connection, transaction, user!, cancellationToken).ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+        InfrastructureLogMessages.RefreshSucceeded(logger, result.TenantId, result.UserId, result.ExpiresAt, true, traceId);
+        return result;
+    }
+
+    private void RejectRefresh(string reason, Guid? tenantId, Guid? userId, string traceId, string origin)
+    {
+        InfrastructureLogMessages.RefreshRejected(logger, reason, tenantId, userId, traceId, origin);
+        throw new AuthenticationException("Sua sessão expirou. Faça login novamente.", $"refresh_token_{reason.Replace(' ', '_')}");
     }
 
     private async Task<AuthenticationResult> IssueTokensAsync(
@@ -320,5 +376,21 @@ public sealed class IdentityService(
         public string Email { get; init; } = string.Empty;
 
         public string PasswordHash { get; init; } = string.Empty;
+
+        public string Status { get; init; } = string.Empty;
+
+        public DateTimeOffset? DeletedAt { get; init; }
+    }
+
+    private sealed class RefreshTokenLookup
+    {
+        public Guid TenantId { get; set; }
+        public Guid UserId { get; set; }
+        public DateTimeOffset ExpiresAt { get; set; }
+        public DateTimeOffset? RevokedAt { get; set; }
+        public string? UserStatus { get; set; }
+        public DateTimeOffset? UserDeletedAt { get; set; }
+        public short? TenantStatus { get; set; }
+        public DateTimeOffset? TenantDeletedAt { get; set; }
     }
 }
