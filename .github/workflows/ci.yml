@@ -25,6 +25,8 @@ jobs:
         run: dotnet format MNSOFT.Agro360.sln --verify-no-changes --no-restore
       - name: Build
         run: dotnet build MNSOFT.Agro360.sln --configuration Release --no-restore
+      - name: Validate unique API routes
+        run: python3 tools/check-api-routes.py
       - name: Validate portable database release
         working-directory: database/releases/v0.2.0
         run: |
