@@ -10,7 +10,9 @@ public sealed class LoginExperienceTests
     {
         var service = Read("src/Modules/Agro360.Infrastructure/Services/IdentityService.cs");
 
-        Assert.Contains("tenancy_tenants where slug = lower(@Slug)", service);
+        Assert.Contains("where slug = lower(@TenantSlug)", service);
+        Assert.Contains("new { TenantSlug = tenantSlug }", service);
+        Assert.DoesNotContain("new { command.TenantSlug }", service);
         Assert.Contains("u.status = 'ACTIVE'", service);
         Assert.Contains("passwordHasher.Verify(command.Password, user.PasswordHash)", service);
         Assert.Contains("identity_role_permissions", service);

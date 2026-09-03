@@ -117,16 +117,27 @@ public sealed class IdentityService(
     {
         var email = command.Email.Trim();
         ValidateEmail(email);
+        var tenantSlug = command.TenantSlug.Trim();
         var tenant = await database.InSystemTransactionAsync(async (connection, transaction) =>
             await connection.QuerySingleOrDefaultAsync<TenantLookup>(new CommandDefinition(
-                "select id, status from agro360.tenancy_tenants where slug = lower(@Slug);",
-                new { command.TenantSlug },
+                """
+                select id, status
+                from agro360.tenancy_tenants
+                where slug = lower(@TenantSlug)
+                  and deleted_at is null;
+                """,
+                new { TenantSlug = tenantSlug },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
 
-        if (tenant is null || tenant.Status is 3 or 4 or 5)
+        if (tenant is null)
         {
-            throw new ForbiddenException("Credenciais inválidas ou tenant indisponível.");
+            throw new ForbiddenException("Cliente/organização não encontrado.");
+        }
+
+        if (tenant.Status is 3 or 4 or 5)
+        {
+            throw new ForbiddenException("Cliente/organização inativo ou bloqueado. Contate o suporte.");
         }
 
         return await database.InTenantTransactionAsync(tenant.Id, async (connection, transaction) =>
@@ -144,9 +155,14 @@ public sealed class IdentityService(
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-            if (user is null || !passwordHasher.Verify(command.Password, user.PasswordHash))
+            if (user is null)
             {
-                throw new ForbiddenException("Credenciais inválidas ou tenant indisponível.");
+                throw new ForbiddenException("Usuário inexistente ou inativo para esta organização.");
+            }
+
+            if (!passwordHasher.Verify(command.Password, user.PasswordHash))
+            {
+                throw new ForbiddenException("Senha incorreta.");
             }
 
             return await IssueTokensAsync(connection, transaction, user, cancellationToken).ConfigureAwait(false);

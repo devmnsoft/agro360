@@ -117,7 +117,7 @@
             });
             const result = await response.json().catch(() => ({}));
             if (response.status === 401 || response.status === 403) {
-                throw new Error("Tenant, e-mail ou senha inválidos.");
+                throw new Error(result.detail || "Cliente, e-mail ou senha inválidos.");
             }
             if (response.status === 400) {
                 const validationMessage = result.detail
@@ -139,7 +139,7 @@
         } finally {
             button.disabled = false;
             form.setAttribute("aria-busy", "false");
-            button.querySelector("span").textContent = "Entrar no Agro 360";
+            button.querySelector("span").textContent = "Entrar no Agro360";
         }
     }
 
