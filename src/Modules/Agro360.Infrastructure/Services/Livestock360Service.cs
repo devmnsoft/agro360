@@ -11,8 +11,15 @@ namespace Agro360.Infrastructure.Services;
 
 public sealed class Livestock360Service(DatabaseExecutor db, ITenantContext tenant, ILogger<Livestock360Service> logger) : ILivestock360Service
 {
-    public Task<AnimalDto?> GetAnimalAsync(Guid id,CancellationToken ct)=>Tx<AnimalDto?>(async(c,t)=>await c.QuerySingleOrDefaultAsync<AnimalDto>(new CommandDefinition(AnimalSelect+" where tenant_id=@TenantId and id=@Id and deleted_at is null",new{tenant.TenantId,Id=id},t,cancellationToken:ct)));
-    public Task<AnimalDto> UpdateAnimalAsync(Guid id,RegisterAnimalCommand command,CancellationToken ct)=>Tx<AnimalDto>(async(c,t)=>{ ValidateWeight(null); var n=await c.ExecuteAsync(new CommandDefinition("update agro360.livestock_animals set farm_id=@FarmId,herd_id=@HerdId,tag=@Tag,rfid=@Rfid,species=@Species,breed=@Breed,sex=@Sex,birth_date=@BirthDate,mother_id=@MotherId,father_id=@FatherId,updated_at=now(),updated_by=@UserId,version=version+1 where tenant_id=@TenantId and id=@Id",new{command.FarmId,command.HerdId,Tag=Guard.Required(command.Tag,nameof(command.Tag),80),command.Rfid,command.Species,command.Breed,command.Sex,command.BirthDate,command.MotherId,command.FatherId,tenant.TenantId,tenant.UserId,Id=id},t,cancellationToken:ct));if(n==0)throw new NotFoundException("Animal",id);await Audit(c,t,"update","Animal",id,command,ct);return await c.QuerySingleAsync<AnimalDto>(new CommandDefinition(AnimalSelect+" where tenant_id=@TenantId and id=@Id and deleted_at is null",new{tenant.TenantId,Id=id},t,cancellationToken:ct));});
+    public Task<AnimalDto?> GetAnimalAsync(Guid id, CancellationToken ct) => Tx<AnimalDto?>(async (c, t) =>
+    {
+        var row = await c.QuerySingleOrDefaultAsync<AnimalRow>(new CommandDefinition(
+            AnimalSelect + " where tenant_id=@TenantId and id=@Id and deleted_at is null",
+            new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
+        return row?.ToDto();
+    });
+
+    public Task<AnimalDto> UpdateAnimalAsync(Guid id,RegisterAnimalCommand command,CancellationToken ct)=>Tx<AnimalDto>(async(c,t)=>{var n=await c.ExecuteAsync(new CommandDefinition("update agro360.livestock_animals set farm_id=@FarmId,herd_id=@HerdId,tag=@Tag,rfid=@Rfid,species=@Species,breed=@Breed,sex=@Sex,birth_date=@BirthDate,mother_id=@MotherId,father_id=@FatherId,updated_at=now(),updated_by=@UserId,version=version+1 where tenant_id=@TenantId and id=@Id",new{command.FarmId,command.HerdId,Tag=Guard.Required(command.Tag,nameof(command.Tag),80),command.Rfid,command.Species,command.Breed,command.Sex,command.BirthDate,command.MotherId,command.FatherId,tenant.TenantId,tenant.UserId,Id=id},t,cancellationToken:ct));if(n==0)throw new NotFoundException("Animal",id);await Audit(c,t,"update","Animal",id,command,ct);var row=await c.QuerySingleOrDefaultAsync<AnimalRow>(new CommandDefinition(AnimalSelect+" where tenant_id=@TenantId and id=@Id and deleted_at is null",new{tenant.TenantId,Id=id},t,cancellationToken:ct));return row?.ToDto()??throw new NotFoundException("Animal",id);});
     public Task ChangeAnimalStatusAsync(Guid id,string status,AnimalStatusCommand command,CancellationToken ct)=>Tx(async(c,t)=>{var code=status switch{"DEAD"=>4,"SOLD"=>3,"DISCARDED"=>5,_=>throw new DomainException("Status inválido.","agro360.livestock_status_invalid")};var n=await c.ExecuteAsync(new CommandDefinition("update agro360.livestock_animals set status=@Code,updated_at=now(),updated_by=@UserId,version=version+1 where tenant_id=@TenantId and id=@Id and status in (1,2,6); insert into agro360.livestock_animal_events(id,tenant_id,animal_id,event_type,occurred_on,data,created_at,created_by) select @EventId,@TenantId,@Id,@Status,@On,jsonb_build_object('reason',@Reason),now(),@UserId where exists(select 1 from agro360.livestock_animals where tenant_id=@TenantId and id=@Id and status=@Code)",new{Code=code,tenant.TenantId,tenant.UserId,Id=id,EventId=Guid.CreateVersion7(),Status=status,On=command.OccurredOn,command.Reason},t,cancellationToken:ct));if(n<2)throw new ConflictException("Animal inexistente ou inativo.","agro360.livestock_animal_not_active");await Audit(c,t,status.ToLowerInvariant(),"Animal",id,command,ct);});
     public Task TransferAnimalAsync(Guid id,AnimalTransferCommand command,CancellationToken ct)=>Tx(async(c,t)=>{var old=await c.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition("select farm_id,paddock_id,status from agro360.livestock_animals where tenant_id=@TenantId and id=@Id for update",new{tenant.TenantId,Id=id},t,cancellationToken:ct))??throw new NotFoundException("Animal",id);await c.ExecuteAsync(new CommandDefinition("update agro360.livestock_animals set farm_id=@FarmId,paddock_id=@PaddockId,updated_at=now(),updated_by=@UserId,version=version+1 where tenant_id=@TenantId and id=@Id; insert into agro360.livestock_animal_movements(id,tenant_id,animal_id,from_farm_id,to_farm_id,from_paddock_id,to_paddock_id,moved_on,notes,created_at,created_by) values(@Movement,@TenantId,@Id,@OldFarm,@FarmId,@OldPaddock,@PaddockId,@On,@Notes,now(),@UserId)",new{command.FarmId,command.PaddockId,tenant.TenantId,tenant.UserId,Id=id,Movement=Guid.CreateVersion7(),OldFarm=(Guid)old.farm_id,OldPaddock=(Guid?)old.paddock_id,On=command.OccurredOn,command.Notes},t,cancellationToken:ct));await Audit(c,t,"transfer","Animal",id,command,ct);});
     public Task<IReadOnlyList<dynamic>> ListHerdsAsync(CancellationToken ct)=>List("select id, farm_id as \"farmId\", name, species, category, head_count as \"headCount\", status from agro360.livestock_herds where tenant_id=@TenantId and status='ACTIVE' and deleted_at is null order by name",ct);
@@ -43,24 +50,24 @@ public sealed class Livestock360Service(DatabaseExecutor db, ITenantContext tena
             var dashboard = await db.InTenantTransactionAsync<LivestockDashboardDto>(async(c,t)=>
             {
                 using var g=await c.QueryMultipleAsync(new CommandDefinition(DashboardSql,new{tenant.TenantId},t,cancellationToken:ct));
-                var animals=await g.ReadSingleAsync<AnimalDashboardRow>();
+                var animals=await g.ReadFirstOrDefaultAsync<AnimalDashboardRow>() ?? new();
                 var species=(await g.ReadAsync<MetricRow>()).Select(ToMetric).ToArray();
                 var categories=(await g.ReadAsync<MetricRow>()).Select(ToMetric).ToArray();
-                var herds=await g.ReadSingleAsync<long>();
-                var milk=await g.ReadSingleAsync<decimal>();
-                var reproduction=await g.ReadSingleAsync<ReproductionDashboardRow>();
-                var vaccines=await g.ReadSingleAsync<long>();
-                var pastures=await g.ReadSingleAsync<PastureDashboardRow>();
-                var overcapacity=await g.ReadSingleAsync<long>();
-                var nutrition=await g.ReadSingleAsync<decimal>();
-                var healthCost=await g.ReadSingleAsync<decimal>();
-                var averageDailyGain=await g.ReadSingleAsync<decimal>();
-                var recentWeighings=await g.ReadSingleAsync<long>();
+                var herds=await g.ReadFirstOrDefaultAsync<long>();
+                var milk=await g.ReadFirstOrDefaultAsync<decimal>();
+                var reproduction=await g.ReadFirstOrDefaultAsync<ReproductionDashboardRow>() ?? new();
+                var vaccines=await g.ReadFirstOrDefaultAsync<long>();
+                var pastures=await g.ReadFirstOrDefaultAsync<PastureDashboardRow>() ?? new();
+                var overcapacity=await g.ReadFirstOrDefaultAsync<long>();
+                var nutrition=await g.ReadFirstOrDefaultAsync<decimal>();
+                var healthCost=await g.ReadFirstOrDefaultAsync<decimal>();
+                var averageDailyGain=await g.ReadFirstOrDefaultAsync<decimal>();
+                var recentWeighings=await g.ReadFirstOrDefaultAsync<long>();
                 var status=animals.ActiveAnimals==0&&herds==0?"Sem dados":"Disponível";
                 return new(animals.ActiveAnimals,species,categories,herds,animals.UnderObservation,animals.Deaths,averageDailyGain,milk,reproduction.PregnantFemales,reproduction.ExpectedBirths,vaccines,animals.InWithdrawal,pastures.InUse,pastures.Resting,overcapacity,nutrition,healthCost,vaccines,vaccines+animals.InWithdrawal,recentWeighings,status);
             },ct);
             InfrastructureLogMessages.LivestockDashboardCompleted(logger, operation, tenant.TenantId, traceId);
-            return dashboard;
+            return dashboard ?? LivestockDashboardDto.Empty;
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -123,6 +130,26 @@ public sealed class Livestock360Service(DatabaseExecutor db, ITenantContext tena
         public long Value { get; set; }
     }
 
+    private sealed class AnimalRow
+    {
+        public Guid Id { get; set; }
+        public Guid FarmId { get; set; }
+        public string Tag { get; set; } = string.Empty;
+        public string? Rfid { get; set; }
+        public string Species { get; set; } = string.Empty;
+        public string Breed { get; set; } = string.Empty;
+        public string Sex { get; set; } = string.Empty;
+        public DateOnly BirthDate { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public decimal? CurrentWeightKg { get; set; }
+        public DateOnly? LastWeightDate { get; set; }
+        public DateOnly? WithdrawalUntil { get; set; }
+        public long Version { get; set; }
+
+        public AnimalDto ToDto() => new(Id, FarmId, Tag, Rfid, Species, Breed, Sex, BirthDate,
+            Status, CurrentWeightKg, LastWeightDate, WithdrawalUntil, Version);
+    }
+
     private sealed class AnimalDashboardRow
     {
         public long ActiveAnimals { get; set; }
@@ -149,5 +176,4 @@ public sealed class Livestock360Service(DatabaseExecutor db, ITenantContext tena
     private Task<T> Tx<T>(Func<NpgsqlConnection,NpgsqlTransaction,Task<T>> work)=>db.InTenantTransactionAsync(work,CancellationToken.None);
     private Task Tx(Func<NpgsqlConnection,NpgsqlTransaction,Task> work)=>db.InTenantTransactionAsync(work,CancellationToken.None);
     private static int GestationDays(string species)=>species.ToUpperInvariant() switch{"BOVINE" or "BOVINO"=>283,"BUFFALO" or "BUBALINO"=>310,"SHEEP" or "OVINO"=>150,"GOAT" or "CAPRINO"=>150,"SWINE" or "SUINO" or "SUÍNO"=>114,_=>280};
-    private static void ValidateWeight(decimal? value){if(value<0)throw new DomainException("Peso não pode ser negativo.","agro360.livestock_weight_invalid");}
 }

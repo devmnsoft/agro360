@@ -9,6 +9,10 @@
 - [ ] Percorrer login, dashboards, tenants, usuários, perfis e pecuária; conferir mini manual, tooltips, toasts e confirmações.
 - [ ] Homologar tema claro, contraste, teclado e larguras 320/768/1440 px.
 - [ ] Confirmar que o commit não contém binários, segredos ou artefatos de build.
+- [ ] Executar o SQL duas vezes com `ON_ERROR_STOP=1` e confirmar um único tenant `santa-clara`, usuário, perfil e vínculos de permissão.
+- [ ] Entrar como Super Administrador e Administrador Santa Clara; conferir os 18 grupos na ordem prevista e ausência de itens sem permissão.
+- [ ] Conferir `Como usar esta tela` em todas as Razor Pages, no desktop e mobile, inclusive após navegar diretamente por URL.
+- [ ] Simular API indisponível, 400, 401, 403 e 404; validar loading finito, limpeza da sessão e mensagem acionável com código de suporte quando disponível.
 
 ## Sprint 31
 

@@ -29,6 +29,36 @@
             sessionStorage.clear();
         }
         renderUser();
+        renderNavigation();
+    }
+
+    function normalizePermission(value) {
+        return String(value ?? "")
+            .toLowerCase()
+            .replace(/^agro360\./, "")
+            .replaceAll("_", ".");
+    }
+
+    function renderNavigation() {
+        const permissions = new Set((state.session?.permissions ?? []).map(normalizePermission));
+        const isSuperAdministrator = state.session?.email?.toLowerCase() === "superadmin@mnsoft.com.br";
+        document.querySelectorAll(".main-nav a").forEach(link => {
+            const required = (link.dataset.permissions ?? "").split(",").filter(Boolean).map(normalizePermission);
+            const allowed = Boolean(state.session) && (isSuperAdministrator
+                || link.dataset.publicMenu === "true"
+                || (link.dataset.superAdmin !== "true" && required.some(permission => permissions.has(permission))));
+            link.hidden = !allowed;
+            link.setAttribute("aria-hidden", String(!allowed));
+        });
+        document.querySelectorAll(".main-nav .nav-label").forEach(label => {
+            let sibling = label.nextElementSibling;
+            let hasVisibleLink = false;
+            while (sibling && !sibling.classList.contains("nav-label")) {
+                if (sibling.matches("a:not([hidden])")) hasVisibleLink = true;
+                sibling = sibling.nextElementSibling;
+            }
+            label.hidden = !hasVisibleLink;
+        });
     }
 
     function renderUser() {
@@ -431,6 +461,7 @@
         const savedTheme = localStorage.getItem(storageKeys.theme);
         if (savedTheme) document.documentElement.dataset.theme = savedTheme;
         renderUser();
+        renderNavigation();
         element("login-form").addEventListener("submit", login);
         element("login-form").addEventListener("input", event => {
             if (event.target.matches("input[required]")) validateLoginForm(event.currentTarget);

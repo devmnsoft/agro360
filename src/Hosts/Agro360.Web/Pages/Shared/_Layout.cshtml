@@ -51,38 +51,28 @@
                 <button type="button" data-feature="context">Alterar contexto <svg><use href="#i-arrow" /></svg></button>
             </div>
             <nav class="main-nav" aria-label="Navegação principal">
+                <span class="nav-label">Visão geral</span>
+                <a class="active" href="/" data-permissions="dashboard.read"><svg><use href="#i-grid" /></svg><span>Início / Dashboard</span></a>
+                <a href="/Saas" data-super-admin="true"><svg><use href="#i-grid" /></svg><span>Administração SaaS MNSOFT</span><i>global</i></a>
+                <a href="/Saas" data-super-admin="true"><svg><use href="#i-chart" /></svg><span>Clientes / Tenants</span></a>
+                <a href="/Saas" data-permissions="governance.read,security.sessions"><svg><use href="#i-grid" /></svg><span>Usuários e Perfis</span></a>
+                <a href="/Agriculture" data-permissions="properties.read"><svg><use href="#i-map" /></svg><span>Fazendas e Unidades</span></a>
                 <span class="nav-label">Operação</span>
-                <a class="active" href="/"><svg><use href="#i-grid" /></svg><span>Command Center</span></a>
-                <a href="/field"><svg><use href="#i-map" /></svg><span>Campo Mobile</span><i>offline</i></a>
-                <a href="/Maps"><svg><use href="#i-map" /></svg><span>Mapa Agro</span><i>geo</i></a>
-                <a href="/Agriculture"><svg><use href="#i-map" /></svg><span>Propriedades e agricultura</span><i>core</i></a>
-                <a href="/#livestock"><svg><use href="#i-animal" /></svg><span>Pecuária</span><i>core</i></a>
-                <a href="/#storage"><svg><use href="#i-box" /></svg><span>Estoque e armazenagem</span><i>core</i></a>
-                <a href="/#operations"><svg><use href="#i-coins" /></svg><span>Compras e operação</span></a>
-                <span class="nav-label">Gestão</span>
-                <a href="/crm"><svg><use href="#i-chart" /></svg><span>CRM &amp; Ciclo do Cliente</span><i>S47</i></a>
-                <a href="/saas"><svg><use href="#i-grid" /></svg><span>Governança SaaS</span><i>admin</i></a>
-                <a href="/governance"><svg><use href="#i-grid" /></svg><span>Governança de Dados</span><i>S48</i></a>
-                <a href="/Deployment"><svg><use href="#i-grid" /></svg><span>Implantação</span><i>novo</i></a>
-                <a href="/Finance"><svg><use href="#i-coins" /></svg><span>Financeiro e Controladoria</span></a>
-                <a href="/Procurement"><svg><use href="#i-box" /></svg><span>Compras e Suprimentos</span><i>novo</i></a>
-                <a href="/Production"><svg><use href="#i-chart" /></svg><span>Produção Agroindustrial</span><i>PCP</i></a>
-                <a href="/Export"><svg><use href="#i-truck" /></svg><span>Exportação e Trading</span><i>novo</i></a>
-                <a href="/Fiscal"><svg><use href="#i-coins" /></svg><span>Fiscal e Faturamento</span><i>novo</i></a>
-                <a href="/Maps"><svg><use href="#i-truck" /></svg><span>Logística regional</span></a>
-                <a href="/inteligencia-agro360"><svg><use href="#i-chart" /></svg><span>Inteligência Agro360</span><i>360</i></a>
-                <a href="/Reports"><svg><use href="#i-chart" /></svg><span>Relatórios</span><i>CSV</i></a>
-                <a href="/compliance"><svg><use href="#i-leaf" /></svg><span>Compliance &amp; ESG</span><i>ESG</i></a>
-                <a href="/Documents"><svg><use href="#i-box" /></svg><span>Documentos e Evidências</span><i>novo</i></a>
-                <a href="/Integrations">Integrações</a>
-                <a href="/ecosystem"><svg><use href="#i-grid" /></svg><span>Marketplace &amp; Parceiros</span><i>SaaS</i></a>
-                <a href="/Cooperatives"><svg><use href="#i-coins" /></svg><span>Cooperativas &amp; B2B</span><i>novo</i></a>
-                <a href="/RuralHr"><svg><use href="#i-chart" /></svg><span>RH Rural &amp; SST</span><i>novo</i></a>
-                <a href="/Sst"><svg><use href="#i-bell" /></svg><span>SST Rural</span><i>segurança</i></a>
-                <a href="/Fleet"><svg><use href="#i-truck" /></svg><span>Frota e Máquinas</span><i>novo</i></a>
-                <a href="/support"><svg><use href="#i-bell" /></svg><span>Atendimento e Suporte</span><i>SLA</i></a>
-            <a href="/Work"><svg><use href="#i-bell" /></svg><span>Workflows &amp; Tarefas</span><i>S49</i></a>
-</nav>
+                <a href="/Agriculture" data-permissions="agriculture.read"><svg><use href="#i-leaf" /></svg><span>Agricultura</span></a>
+                <a href="/#livestock" data-permissions="livestock.read"><svg><use href="#i-animal" /></svg><span>Pecuária</span></a>
+                <a href="/#storage" data-permissions="inventory.read,storage.read"><svg><use href="#i-box" /></svg><span>Estoque e Almoxarifado</span></a>
+                <a href="/Procurement" data-permissions="purchasing.read"><svg><use href="#i-box" /></svg><span>Compras e Fornecedores</span></a>
+                <a href="/Production" data-permissions="production.read"><svg><use href="#i-chart" /></svg><span>Produção Agroindustrial</span></a>
+                <a href="/Commercial" data-permissions="commercial.read"><svg><use href="#i-coins" /></svg><span>Comercial e Vendas</span></a>
+                <a href="/Finance" data-permissions="finance.read"><svg><use href="#i-coins" /></svg><span>Financeiro e Custos</span></a>
+                <a href="/Maps" data-permissions="logistics.read,regional-logistics.read"><svg><use href="#i-truck" /></svg><span>Logística</span></a>
+                <a href="/Compliance" data-permissions="compliance.read,esg.read"><svg><use href="#i-leaf" /></svg><span>Qualidade e Compliance</span></a>
+                <a href="/Documents" data-permissions="documents.read"><svg><use href="#i-box" /></svg><span>Documentos e Evidências</span></a>
+                <a href="/Reports" data-permissions="intelligence.read,finance.export"><svg><use href="#i-chart" /></svg><span>Relatórios e Analytics</span></a>
+                <span class="nav-label">Sistema</span>
+                <a href="/Governance" data-permissions="governance.read,integrations.read"><svg><use href="#i-grid" /></svg><span>Configurações</span></a>
+                <a href="/Support" data-public-menu="true"><svg><use href="#i-bell" /></svg><span>Ajuda / Manual do Sistema</span></a>
+            </nav>
             <div class="sidebar-footer">
                 <div class="sync-state"><span></span><div><strong>Serviços online</strong><small id="sync-time">verificando agora</small></div></div>
                 <button class="user-chip" type="button" id="logout-button">
@@ -104,6 +94,14 @@
                     <a class="icon-button notification-button" href="/Compliance" aria-label="Alertas de conformidade"><svg><use href="#i-bell" /></svg><span></span></a>
                 </div>
             </header>
+            <details class="screen-help global-screen-help">
+                <summary><span>Como usar esta tela</span><small>orientação rápida</small></summary>
+                <div>
+                    <p><strong>Para que serve:</strong> esta área reúne os dados e ações de @ViewData["Title"] disponíveis para o seu cliente e perfil.</p>
+                    <p><strong>Como trabalhar:</strong> confira o contexto ativo, preencha os campos marcados com * e use os seletores por nome — nunca informe IDs técnicos.</p>
+                    <p><strong>Regras e resultado:</strong> plano, status, permissões e validações podem limitar ações. Ao salvar, o dado é persistido e auditado; ações críticas pedem confirmação e qualquer falha apresenta uma orientação ou código de suporte.</p>
+                </div>
+            </details>
             @RenderBody()
         </main>
     </div>
@@ -132,7 +130,10 @@
             <label>Senha<input name="password" type="password" autocomplete="current-password" minlength="12" placeholder="••••••••••••" aria-describedby="password-error" data-help="Digite sua senha de acesso. O Agro360 nunca exibe nem envia a senha em mensagens." required /><span class="login-field-error" id="password-error"></span></label>
             <button class="primary-button" type="submit"><span>Entrar no Agro360</span><svg><use href="#i-arrow" /></svg></button>
             <button class="connection-button" id="test-api-connection" type="button"><i></i><span>Testar conexão com a API</span></button>
-            <a class="swagger-link" href="@($"{apiBaseUrl.TrimEnd('/')}/swagger")" target="_blank" rel="noopener noreferrer">Abrir documentação Swagger ↗</a>
+            @if (HostEnvironment.IsDevelopment())
+            {
+                <a class="swagger-link" href="@($"{apiBaseUrl.TrimEnd('/')}/swagger")" target="_blank" rel="noopener noreferrer">Abrir documentação Swagger ↗</a>
+            }
             <div class="form-message" id="login-message" role="alert" aria-live="assertive"></div>
             <small>Agro360 by MNSOFT · Sessão criptografada e isolada por cliente.</small>
         </form>
