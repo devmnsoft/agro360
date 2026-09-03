@@ -387,3 +387,9 @@ A camada global de formulários adiciona validação acessível por campo e resu
 
 ## Instalação PostgreSQL sem Docker (schema canônico)
 Configure `ConnectionStrings__Agro360` para um PostgreSQL externo e execute `psql "$ConnectionStrings__Agro360" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql`. O instalador cria exclusivamente o schema `agro360`; os módulos são preservados por prefixos (`identity_users`, `finance_payables`, etc.). A senha inicial do administrador nunca pertence ao SQL: defina `AGRO360_SUPERADMIN_INITIAL_PASSWORD` antes do bootstrap seguro da aplicação. Em produção não há senha padrão; em Development uma senha configurada continua exigindo troca no primeiro acesso.
+
+## Operação assistida e experiência do usuário
+
+- Consulte o [Manual do usuário](docs/USER-MANUAL.md) para acesso, perfis, módulos, dashboards, alertas e suporte.
+- Siga as [Diretrizes de UX](docs/UX-GUIDELINES.md) ao criar telas, mini manuais, ajuda de campo e confirmações.
+- Execute o [Checklist de QA](docs/QA-CHECKLIST.md) antes de homologar uma entrega.

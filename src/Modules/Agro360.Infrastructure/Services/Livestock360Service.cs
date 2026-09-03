@@ -44,8 +44,8 @@ public sealed class Livestock360Service(DatabaseExecutor db, ITenantContext tena
             {
                 using var g=await c.QueryMultipleAsync(new CommandDefinition(DashboardSql,new{tenant.TenantId},t,cancellationToken:ct));
                 var animals=await g.ReadSingleAsync<AnimalDashboardRow>();
-                var species=(await g.ReadAsync<MetricDto>()).ToArray();
-                var categories=(await g.ReadAsync<MetricDto>()).ToArray();
+                var species=(await g.ReadAsync<MetricRow>()).Select(ToMetric).ToArray();
+                var categories=(await g.ReadAsync<MetricRow>()).Select(ToMetric).ToArray();
                 var herds=await g.ReadSingleAsync<long>();
                 var milk=await g.ReadSingleAsync<decimal>();
                 var reproduction=await g.ReadSingleAsync<ReproductionDashboardRow>();
@@ -83,7 +83,7 @@ public sealed class Livestock360Service(DatabaseExecutor db, ITenantContext tena
                count(*) filter(where status=4 and updated_at>=date_trunc('month',now())) as "Deaths",
                count(*) filter(where withdrawal_until>=current_date) as "InWithdrawal"
         from agro360.livestock_animals where tenant_id=@TenantId and deleted_at is null;
-        select species as "Name",count(*) as "Value" from agro360.livestock_animals
+        select coalesce(species,'NÃO INFORMADA') as "Name",count(*) as "Value" from agro360.livestock_animals
         where tenant_id=@TenantId and status in(1,2) and deleted_at is null group by species;
         select coalesce(h.category,'NÃO INFORMADA') as "Name",count(*) as "Value"
         from agro360.livestock_animals a left join agro360.livestock_herds h
@@ -113,9 +113,35 @@ public sealed class Livestock360Service(DatabaseExecutor db, ITenantContext tena
         select count(*) from agro360.livestock_handling_events
         where tenant_id=@TenantId and weight_kg is not null and occurred_on>=current_date-interval '30 days';
         """;
-    private sealed record AnimalDashboardRow(long ActiveAnimals,long UnderObservation,long Deaths,long InWithdrawal);
-    private sealed record ReproductionDashboardRow(long PregnantFemales,long ExpectedBirths);
-    private sealed record PastureDashboardRow(long InUse,long Resting);
+    private static MetricDto ToMetric(MetricRow row) => new(row.Name, Convert.ToDecimal(row.Value));
+
+    // Dashboard projections deliberately remain persistence-only mutable rows. Dapper can
+    // populate them without relying on positional-record constructor type matching (COUNT is bigint).
+    private sealed class MetricRow
+    {
+        public string Name { get; set; } = string.Empty;
+        public long Value { get; set; }
+    }
+
+    private sealed class AnimalDashboardRow
+    {
+        public long ActiveAnimals { get; set; }
+        public long UnderObservation { get; set; }
+        public long Deaths { get; set; }
+        public long InWithdrawal { get; set; }
+    }
+
+    private sealed class ReproductionDashboardRow
+    {
+        public long PregnantFemales { get; set; }
+        public long ExpectedBirths { get; set; }
+    }
+
+    private sealed class PastureDashboardRow
+    {
+        public long InUse { get; set; }
+        public long Resting { get; set; }
+    }
     private Task<IReadOnlyList<dynamic>> List(string sql,CancellationToken ct)=>Tx<IReadOnlyList<dynamic>>(async(c,t)=>(await c.QueryAsync(new CommandDefinition(sql,new{tenant.TenantId},t,cancellationToken:ct))).AsList());
     private Task<Guid> Upsert(string table,Guid? id,string columns,string values,string updates,object x,CancellationToken ct)=>Tx<Guid>(async(c,t)=>{var key=id??Guid.CreateVersion7();var args=new DynamicParameters(x);args.Add("Id",key);args.Add("TenantId",tenant.TenantId);args.Add("UserId",tenant.UserId);var sql=id is null?$"insert into {table}(id,tenant_id,{columns},created_at,created_by) values(@Id,@TenantId,{values},now(),@UserId)":$"update {table} set {updates},updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id";var n=await c.ExecuteAsync(new CommandDefinition(sql,args,t,cancellationToken:ct));if(n==0)throw new NotFoundException(table,key);await Audit(c,t,id is null?"create":"update",table,key,x,ct);return key;});
     private async Task Consume(NpgsqlConnection c,NpgsqlTransaction t,Guid? warehouse,Guid? product,decimal quantity,string unit,Guid reference,string type,CancellationToken ct){if(warehouse is null&&product is null)return;if(warehouse is null||product is null)throw new DomainException("Depósito e produto devem ser informados juntos.","agro360.inventory_references_required");var row=await c.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition("select id,available,reserved,average_cost,version,unit from agro360.inventory_stock_balances where tenant_id=@TenantId and warehouse_id=@Warehouse and product_id=@Product for update",new{tenant.TenantId,Warehouse=warehouse,Product=product},t,cancellationToken:ct))??throw new ConflictException("Insumo sem saldo.","agro360.inventory_insufficient_stock");if((decimal)row.available-(decimal)row.reserved<quantity)throw new ConflictException("Estoque insuficiente.","agro360.inventory_insufficient_stock");if(!string.Equals((string)row.unit,unit,StringComparison.OrdinalIgnoreCase))throw new DomainException("Unidade incompatível.","agro360.inventory_unit_mismatch");var balance=(decimal)row.available-quantity;await c.ExecuteAsync(new CommandDefinition("update agro360.inventory_stock_balances set available=@Balance,version=version+1,updated_at=now() where id=@Id and tenant_id=@TenantId and version=@Version; insert into agro360.inventory_stock_movements(id,tenant_id,warehouse_id,product_id,movement_type,quantity,unit,unit_cost,total_cost,reference_type,reference_id,balance_after,average_cost_after,balance_version,occurred_at,created_by) values(@Movement,@TenantId,@Warehouse,@Product,'CONSUMPTION',@Quantity,@Unit,@Cost,@Total,@Type,@Reference,@Balance,@Cost,@NewVersion,now(),@UserId)",new{Balance=balance,Id=(Guid)row.id,tenant.TenantId,Version=(long)row.version,Movement=Guid.CreateVersion7(),Warehouse=warehouse,Product=product,Quantity=quantity,Unit=unit,Cost=(decimal)row.average_cost,Total=quantity*(decimal)row.average_cost,Type=type,Reference=reference,NewVersion=(long)row.version+1,tenant.UserId},t,cancellationToken:ct));}

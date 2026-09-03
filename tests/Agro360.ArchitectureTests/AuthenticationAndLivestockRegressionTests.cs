@@ -69,6 +69,11 @@ public sealed class AuthenticationAndLivestockRegressionTests
         Assert.Contains("recentWeighings", service, StringComparison.Ordinal);
         Assert.Contains("LivestockDashboardStarted", service, StringComparison.Ordinal);
         Assert.Contains("LivestockDashboardCompleted", service, StringComparison.Ordinal);
+        Assert.Contains("ReadAsync<MetricRow>", service, StringComparison.Ordinal);
+        Assert.Contains("Select(ToMetric)", service, StringComparison.Ordinal);
+        Assert.DoesNotContain("ReadAsync<MetricDto>", service, StringComparison.Ordinal);
+        Assert.Contains("public long Value { get; set; }", service, StringComparison.Ordinal);
+        Assert.Contains("coalesce(species,'NÃO INFORMADA') as \"Name\"", service, StringComparison.Ordinal);
     }
 
     [Fact]

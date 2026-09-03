@@ -1,5 +1,15 @@
 # Checklist de homologação da Release Candidate
 
+## Sprint corretiva — dashboard pecuário e UX guiada
+
+- [ ] Executar `dotnet restore`, `dotnet build`, `dotnet test` e `dotnet format`.
+- [ ] Abrir `/swagger`, autenticar com usuário real, renovar o token e confirmar que erros mostram `traceId` sem stack trace.
+- [ ] Abrir os dashboards principal e pecuário com banco vazio e populado; conferir zeros/listas vazias e dados reais.
+- [ ] Confirmar aliases PascalCase, projeções `Row` e conversões explícitas nas agregações Dapper.
+- [ ] Percorrer login, dashboards, tenants, usuários, perfis e pecuária; conferir mini manual, tooltips, toasts e confirmações.
+- [ ] Homologar tema claro, contraste, teclado e larguras 320/768/1440 px.
+- [ ] Confirmar que o commit não contém binários, segredos ou artefatos de build.
+
 ## Sprint 31
 
 - [ ] Testar dois tenants e UUID cruzado em dashboard, listas, detalhes e assistente.
