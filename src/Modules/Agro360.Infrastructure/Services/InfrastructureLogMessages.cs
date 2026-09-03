@@ -54,6 +54,10 @@ internal static partial class InfrastructureLogMessages
     internal static partial void RefreshRejected(ILogger logger, string reason, Guid? tenantId, Guid? userId, string traceId, string origin);
     [LoggerMessage(1025, LogLevel.Information, "Refresh concluído. TenantId: {TenantId}; UserId: {UserId}; ExpiraEm: {ExpiresAt}; TokenRotacionado: {Rotated}; TraceId: {TraceId}")]
     internal static partial void RefreshSucceeded(ILogger logger, Guid tenantId, Guid userId, DateTimeOffset expiresAt, bool rotated, string traceId);
-    [LoggerMessage(1026, LogLevel.Error, "Falha no dashboard pecuário do tenant {TenantId}")]
-    internal static partial void LivestockDashboardFailed(ILogger logger, Guid tenantId, Exception exception);
+    [LoggerMessage(1026, LogLevel.Error, "Falha na operação {Operation} do dashboard pecuário. TenantId: {TenantId}; TraceId: {TraceId}")]
+    internal static partial void LivestockDashboardFailed(ILogger logger, string operation, Guid tenantId, string traceId, Exception exception);
+    [LoggerMessage(1027, LogLevel.Information, "Iniciando operação {Operation} do dashboard pecuário. TenantId: {TenantId}; TraceId: {TraceId}")]
+    internal static partial void LivestockDashboardStarted(ILogger logger, string operation, Guid tenantId, string traceId);
+    [LoggerMessage(1028, LogLevel.Information, "Operação {Operation} do dashboard pecuário concluída. TenantId: {TenantId}; TraceId: {TraceId}")]
+    internal static partial void LivestockDashboardCompleted(ILogger logger, string operation, Guid tenantId, string traceId);
 }
