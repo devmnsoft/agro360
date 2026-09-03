@@ -15,12 +15,37 @@ public sealed record NutritionItemCommand(Guid ProductId, decimal QuantityPerDay
 public sealed record NutritionPlanCommand(Guid FarmId, Guid? HerdId, string Name, DateOnly StartsOn, DateOnly? EndsOn, IReadOnlyList<NutritionItemCommand> Items);
 public sealed record FeedingCommand(Guid PlanId, Guid WarehouseId, DateOnly SuppliedOn, int HeadCount, IReadOnlyList<NutritionItemCommand> Items, string? Notes);
 public sealed record MilkProductionCommand(Guid FarmId, Guid? AnimalId, Guid? HerdId, DateOnly ProducedOn, decimal QuantityLiters, decimal DiscardedLiters, string? Quality, string? Destination, string? Notes);
-public sealed record LivestockDashboardDto(long ActiveAnimals, IReadOnlyList<MetricDto> BySpecies, IReadOnlyList<MetricDto> ByCategory, long ActiveHerds, long UnderObservation, long Deaths, decimal AverageDailyGainKg, decimal MilkThisMonthLiters, long PregnantFemales, long ExpectedBirths, long VaccinesDue, long InWithdrawal, long PasturesInUse, long PasturesResting, long OvercapacityAlerts, decimal NutritionCostMonth, decimal HealthCostMonth);
+public sealed record LivestockDashboardDto(
+    long ActiveAnimals,
+    IReadOnlyList<MetricDto> BySpecies,
+    IReadOnlyList<MetricDto> ByCategory,
+    long ActiveHerds,
+    long UnderObservation,
+    long Deaths,
+    decimal AverageDailyGainKg,
+    decimal MilkThisMonthLiters,
+    long PregnantFemales,
+    long ExpectedBirths,
+    long VaccinesDue,
+    long InWithdrawal,
+    long PasturesInUse,
+    long PasturesResting,
+    long OvercapacityAlerts,
+    decimal NutritionCostMonth,
+    decimal HealthCostMonth,
+    long PendingHandlings,
+    long HealthAlerts,
+    long RecentWeighings,
+    string Status)
+{
+    public static LivestockDashboardDto Empty { get; } = new(
+        0, [], [], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "Sem dados");
+}
 public sealed record MetricDto(string Name, decimal Value);
 
 public interface ILivestock360Service
 {
-    Task<dynamic?> GetAnimalAsync(Guid id, CancellationToken ct); Task<dynamic> UpdateAnimalAsync(Guid id, RegisterAnimalCommand command, CancellationToken ct); Task ChangeAnimalStatusAsync(Guid id, string status, AnimalStatusCommand command, CancellationToken ct); Task TransferAnimalAsync(Guid id, AnimalTransferCommand command, CancellationToken ct);
+    Task<AnimalDto?> GetAnimalAsync(Guid id, CancellationToken ct); Task<AnimalDto> UpdateAnimalAsync(Guid id, RegisterAnimalCommand command, CancellationToken ct); Task ChangeAnimalStatusAsync(Guid id, string status, AnimalStatusCommand command, CancellationToken ct); Task TransferAnimalAsync(Guid id, AnimalTransferCommand command, CancellationToken ct);
     Task<IReadOnlyList<dynamic>> ListHerdsAsync(CancellationToken ct); Task<Guid> SaveHerdAsync(Guid? id, HerdCommand command, CancellationToken ct);
     Task<IReadOnlyList<dynamic>> ListPasturesAsync(CancellationToken ct); Task<Guid> SavePastureAsync(Guid? id, PastureCommand command, CancellationToken ct); Task<IReadOnlyList<dynamic>> ListPaddocksAsync(CancellationToken ct); Task<Guid> SavePaddockAsync(Guid? id, PaddockCommand command, CancellationToken ct); Task MovePaddockAsync(Guid id, bool occupy, PaddockMovementCommand command, CancellationToken ct);
     Task<IReadOnlyList<dynamic>> ListEventsAsync(string kind, CancellationToken ct); Task<Guid> AddHandlingAsync(HandlingEventCommand command, CancellationToken ct); Task<Guid> AddHealthAsync(HealthEventCommand command, CancellationToken ct); Task<Guid> AddReproductionAsync(ReproductionEventCommand command, CancellationToken ct);

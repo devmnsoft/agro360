@@ -56,6 +56,22 @@ public sealed class AuthenticationAndLivestockRegressionTests
     }
 
     [Fact]
+    public void LivestockDashboardUsesRealSchemaColumnsAndStrongEndpointContract()
+    {
+        var service = Read("src/Modules/Agro360.Infrastructure/Services/Livestock360Service.cs");
+        var contract = Read("src/Modules/Agro360.Application/Contracts/Livestock360Contracts.cs");
+        var controller = Read("src/Hosts/Agro360.Api/Controllers/Livestock360Controller.cs");
+
+        Assert.Contains("Task<LivestockDashboardDto> DashboardAsync", contract, StringComparison.Ordinal);
+        Assert.Contains("Task<LivestockDashboardDto> Dashboard", controller, StringComparison.Ordinal);
+        Assert.Contains("left join agro360.livestock_herds", service, StringComparison.Ordinal);
+        Assert.DoesNotContain("select coalesce(category", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("recentWeighings", service, StringComparison.Ordinal);
+        Assert.Contains("LivestockDashboardStarted", service, StringComparison.Ordinal);
+        Assert.Contains("LivestockDashboardCompleted", service, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DatabaseFailuresLogStructuredPostgresMetadataWithoutSqlParameters()
     {
         var executor = Read("src/Modules/Agro360.Infrastructure/Persistence/DatabaseExecutor.cs");
