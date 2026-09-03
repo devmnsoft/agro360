@@ -69,6 +69,7 @@
         } catch {
             persistSession(null);
             showLogin();
+            toastWarning("Sessão expirada", "Entre novamente para continuar com segurança.");
             return false;
         }
     }
@@ -89,6 +90,10 @@
         button.querySelector("span").textContent = "Validando acesso...";
         message.textContent = "";
         try {
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                throw new Error("Preencha Cliente/Organização, e-mail e senha para continuar.");
+            }
             const data = Object.fromEntries(new FormData(form));
             const response = await fetch(`${apiBase}/api/v1/auth/login`, {
                 method: "POST",
@@ -107,15 +112,38 @@
             if (!response.ok) throw new Error(result.detail || "Não foi possível entrar.");
             persistSession(result);
             hideLogin();
-            toast("Acesso confirmado", "Os dados exibidos respeitam seu tenant e suas permissões.");
+            toastSuccess("Acesso confirmado", "Bem-vindo. Os dados respeitam sua organização e suas permissões.");
             await loadDashboard();
         } catch (error) {
-            message.textContent = error instanceof TypeError
-                ? "Não foi possível conectar à API. Abra https://localhost:7081/swagger e confirme se a API está rodando."
+            const detail = error instanceof TypeError
+                ? "Não foi possível conectar à API. Verifique se a Agro360.Api está rodando em https://localhost:7081 e se o Swagger abre corretamente."
                 : error.message;
+            message.textContent = detail;
+            error instanceof TypeError
+                ? toastError("API indisponível", detail)
+                : toastError("Não foi possível entrar", detail);
         } finally {
             button.disabled = false;
             button.querySelector("span").textContent = "Entrar no Agro 360";
+        }
+    }
+
+    async function testApiConnection() {
+        const button = element("test-api-connection");
+        button.disabled = true;
+        button.classList.add("checking");
+        try {
+            const response = await fetch(`${apiBase}/health`, { headers: { Accept: "application/json" } });
+            if (!response.ok) throw new Error(`A API respondeu com status ${response.status}. Verifique a conexão com o banco.`);
+            toastSuccess("API conectada", "A Agro360.Api e o banco de dados estão disponíveis.");
+        } catch (error) {
+            const detail = error instanceof TypeError
+                ? "Não foi possível conectar à API. Verifique se a Agro360.Api está rodando em https://localhost:7081 e se o Swagger abre corretamente."
+                : error.message;
+            toastError("Falha na conexão", detail);
+        } finally {
+            button.disabled = false;
+            button.classList.remove("checking");
         }
     }
 
@@ -321,13 +349,32 @@
         localStorage.setItem(storageKeys.theme, next);
     }
 
-    function toast(title, detail, error = false) {
+    function showToast(severity, title, detail) {
         const item = document.createElement("div");
-        item.className = `toast${error ? " error" : ""}`;
-        item.innerHTML = `<div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small></div>`;
+        item.className = `toast ${severity}`;
+        item.setAttribute("role", severity === "error" ? "alert" : "status");
+        item.innerHTML = `<span class="toast-icon" aria-hidden="true"></span><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small></div><button type="button" aria-label="Fechar mensagem">×</button>`;
+        item.querySelector("button").addEventListener("click", () => item.remove());
         element("toast-region").append(item);
         window.setTimeout(() => item.remove(), 5200);
     }
+
+    const toastSuccess = (title, detail) => showToast("success", title, detail);
+    const toastWarning = (title, detail) => showToast("warning", title, detail);
+    const toastError = (title, detail) => showToast("error", title, detail);
+    const toast = (title, detail, error = false) => error ? toastError(title, detail) : toastSuccess(title, detail);
+
+    function confirmDialog(title, message, confirmText = "Confirmar", cancelText = "Cancelar") {
+        const dialog = element("action-confirmation");
+        element("confirmation-title").textContent = title;
+        element("confirmation-consequence").textContent = message;
+        element("confirmation-submit").textContent = confirmText;
+        dialog.querySelector('[value="cancel"]').textContent = cancelText;
+        dialog.showModal();
+        return new Promise(resolve => dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true }));
+    }
+
+    Object.assign(window, { toastSuccess, toastWarning, toastError, confirmDialog });
 
     function setText(id, value) { element(id).textContent = value; }
     function escapeHtml(value) { const span = document.createElement("span"); span.textContent = String(value ?? ""); return span.innerHTML; }
@@ -346,6 +393,7 @@
         if (savedTheme) document.documentElement.dataset.theme = savedTheme;
         renderUser();
         element("login-form").addEventListener("submit", login);
+        element("test-api-connection").addEventListener("click", testApiConnection);
         element("logout-button").addEventListener("click", logout);
         element("search-trigger").addEventListener("click", openPalette);
         element("global-search").addEventListener("input", scheduleSearch);

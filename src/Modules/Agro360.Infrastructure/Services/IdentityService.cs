@@ -224,6 +224,10 @@ public sealed class IdentityService(
         var refreshExpiresAt = clock.UtcNow.AddDays(14);
         await connection.ExecuteAsync(new CommandDefinition(
             """
+            update agro360.identity_users
+            set last_login_at = now(), updated_at = now(), version = version + 1
+            where tenant_id = @TenantId and id = @UserId;
+
             insert into agro360.identity_refresh_tokens
                 (id, tenant_id, user_id, token_hash, expires_at, created_at)
             values

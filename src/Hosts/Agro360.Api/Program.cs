@@ -110,9 +110,9 @@ if (app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Swa
     app.UseSwagger();
     app.UseSwaggerUI(options =>
     {
-        options.DocumentTitle = "MNSOFT Agro 360 API";
+        options.DocumentTitle = "MNSOFT Agro360 API";
         options.RoutePrefix = "swagger";
-        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Agro 360 API v1");
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Agro360 API v1");
     });
 
     app.MapOpenApi();
