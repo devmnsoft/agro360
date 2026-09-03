@@ -45,6 +45,17 @@ public sealed class AuthenticationAndLivestockRegressionTests
     }
 
     [Fact]
+    public void LivestockDashboardUsesValueReturningTransactionOverload()
+    {
+        var service = Read("src/Modules/Agro360.Infrastructure/Services/Livestock360Service.cs");
+        var dashboard = service[service.IndexOf("DashboardAsync", StringComparison.Ordinal)..];
+        dashboard = dashboard[..dashboard.IndexOf("private Task<IReadOnlyList<dynamic>>", StringComparison.Ordinal)];
+
+        Assert.Contains("InTenantTransactionAsync<LivestockDashboardDto>", dashboard, StringComparison.Ordinal);
+        Assert.Contains("return new(", dashboard, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DatabaseFailuresLogStructuredPostgresMetadataWithoutSqlParameters()
     {
         var executor = Read("src/Modules/Agro360.Infrastructure/Persistence/DatabaseExecutor.cs");
