@@ -103,7 +103,7 @@
     function validateLoginForm(form) {
         const messages = {
             tenantSlug: "Informe o identificador da sua organização.",
-            email: "Informe um e-mail válido.",
+            email: "Informe um e-mail, CPF ou CNPJ válido.",
             password: "A senha deve ter pelo menos 12 caracteres."
         };
         let valid = true;
@@ -125,7 +125,7 @@
         button.querySelector("span").textContent = "Validando acesso...";
         try {
             if (!validateLoginForm(form)) {
-                throw new Error("Preencha Cliente/Organização, e-mail e senha para continuar.");
+                throw new Error("Preencha Cliente/Organização, e-mail, CPF ou CNPJ e senha para continuar.");
             }
             const data = Object.fromEntries(new FormData(form));
             const response = await fetch(`${apiBase}/api/v1/auth/login`, {
@@ -135,7 +135,7 @@
             });
             const result = await response.json().catch(() => ({}));
             if (response.status === 401 || response.status === 403) {
-                throw new Error(result.detail || "Cliente, e-mail ou senha inválidos.");
+                throw new Error(result.detail || "Cliente, identificação ou senha inválidos.");
             }
             if (response.status === 400) {
                 const validationMessage = result.detail

@@ -118,8 +118,8 @@ public sealed class IdentityService(
 
     public async Task<AuthenticationResult> LoginAsync(LoginCommand command, CancellationToken cancellationToken)
     {
-        var email = command.Email.Trim();
-        ValidateEmail(email);
+        var identifier = NormalizeLoginIdentifier(command.Email);
+        var isDocument = !identifier.Contains('@');
         var tenantSlug = command.TenantSlug.Trim();
         var tenant = await database.InSystemTransactionAsync(async (connection, transaction) =>
             await connection.QuerySingleOrDefaultAsync<TenantLookup>(new CommandDefinition(
@@ -151,9 +151,10 @@ public sealed class IdentityService(
                        status, deleted_at as DeletedAt
                 from agro360.identity_users u
                 where u.tenant_id = @TenantId
-                  and u.email = lower(@Email);
+                  and ((not @IsDocument and u.email = lower(@Identifier))
+                    or (@IsDocument and u.normalized_document = @Identifier));
                 """,
-                new { TenantId = tenant.Id, Email = email },
+                new { TenantId = tenant.Id, Identifier = identifier, IsDocument = isDocument },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
@@ -356,6 +357,28 @@ public sealed class IdentityService(
                 Source = exception.Source
             };
         }
+    }
+
+    private static string NormalizeLoginIdentifier(string identifier)
+    {
+        var value = Guard.Required(identifier, "email", 254).Trim();
+        if (value.Contains('@'))
+        {
+            ValidateEmail(value);
+            return value.ToLowerInvariant();
+        }
+
+        var document = new string(value.Where(char.IsDigit).ToArray());
+        if (document.Length is not (11 or 14) || value.Any(character =>
+                !char.IsDigit(character) && character is not ('.' or '-' or '/' or ' ')))
+        {
+            throw new ValidationException(new Dictionary<string, string[]>
+            {
+                ["email"] = ["Informe um e-mail, CPF ou CNPJ válido."]
+            });
+        }
+
+        return document;
     }
 
     private sealed class TenantLookup
