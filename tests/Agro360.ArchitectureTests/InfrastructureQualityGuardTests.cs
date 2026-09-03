@@ -43,6 +43,20 @@ public sealed class InfrastructureQualityGuardTests
         Assert.DoesNotContain("USING gist", sql, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void DashboardDapperQueryMustUseExplicitAliasesAndAnInternalReadRow()
+    {
+        var source = File.ReadAllText(Path.Combine(ServicesRoot, "DashboardService.cs"));
+
+        Assert.DoesNotContain("select *", source, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("QueryAsync<RecentOperationRow>", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("QueryAsync<RecentOperation>", source, StringComparison.Ordinal);
+        foreach (var alias in new[] { "Id", "ModuleName", "OperationType", "Description", "Amount", "OccurredAt", "Status" })
+        {
+            Assert.Contains($"as \"{alias}\"", source, StringComparison.Ordinal);
+        }
+    }
+
     
     private static string FindRepositoryRoot()
     {
