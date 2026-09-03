@@ -48,39 +48,64 @@ public sealed class DashboardService(
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-            var operations = (await connection.QueryAsync<RecentOperation>(new CommandDefinition(
+            var operationRows = await connection.QueryAsync<RecentOperationRow>(new CommandDefinition(
                 """
-                select * from (
-                    select o.id, 'AGRICULTURE' as Module, o.operation_type as Type,
-                           concat(o.operation_type, ' · ', f.name) as Description,
-                           c.amount as Amount, o.executed_at as OccurredAt, o.status
+                select
+                    recent."Id" as "Id",
+                    recent."ModuleName" as "ModuleName",
+                    recent."OperationType" as "OperationType",
+                    recent."Description" as "Description",
+                    recent."Amount" as "Amount",
+                    recent."OccurredAt" as "OccurredAt",
+                    recent."Status" as "Status"
+                from (
+                    select
+                           o.id as "Id",
+                           'AGRICULTURE'::text as "ModuleName",
+                           coalesce(o.operation_type, 'OPERATION')::text as "OperationType",
+                           concat(coalesce(o.operation_type, 'Operação'), ' · ', coalesce(f.name, 'Talhão'))::text as "Description",
+                           (select sum(c.amount) from agro360.cost_entries c
+                            where c.source_id = o.id and c.tenant_id = o.tenant_id) as "Amount",
+                           o.executed_at as "OccurredAt",
+                           coalesce(o.status, 'UNKNOWN')::text as "Status"
                     from agro360.agriculture_field_operations o
                     join agro360.geo_fields f on f.id = o.field_id and f.tenant_id = o.tenant_id
-                    left join agro360.cost_entries c on c.source_id = o.id and c.tenant_id = o.tenant_id
                     where o.tenant_id = @TenantId and (@FarmId is null or o.farm_id = @FarmId)
 
                     union all
 
-                    select e.id, 'LIVESTOCK', e.event_type,
-                           concat(e.event_type, ' · animal ', a.tag), e.cost_amount,
-                           e.created_at, 'COMPLETED'
+                    select
+                           e.id as "Id",
+                           'LIVESTOCK'::text as "ModuleName",
+                           coalesce(e.event_type, 'EVENT')::text as "OperationType",
+                           concat(coalesce(e.event_type, 'Evento'), ' · animal ', coalesce(a.tag, 'sem identificação'))::text as "Description",
+                           e.cost_amount as "Amount",
+                           e.created_at as "OccurredAt",
+                           'COMPLETED'::text as "Status"
                     from agro360.livestock_animal_events e
                     join agro360.livestock_animals a on a.id = e.animal_id and a.tenant_id = e.tenant_id
                     where e.tenant_id = @TenantId and (@FarmId is null or a.farm_id = @FarmId)
 
                     union all
 
-                    select s.id, 'COMMERCIAL', 'SALE', concat('Venda · ', s.buyer_name),
-                           s.total_amount, s.created_at, s.status
+                    select
+                           s.id as "Id",
+                           'COMMERCIAL'::text as "ModuleName",
+                           'SALE'::text as "OperationType",
+                           concat('Venda · ', coalesce(s.buyer_name, 'Cliente'))::text as "Description",
+                           s.total_amount as "Amount",
+                           s.created_at as "OccurredAt",
+                           coalesce(s.status, 'UNKNOWN')::text as "Status"
                     from agro360.commercial_sales s
                     where s.tenant_id = @TenantId and (@FarmId is null or s.farm_id = @FarmId)
                 ) recent
-                order by OccurredAt desc
+                order by recent."OccurredAt" desc
                 limit 12;
                 """,
                 new { tenantContext.TenantId, FarmId = farmId },
                 transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false)).ToArray();
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+            var operations = operationRows.Select(MapRecentOperation).ToArray();
 
             var estimatedMargin = row.Receivables - row.OperationalCosts;
             var kpis = new DashboardKpis(
@@ -114,5 +139,41 @@ public sealed class DashboardService(
         public decimal OperationalCosts { get; init; }
 
         public int CriticalAlerts { get; init; }
+    }
+
+    internal static RecentOperation MapRecentOperation(RecentOperationRow row)
+    {
+        var occurredAtUtc = row.OccurredAt.Kind switch
+        {
+            DateTimeKind.Utc => row.OccurredAt,
+            DateTimeKind.Local => row.OccurredAt.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(row.OccurredAt, DateTimeKind.Utc)
+        };
+
+        return new RecentOperation(
+            row.Id,
+            row.ModuleName,
+            row.OperationType,
+            row.Description,
+            row.Amount,
+            new DateTimeOffset(occurredAtUtc),
+            row.Status);
+    }
+
+    internal sealed class RecentOperationRow
+    {
+        public Guid Id { get; set; }
+
+        public string ModuleName { get; set; } = string.Empty;
+
+        public string OperationType { get; set; } = string.Empty;
+
+        public string Description { get; set; } = string.Empty;
+
+        public decimal? Amount { get; set; }
+
+        public DateTime OccurredAt { get; set; }
+
+        public string Status { get; set; } = string.Empty;
     }
 }

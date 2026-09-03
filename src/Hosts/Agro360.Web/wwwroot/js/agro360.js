@@ -47,7 +47,9 @@
 
         if (!response.ok) {
             const problem = await response.json().catch(() => ({}));
-            const error = new Error(problem.detail || problem.title || `Falha HTTP ${response.status}`);
+            const supportCode = typeof problem.traceId === "string" ? problem.traceId : "";
+            const detail = problem.detail || problem.title || `Falha HTTP ${response.status}`;
+            const error = new Error(supportCode ? `${detail} Código de suporte: ${supportCode}.` : detail);
             error.status = response.status;
             error.problem = problem;
             throw error;
