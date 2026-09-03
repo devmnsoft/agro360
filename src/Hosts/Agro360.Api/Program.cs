@@ -20,6 +20,8 @@ builder.Host.UseSerilog((context, configuration) => configuration
 
 builder.Services.AddAgro360Infrastructure(builder.Configuration);
 builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddHttpContextAccessor();
@@ -85,7 +87,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-    ?? ["http://localhost:8080", "https://localhost:7080"];
+    ?? ["https://localhost:7080", "http://localhost:8080", "https://127.0.0.1:7080", "http://127.0.0.1:8080"];
 builder.Services.AddCors(options => options.AddPolicy("web", policy => policy
     .WithOrigins(allowedOrigins)
     .AllowAnyHeader()
@@ -103,13 +105,17 @@ app.UseAuthentication();
 app.UseMiddleware<TenantContextMiddleware>();
 app.UseAuthorization();
 
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
+    app.UseSwagger();
+    app.UseSwaggerUI(options =>
+    {
+        options.DocumentTitle = "MNSOFT Agro 360 API";
+        options.RoutePrefix = "swagger";
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Agro 360 API v1");
+    });
+
     app.MapOpenApi();
-}
-else
-{
-    app.MapOpenApi().RequireAuthorization();
 }
 
 app.MapHealthChecks("/health/live", new() { Predicate = _ => false });

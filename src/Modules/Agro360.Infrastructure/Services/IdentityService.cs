@@ -114,10 +114,8 @@ public sealed class IdentityService(
 
     public async Task<AuthenticationResult> LoginAsync(LoginCommand command, CancellationToken cancellationToken)
     {
-        var identifier = command.Identifier.Trim();
-        var normalizedIdentifier = new string(identifier.Where(char.IsDigit).ToArray());
-        if (!identifier.Contains('@') && normalizedIdentifier.Length is not (11 or 14))
-            throw new ForbiddenException("Credenciais inválidas ou tenant indisponível.");
+        var email = command.Email.Trim();
+        ValidateEmail(email);
         var tenant = await database.InSystemTransactionAsync(async (connection, transaction) =>
             await connection.QuerySingleOrDefaultAsync<TenantLookup>(new CommandDefinition(
                 "select id, status from agro360.tenancy_tenants where slug = lower(@Slug);",
@@ -137,20 +135,11 @@ public sealed class IdentityService(
                 select id, tenant_id as TenantId, name, email, password_hash as PasswordHash
                 from agro360.identity_users u
                 where u.tenant_id = @TenantId
-                  and (u.email = lower(@Identifier)
-                       or u.normalized_document = @NormalizedIdentifier
-                       or (@NormalizedIdentifier <> '' and exists (
-                           select 1 from agro360.saas_organizations o
-                           where o.tenant_id = u.tenant_id
-                             and o.document = @NormalizedIdentifier
-                             and u.id in (
-                               select ur.user_id from agro360.identity_user_roles ur
-                               join agro360.identity_roles r on r.id=ur.role_id and r.tenant_id=ur.tenant_id
-                               where ur.tenant_id=u.tenant_id and r.code='tenant-administrator'))))
+                  and u.email = lower(@Email)
                   and u.status = 'ACTIVE'
                   and u.deleted_at is null;
                 """,
-                new { TenantId = tenant.Id, Identifier = identifier, NormalizedIdentifier = normalizedIdentifier },
+                new { TenantId = tenant.Id, Email = email },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 

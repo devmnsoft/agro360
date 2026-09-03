@@ -1,7 +1,7 @@
 (() => {
     "use strict";
 
-    const apiBase = document.querySelector('meta[name="api-base"]')?.content?.replace(/\/$/, "") ?? "http://localhost:8081";
+    const apiBase = document.querySelector('meta[name="api-base"]')?.content?.replace(/\/$/, "") ?? "https://localhost:7081";
     const storageKeys = { session: "agro360.session", theme: "agro360.theme" };
     const state = { session: readJson(storageKeys.session), searchTimer: 0, selectedSearch: -1 };
     const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -96,13 +96,23 @@
                 body: JSON.stringify(data)
             });
             const result = await response.json().catch(() => ({}));
+            if (response.status === 401 || response.status === 403) {
+                throw new Error("Tenant, e-mail ou senha inválidos.");
+            }
+            if (response.status === 400) {
+                const validationMessage = result.detail
+                    || Object.values(result.errors || {}).flat().join(" ");
+                throw new Error(validationMessage || "Confira os dados informados.");
+            }
             if (!response.ok) throw new Error(result.detail || "Não foi possível entrar.");
             persistSession(result);
             hideLogin();
             toast("Acesso confirmado", "Os dados exibidos respeitam seu tenant e suas permissões.");
             await loadDashboard();
         } catch (error) {
-            message.textContent = error.message;
+            message.textContent = error instanceof TypeError
+                ? "Não foi possível conectar à API. Abra https://localhost:7081/swagger e confirme se a API está rodando."
+                : error.message;
         } finally {
             button.disabled = false;
             button.querySelector("span").textContent = "Entrar no Agro 360";

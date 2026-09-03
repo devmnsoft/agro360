@@ -10,7 +10,7 @@ public sealed record BootstrapCommand(
 
 public sealed record BootstrapResult(Guid TenantId, Guid OrganizationId, Guid UserId, string TenantSlug);
 
-public sealed record LoginCommand(string TenantSlug, string Identifier, string Password);
+public sealed record LoginCommand(string TenantSlug, string Email, string Password);
 
 public sealed record RefreshTokenCommand(string RefreshToken);
 

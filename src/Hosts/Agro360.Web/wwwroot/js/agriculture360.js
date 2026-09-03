@@ -1,6 +1,6 @@
 (() => {
  "use strict";
- const base=document.querySelector('meta[name="api-base"]')?.content?.replace(/\/$/,"")??"http://localhost:8081";
+ const base=document.querySelector('meta[name="api-base"]')?.content?.replace(/\/$/,"")??"https://localhost:7081";
  const session=()=>{try{return JSON.parse(localStorage.getItem("agro360.session"));}catch{return null;}};
  const request=async(path,options={})=>{const headers=new Headers(options.headers);headers.set("Content-Type","application/json");const token=session()?.accessToken;if(token)headers.set("Authorization",`Bearer ${token}`);const response=await fetch(base+path,{...options,headers});const body=await response.json().catch(()=>({}));if(!response.ok)throw new Error(body.detail||body.title||"Não foi possível concluir a operação.");return body;};
  const form=document.getElementById("agriculture-form"),list=document.getElementById("agriculture-list"),summary=document.getElementById("form-summary");let module="field-notes",saving=false;
