@@ -1,6 +1,9 @@
 @inject IConfiguration Configuration
+@inject IWebHostEnvironment HostEnvironment
 @{
     var apiBaseUrl = Configuration["ApiBaseUrl"] ?? "https://localhost:7081";
+    var environmentName = HostEnvironment.IsDevelopment() ? "Desenvolvimento"
+        : HostEnvironment.IsStaging() ? "Homologação" : "Produção";
 }
 <!doctype html>
 <html lang="pt-BR" data-theme="dark">
@@ -105,19 +108,29 @@
         </main>
     </div>
 
-    <div class="modal-backdrop" id="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title" hidden>
-        <form class="login-card" id="login-form">
+    <div class="modal-backdrop login-backdrop" id="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title" hidden>
+        <section class="login-experience">
+        <aside class="login-story" aria-hidden="true">
+            <div class="login-brand"><span class="brand-mark"><svg><use href="#i-leaf" /></svg></span><span>AGRO <b>360</b><small>BY MNSOFT</small></span></div>
+            <span class="eyebrow">Inteligência para o campo</span>
+            <h2>Gestão conectada.<br />Decisões que cultivam futuro.</h2>
+            <p>Dados, operação e governança em uma plataforma segura, desenhada para o agronegócio.</p>
+            <div class="login-signal"><i></i><span>Ambiente protegido e multitenant</span></div>
+        </aside>
+        <form class="login-card" id="login-form" novalidate>
             <div class="login-brand"><span class="brand-mark"><svg><use href="#i-leaf" /></svg></span><span>AGRO <b>360</b></span></div>
-            <span class="eyebrow">Plataforma MNSOFT · Acesso seguro</span>
-            <h2 id="login-title">Sua operação em uma única visão.</h2>
-            <p>Entre no tenant da sua empresa para acessar dados autorizados.</p>
-            <label>Tenant<input name="tenantSlug" autocomplete="organization" placeholder="ex.: fazenda-boa-vista" required /></label>
+            <div class="login-heading"><span class="eyebrow">Acesso seguro</span><span class="environment-badge">@environmentName</span></div>
+            <h2 id="login-title">Bem-vindo ao Agro360</h2>
+            <p>Acesse o ambiente exclusivo da sua organização.</p>
+            <label>Cliente / Organização<input name="tenantSlug" autocomplete="organization" placeholder="ex.: minha-fazenda" required /></label>
             <label>E-mail<input name="email" type="email" autocomplete="username" placeholder="voce@empresa.com.br" required /></label>
-            <label>Senha<input name="password" type="password" autocomplete="current-password" required /></label>
+            <label>Senha<input name="password" type="password" autocomplete="current-password" minlength="12" required /></label>
             <button class="primary-button" type="submit"><span>Entrar no Agro 360</span><svg><use href="#i-arrow" /></svg></button>
-            <div class="form-message" id="login-message" role="alert"></div>
-            <small>A sessão usa token de curta duração e refresh token rotativo.</small>
+            <button class="connection-button" id="test-api-connection" type="button"><i></i><span>Testar conexão com a API</span></button>
+            <div class="form-message" id="login-message" role="alert" aria-live="assertive"></div>
+            <small>Agro360 by MNSOFT · Sessão criptografada e isolada por cliente.</small>
         </form>
+        </section>
     </div>
 
     <div class="modal-backdrop palette-backdrop" id="command-palette" role="dialog" aria-modal="true" aria-label="Busca global" hidden>
