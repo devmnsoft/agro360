@@ -126,11 +126,11 @@
             <div class="login-brand"><span class="brand-mark"><svg><use href="#i-leaf" /></svg></span><span>AGRO <b>360</b></span></div>
             <div class="login-heading"><span class="eyebrow">Acesso seguro</span><span class="environment-badge">@environmentName</span></div>
             <h2 id="login-title">Bem-vindo ao Agro360</h2>
-            <p>Acesse o ambiente exclusivo da sua organização.</p>
-            <label>Cliente / Organização<input name="tenantSlug" autocomplete="organization" placeholder="ex.: minha-fazenda" aria-describedby="tenantSlug-error" required /><span class="login-field-error" id="tenantSlug-error"></span></label>
+            <p>Seu acesso é validado diretamente no banco e as permissões são carregadas conforme o seu perfil.</p>
+            <label>Cliente / Organização<input name="tenantSlug" autocomplete="organization" placeholder="ex.: minha-fazenda" aria-describedby="tenantSlug-help tenantSlug-error" required /><small class="login-field-help" id="tenantSlug-help">Identificador exclusivo do ambiente da sua empresa.</small><span class="login-field-error" id="tenantSlug-error"></span></label>
             <label>E-mail<input name="email" type="email" autocomplete="username" placeholder="voce@empresa.com.br" aria-describedby="email-error" required /><span class="login-field-error" id="email-error"></span></label>
             <label>Senha<input name="password" type="password" autocomplete="current-password" minlength="12" placeholder="••••••••••••" aria-describedby="password-error" required /><span class="login-field-error" id="password-error"></span></label>
-            <button class="primary-button" type="submit"><span>Entrar no Agro 360</span><svg><use href="#i-arrow" /></svg></button>
+            <button class="primary-button" type="submit"><span>Entrar no Agro360</span><svg><use href="#i-arrow" /></svg></button>
             <button class="connection-button" id="test-api-connection" type="button"><i></i><span>Testar conexão com a API</span></button>
             <a class="swagger-link" href="@($"{apiBaseUrl.TrimEnd('/')}/swagger")" target="_blank" rel="noopener noreferrer">Abrir documentação Swagger ↗</a>
             <div class="form-message" id="login-message" role="alert" aria-live="assertive"></div>

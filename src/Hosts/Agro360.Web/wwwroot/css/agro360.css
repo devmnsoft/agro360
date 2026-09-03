@@ -206,6 +206,7 @@ td strong { display: block; color: var(--text); font-size: 11px; font-weight: 65
 .login-card input:user-invalid { border-color: var(--red); box-shadow: 0 0 0 3px color-mix(in srgb, var(--red), transparent 86%); }
 .login-card input[aria-invalid="true"] { border-color: var(--red); box-shadow: 0 0 0 3px color-mix(in srgb, var(--red), transparent 86%); }
 .login-field-error { min-height: 11px; color: var(--red); font-size: 8px; font-weight: 500; }
+.login-field-help { color: var(--faint); font-size: 8px; font-weight: 500; line-height: 1.45; }
 .login-card[aria-busy="true"] { cursor: wait; }
 .login-card[aria-busy="true"] .primary-button svg { animation: pulse .8s infinite alternate; }
 .login-card > small { display: block; margin-top: 16px; color: var(--faint); font-size: 8px; text-align: center; }
