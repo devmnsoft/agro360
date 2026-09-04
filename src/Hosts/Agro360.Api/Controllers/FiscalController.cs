@@ -22,6 +22,8 @@ public sealed class FiscalController(IFiscalService service,IFiscalEmissionServi
  [HttpPost("documents/{id:guid}/submit"),Authorize(Policy=Permissions.FiscalApprove)] public async Task<IActionResult> Submit(Guid id,CancellationToken ct)=>Ok(await emission.SubmitAsync(id,ct));
  [HttpPost("documents/{id:guid}/query"),Authorize(Policy=Permissions.FiscalRead)] public async Task<IActionResult> Query(Guid id,CancellationToken ct)=>Ok(await emission.QueryAsync(id,ct));
  [HttpPost("documents/{id:guid}/cancel"),Authorize(Policy=Permissions.FiscalApprove)] public async Task<IActionResult> CancelDocument(Guid id,[FromBody]FiscalCancellationRequest x,CancellationToken ct)=>Ok(await emission.CancelAsync(id,x.Reason,ct));
+ [HttpPost("documents/{id:guid}/corrections"),Authorize(Policy=Permissions.FiscalApprove)] public async Task<IActionResult> CorrectDocument(Guid id,FiscalCorrectionCommand x,CancellationToken ct)=>Created($"api/fiscal/documents/{id}/corrections",new{id=await service.CreateCorrectionAsync(id,x,ct)});
+ [HttpGet("catalog/{resource}"),Authorize(Policy=Permissions.FiscalRead)] public Task<IReadOnlyList<dynamic>> Catalog(string resource,CancellationToken ct)=>service.CatalogAsync(resource,ct);
  [HttpPost("purchase-checks"),Authorize(Policy=Permissions.FiscalApprove)] public async Task<IActionResult> Check(FiscalPurchaseCheckCommand x,CancellationToken ct)=>Created("api/fiscal/purchase-checks",new{id=await service.CheckPurchaseAsync(x,ct)});
  [HttpGet("reports/{report}.csv"),Authorize(Policy=Permissions.FiscalReports)] public async Task<IActionResult> Report(string report,[FromQuery]FiscalQuery q,CancellationToken ct)=>File(await service.ExportCsvAsync(report,q,ct),"text/csv; charset=utf-8",$"fiscal-{report}-{DateTime.UtcNow:yyyyMMdd}.csv");
 }

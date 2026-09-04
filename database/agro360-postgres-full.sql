@@ -1433,6 +1433,8 @@ commit;
 
 
 
+
+
 -- Sprint 26 - Agro360 Campo, fila offline auditavel e checklists inteligentes
 begin;
 create table if not exists agro360.field_operations_occurrences(
@@ -3176,4 +3178,22 @@ create index if not exists ix_commercial_forecasts_tenant_status_date on agro360
 create index if not exists ix_commercial_forecasts_customer on agro360.commercial_billing_forecasts(tenant_id,customer_id,due_date) where deleted_at is null;
 create index if not exists ix_commercial_events_aggregate on agro360.commercial_events(tenant_id,aggregate_type,aggregate_id,created_at desc);
 insert into agro360.platform_schema_versions(version,description,installed_at) values('2.1.1','Comercial Agro 360: entregas e faturamento previsto',now()) on conflict(version) do update set description=excluded.description;
+commit;
+
+-- Sprint Fiscal Agro360: cartas de correção permanecem pendentes até confirmação de um provedor real.
+begin;
+create table if not exists agro360.fiscal_correction_letters(
+ id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id), fiscal_document_id uuid not null,
+ correction varchar(1000) not null, status varchar(30) not null default 'PENDING_INTEGRATION',
+ provider_protocol varchar(160), provider_message varchar(1000), sent_at timestamptz, confirmed_at timestamptz,
+ created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+ created_by uuid not null, updated_by uuid,
+ unique(tenant_id,id), foreign key(tenant_id,fiscal_document_id) references agro360.fiscal_documents(tenant_id,id),
+ check(length(trim(correction)) between 15 and 1000),
+ check(status in('PENDING_INTEGRATION','SUBMITTED','CONFIRMED','REJECTED','FAILED')),
+ check(status<>'CONFIRMED' or (provider_protocol is not null and confirmed_at is not null)),
+ check(status<>'REJECTED' or nullif(trim(provider_message),'') is not null));
+create index if not exists ix_fiscal_corrections_document on agro360.fiscal_correction_letters(tenant_id,fiscal_document_id,created_at desc);
+insert into agro360.platform_schema_versions(version,description,installed_at)
+values('6.4.0','Sprint Fiscal Agro360 - cartas de correção e fluxos auditáveis',now()) on conflict(version) do nothing;
 commit;

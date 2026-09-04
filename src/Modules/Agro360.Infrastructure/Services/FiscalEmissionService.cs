@@ -8,7 +8,7 @@ namespace Agro360.Infrastructure.Services;
 
 public sealed class FiscalProviderRegistry(IEnumerable<IFiscalProvider> registeredProviders) : IFiscalProviderRegistry
 {
-    private readonly IReadOnlyDictionary<string, IFiscalProvider> providers = registeredProviders.ToDictionary(x => x.ProviderKey, StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, IFiscalProvider> providers = registeredProviders.ToDictionary(x => x.ProviderKey, StringComparer.OrdinalIgnoreCase);
     public IReadOnlyCollection<string> ProviderKeys => providers.Keys.ToArray();
     public IFiscalProvider? Find(string providerKey) => providers.GetValueOrDefault(providerKey);
 }
