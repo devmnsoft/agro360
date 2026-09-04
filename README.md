@@ -399,3 +399,6 @@ Configure `ConnectionStrings__Agro360` para um PostgreSQL externo e execute `psq
 - Consulte o [Manual do usuário](docs/USER-MANUAL.md) para acesso, perfis, módulos, dashboards, alertas e suporte.
 - Siga as [Diretrizes de UX](docs/UX-GUIDELINES.md) ao criar telas, mini manuais, ajuda de campo e confirmações.
 - Execute o [Checklist de QA](docs/QA-CHECKLIST.md) antes de homologar uma entrega.
+# Maturidade SaaS e operação guiada
+
+O shell web mantém a sessão e o token compatível entre os módulos, apresenta menus por permissão e oferece acesso direto à **Central de Implantação** e à **Central de Tarefas e Alertas**. A implantação calcula sua prontidão exclusivamente a partir dos cadastros persistidos do tenant (usuários, perfis, módulos, fazendas e checklist), inclusive em banco vazio.

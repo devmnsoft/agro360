@@ -2997,7 +2997,10 @@ insert into agro360.platform_tenant_settings(tenant_id,language,currency,time_zo
 values ('00000000-0000-0000-0000-000000000001','pt-BR','BRL','America/Sao_Paulo','{"firstLoginPasswordChange":true}')
 on conflict(tenant_id) do update set preferences=excluded.preferences,updated_at=now();
 
--- Cliente de homologação funcional da sprint de UX. O CNPJ e o CPF são fictícios,
+-- Cliente de homologação funcional e idempotente da sprint de prontidão SaaS.
+-- Login validado pela aplicação: tenant santa-clara / admin@santaclara.agro360.local.
+-- A senha inicial nunca é persistida; somente o hash PBKDF2-SHA512 abaixo.
+-- O CNPJ e o CPF são fictícios,
 -- matematicamente válidos e reservados exclusivamente ao desenvolvimento interno.
 -- O contexto é alterado antes de qualquer tabela protegida por RLS; isso permite
 -- executar o instalador com a role da aplicação, sem depender de BYPASSRLS.

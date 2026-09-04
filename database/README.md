@@ -83,3 +83,12 @@ psql -v ON_ERROR_STOP=1 -d agro360 -f database/agro360-postgres-seed-dev.sql
 ```
 
 Esse arquivo é opcional; `agro360-postgres-full.sql` sozinho já deixa a plataforma inicializável.
+# Execução do instalador SQL
+
+`agro360-postgres-full.sql` é um script de texto e deve ser executado pelo **Query Tool** do PostgreSQL ou por:
+
+```bash
+psql "$AGRO360_CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
+```
+
+Não use `pg_restore` com esse arquivo; esse comando é destinado a dumps em formatos próprios. O bootstrap é idempotente e inclui o tenant `santa-clara`, o Administrador do Cliente e o Super Administrador com hashes PBKDF2-SHA512 compatíveis com a aplicação.

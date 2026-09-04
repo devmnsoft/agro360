@@ -42,4 +42,37 @@ public sealed class DeploymentService(DatabaseExecutor db,ITenantContext tenant,
  public Task<IReadOnlyList<ImportHistory>> ImportsAsync(CancellationToken ct)=>db.InTenantTransactionAsync(async(c,t)=>(IReadOnlyList<ImportHistory>)(await c.QueryAsync<ImportHistory>("select id,type,file_name FileName,status,total_rows TotalRows,valid_rows ValidRows,invalid_rows InvalidRows,created_at CreatedAt from agro360.deployment_imports where tenant_id=@TenantId order by created_at desc limit 100",new{tenant.TenantId},t)).ToArray(),ct);
  public Task RollbackImportAsync(Guid id,Guid actor,CancellationToken ct)=>db.InTenantTransactionAsync(async(c,t)=>{var n=await c.ExecuteAsync("update agro360.deployment_imports set status='ROLLED_BACK',rolled_back_at=now(),rolled_back_by=@Actor where id=@Id and tenant_id=@TenantId and status='COMPLETED'",new{id,tenant.TenantId,Actor=actor},t);if(n==0)throw new KeyNotFoundException("Importação concluída não encontrada.");},ct);
  public Task<DeploymentDashboard> DashboardAsync(CancellationToken ct)=>db.InSystemTransactionAsync(async(c,t)=>{var totals=await c.QuerySingleAsync<(int Done,int Pending,decimal Average)>("select count(*) filter(where progress=100)::int Done,count(*) filter(where progress<100)::int Pending,coalesce(avg(progress),0) Average from agro360.deployment_organization_progress",transaction:t);var modules=(await c.QueryAsync<string>("select module_code from agro360.deployment_organization_modules where enabled group by module_code order by count(*) desc limit 5",transaction:t)).ToArray();var segments=(await c.QueryAsync<string>("select segment from agro360.deployment_onboardings group by segment order by count(*) desc",transaction:t)).ToArray();var imports=(await c.QueryAsync<ImportHistory>("select id,type,file_name FileName,status,total_rows TotalRows,valid_rows ValidRows,invalid_rows InvalidRows,created_at CreatedAt from agro360.deployment_imports order by created_at desc limit 10",transaction:t)).ToArray();return new DeploymentDashboard(totals.Done,totals.Pending,totals.Average,modules,segments,imports.Sum(x=>x.InvalidRows),imports);},ct);
+ public Task<ImplementationCenter> ImplementationCenterAsync(CancellationToken ct)=>db.InTenantTransactionAsync(async(c,t)=>
+ {
+  var p=new{tenant.TenantId};
+  var tenantRow=await c.QuerySingleAsync<ImplementationTenantRow>(new CommandDefinition("""
+   select t.name TenantName,coalesce(p.name,t.plan_code,'Não definido') PlanName
+   from agro360.tenancy_tenants t
+   left join agro360.platform_tenants pt on pt.id=t.id and pt.deleted_at is null
+   left join agro360.platform_saas_plans p on p.id=pt.plan_id and p.deleted_at is null
+   where t.id=@TenantId
+   """,p,t,cancellationToken:ct));
+  using var grid=await c.QueryMultipleAsync(new CommandDefinition("""
+   select count(*)::int from agro360.identity_users where tenant_id=@TenantId and deleted_at is null;
+   select count(*)::int from agro360.identity_roles where tenant_id=@TenantId;
+   select count(*)::int from agro360.platform_tenant_modules where tenant_id=@TenantId and status in ('CONTRACTED','ACTIVE','TRIAL');
+   select count(*)::int from agro360.geo_farms where tenant_id=@TenantId and deleted_at is null;
+   select count(*)::int from agro360.deployment_checklist where tenant_id=@TenantId and required;
+   select count(*)::int from agro360.deployment_checklist where tenant_id=@TenantId and required and completed;
+   """,p,t,cancellationToken:ct));
+  var users=await grid.ReadSingleAsync<int>();var profiles=await grid.ReadSingleAsync<int>();var modules=await grid.ReadSingleAsync<int>();
+  var farms=await grid.ReadSingleAsync<int>();var required=await grid.ReadSingleAsync<int>();var completed=await grid.ReadSingleAsync<int>();
+  var pending=new List<string>();var alerts=new List<string>();var actions=new List<ImplementationAction>();
+  if(users<2){pending.Add("Convide ao menos um segundo usuário para evitar dependência de uma única conta.");actions.Add(new("Cadastrar usuários","Defina responsáveis e mantenha acessos individuais.","/Saas?view=users","HIGH"));}
+  if(profiles==0){pending.Add("Configure perfis e permissões por função.");actions.Add(new("Configurar perfis","Aplique o menor privilégio para cada função.","/Saas?view=roles","HIGH"));}
+  if(modules==0){alerts.Add("Nenhum módulo contratado/ativo foi associado ao cliente.");actions.Add(new("Revisar módulos","Confira plano, módulos e feature flags.","/Saas?view=features","CRITICAL"));}
+  if(farms==0){pending.Add("Cadastre a primeira fazenda ou unidade operacional.");actions.Add(new("Cadastrar fazenda","Informe dados cadastrais e área da unidade.","/Agriculture","HIGH"));}
+  if(required>completed){alerts.Add($"{required-completed} etapa(s) obrigatória(s) do checklist ainda estão pendentes.");actions.Add(new("Concluir checklist","Revise as etapas obrigatórias de implantação.","/Deployment?panel=checklist","MEDIUM"));}
+  if(actions.Count==0)actions.Add(new("Iniciar operação","A implantação essencial está concluída; registre as primeiras operações.","/","LOW"));
+  var baseProgress=required==0?0:(int)Math.Round(completed*100m/required);
+  var readiness=(users>0?20:0)+(profiles>0?20:0)+(modules>0?20:0)+(farms>0?20:0)+(required==0?0:baseProgress/5);
+  return new ImplementationCenter(tenantRow.TenantName,tenantRow.PlanName,Math.Clamp(readiness,0,100),users,profiles,modules,farms,pending,alerts,actions);
+ },ct);
+
+ private sealed class ImplementationTenantRow { public string TenantName {get;init;}=string.Empty; public string PlanName {get;init;}=string.Empty; }
 }

@@ -21,6 +21,10 @@
         state.session = session;
         if (session) {
             localStorage.setItem(storageKeys.session, JSON.stringify(session));
+            // Transitional keys are still consumed by module-specific clients. Keep
+            // them synchronized so a successful login authorizes every screen.
+            localStorage.setItem("agro360.accessToken", session.accessToken);
+            localStorage.setItem("agro360.access_token", session.accessToken);
             state.refreshStopped = false;
         } else {
             localStorage.removeItem(storageKeys.session);
