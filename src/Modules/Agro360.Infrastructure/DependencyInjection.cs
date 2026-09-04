@@ -80,6 +80,8 @@ public static class DependencyInjection
         services.AddScoped<IFiscalStockIntegration>(p => p.GetRequiredService<FiscalIntegrationAdapter>());
         services.AddScoped<IFiscalFinancialIntegration>(p => p.GetRequiredService<FiscalIntegrationAdapter>());
         services.AddScoped<IFiscalService, FiscalService>();
+        services.AddScoped<IFiscalProviderRegistry, FiscalProviderRegistry>();
+        services.AddScoped<IFiscalEmissionService, FiscalEmissionService>();
         return services;
     }
 }
