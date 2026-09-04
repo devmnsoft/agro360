@@ -58,3 +58,9 @@ Preferir código formatado e métodos pequenos a expressões comprimidas. Evento
 ### Banco canônico
 
 O instalador deve continuar sendo SQL puro e idempotente no schema único `agro360`. Toda tabela usada por service novo deve ser criada no mesmo ciclo, com índices GIN para JSONB quando aplicável. Seeds essenciais (tenant MNSOFT, módulos, permissões, perfis e Super Administrador) devem ser verificados em revisão e em ambiente PostgreSQL descartável.
+
+## Sprint 63 — auditoria fiscal e consistência comercial → financeiro → fiscal
+
+A auditoria identificou que o endpoint administrativo genérico aceitava transição direta para `EXTERNALLY_AUTHORIZED` e `CANCELLED`, sem prova de retorno externo. A transição foi bloqueada: autorização e cancelamento agora só são aplicados pelo serviço de emissão após resultado de `IFiscalProvider`, com validação mínima da confirmação e tentativa append-only.
+
+Também foram identificadas lacunas de idempotência, roteamento desacoplado e configuração por filial. A evolução adiciona chave única por tenant/origem, registry de adapters, perfis por filial, configuração sem segredo e histórico de tentativas. O repositório recebido é Agro360 (branch `work`), e não BarberSync; portanto, rotas, nomes e integrações exclusivas de agenda/barbearia não existem nesta árvore e não foram artificialmente criadas.

@@ -13,7 +13,23 @@ public sealed record FiscalPurchaseCheckCommand([Required]Guid PurchaseOrderId,G
 
 public interface IFiscalStockIntegration { Task IntegrateInvoiceAsync(Guid tenantId,Guid invoiceId,CancellationToken ct); }
 public interface IFiscalFinancialIntegration { Task CreateReceivablesAsync(Guid tenantId,Guid invoiceId,IReadOnlyList<FiscalInstallmentCommand> installments,CancellationToken ct); Task CreatePayablesAsync(Guid tenantId,Guid purchaseCheckId,CancellationToken ct); }
-public interface IFiscalIssuanceProvider { bool IsConfigured { get; } Task<string> RequestIssuanceAsync(Guid tenantId,Guid documentId,CancellationToken ct); }
+public enum FiscalProviderOutcome { Submitted, Authorized, Rejected, Cancelled, ProviderUnavailable }
+public sealed record FiscalProviderRequest(Guid TenantId,Guid DocumentId,string DocumentType,string IdempotencyKey,string? ProviderDocumentId=null,string? Reason=null);
+public sealed record FiscalProviderResult(FiscalProviderOutcome Outcome,string? ProviderDocumentId=null,string? ExternalNumber=null,string? AccessKey=null,string? VerificationCode=null,string? ProviderCode=null,string? PublicMessage=null);
+public interface IFiscalProvider
+{
+ string ProviderKey { get; }
+ Task<FiscalProviderResult> SubmitAsync(FiscalProviderRequest request,CancellationToken ct);
+ Task<FiscalProviderResult> QueryAsync(FiscalProviderRequest request,CancellationToken ct);
+ Task<FiscalProviderResult> CancelAsync(FiscalProviderRequest request,CancellationToken ct);
+}
+public interface IFiscalProviderRegistry { IFiscalProvider? Find(string providerKey); IReadOnlyCollection<string> ProviderKeys { get; } }
+public interface IFiscalEmissionService
+{
+ Task<FiscalProviderResult> SubmitAsync(Guid documentId,CancellationToken ct);
+ Task<FiscalProviderResult> QueryAsync(Guid documentId,CancellationToken ct);
+ Task<FiscalProviderResult> CancelAsync(Guid documentId,string reason,CancellationToken ct);
+}
 public interface IFiscalService
 {
  Task<dynamic> DashboardAsync(CancellationToken ct); Task<IReadOnlyList<dynamic>> OperationsAsync(FiscalQuery query,CancellationToken ct); Task<Guid> SaveOperationAsync(Guid? id,FiscalOperationCommand command,CancellationToken ct); Task<IReadOnlyList<dynamic>> RulesAsync(FiscalQuery query,CancellationToken ct); Task<Guid> SaveRuleAsync(Guid? id,FiscalRuleCommand command,CancellationToken ct); Task<IReadOnlyList<dynamic>> InvoicesAsync(FiscalQuery query,CancellationToken ct); Task<Guid> CreateInvoiceAsync(FiscalInvoiceCommand command,CancellationToken ct); Task ConfirmInvoiceAsync(Guid id,CancellationToken ct); Task CancelInvoiceAsync(Guid id,string reason,CancellationToken ct); Task<IReadOnlyList<dynamic>> DocumentsAsync(FiscalQuery query,CancellationToken ct); Task<Guid> CreateDocumentAsync(FiscalDocumentCommand command,CancellationToken ct); Task ChangeDocumentStatusAsync(Guid id,string status,string reason,CancellationToken ct); Task<Guid> CheckPurchaseAsync(FiscalPurchaseCheckCommand command,CancellationToken ct); Task<byte[]> ExportCsvAsync(string report,FiscalQuery query,CancellationToken ct);
