@@ -92,3 +92,7 @@ psql "$AGRO360_CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/agro360-postgre
 ```
 
 Não use `pg_restore` com esse arquivo; esse comando é destinado a dumps em formatos próprios. O bootstrap é idempotente e inclui o tenant `santa-clara`, o Administrador do Cliente e o Super Administrador com hashes PBKDF2-SHA512 compatíveis com a aplicação.
+
+## Comercial Agro 360 (sprint atual)
+
+Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo persistente e pendências reais de integração.

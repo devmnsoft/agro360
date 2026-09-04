@@ -40,3 +40,7 @@ A experiência deve refletir a ordem do backend: cadastro → validação → pe
 - Próximas ações devem apontar para rotas existentes e nunca solicitar GUIDs.
 - Erros da API devem preservar a mensagem clara e acrescentar o `traceId` como código de suporte quando fornecido.
 - Em larguras até 760 px, indicadores e colunas de ação devem se reorganizar sem rolagem horizontal.
+
+## Comercial Agro 360 (sprint atual)
+
+Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo persistente e pendências reais de integração.

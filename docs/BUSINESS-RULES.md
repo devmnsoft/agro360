@@ -99,3 +99,7 @@
 - Usuário, perfil, módulo contratado, fazenda e checklist obrigatório contribuem para a prontidão; ausência de dados gera uma ação recomendada, não um valor fictício.
 - Plano e módulo contratado não substituem permissão: o endpoint continua protegido por `deployment.read`.
 - O Super Administrador mantém acesso global por política; demais usuários permanecem no tenant emitido no token.
+
+## Comercial Agro 360 (sprint atual)
+
+Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo persistente e pendências reais de integração.

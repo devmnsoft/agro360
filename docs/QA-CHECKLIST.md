@@ -303,3 +303,7 @@ O bootstrap seguro recebe `AGRO360_SUPERADMIN_INITIAL_PASSWORD`, aplica o hash r
 - [ ] Abrir `/Work`, avaliar regras e confirmar que alertas correspondem a registros persistidos.
 - [ ] Invalidar o access token, confirmar refresh único e mensagem de sessão expirada em falha.
 - [ ] Validar estado vazio e responsividade a 100% de zoom e largura de 360 px.
+
+## Comercial Agro 360 (sprint atual)
+
+Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo persistente e pendências reais de integração.
