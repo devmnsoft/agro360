@@ -99,7 +99,7 @@ Os valores são apenas exemplos locais. Em pgAdmin/DBeaver, abra e execute o mes
 
 ### Homologação guiada local
 
-O instalador completo é idempotente e inclui o cliente interno **Fazenda Santa Clara** no plano Profissional. Para validar autenticação real no banco, use o tenant `santa-clara`, o usuário `admin@santaclara.agro360.local` e a senha inicial `SantaClara@360!`; a troca é obrigatória no primeiro acesso. O acesso global usa `agro360-platform` e `superadmin@mnsoft.com.br`. Essas credenciais e os documentos matematicamente válidos do seed são exclusivamente locais e não devem existir em produção.
+O instalador completo é idempotente e inclui o cliente interno **Fazenda Santa Clara** no plano Profissional. Para validar autenticação real no banco, use o tenant `santa-clara`, o usuário `admin@santaclara.agro360.local` e a senha inicial `SantaClara@2026!`; a troca é obrigatória no primeiro acesso. O acesso global usa o tenant `agro360-platform`, o usuário `superadmin@mnsoft.com.br` e a senha inicial `MNSoft@Agro360#2026`. Essas credenciais e os documentos matematicamente válidos do seed são exclusivamente locais e não devem existir em produção.
 
 Depois de aplicar o SQL, inicie API e Web, abra `/swagger` somente em Development e execute o login. A navegação é derivada das permissões devolvidas pela API; ocultar um item no cliente não substitui a autorização do endpoint.
 

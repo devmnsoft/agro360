@@ -12,7 +12,7 @@ O MNSOFT Agro360 é uma plataforma SaaS B2B para integrar cadastros, operação 
 
 ### Cliente interno de homologação
 
-Ao executar `database/agro360-postgres-full.sql`, o ambiente local recebe o tenant **Fazenda Santa Clara** (`santa-clara`), no plano Profissional, e o usuário `admin@santaclara.agro360.local`. A senha inicial de desenvolvimento é `SantaClara@360!` e deve ser alterada no primeiro acesso. O super administrador usa o tenant `agro360-platform` e o e-mail `superadmin@mnsoft.com.br`. Essas contas são destinadas apenas à homologação local; nunca copie as credenciais ou documentos fictícios para produção.
+Ao executar `database/agro360-postgres-full.sql`, o ambiente local recebe o tenant **Fazenda Santa Clara** (`santa-clara`), no plano Profissional, e o usuário `admin@santaclara.agro360.local`. A senha inicial de desenvolvimento é `SantaClara@2026!` e deve ser alterada no primeiro acesso. O super administrador usa o tenant `agro360-platform`, o e-mail `superadmin@mnsoft.com.br` e a senha inicial `MNSoft@Agro360#2026`. Essas contas são destinadas apenas à homologação local; nunca copie as credenciais ou documentos fictícios para produção.
 
 ## Usuários, perfis e permissões
 

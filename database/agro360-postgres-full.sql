@@ -2652,7 +2652,7 @@ create unique index if not exists ux_platform_single_active_super_admin on agro3
 
 -- Bootstrap idempotente do Super Administrador local. O hash abaixo e PBKDF2-SHA512
 -- (210.000 iteracoes), exatamente o formato aceito por Infrastructure.PasswordHasher.
--- A credencial de desenvolvimento Admin@123456 deve ser trocada no primeiro acesso.
+-- A credencial de desenvolvimento MNSoft@Agro360#2026 deve ser trocada no primeiro acesso.
 alter table agro360.identity_users add column if not exists document_type varchar(10);
 alter table agro360.identity_users add column if not exists must_change_password boolean not null default false;
 select set_config('app.tenant_id','00000000-0000-0000-0000-000000000001',false);
@@ -2660,7 +2660,7 @@ insert into agro360.tenancy_tenants(id,name,slug,status,plan_code)
 values ('00000000-0000-0000-0000-000000000001','MNSOFT / Agro360 Platform','agro360-platform',1,'ENTERPRISE')
 on conflict(id) do update set name=excluded.name, status=excluded.status;
 insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status)
-values ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','Super Administrador MNSOFT','superadmin@mnsoft.com.br','pbkdf2-sha512$210000$QWdybzM2ME1OU09GVCEh$hiccVEYBSwMAvQ4i85qQ+EN09O0fKa7TGmXfJyqHrGQ=','ACTIVE')
+values ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','Super Administrador MNSOFT','superadmin@mnsoft.com.br','pbkdf2-sha512$210000$QWdybzM2ME1OU09GVDI2IQ==$XPdvwPxWZJO1J6BgBee2oNx3qEmuDipAFEqE+RRiaos=','ACTIVE')
 on conflict(id) do update set tenant_id=excluded.tenant_id,name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,status='ACTIVE';
 update agro360.identity_users set normalized_document='18160057000113',document_type='CNPJ',must_change_password=true
 where id='00000000-0000-0000-0000-000000000002';
@@ -2999,6 +2999,9 @@ on conflict(tenant_id) do update set preferences=excluded.preferences,updated_at
 
 -- Cliente de homologação funcional da sprint de UX. O CNPJ e o CPF são fictícios,
 -- matematicamente válidos e reservados exclusivamente ao desenvolvimento interno.
+-- O contexto é alterado antes de qualquer tabela protegida por RLS; isso permite
+-- executar o instalador com a role da aplicação, sem depender de BYPASSRLS.
+select set_config('app.tenant_id','30000000-0000-0000-0000-000000000001',true);
 insert into agro360.tenancy_tenants(id,name,slug,timezone_id,status,plan_code)
 values ('30000000-0000-0000-0000-000000000001','Fazenda Santa Clara','santa-clara','America/Belem',1,'PROFESSIONAL')
 on conflict(id) do update set name=excluded.name,slug=excluded.slug,timezone_id=excluded.timezone_id,status=1,plan_code='PROFESSIONAL',deleted_at=null,updated_at=now();
@@ -3008,10 +3011,22 @@ on conflict(id) do update set legal_name=excluded.legal_name,trade_name=excluded
 insert into agro360.platform_tenant_settings(tenant_id,language,currency,time_zone,preferences)
 values ('30000000-0000-0000-0000-000000000001','pt-BR','BRL','America/Belem','{"firstLoginPasswordChange":true,"guidedHelp":true}')
 on conflict(tenant_id) do update set language='pt-BR',currency='BRL',time_zone='America/Belem',preferences=excluded.preferences,updated_at=now();
-select set_config('app.tenant_id','30000000-0000-0000-0000-000000000001',true);
+-- Mantém o cadastro no contexto SaaS legado ainda consumido pelos endpoints de
+-- clientes, limites, dashboard e configurações. Assim o tenant aparece na
+-- administração e não produz QuerySingle sem linha após uma instalação limpa.
+insert into agro360.saas_organizations(tenant_id,organization_type,document,responsible_name,responsible_email,plan_id,status,activated_at,onboarding_status)
+select '30000000-0000-0000-0000-000000000001','PRODUCER','11222333000181','Administrador Santa Clara','admin@santaclara.agro360.local',id,'ACTIVE',now(),'COMPLETED'
+from agro360.saas_plans where name='Profissional'
+on conflict(tenant_id) do update set organization_type=excluded.organization_type,document=excluded.document,responsible_name=excluded.responsible_name,responsible_email=excluded.responsible_email,plan_id=excluded.plan_id,status='ACTIVE',activated_at=coalesce(agro360.saas_organizations.activated_at,excluded.activated_at),blocked_at=null,block_reason=null,onboarding_status='COMPLETED',updated_at=now();
+insert into agro360.saas_usage_metrics(tenant_id)
+values ('30000000-0000-0000-0000-000000000001')
+on conflict(tenant_id) do nothing;
+insert into agro360.saas_organization_settings(tenant_id,unit_system,currency,time_zone,main_culture,main_activities,notification_preferences)
+values ('30000000-0000-0000-0000-000000000001','METRIC','BRL','America/Belem','pt-BR',array['AGRICULTURE','LIVESTOCK'],array['SYSTEM','SECURITY'])
+on conflict(tenant_id) do update set unit_system='METRIC',currency='BRL',time_zone='America/Belem',main_culture='pt-BR',main_activities=excluded.main_activities,notification_preferences=excluded.notification_preferences,updated_at=now();
 -- PBKDF2-SHA512, 210.000 iterações e salt de 16 bytes, no formato de PasswordHasher.
 insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,normalized_document,document_type,must_change_password,created_by)
-values ('30000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000001','Administrador Santa Clara','admin@santaclara.agro360.local','pbkdf2-sha512$210000$QWdybzM2MFNhbnRhQ2xhcmE=$Gc4ZyXeYAKAq7rf+P7O54grYZXxdXGcpqvwmTKiQnsk=','ACTIVE','52998224725','CPF',true,'30000000-0000-0000-0000-000000000003')
+values ('30000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000001','Administrador Santa Clara','admin@santaclara.agro360.local','pbkdf2-sha512$210000$QWdybzM2MFNhbnRhMjYhIQ==$4UDbHTJM4k2raurPMDeniCv/McIHqZ1BxdqSD1I7GKc=','ACTIVE','52998224725','CPF',true,'30000000-0000-0000-0000-000000000003')
 on conflict(id) do update set name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,status='ACTIVE',normalized_document=excluded.normalized_document,document_type='CPF',must_change_password=true,deleted_at=null,updated_at=now();
 -- A organização referencia o usuário criador; por isso deve ser criada somente
 -- depois do usuário para manter a restauração compatível com FKs imediatas.
