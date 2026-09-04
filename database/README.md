@@ -40,7 +40,7 @@ Não use a opção **Restore** do pgAdmin para esse arquivo, pois ela aciona o f
 - **Login/e-mail:** `superadmin@mnsoft.com.br`
 - **Documento:** `18.160.057/0001-13` (`CNPJ`)
 - **Perfil:** `SUPER_ADMIN`
-- **Senha inicial:** `Admin@123456`
+- **Senha inicial:** `MNSoft@Agro360#2026`
 - **Status:** Ativo
 
 > **Atenção:** esta senha é exclusivamente para desenvolvimento/local. O usuário é criado com `must_change_password = true`; troque-a no primeiro acesso e nunca reutilize essa credencial em produção.
@@ -73,6 +73,10 @@ where u.email='superadmin@mnsoft.com.br';
 ```
 
 Antes de publicar, execute também `./scripts/validate-full-sql.sh`, `dotnet restore`, `dotnet build --no-restore` e `dotnet test --no-build`.
+
+## Cliente de homologação incluído
+
+O instalador completo também inclui, de forma idempotente, o cliente **Fazenda Santa Clara** no plano Profissional. Para o teste local, use o tenant `santa-clara`, o e-mail `admin@santaclara.agro360.local` e a senha inicial `SantaClara@2026!` (perfil **Administrador do Cliente**). O SQL armazena exclusivamente hashes PBKDF2; as senhas em texto desta documentação são credenciais descartáveis de homologação e não devem ser usadas em produção.
 
 ## Seed operacional opcional de desenvolvimento
 

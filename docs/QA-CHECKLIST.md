@@ -1,5 +1,12 @@
 # Checklist de homologação da Release Candidate
 
+## Recuperação emergencial do shell
+
+- [ ] Confirmar que `_Layout.cshtml` renderiza `Styles`, `Head`, `RenderBody()` e `Scripts` uma única vez e nessa ordem.
+- [ ] Entrar, abrir Documentos, Comercial, Fiscal e Relatórios e confirmar que todos recebem o mesmo access token; renovar a sessão e repetir.
+- [ ] Conferir a ordem do menu, inclusive Fiscal e Central de Implantação, sem links para Razor Pages inexistentes.
+- [ ] Homologar sem overflow horizontal em 320, 768, 1024 e 1440 px, a 100% e 200% de zoom.
+
 ## Sprint corretiva — dashboard pecuário e UX guiada
 
 - [ ] Executar `dotnet restore`, `dotnet build`, `dotnet test` e `dotnet format`.
