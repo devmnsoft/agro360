@@ -41,7 +41,7 @@ html[data-theme="light"] {
 
 * { box-sizing: border-box; }
 html { min-height: 100%; background: var(--bg); }
-body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); }
+body { margin: 0; min-height: 100vh; overflow-x: hidden; background: var(--bg); color: var(--text); }
 button, input { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { color: inherit; }
@@ -172,16 +172,16 @@ td strong { display: block; color: var(--text); font-size: 11px; font-weight: 65
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px; background: rgba(2, 8, 6, .72); backdrop-filter: blur(14px); }
 .modal-backdrop[hidden] { display: none; }
-.login-backdrop { isolation: isolate; background: radial-gradient(circle at 12% 18%, rgba(35, 143, 94, .3), transparent 34%), radial-gradient(circle at 88% 82%, rgba(99, 230, 167, .14), transparent 32%), linear-gradient(135deg, #020806f5, #06130fee); }
+.login-backdrop { isolation: isolate; color-scheme: light; --surface: #fff; --surface-2: #f6f9f7; --surface-3: #eaf1ed; --line: rgba(25, 61, 46, .12); --line-strong: rgba(25, 61, 46, .2); --text: #13251d; --muted: #61736b; --faint: #829189; --accent: #19724c; --accent-soft: rgba(25, 114, 76, .09); background: radial-gradient(circle at 12% 18%, rgba(37, 132, 88, .13), transparent 34%), radial-gradient(circle at 88% 82%, rgba(89, 170, 131, .1), transparent 32%), linear-gradient(135deg, #edf3ef, #f9fbfa); }
 .login-backdrop::before { position: absolute; inset: 0; opacity: .16; background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 46px 46px; content: ""; mask-image: linear-gradient(to bottom, black, transparent); }
 .login-backdrop::after { position: absolute; z-index: -1; width: min(70vw, 900px); height: min(70vw, 900px); border: 1px solid rgba(99,230,167,.08); border-radius: 50%; content: ""; box-shadow: 0 0 0 90px rgba(99,230,167,.025), 0 0 0 180px rgba(99,230,167,.018); }
-.login-experience { position: relative; display: grid; width: min(940px, 100%); overflow: hidden; grid-template-columns: 1.1fr .9fr; border: 1px solid var(--line-strong); border-radius: 28px; background: var(--surface); box-shadow: 0 40px 120px #0009; }
-.login-story { display: flex; min-height: 600px; flex-direction: column; justify-content: center; padding: clamp(38px, 6vw, 72px); background: radial-gradient(circle at 20% 85%, rgba(99, 230, 167, .2), transparent 35%), linear-gradient(145deg, #0c251c, #07130f); }
+.login-experience { position: relative; display: grid; width: min(940px, 100%); overflow: hidden; grid-template-columns: 1.1fr .9fr; border: 1px solid var(--line-strong); border-radius: 28px; background: var(--surface); box-shadow: 0 30px 90px rgba(29, 68, 51, .18); }
+.login-story { display: flex; min-height: 600px; flex-direction: column; justify-content: center; padding: clamp(38px, 6vw, 72px); background: radial-gradient(circle at 20% 85%, rgba(58, 151, 105, .14), transparent 35%), linear-gradient(145deg, #eaf3ed, #f7faf8); }
 .login-story h2 { margin: 18px 0; font-size: clamp(34px, 4vw, 52px); line-height: 1.05; letter-spacing: -.05em; }
-.login-story p { max-width: 440px; color: #a7bcb3; font-size: 14px; line-height: 1.7; }
+.login-story p { max-width: 440px; color: var(--muted); font-size: 14px; line-height: 1.7; }
 .login-benefits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 28px; }
-.login-benefits span { display: grid; gap: 5px; padding: 13px; border: 1px solid rgba(133, 224, 180, .13); border-radius: 13px; color: #789287; background: rgba(255,255,255,.025); font-size: 8px; text-transform: uppercase; letter-spacing: .06em; }
-.login-benefits strong { color: #d8eee3; font-size: 11px; text-transform: none; letter-spacing: 0; }
+.login-benefits span { display: grid; gap: 5px; padding: 13px; border: 1px solid var(--line); border-radius: 13px; color: var(--muted); background: rgba(255,255,255,.62); font-size: 8px; text-transform: uppercase; letter-spacing: .06em; }
+.login-benefits strong { color: var(--text); font-size: 11px; text-transform: none; letter-spacing: 0; }
 .login-story .login-brand { position: absolute; top: 34px; }
 .login-story .login-brand span:last-child { display: grid; grid-template-columns: auto auto; column-gap: 4px; }
 .login-story .login-brand small { grid-column: 1/-1; color: var(--faint); font-size: 8px; letter-spacing: .18em; }

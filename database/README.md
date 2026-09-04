@@ -96,3 +96,7 @@ Não use `pg_restore` com esse arquivo; esse comando é destinado a dumps em for
 ## Comercial Agro 360 (sprint atual)
 
 Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo persistente e pendências reais de integração.
+
+## Verificação da recuperação
+
+Após executar o SQL completo, valide os dois acessos documentados acima e confirme que os respectivos perfis retornam permissões de dashboard e menus. O frontend não contém credenciais nem hashes: autenticação e renovação continuam sendo feitas pela API contra os hashes PBKDF2-SHA512 persistidos no PostgreSQL.
