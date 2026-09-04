@@ -406,3 +406,7 @@ O shell web mantém a sessão e o token compatível entre os módulos, apresenta
 ## Comercial Agro 360 (sprint atual)
 
 Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo persistente e pendências reais de integração.
+
+### Recuperação emergencial do shell web
+
+O shell compartilhado agora inicializa com segurança também nas páginas de módulos: elementos exclusivos do dashboard são opcionais, a navegação marca a rota atual e mantém Fiscal e Implantação acessíveis na ordem operacional. A experiência de login usa uma superfície clara, sem depender de imagens binárias. Consulte o checklist de QA antes de promover o ambiente.

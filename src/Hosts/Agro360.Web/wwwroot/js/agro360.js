@@ -65,6 +65,14 @@
             }
             label.hidden = !hasVisibleLink;
         });
+        const currentPath = window.location.pathname.toLowerCase().replace(/\/$/, "") || "/";
+        let activePathAssigned = false;
+        document.querySelectorAll(".main-nav a").forEach(link => {
+            const linkPath = new URL(link.href, window.location.origin).pathname.toLowerCase().replace(/\/$/, "") || "/";
+            const isCurrent = !activePathAssigned && linkPath === currentPath;
+            link.classList.toggle("active", isCurrent);
+            activePathAssigned ||= isCurrent;
+        });
     }
 
     function renderUser() {
@@ -231,7 +239,9 @@
 
     async function loadDashboard() {
         if (!state.session) { showLogin(); return; }
-        element("dashboard-subtitle").textContent = "Atualizando a malha de dados do tenant...";
+        const subtitle = element("dashboard-subtitle");
+        if (!subtitle) return;
+        subtitle.textContent = "Atualizando a malha de dados do tenant...";
         try {
             const result = await api("/api/v1/dashboard/command-center");
             renderDashboard(result);
@@ -240,7 +250,7 @@
             element("sync-time").textContent = "sincronizado agora";
         } catch (error) {
             if (error.status !== 401) toast("Não foi possível atualizar", error.message, true);
-            element("dashboard-subtitle").textContent = "Não foi possível consolidar os indicadores agora.";
+            subtitle.textContent = "Não foi possível consolidar os indicadores agora.";
         }
     }
 
@@ -451,7 +461,10 @@
 
     Object.assign(window, { toastSuccess, toastWarning, toastError, toastInfo, confirmDialog });
 
-    function setText(id, value) { element(id).textContent = value; }
+    function setText(id, value) {
+        const target = element(id);
+        if (target) target.textContent = value;
+    }
     function escapeHtml(value) { const span = document.createElement("span"); span.textContent = String(value ?? ""); return span.innerHTML; }
     function formatRelative(value) {
         const seconds = Math.round((new Date(value).getTime() - Date.now()) / 1000);
@@ -478,7 +491,7 @@
         element("global-search").addEventListener("input", scheduleSearch);
         element("theme-button").addEventListener("click", toggleTheme);
         element("menu-button").addEventListener("click", () => document.body.classList.toggle("menu-open"));
-        element("refresh-dashboard").addEventListener("click", loadDashboard);
+        element("refresh-dashboard")?.addEventListener("click", loadDashboard);
         document.querySelectorAll("[data-feature]").forEach(button => button.addEventListener("click", featureMessage));
         document.addEventListener("keydown", keydown);
         palette.addEventListener("click", event => { if (event.target === palette) closePalette(); });
