@@ -25,11 +25,13 @@
             // them synchronized so a successful login authorizes every screen.
             localStorage.setItem("agro360.accessToken", session.accessToken);
             localStorage.setItem("agro360.access_token", session.accessToken);
+            localStorage.setItem("agro360.token", session.accessToken);
             state.refreshStopped = false;
         } else {
             localStorage.removeItem(storageKeys.session);
             localStorage.removeItem("agro360.accessToken");
             localStorage.removeItem("agro360.access_token");
+            localStorage.removeItem("agro360.token");
             sessionStorage.clear();
         }
         renderUser();
