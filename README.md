@@ -402,3 +402,7 @@ Configure `ConnectionStrings__Agro360` para um PostgreSQL externo e execute `psq
 # Maturidade SaaS e operação guiada
 
 O shell web mantém a sessão e o token compatível entre os módulos, apresenta menus por permissão e oferece acesso direto à **Central de Implantação** e à **Central de Tarefas e Alertas**. A implantação calcula sua prontidão exclusivamente a partir dos cadastros persistidos do tenant (usuários, perfis, módulos, fazendas e checklist), inclusive em banco vazio.
+
+## Comercial Agro 360 (sprint atual)
+
+Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo persistente e pendências reais de integração.

@@ -52,3 +52,7 @@ Acesse **Visão geral → Central de Implantação**. O percentual combina usuá
 ## Central de Tarefas e Alertas
 
 Acesse **Operação → Tarefas e Alertas**. Os cartões e listas vêm das tarefas, regras, alertas, estoque, aprovações e notificações do cliente autenticado. Use **Avaliar regras** para gerar alertas a partir das condições configuradas; não são criados alertas demonstrativos.
+
+## Comercial Agro 360 (sprint atual)
+
+Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo persistente e pendências reais de integração.
