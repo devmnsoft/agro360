@@ -93,3 +93,9 @@
 - IA conhece usuário, permissão, fazenda, período e módulo;
 - recomendação mostra motivo, dados, período, confiança e fonte;
 - falha de integração usa retry limitado, backoff e dead-letter/outbox sem duplicar operação.
+# Prontidão de implantação
+
+- O diagnóstico é sempre calculado no backend e isolado pelo `tenant_id` autenticado.
+- Usuário, perfil, módulo contratado, fazenda e checklist obrigatório contribuem para a prontidão; ausência de dados gera uma ação recomendada, não um valor fictício.
+- Plano e módulo contratado não substituem permissão: o endpoint continua protegido por `deployment.read`.
+- O Super Administrador mantém acesso global por política; demais usuários permanecem no tenant emitido no token.

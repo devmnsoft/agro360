@@ -33,3 +33,10 @@ Permissão negada, registro inexistente e módulo não contratado são estados o
 ## Fluxo consistente
 
 A experiência deve refletir a ordem do backend: cadastro → validação → persistência → auditoria → evento/log → mensagem → atualização do dashboard. A validação no cliente melhora a experiência, mas não substitui a regra no backend.
+# Padrão das centrais guiadas
+
+- Mostrar progresso com texto e barra acessível, sem depender apenas de cor.
+- Em estados vazios, explicar o primeiro cadastro real que desbloqueia o fluxo.
+- Próximas ações devem apontar para rotas existentes e nunca solicitar GUIDs.
+- Erros da API devem preservar a mensagem clara e acrescentar o `traceId` como código de suporte quando fornecido.
+- Em larguras até 760 px, indicadores e colunas de ação devem se reorganizar sem rolagem horizontal.

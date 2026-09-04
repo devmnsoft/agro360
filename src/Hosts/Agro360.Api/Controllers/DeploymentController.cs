@@ -18,6 +18,7 @@ public sealed class DeploymentController(IDeploymentService service):ControllerB
  [HttpGet("imports")] public Task<IReadOnlyList<ImportHistory>> Imports(CancellationToken ct)=>service.ImportsAsync(ct);
  [HttpPost("imports/{id:guid}/rollback"),Authorize(Policy=Permissions.DeploymentWrite)] public async Task<IActionResult> Rollback(Guid id,CancellationToken ct){await service.RollbackImportAsync(id,Actor(),ct);return NoContent();}
  [HttpGet("dashboard")] public Task<DeploymentDashboard> Dashboard(CancellationToken ct)=>service.DashboardAsync(ct);
+ [HttpGet("center")] public Task<ImplementationCenter> Center(CancellationToken ct)=>service.ImplementationCenterAsync(ct);
  private Guid Actor()=>Guid.TryParse(User.FindFirstValue("sub"),out var id)?id:throw new UnauthorizedAccessException("Usuário autenticado inválido.");
 }
 public sealed record ChecklistUpdate(bool Completed,string? Notes);

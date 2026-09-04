@@ -10,6 +10,11 @@ public sealed record ImportRow(int Line,bool Valid,Dictionary<string,string> Val
 public sealed record ImportPreview(Guid Token,string Type,string FileName,int ValidRows,int InvalidRows,IReadOnlyList<ImportRow> Rows);
 public sealed record ImportHistory(Guid Id,string Type,string FileName,string Status,int TotalRows,int ValidRows,int InvalidRows,DateTimeOffset CreatedAt);
 public sealed record DeploymentDashboard(int ImplementedOrganizations,int PendingOrganizations,decimal AverageProgress,IReadOnlyList<string> MostUsedModules,IReadOnlyList<string> Segments,int ImportErrors,IReadOnlyList<ImportHistory> LatestImports);
+public sealed record ImplementationAction(string Title,string Description,string Url,string Severity);
+public sealed record ImplementationCenter(
+ string TenantName,string PlanName,int Progress,int Users,int Profiles,int ContractedModules,int Farms,
+ IReadOnlyList<string> PendingRegistration,IReadOnlyList<string> ConfigurationAlerts,
+ IReadOnlyList<ImplementationAction> NextActions);
 
 public interface IDeploymentService
 {
@@ -22,4 +27,5 @@ public interface IDeploymentService
  Task<IReadOnlyList<ImportHistory>> ImportsAsync(CancellationToken ct);
  Task RollbackImportAsync(Guid id,Guid actor,CancellationToken ct);
  Task<DeploymentDashboard> DashboardAsync(CancellationToken ct);
+ Task<ImplementationCenter> ImplementationCenterAsync(CancellationToken ct);
 }
