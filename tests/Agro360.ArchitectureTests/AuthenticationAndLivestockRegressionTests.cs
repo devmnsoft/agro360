@@ -41,7 +41,8 @@ public sealed class AuthenticationAndLivestockRegressionTests
         Assert.Contains("set revoked_at = now()", identity, StringComparison.Ordinal);
         Assert.Contains("/api/v1/auth/logout", client, StringComparison.Ordinal);
         Assert.Contains("element(\"refresh-dashboard\")?.addEventListener", client, StringComparison.Ordinal);
-        Assert.Contains("if (!element(\"dashboard-subtitle\")) return", client, StringComparison.Ordinal);
+        Assert.Contains("const subtitle = element(\"dashboard-subtitle\")", client, StringComparison.Ordinal);
+        Assert.Contains("if (!subtitle) return", client, StringComparison.Ordinal);
     }
 
     [Fact]

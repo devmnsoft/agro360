@@ -44,3 +44,10 @@ A experiência deve refletir a ordem do backend: cadastro → validação → pe
 ## Comercial Agro 360 (sprint atual)
 
 Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo persistente e pendências reais de integração.
+
+## Baseline visual de recuperação
+
+- O tema inicial é claro, com fundo neutro, cards brancos, bordas suaves e verde reservado a identidade, foco e status.
+- Nenhuma página pode provocar overflow horizontal no documento; tabelas extensas devem rolar dentro de `.table-wrap`.
+- Inicializadores globais devem tratar controles específicos de página como opcionais.
+- O item correspondente à rota atual deve ser o único link ativo na navegação.
