@@ -10,6 +10,7 @@ public sealed class AuthenticationAndLivestockRegressionTests
     {
         var identity = Read("src/Modules/Agro360.Infrastructure/Services/IdentityService.cs");
         var middleware = Read("src/Hosts/Agro360.Api/Middleware/ExceptionHandlingMiddleware.cs");
+        var program = Read("src/Hosts/Agro360.Api/Program.cs");
 
         foreach (var reason in new[] { "token ausente", "token não encontrado", "token expirado", "token revogado", "tenant divergente", "usuário inativo", "usuário bloqueado" })
             Assert.Contains(reason, identity, StringComparison.Ordinal);
@@ -17,6 +18,10 @@ public sealed class AuthenticationAndLivestockRegressionTests
         Assert.Contains("for update of rt", identity, StringComparison.Ordinal);
         Assert.Contains("set revoked_at = now()", identity, StringComparison.Ordinal);
         Assert.Contains("IssueTokensAsync", identity, StringComparison.Ordinal);
+        Assert.True(
+            program.IndexOf("UseSerilogRequestLogging", StringComparison.Ordinal) <
+            program.IndexOf("UseMiddleware<ExceptionHandlingMiddleware>", StringComparison.Ordinal),
+            "O logger deve observar o status final produzido pelo middleware de exceções.");
     }
 
     [Fact]
