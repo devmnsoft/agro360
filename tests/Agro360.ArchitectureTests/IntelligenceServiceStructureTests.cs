@@ -44,7 +44,7 @@ public sealed class IntelligenceServiceStructureTests
         Assert.DoesNotMatch(new Regex(@"\b(?:identity|finance|workflow|inventory)\.[a-z_]", RegexOptions.IgnoreCase), Service);
     }
 
-   
+
     private static string FindRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

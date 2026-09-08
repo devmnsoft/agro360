@@ -60,4 +60,12 @@ internal static partial class InfrastructureLogMessages
     internal static partial void LivestockDashboardStarted(ILogger logger, string operation, Guid tenantId, string traceId);
     [LoggerMessage(1028, LogLevel.Information, "Operação {Operation} do dashboard pecuário concluída. TenantId: {TenantId}; TraceId: {TraceId}")]
     internal static partial void LivestockDashboardCompleted(ILogger logger, string operation, Guid tenantId, string traceId);
+    [LoggerMessage(1029, LogLevel.Information, "Login iniciado. TenantSlug: {TenantSlug}; TipoIdentificador: {IdentifierType}; TraceId: {TraceId}")]
+    internal static partial void LoginStarted(ILogger logger, string tenantSlug, string identifierType, string traceId);
+    [LoggerMessage(1030, LogLevel.Warning, "Login rejeitado. Motivo: {Reason}; TenantId: {TenantId}; TipoIdentificador: {IdentifierType}; TraceId: {TraceId}")]
+    internal static partial void LoginRejected(ILogger logger, string reason, Guid? tenantId, string identifierType, string traceId);
+    [LoggerMessage(1031, LogLevel.Information, "Login concluído. TenantId: {TenantId}; UserId: {UserId}; TraceId: {TraceId}")]
+    internal static partial void LoginSucceeded(ILogger logger, Guid tenantId, Guid userId, string traceId);
+    [LoggerMessage(1032, LogLevel.Information, "Logout concluído. TenantId: {TenantId}; TokenRevogado: {Revoked}; TraceId: {TraceId}")]
+    internal static partial void LogoutCompleted(ILogger logger, Guid tenantId, bool revoked, string traceId);
 }

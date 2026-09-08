@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using System.Threading.RateLimiting;
 using Agro360.Api.Health;
@@ -7,6 +6,7 @@ using Agro360.Application;
 using Agro360.Infrastructure;
 using Agro360.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
@@ -15,8 +15,14 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog((context, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
     .Enrich.FromLogContext()
-    .Enrich.WithProperty("Application", "Agro360.Api")
-    .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture));
+    .Enrich.WithProperty("Application", "Agro360.Api"));
+
+var dataProtection = builder.Services.AddDataProtection();
+var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"];
+if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
+{
+    dataProtection.PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
+}
 
 builder.Services.AddAgro360Infrastructure(builder.Configuration);
 builder.Services.AddControllers();

@@ -33,4 +33,13 @@ public sealed class IdentityController(IIdentityService identityService, IConfig
     [ProducesResponseType<AuthenticationResult>(StatusCodes.Status200OK)]
     public Task<AuthenticationResult> Refresh(RefreshTokenCommand command, CancellationToken cancellationToken) =>
         identityService.RefreshAsync(command, cancellationToken);
+
+    [HttpPost("auth/logout")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> Logout(RefreshTokenCommand command, CancellationToken cancellationToken)
+    {
+        await identityService.LogoutAsync(command, cancellationToken).ConfigureAwait(false);
+        return NoContent();
+    }
 }

@@ -38,7 +38,7 @@ public sealed class DataGovernanceService(DatabaseExecutor db, ITenantContext te
         return new PagedResult<ImportBatch>(items, page, pageSize, total);
     }, ct);
 
-    public Task<IReadOnlyList<ImportError>> ErrorsAsync(Guid batchId, CancellationToken ct) => db.InTenantTransactionAsync(async (c,t) =>
+    public Task<IReadOnlyList<ImportError>> ErrorsAsync(Guid batchId, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
         (IReadOnlyList<ImportError>)(await c.QueryAsync<ImportError>("select row_number rownumber,column_name columnname,error_code code,message,severity from agro360.governance_data_import_errors where tenant_id=@TenantId and batch_id=@BatchId order by row_number,column_name", new { tenant.TenantId, batchId }, t)).AsList(), ct);
 
     public Task ReprocessAsync(Guid batchId, CancellationToken ct) => ChangeBatch(batchId, "VALIDATED", "IMPORT_REPROCESSED", null, ct);
@@ -48,39 +48,39 @@ public sealed class DataGovernanceService(DatabaseExecutor db, ITenantContext te
         return ChangeBatch(batchId, "CANCELLED", "IMPORT_CANCELLED", reason, ct);
     }
 
-    public Task<Guid> CreateExportAsync(ExportRequestCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c,t) =>
+    public Task<Guid> CreateExportAsync(ExportRequestCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
     {
         if (command.Modules.Count == 0) throw new ArgumentException("Selecione ao menos um módulo.");
         if (command.Format is not ("CSV" or "JSON")) throw new ArgumentException("Formato deve ser CSV ou JSON.");
-        var id=Guid.NewGuid();
-        await c.ExecuteAsync("insert into agro360.governance_data_export_requests(id,tenant_id,modules,period_from,period_to,format,status,justification,requested_by,created_by,updated_by) values(@Id,@TenantId,@Modules,@From,@To,@Format,'QUEUED',@Justification,@UserId,@UserId,@UserId)",new{id,tenant.TenantId,tenant.UserId,Modules=command.Modules.ToArray(),command.From,command.To,command.Format,command.Justification},t);
-        await Audit(c,t,"EXPORT_REQUESTED","data_export_request",id,"Exportação sem credenciais, hashes ou segredos."); return id;
-    },ct);
+        var id = Guid.NewGuid();
+        await c.ExecuteAsync("insert into agro360.governance_data_export_requests(id,tenant_id,modules,period_from,period_to,format,status,justification,requested_by,created_by,updated_by) values(@Id,@TenantId,@Modules,@From,@To,@Format,'QUEUED',@Justification,@UserId,@UserId,@UserId)", new { id, tenant.TenantId, tenant.UserId, Modules = command.Modules.ToArray(), command.From, command.To, command.Format, command.Justification }, t);
+        await Audit(c, t, "EXPORT_REQUESTED", "data_export_request", id, "Exportação sem credenciais, hashes ou segredos."); return id;
+    }, ct);
 
-    public Task<Guid> CreateLgpdAsync(LgpdRequestCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async(c,t) =>
+    public Task<Guid> CreateLgpdAsync(LgpdRequestCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
     {
-        if(string.IsNullOrWhiteSpace(command.Type)||string.IsNullOrWhiteSpace(command.SubjectName)) throw new ArgumentException("Tipo e titular são obrigatórios.");
-        var document=DataGovernanceRules.NormalizeDocument(command.SubjectDocument); var id=Guid.NewGuid();
-        await c.ExecuteAsync("insert into agro360.governance_lgpd_requests(id,tenant_id,type,subject_name,subject_document,legal_basis,purpose,status,created_by,updated_by) values(@Id,@TenantId,@Type,@SubjectName,@Document,@LegalBasis,@Purpose,'OPEN',@UserId,@UserId)",new{id,tenant.TenantId,tenant.UserId,command.Type,command.SubjectName,Document=document,command.LegalBasis,command.Purpose},t);
-        await Audit(c,t,"LGPD_REQUEST_CREATED","lgpd_request",id,$"type={command.Type}; subject={DataGovernanceRules.MaskDocument(document)}"); return id;
-    },ct);
+        if (string.IsNullOrWhiteSpace(command.Type) || string.IsNullOrWhiteSpace(command.SubjectName)) throw new ArgumentException("Tipo e titular são obrigatórios.");
+        var document = DataGovernanceRules.NormalizeDocument(command.SubjectDocument); var id = Guid.NewGuid();
+        await c.ExecuteAsync("insert into agro360.governance_lgpd_requests(id,tenant_id,type,subject_name,subject_document,legal_basis,purpose,status,created_by,updated_by) values(@Id,@TenantId,@Type,@SubjectName,@Document,@LegalBasis,@Purpose,'OPEN',@UserId,@UserId)", new { id, tenant.TenantId, tenant.UserId, command.Type, command.SubjectName, Document = document, command.LegalBasis, command.Purpose }, t);
+        await Audit(c, t, "LGPD_REQUEST_CREATED", "lgpd_request", id, $"type={command.Type}; subject={DataGovernanceRules.MaskDocument(document)}"); return id;
+    }, ct);
 
-    public Task TransitionLgpdAsync(Guid id,LgpdTransition command,CancellationToken ct)=>db.InTenantTransactionAsync(async(c,t)=>
-    { DataGovernanceRules.ValidateLgpdTransition(command.Status,command.Reason); var n=await c.ExecuteAsync("update agro360.governance_lgpd_requests set status=@Status,decision_reason=@Reason,handled_by=@UserId,handled_at=now(),updated_by=@UserId,updated_at=now() where tenant_id=@TenantId and id=@Id and deleted_at is null",new{tenant.TenantId,tenant.UserId,id,command.Status,command.Reason},t);if(n==0)throw new KeyNotFoundException("Solicitação LGPD não encontrada.");await Audit(c,t,"LGPD_STATUS_CHANGED","lgpd_request",id,$"status={command.Status}; reason={command.Reason}");},ct);
+    public Task TransitionLgpdAsync(Guid id, LgpdTransition command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    { DataGovernanceRules.ValidateLgpdTransition(command.Status, command.Reason); var n = await c.ExecuteAsync("update agro360.governance_lgpd_requests set status=@Status,decision_reason=@Reason,handled_by=@UserId,handled_at=now(),updated_by=@UserId,updated_at=now() where tenant_id=@TenantId and id=@Id and deleted_at is null", new { tenant.TenantId, tenant.UserId, id, command.Status, command.Reason }, t); if (n == 0) throw new KeyNotFoundException("Solicitação LGPD não encontrada."); await Audit(c, t, "LGPD_STATUS_CHANGED", "lgpd_request", id, $"status={command.Status}; reason={command.Reason}"); }, ct);
 
-    public Task ActOnFindingAsync(Guid id,FindingAction command,CancellationToken ct)=>db.InTenantTransactionAsync(async(c,t)=>
-    { DataGovernanceRules.ValidateFindingTransition(command.Status,command.Justification);var n=await c.ExecuteAsync("update agro360.governance_data_quality_findings set status=@Status,justification=@Justification,reviewed_by=@UserId,reviewed_at=now(),updated_by=@UserId,updated_at=now() where tenant_id=@TenantId and id=@Id and deleted_at is null",new{tenant.TenantId,tenant.UserId,id,command.Status,command.Justification},t);if(n==0)throw new KeyNotFoundException("Inconsistência não encontrada.");await Audit(c,t,"QUALITY_FINDING_CHANGED","data_quality_finding",id,$"status={command.Status}; justification={command.Justification}");},ct);
+    public Task ActOnFindingAsync(Guid id, FindingAction command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    { DataGovernanceRules.ValidateFindingTransition(command.Status, command.Justification); var n = await c.ExecuteAsync("update agro360.governance_data_quality_findings set status=@Status,justification=@Justification,reviewed_by=@UserId,reviewed_at=now(),updated_by=@UserId,updated_at=now() where tenant_id=@TenantId and id=@Id and deleted_at is null", new { tenant.TenantId, tenant.UserId, id, command.Status, command.Justification }, t); if (n == 0) throw new KeyNotFoundException("Inconsistência não encontrada."); await Audit(c, t, "QUALITY_FINDING_CHANGED", "data_quality_finding", id, $"status={command.Status}; justification={command.Justification}"); }, ct);
 
-    private Task ChangeBatch(Guid id,string status,string action,string? reason,CancellationToken ct)=>db.InTenantTransactionAsync(async(c,t)=>{var n=await c.ExecuteAsync("update agro360.governance_data_import_batches set status=@Status,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id and status not in ('PROCESSING','COMPLETED')",new{tenant.TenantId,tenant.UserId,id,status},t);if(n==0)throw new InvalidOperationException("Lote não existe ou não pode ser alterado no estado atual.");await Audit(c,t,action,"data_import_batch",id,reason);},ct);
-    private async Task Audit(System.Data.Common.DbConnection c,System.Data.Common.DbTransaction t,string action,string entity,Guid id,string? justification)=>await c.ExecuteAsync("insert into agro360.governance_advanced_audit_events(id,tenant_id,user_id,module,entity,entity_id,action,origin,correlation_id,justification,created_at) values(gen_random_uuid(),@TenantId,@UserId,'GOVERNANCE',@Entity,@Id,@Action,'API',gen_random_uuid()::text,@Justification,now())",new{tenant.TenantId,tenant.UserId,entity,id,action,justification},t);
+    private Task ChangeBatch(Guid id, string status, string action, string? reason, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { var n = await c.ExecuteAsync("update agro360.governance_data_import_batches set status=@Status,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id and status not in ('PROCESSING','COMPLETED')", new { tenant.TenantId, tenant.UserId, id, status }, t); if (n == 0) throw new InvalidOperationException("Lote não existe ou não pode ser alterado no estado atual."); await Audit(c, t, action, "data_import_batch", id, reason); }, ct);
+    private async Task Audit(System.Data.Common.DbConnection c, System.Data.Common.DbTransaction t, string action, string entity, Guid id, string? justification) => await c.ExecuteAsync("insert into agro360.governance_advanced_audit_events(id,tenant_id,user_id,module,entity,entity_id,action,origin,correlation_id,justification,created_at) values(gen_random_uuid(),@TenantId,@UserId,'GOVERNANCE',@Entity,@Id,@Action,'API',gen_random_uuid()::text,@Justification,now())", new { tenant.TenantId, tenant.UserId, entity, id, action, justification }, t);
 
     private static List<string[]> ParseCsv(string csv)
     {
-        var result=new List<string[]>();
-        foreach(var raw in csv.Replace("\r\n","\n").Split('\n',StringSplitOptions.RemoveEmptyEntries))
-        { var fields=new List<string>();var field="";var quoted=false;for(var i=0;i<raw.Length;i++){var ch=raw[i];if(ch=='\"'&&quoted&&i+1<raw.Length&&raw[i+1]=='\"'){field+='\"';i++;}else if(ch=='\"')quoted=!quoted;else if(ch==','&&!quoted){fields.Add(field.Trim());field="";}else field+=ch;}if(quoted)throw new ArgumentException("CSV inválido: aspas não foram fechadas.");fields.Add(field.Trim());result.Add(fields.ToArray());}
-        if(result.Count<2)throw new ArgumentException("CSV inválido: inclua cabeçalho e dados.");if(result.Skip(1).Any(x=>x.Length!=result[0].Length))throw new ArgumentException("CSV inválido: quantidade de colunas inconsistente.");return result;
+        var result = new List<string[]>();
+        foreach (var raw in csv.Replace("\r\n", "\n").Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        { var fields = new List<string>(); var field = ""; var quoted = false; for (var i = 0; i < raw.Length; i++) { var ch = raw[i]; if (ch == '\"' && quoted && i + 1 < raw.Length && raw[i + 1] == '\"') { field += '\"'; i++; } else if (ch == '\"') quoted = !quoted; else if (ch == ',' && !quoted) { fields.Add(field.Trim()); field = ""; } else field += ch; } if (quoted) throw new ArgumentException("CSV inválido: aspas não foram fechadas."); fields.Add(field.Trim()); result.Add(fields.ToArray()); }
+        if (result.Count < 2) throw new ArgumentException("CSV inválido: inclua cabeçalho e dados."); if (result.Skip(1).Any(x => x.Length != result[0].Length)) throw new ArgumentException("CSV inválido: quantidade de colunas inconsistente."); return result;
     }
-    private static List<ImportError> ValidateRows(List<string[]> rows,string[] headers)
-    { var errors=new List<ImportError>();var docs=new HashSet<string>();var emails=new HashSet<string>(StringComparer.OrdinalIgnoreCase);for(var r=1;r<rows.Count;r++)for(var c=0;c<headers.Length;c++){var name=headers[c].Trim().ToLowerInvariant();var value=rows[r][c];if(name is "document" or "cpf" or "cnpj"){try{var doc=DataGovernanceRules.NormalizeDocument(value);if(!docs.Add(doc))errors.Add(new(r+1,headers[c],"DUPLICATE_DOCUMENT","Documento duplicado no arquivo.","CRITICAL"));}catch(ArgumentException ex){errors.Add(new(r+1,headers[c],"INVALID_DOCUMENT",ex.Message,"CRITICAL"));}}if(name=="email"&&!string.IsNullOrWhiteSpace(value)){try{var email=DataGovernanceRules.NormalizeEmail(value);if(!emails.Add(email))errors.Add(new(r+1,headers[c],"DUPLICATE_EMAIL","E-mail duplicado no arquivo.","CRITICAL"));}catch(ArgumentException ex){errors.Add(new(r+1,headers[c],"INVALID_EMAIL",ex.Message,"CRITICAL"));}}}return errors; }
+    private static List<ImportError> ValidateRows(List<string[]> rows, string[] headers)
+    { var errors = new List<ImportError>(); var docs = new HashSet<string>(); var emails = new HashSet<string>(StringComparer.OrdinalIgnoreCase); for (var r = 1; r < rows.Count; r++) for (var c = 0; c < headers.Length; c++) { var name = headers[c].Trim().ToLowerInvariant(); var value = rows[r][c]; if (name is "document" or "cpf" or "cnpj") { try { var doc = DataGovernanceRules.NormalizeDocument(value); if (!docs.Add(doc)) errors.Add(new(r + 1, headers[c], "DUPLICATE_DOCUMENT", "Documento duplicado no arquivo.", "CRITICAL")); } catch (ArgumentException ex) { errors.Add(new(r + 1, headers[c], "INVALID_DOCUMENT", ex.Message, "CRITICAL")); } } if (name == "email" && !string.IsNullOrWhiteSpace(value)) { try { var email = DataGovernanceRules.NormalizeEmail(value); if (!emails.Add(email)) errors.Add(new(r + 1, headers[c], "DUPLICATE_EMAIL", "E-mail duplicado no arquivo.", "CRITICAL")); } catch (ArgumentException ex) { errors.Add(new(r + 1, headers[c], "INVALID_EMAIL", ex.Message, "CRITICAL")); } } } return errors; }
 }

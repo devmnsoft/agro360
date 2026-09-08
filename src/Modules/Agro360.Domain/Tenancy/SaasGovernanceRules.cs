@@ -67,8 +67,8 @@ public static partial class SaasGovernanceRules
             var remainder = sum % 11;
             return remainder < 2 ? 0 : 11 - remainder;
         }
-        if (Digit(value, [5,4,3,2,9,8,7,6,5,4,3,2]) != value[12] - '0') return false;
-        return Digit(value, [6,5,4,3,2,9,8,7,6,5,4,3,2]) == value[13] - '0';
+        if (Digit(value, [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]) != value[12] - '0') return false;
+        return Digit(value, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]) == value[13] - '0';
     }
 
     public static void EnsureSubscriptionCanStart(bool planActive, DateOnly startsOn, DateOnly? endsOn, decimal price, decimal discount, string? discountReason)

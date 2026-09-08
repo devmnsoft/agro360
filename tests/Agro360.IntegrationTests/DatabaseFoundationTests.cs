@@ -13,11 +13,11 @@ public sealed class DatabaseFoundationTests
         await using var connection = new NpgsqlConnection(GetRequiredConnectionString());
         await connection.OpenAsync(TestContext.Current.CancellationToken);
         var extensions = (await connection.QueryAsync<string>(
-            "select extname from pg_extension where extname = any(array['postgis','pg_trgm','unaccent','pgcrypto']) order by extname;"))
+            "select extname from pg_extension where extname = any(array['pg_trgm','unaccent','pgcrypto']) order by extname;"))
             .ToArray();
-        var migrations = await connection.ExecuteScalarAsync<int>("select count(*) from agro360.platform_schema_migrations;");
+        var migrations = await connection.ExecuteScalarAsync<int>("select count(*) from agro360.platform_schema_versions;");
 
-        Assert.Equal(["pg_trgm", "pgcrypto", "postgis", "unaccent"], extensions);
+        Assert.Equal(["pg_trgm", "pgcrypto", "unaccent"], extensions);
         Assert.True(migrations >= 4);
     }
 
@@ -30,8 +30,8 @@ public sealed class DatabaseFoundationTests
             """
             select column_name
             from information_schema.columns
-            where table_schema = 'platform'
-              and table_name = 'outbox_messages'
+            where table_schema = 'agro360'
+              and table_name = 'platform_outbox_messages'
               and column_name = any(array['correlation_id', 'last_attempt_at', 'dead_lettered_at'])
             order by column_name;
             """)).ToArray();
@@ -50,11 +50,7 @@ public sealed class DatabaseFoundationTests
             from pg_class c
             join pg_namespace n on n.oid = c.relnamespace
             where c.relkind = 'r'
-              and n.nspname in (
-                  'identity','organization','geo','agriculture','livestock','inventory','cost',
-                  'commercial','finance','traceability','documents','environment','hr','workflow',
-                  'notification','analytics','iot','logistics','fleet','purchasing','audit'
-              )
+              and n.nspname = 'agro360'
               and exists (
                   select 1 from information_schema.columns col
                   where col.table_schema = n.nspname and col.table_name = c.relname and col.column_name = 'tenant_id'

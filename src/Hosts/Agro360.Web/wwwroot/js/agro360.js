@@ -47,7 +47,7 @@
 
     function renderNavigation() {
         const permissions = new Set((state.session?.permissions ?? []).map(normalizePermission));
-        const isSuperAdministrator = state.session?.email?.toLowerCase() === "superadmin@mnsoft.com.br";
+        const isSuperAdministrator = (state.session?.roles ?? []).includes("SUPER_ADMIN");
         document.querySelectorAll(".main-nav a").forEach(link => {
             const required = (link.dataset.permissions ?? "").split(",").filter(Boolean).map(normalizePermission);
             const allowed = Boolean(state.session) && (isSuperAdministrator
@@ -182,7 +182,8 @@
             persistSession(result);
             hideLogin();
             toastSuccess("Acesso confirmado", "Bem-vindo. Os dados respeitam sua organização e suas permissões.");
-            await loadDashboard();
+            if (element("dashboard-subtitle")) await loadDashboard();
+            else window.location.reload();
         } catch (error) {
             const detail = error instanceof TypeError
                 ? apiUnavailableMessage
@@ -221,16 +222,29 @@
         }
     }
 
-    function logout() {
+    async function logout() {
         if (!state.session) { showLogin(); return; }
-        persistSession(null);
-        resetDashboard();
-        showLogin();
-        toast("Sessão encerrada", "Os dados locais de autenticação foram removidos.");
+        const refreshToken = state.session.refreshToken;
+        try {
+            const response = await fetch(`${apiBase}/api/v1/auth/logout`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ refreshToken })
+            });
+            if (!response.ok) throw new Error(`Falha HTTP ${response.status}`);
+        } catch {
+            toastWarning("Logout parcial", "A sessão local foi encerrada, mas a API não confirmou a revogação. Revogue as sessões na área de segurança.");
+        } finally {
+            persistSession(null);
+            resetDashboard();
+            showLogin();
+            toast("Sessão encerrada", "O refresh token foi revogado e os dados locais de autenticação foram removidos.");
+        }
     }
 
     async function loadDashboard() {
         if (!state.session) { showLogin(); return; }
+        if (!element("dashboard-subtitle")) return;
         element("dashboard-subtitle").textContent = "Atualizando a malha de dados do tenant...";
         try {
             const result = await api("/api/v1/dashboard/command-center");
@@ -290,6 +304,7 @@
 
     function renderOperations(operations) {
         const body = element("recent-operations");
+        if (!body) return;
         body.replaceChildren();
         if (!operations.length) {
             const row = document.createElement("tr");
@@ -451,7 +466,7 @@
 
     Object.assign(window, { toastSuccess, toastWarning, toastError, toastInfo, confirmDialog });
 
-    function setText(id, value) { element(id).textContent = value; }
+    function setText(id, value) { const target = element(id); if (target) target.textContent = value; }
     function escapeHtml(value) { const span = document.createElement("span"); span.textContent = String(value ?? ""); return span.innerHTML; }
     function formatRelative(value) {
         const seconds = Math.round((new Date(value).getTime() - Date.now()) / 1000);
@@ -478,12 +493,12 @@
         element("global-search").addEventListener("input", scheduleSearch);
         element("theme-button").addEventListener("click", toggleTheme);
         element("menu-button").addEventListener("click", () => document.body.classList.toggle("menu-open"));
-        element("refresh-dashboard").addEventListener("click", loadDashboard);
+        element("refresh-dashboard")?.addEventListener("click", loadDashboard);
         document.querySelectorAll("[data-feature]").forEach(button => button.addEventListener("click", featureMessage));
         document.addEventListener("keydown", keydown);
         palette.addEventListener("click", event => { if (event.target === palette) closePalette(); });
         if ("serviceWorker" in navigator) navigator.serviceWorker.register("/service-worker.js").catch(() => {});
-        if (state.session) loadDashboard(); else showLogin();
+        if (state.session && element("dashboard-subtitle")) loadDashboard(); else if (!state.session) showLogin();
     }
 
     init();

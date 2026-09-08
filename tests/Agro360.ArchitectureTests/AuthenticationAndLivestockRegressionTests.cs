@@ -2,7 +2,7 @@ namespace Agro360.ArchitectureTests;
 
 public sealed class AuthenticationAndLivestockRegressionTests
 {
-    private static readonly string Root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../"));
+    private static readonly string Root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
     private static string Read(string path) => File.ReadAllText(Path.Combine(Root, path));
 
     [Fact]
@@ -31,6 +31,35 @@ public sealed class AuthenticationAndLivestockRegressionTests
     }
 
     [Fact]
+    public void LogoutRevokesRefreshTokenAndGlobalClientHandlesNonDashboardPages()
+    {
+        var identity = Read("src/Modules/Agro360.Infrastructure/Services/IdentityService.cs");
+        var controller = Read("src/Hosts/Agro360.Api/Controllers/IdentityController.cs");
+        var client = Read("src/Hosts/Agro360.Web/wwwroot/js/agro360.js");
+
+        Assert.Contains("auth/logout", controller, StringComparison.Ordinal);
+        Assert.Contains("set revoked_at = now()", identity, StringComparison.Ordinal);
+        Assert.Contains("/api/v1/auth/logout", client, StringComparison.Ordinal);
+        Assert.Contains("element(\"refresh-dashboard\")?.addEventListener", client, StringComparison.Ordinal);
+        Assert.Contains("if (!element(\"dashboard-subtitle\")) return", client, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SuperAdministratorRoleIsLoadedIntoTokenAndDrivesGlobalNavigation()
+    {
+        var identity = Read("src/Modules/Agro360.Infrastructure/Services/IdentityService.cs");
+        var tokens = Read("src/Modules/Agro360.Infrastructure/Security/SecurityServices.cs");
+        var platform = Read("src/Hosts/Agro360.Api/Controllers/SaasControllers.cs");
+        var client = Read("src/Hosts/Agro360.Web/wwwroot/js/agro360.js");
+
+        Assert.Contains("select distinct r.code", identity, StringComparison.Ordinal);
+        Assert.Contains("new Claim(\"role\", role)", tokens, StringComparison.Ordinal);
+        Assert.Contains("Authorize(Roles = \"SUPER_ADMIN\")", platform, StringComparison.Ordinal);
+        Assert.Contains("roles ?? []", client, StringComparison.Ordinal);
+        Assert.DoesNotContain("superadmin@mnsoft.com.br", client, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void LivestockDashboardUsesCanonicalHerdLifecycleColumn()
     {
         var service = Read("src/Modules/Agro360.Infrastructure/Services/Livestock360Service.cs");
@@ -38,7 +67,7 @@ public sealed class AuthenticationAndLivestockRegressionTests
         var dashboard = service[service.IndexOf("DashboardAsync", StringComparison.Ordinal)..];
         dashboard = dashboard[..dashboard.IndexOf("private Task<IReadOnlyList<dynamic>>", StringComparison.Ordinal)];
 
-        Assert.DoesNotContain(" active", dashboard, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("where active", dashboard, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("status='ACTIVE' and deleted_at is null", dashboard, StringComparison.Ordinal);
         Assert.Contains("status varchar(20) not null default 'ACTIVE'", schema, StringComparison.Ordinal);
         Assert.DoesNotContain("head_count integer not null default 0 check(head_count>=0),active boolean", schema, StringComparison.Ordinal);

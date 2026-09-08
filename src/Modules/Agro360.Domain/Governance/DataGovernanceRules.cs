@@ -49,8 +49,8 @@ public static partial class DataGovernanceRules
     }
 
     private static bool ValidDocumentDigits(string value) => value.Length == 11
-        ? Check(value, 9, [10,9,8,7,6,5,4,3,2]) && Check(value, 10, [11,10,9,8,7,6,5,4,3,2])
-        : Check(value, 12, [5,4,3,2,9,8,7,6,5,4,3,2]) && Check(value, 13, [6,5,4,3,2,9,8,7,6,5,4,3,2]);
+        ? Check(value, 9, [10, 9, 8, 7, 6, 5, 4, 3, 2]) && Check(value, 10, [11, 10, 9, 8, 7, 6, 5, 4, 3, 2])
+        : Check(value, 12, [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]) && Check(value, 13, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
 
     private static bool Check(string value, int position, int[] weights)
     {

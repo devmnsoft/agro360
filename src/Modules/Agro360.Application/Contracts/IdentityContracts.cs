@@ -22,7 +22,8 @@ public sealed record AuthenticationResult(
     string AccessToken,
     string RefreshToken,
     DateTimeOffset ExpiresAt,
-    IReadOnlyCollection<string> Permissions);
+    IReadOnlyCollection<string> Permissions,
+    IReadOnlyCollection<string> Roles);
 
 public interface IIdentityService
 {
@@ -31,4 +32,6 @@ public interface IIdentityService
     Task<AuthenticationResult> LoginAsync(LoginCommand command, CancellationToken cancellationToken);
 
     Task<AuthenticationResult> RefreshAsync(RefreshTokenCommand command, CancellationToken cancellationToken);
+
+    Task LogoutAsync(RefreshTokenCommand command, CancellationToken cancellationToken);
 }

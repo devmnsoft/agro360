@@ -2,7 +2,7 @@ namespace Agro360.ArchitectureTests;
 
 public sealed class LoginExperienceTests
 {
-    private static readonly string Root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../"));
+    private static readonly string Root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
     private static string Read(string path) => File.ReadAllText(Path.Combine(Root, path));
 
     [Fact]
@@ -21,6 +21,20 @@ public sealed class LoginExperienceTests
         Assert.Contains("u.normalized_document = @Identifier", service);
         Assert.Contains("document.Length is not (11 or 14)", service);
         Assert.Contains("ck_identity_users_normalized_document", Read("database/agro360-postgres-full.sql"));
+    }
+
+    [Fact]
+    public void TenantTokensRespectContractedModulesAndCanonicalPermissionCodes()
+    {
+        var service = Read("src/Modules/Agro360.Infrastructure/Services/IdentityService.cs");
+        var sql = Read("database/agro360-postgres-full.sql");
+
+        Assert.Contains("platform_tenant_module_entitlements", service);
+        Assert.Contains("platform_tenant_modules", service);
+        Assert.Contains("IsPermissionContracted", service);
+        Assert.Contains("SUPER_ADMIN", service);
+        Assert.Contains("'inventory.read'", sql);
+        Assert.DoesNotContain("('agro360.inventory_read', 'Inventory'", sql);
     }
 
     [Fact]

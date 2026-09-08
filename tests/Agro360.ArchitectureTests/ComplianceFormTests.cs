@@ -7,7 +7,7 @@ public sealed class ComplianceFormTests
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
         var html = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/Pages/Compliance/Index.cshtml"));
-        var js = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/wwwroot/js/agro360.compliance_js"));
+        var js = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/wwwroot/js/compliance.js"));
         Assert.DoesNotContain("ID técnico", html + js, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("data-resource", js);
         Assert.Contains("reportValidity", js);
