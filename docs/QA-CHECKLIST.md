@@ -314,3 +314,12 @@ O bootstrap seguro recebe `AGRO360_SUPERADMIN_INITIAL_PASSWORD`, aplica o hash r
 ## Comercial Agro 360 (sprint atual)
 
 Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo persistente e pendências reais de integração.
+
+## Regressão do template compartilhado
+
+- [ ] Abrir `/`, `/Saas`, `/Fiscal`, `/Commercial`, `/Finance` e `/Deployment` sem erro no console.
+- [ ] Confirmar login e refresh token nas páginas inicial e de módulo.
+- [ ] Confirmar apenas um menu ativo e menus filtrados pelas permissões.
+- [ ] Validar login em 320 px, 768 px e desktop a 100% de zoom, sem overflow horizontal.
+- [ ] Confirmar que API `/health` e `/swagger/v1/swagger.json` respondem no ambiente habilitado.
+- [ ] Confirmar que nenhum PNG, JPG, WEBP ou PDF foi adicionado.

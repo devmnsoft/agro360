@@ -103,3 +103,9 @@
 ## Comercial Agro 360 (sprint atual)
 
 Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo persistente e pendências reais de integração.
+
+## Regras de acesso do shell
+
+- A navegação é derivada das permissões devolvidas pelo login; o Super Administrador da plataforma é a exceção global.
+- Links administrativos globais permanecem exclusivos do Super Administrador.
+- A ausência de componentes do dashboard em uma página de módulo não pode interromper login, refresh token, menu ou scripts específicos do módulo.

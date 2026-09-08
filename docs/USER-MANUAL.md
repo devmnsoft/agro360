@@ -56,3 +56,10 @@ Acesse **Operação → Tarefas e Alertas**. Os cartões e listas vêm das taref
 ## Comercial Agro 360 (sprint atual)
 
 Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo persistente e pendências reais de integração.
+
+## Acesso e navegação recuperados
+
+1. Informe o slug do cliente, a identificação e a senha; o botão bloqueia durante a validação para impedir envio duplo.
+2. Após o acesso, o menu exibe somente itens autorizados e destaca a tela atual.
+3. Em qualquer módulo, abra **Como usar esta tela** para conferir finalidade, campos, ações e efeitos da gravação.
+4. Use **Testar conexão com a API** no acesso para validar API, banco e Swagger no ambiente de desenvolvimento.
