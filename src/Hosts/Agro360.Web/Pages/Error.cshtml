@@ -1,0 +1,28 @@
+@page
+@model ErrorModel
+@{
+    ViewData["Title"] = "Não foi possível concluir";
+}
+
+<div class="page-content">
+    <section class="page-heading">
+        <div>
+            <span class="eyebrow">Atendimento seguro</span>
+            <h1>Não foi possível concluir esta solicitação.</h1>
+            <p>Seus dados permanecem protegidos. Tente novamente ou informe o código abaixo ao suporte.</p>
+        </div>
+        <div class="heading-actions">
+            <a class="primary-button" href="/">Ir para o início</a>
+        </div>
+    </section>
+
+    <section class="panel" role="alert">
+        <header class="panel-header">
+            <div>
+                <span class="eyebrow">Código de acompanhamento</span>
+                <h2>@Model.RequestId</h2>
+            </div>
+        </header>
+        <p>O detalhe técnico não é exibido nesta tela. Use o código para localizar o evento nos logs da aplicação.</p>
+    </section>
+</div>

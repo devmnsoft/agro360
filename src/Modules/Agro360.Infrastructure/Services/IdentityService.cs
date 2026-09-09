@@ -1,12 +1,14 @@
-using System.Net.Mail;
 using System.Diagnostics;
+using System.Net.Mail;
 using Agro360.Application;
 using Agro360.Application.Abstractions;
 using Agro360.Application.Contracts;
 using Agro360.Domain.Tenancy;
 using Agro360.Infrastructure.Persistence;
+using Agro360.Infrastructure.Security;
 using Agro360.SharedKernel;
 using Dapper;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Logging;
 
 namespace Agro360.Infrastructure.Services;
@@ -16,8 +18,10 @@ public sealed class IdentityService(
     IPasswordHasher passwordHasher,
     ITokenService tokenService,
     IClock clock,
+    IDataProtectionProvider dataProtectionProvider,
     ILogger<IdentityService> logger) : IIdentityService
 {
+    private readonly IDataProtector _mfaProtector = dataProtectionProvider.CreateProtector("Agro360.Identity.Mfa.v1");
     public Task<BootstrapResult> BootstrapAsync(BootstrapCommand command, CancellationToken cancellationToken)
     {
         ValidateEmail(command.Email);
@@ -118,6 +122,9 @@ public sealed class IdentityService(
 
     public async Task<AuthenticationResult> LoginAsync(LoginCommand command, CancellationToken cancellationToken)
     {
+        var traceId = Activity.Current?.TraceId.ToString() ?? "unavailable";
+        var identifierType = IdentifierType(command.Email);
+        InfrastructureLogMessages.LoginStarted(logger, command.TenantSlug, identifierType, traceId);
         var identifier = NormalizeLoginIdentifier(command.Email);
         var isDocument = !identifier.Contains('@');
         var tenantSlug = command.TenantSlug.Trim();
@@ -135,20 +142,23 @@ public sealed class IdentityService(
 
         if (tenant is null)
         {
+            InfrastructureLogMessages.LoginRejected(logger, "tenant_invalid", null, identifierType, traceId);
             throw new AuthenticationException("Cliente/organização inválido.", "tenant_invalid");
         }
 
         if (tenant.Status is 3 or 4 or 5)
         {
+            InfrastructureLogMessages.LoginRejected(logger, "tenant_blocked", tenant.Id, identifierType, traceId);
             throw new ForbiddenException("Cliente/organização inativo ou bloqueado. Contate o suporte.");
         }
 
-        return await database.InTenantTransactionAsync(tenant.Id, async (connection, transaction) =>
+        var result = await database.InTenantTransactionAsync(tenant.Id, async (connection, transaction) =>
         {
             var user = await connection.QuerySingleOrDefaultAsync<UserLookup>(new CommandDefinition(
                 """
                 select id, tenant_id as TenantId, name, email, password_hash as PasswordHash,
-                       status, deleted_at as DeletedAt
+                       status, deleted_at as DeletedAt, must_change_password as MustChangePassword,
+                       mfa_enabled as MfaEnabled, mfa_secret_encrypted as MfaSecretEncrypted
                 from agro360.identity_users u
                 where u.tenant_id = @TenantId
                   and ((not @IsDocument and u.email = lower(@Identifier))
@@ -160,11 +170,13 @@ public sealed class IdentityService(
 
             if (user is null)
             {
+                InfrastructureLogMessages.LoginRejected(logger, "invalid_credentials", tenant.Id, identifierType, traceId);
                 throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
             }
 
             if (user.DeletedAt is not null || !string.Equals(user.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
             {
+                InfrastructureLogMessages.LoginRejected(logger, "user_inactive_or_blocked", tenant.Id, identifierType, traceId);
                 throw new ForbiddenException(user.Status is "BLOCKED" or "LOCKED"
                     ? "Usuário bloqueado. Contate o suporte."
                     : "Usuário inativo. Contate o suporte.");
@@ -172,11 +184,41 @@ public sealed class IdentityService(
 
             if (!passwordHasher.Verify(command.Password, user.PasswordHash))
             {
+                InfrastructureLogMessages.LoginRejected(logger, "invalid_credentials", tenant.Id, identifierType, traceId);
                 throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
+            }
+
+            var isGlobalAdministrator = await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
+                "select exists(select 1 from agro360.platform_super_admins where user_id=@UserId and active and deleted_at is null)",
+                new { UserId = user.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            if (isGlobalAdministrator)
+            {
+                if (!user.MfaEnabled || string.IsNullOrWhiteSpace(user.MfaSecretEncrypted))
+                    throw new ForbiddenException("O acesso global exige MFA configurado por segredo local.");
+                string secret;
+                try { secret = _mfaProtector.Unprotect(user.MfaSecretEncrypted); }
+                catch (System.Security.Cryptography.CryptographicException) { throw new ForbiddenException("A configuração MFA global não pode ser validada neste host."); }
+                if (!TotpVerifier.Verify(secret, command.MfaCode, clock.UtcNow))
+                    throw new AuthenticationException("Código MFA inválido.", "mfa_invalid");
+            }
+
+            if (user.MustChangePassword)
+            {
+                if (string.IsNullOrWhiteSpace(command.NewPassword))
+                    throw new ValidationException(new Dictionary<string, string[]> { [nameof(command.NewPassword)] = ["Defina uma nova senha no primeiro acesso."] });
+                if (passwordHasher.Verify(command.NewPassword, user.PasswordHash))
+                    throw new ValidationException(new Dictionary<string, string[]> { [nameof(command.NewPassword)] = ["A nova senha deve ser diferente da senha inicial."] });
+                var newPasswordHash = passwordHasher.Hash(command.NewPassword);
+                var changed = await connection.ExecuteAsync(new CommandDefinition(
+                    "update agro360.identity_users set password_hash=@PasswordHash,must_change_password=false,updated_at=now(),version=version+1 where tenant_id=@TenantId and id=@UserId and must_change_password",
+                    new { PasswordHash = newPasswordHash, TenantId = tenant.Id, UserId = user.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+                if (changed != 1) throw new ConflictException("O primeiro acesso foi alterado concorrentemente. Tente novamente.", "first_access_concurrent_change");
             }
 
             return await IssueTokensAsync(connection, transaction, user, cancellationToken).ConfigureAwait(false);
         }, cancellationToken).ConfigureAwait(false);
+        InfrastructureLogMessages.LoginSucceeded(logger, result.TenantId, result.UserId, traceId);
+        return result;
     }
 
     public async Task<AuthenticationResult> RefreshAsync(RefreshTokenCommand command, CancellationToken cancellationToken)
@@ -268,6 +310,29 @@ public sealed class IdentityService(
         return result;
     }
 
+    public async Task LogoutAsync(RefreshTokenCommand command, CancellationToken cancellationToken)
+    {
+        if (!TryReadTenantId(command.RefreshToken, out var tenantId))
+        {
+            return;
+        }
+
+        var tokenHash = tokenService.HashRefreshToken(command.RefreshToken);
+        var revoked = await database.InTenantTransactionAsync(tenantId, async (connection, transaction) =>
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                update agro360.identity_refresh_tokens
+                set revoked_at = now()
+                where tenant_id = @TenantId and token_hash = @TokenHash and revoked_at is null;
+                """,
+                new { TenantId = tenantId, TokenHash = tokenHash },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+
+        var traceId = Activity.Current?.TraceId.ToString() ?? "unavailable";
+        InfrastructureLogMessages.LogoutCompleted(logger, tenantId, revoked > 0, traceId);
+    }
+
     private void RejectRefresh(string reason, Guid? tenantId, Guid? userId, string traceId, string origin)
     {
         InfrastructureLogMessages.RefreshRejected(logger, reason, tenantId, userId, traceId, origin);
@@ -280,7 +345,7 @@ public sealed class IdentityService(
         UserLookup user,
         CancellationToken cancellationToken)
     {
-        var permissions = (await connection.QueryAsync<string>(new CommandDefinition(
+        var grantedPermissions = (await connection.QueryAsync<string>(new CommandDefinition(
             """
             select distinct p.code
             from agro360.identity_user_roles ur
@@ -292,9 +357,66 @@ public sealed class IdentityService(
             """,
             new { user.TenantId, UserId = user.Id },
             transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false)).ToArray();
+
+        var roles = (await connection.QueryAsync<string>(new CommandDefinition(
+            """
+            select distinct r.code
+            from agro360.identity_user_roles ur
+            join agro360.identity_roles r
+              on r.id = ur.role_id and r.tenant_id = ur.tenant_id
+            where ur.tenant_id = @TenantId and ur.user_id = @UserId
+            order by r.code;
+            """,
+            new { user.TenantId, UserId = user.Id },
+            transaction,
             cancellationToken: cancellationToken)).ConfigureAwait(false)).ToArray();
 
-        var pair = tokenService.Create(user.TenantId, user.Id, user.Email, permissions);
+        var isGlobalAdministrator = roles.Contains("SUPER_ADMIN", StringComparer.OrdinalIgnoreCase)
+            && await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
+                "select exists(select 1 from agro360.platform_super_admins where user_id=@UserId and active and deleted_at is null)",
+                new { UserId = user.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        if (!isGlobalAdministrator)
+            roles = roles.Where(role => !role.Equals("SUPER_ADMIN", StringComparison.OrdinalIgnoreCase)).ToArray();
+
+        var permissions = isGlobalAdministrator
+            ? grantedPermissions
+            : grantedPermissions.Where(permission => !permission.Equals(Permissions.PlatformAdmin, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (!isGlobalAdministrator)
+        {
+            var contractedModules = (await connection.QueryAsync<string>(new CommandDefinition(
+                """
+                select distinct module_code
+                from (
+                    select unnest(p.modules) as module_code
+                    from agro360.saas_organizations o
+                    join agro360.saas_plans p on p.id = o.plan_id
+                    where o.tenant_id = @TenantId and o.status = 'ACTIVE' and p.active
+                    union
+                    select c.code
+                    from agro360.platform_tenant_module_entitlements e
+                    join agro360.platform_module_catalog c on c.id = e.module_id
+                    where e.tenant_id = @TenantId and e.status in ('CONTRACTED','ACTIVE','TRIAL')
+                    union
+                    select m.code
+                    from agro360.platform_tenant_modules tm
+                    join agro360.platform_marketplace_modules m on m.id = tm.module_id
+                    where tm.tenant_id = @TenantId and tm.status = 'ACTIVE'
+                      and (tm.trial_ends_at is null or tm.trial_ends_at > now())
+                ) contracted
+                where module_code is not null;
+                """,
+                new { user.TenantId },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            permissions = grantedPermissions
+                .Where(permission => IsPermissionContracted(permission, contractedModules))
+                .ToArray();
+        }
+
+        var pair = tokenService.Create(user.TenantId, user.Id, user.Email, permissions, roles);
         var refreshExpiresAt = clock.UtcNow.AddDays(14);
         await connection.ExecuteAsync(new CommandDefinition(
             """
@@ -326,7 +448,47 @@ public sealed class IdentityService(
             pair.AccessToken,
             pair.RefreshToken,
             pair.ExpiresAt,
-            permissions);
+            permissions,
+            roles);
+    }
+
+    private static bool IsPermissionContracted(string permission, IReadOnlySet<string> contractedModules)
+    {
+        if (permission.StartsWith("account.", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var permissionGroup = permission.Split('.', 2, StringSplitOptions.TrimEntries)[0];
+        string[] acceptedModules = permissionGroup switch
+        {
+            "properties" => ["properties"],
+            "agriculture" => ["agriculture"],
+            "inventory" => ["inventory"],
+            "livestock" => ["livestock"],
+            "crm" or "commercial" or "commercial-saas" or "customer-success" => ["commercial"],
+            "finance" => ["finance"],
+            "purchasing" => ["purchasing"],
+            "production" => ["agroindustry"],
+            "fleet" or "maintenance" => ["fleet"],
+            "dashboard" => ["reports", "analytics"],
+            "storage" => ["inventory", "warehousing"],
+            "logistics" or "regional-logistics" => ["logistics"],
+            "traceability" or "ledger" or "sales-network" => ["traceability"],
+            "intelligence" => ["reports", "intelligence", "analytics", "ai", "predictive-ai"],
+            "compliance" or "esg" or "sustainability" => ["environment-esg"],
+            "maps" => ["properties", "analytics"],
+            "cooperative" => ["cooperatives"],
+            "rural-hr" or "sst" => ["verticals", "rural-hr"],
+            "documents" or "evidences" or "dossiers" or "certificates" => ["documents"],
+            "mobile" or "field-checklists" => ["mobile"],
+            "export" or "fiscal" => [permissionGroup],
+            "marketplace" or "partners" or "api-keys" or "integrations" => ["platform", "marketplace"],
+            "deployment" or "governance" or "lgpd" or "security" or "work" or "support" or "portal" => ["platform"],
+            _ => Array.Empty<string>()
+        };
+
+        return acceptedModules.Any(contractedModules.Contains);
     }
 
     private static bool TryReadTenantId(string refreshToken, out Guid tenantId)
@@ -369,16 +531,30 @@ public sealed class IdentityService(
         }
 
         var document = new string(value.Where(char.IsDigit).ToArray());
-        if (document.Length is not (11 or 14) || value.Any(character =>
+        if (document.Length != 11 || value.Any(character =>
                 !char.IsDigit(character) && character is not ('.' or '-' or '/' or ' ')))
         {
             throw new ValidationException(new Dictionary<string, string[]>
             {
-                ["email"] = ["Informe um e-mail, CPF ou CNPJ válido."]
+                ["email"] = ["Informe um e-mail ou CPF pessoal válido. O CNPJ identifica a organização."]
             });
         }
 
         return document;
+    }
+
+    private static string IdentifierType(string identifier)
+    {
+        if (identifier.Contains('@'))
+        {
+            return "EMAIL";
+        }
+
+        return new string(identifier.Where(char.IsDigit).ToArray()).Length switch
+        {
+            11 => "CPF",
+            _ => "INVALID"
+        };
     }
 
     private sealed class TenantLookup
@@ -403,6 +579,12 @@ public sealed class IdentityService(
         public string Status { get; init; } = string.Empty;
 
         public DateTimeOffset? DeletedAt { get; init; }
+
+        public bool MustChangePassword { get; init; }
+
+        public bool MfaEnabled { get; init; }
+
+        public string? MfaSecretEncrypted { get; init; }
     }
 
     private sealed class RefreshTokenLookup

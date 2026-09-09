@@ -2,7 +2,7 @@
     "use strict";
 
     const apiBase = document.querySelector('meta[name="api-base"]')?.content?.replace(/\/$/, "") ?? "http://localhost:8081";
-    const apiUnavailableMessage = "Não foi possível conectar à API. Confirme se a Agro360.Api está rodando em http://localhost:8081 e abra http://localhost:8081/swagger.";
+    const apiUnavailableMessage = `Não foi possível conectar à API. Confirme se a Agro360.Api está rodando em ${apiBase} e abra ${apiBase}/swagger.`;
     const storageKeys = { session: "agro360.session", theme: "agro360.theme" };
     const state = { session: readJson(storageKeys.session), searchTimer: 0, selectedSearch: -1, refreshPromise: null, refreshStopped: false };
     const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -47,7 +47,7 @@
 
     function renderNavigation() {
         const permissions = new Set((state.session?.permissions ?? []).map(normalizePermission));
-        const isSuperAdministrator = state.session?.email?.toLowerCase() === "superadmin@mnsoft.com.br";
+        const isSuperAdministrator = (state.session?.roles ?? []).includes("SUPER_ADMIN");
         document.querySelectorAll(".main-nav a").forEach(link => {
             const required = (link.dataset.permissions ?? "").split(",").filter(Boolean).map(normalizePermission);
             const allowed = Boolean(state.session) && (isSuperAdministrator
@@ -147,7 +147,7 @@
     function validateLoginForm(form) {
         const messages = {
             tenantSlug: "Informe o identificador da sua organização.",
-            email: "Informe um e-mail, CPF ou CNPJ válido.",
+            email: "Informe um e-mail ou CPF válido.",
             password: "A senha deve ter pelo menos 12 caracteres."
         };
         let valid = true;
@@ -172,6 +172,10 @@
                 throw new Error("Preencha Cliente/Organização, e-mail, CPF ou CNPJ e senha para continuar.");
             }
             const data = Object.fromEntries(new FormData(form));
+            if (data.newPassword && data.newPassword !== data.newPasswordConfirmation) {
+                throw new Error("A confirmação da nova senha não corresponde.");
+            }
+            delete data.newPasswordConfirmation;
             const response = await fetch(`${apiBase}/api/v1/auth/login`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -190,7 +194,8 @@
             persistSession(result);
             hideLogin();
             toastSuccess("Acesso confirmado", "Bem-vindo. Os dados respeitam sua organização e suas permissões.");
-            await loadDashboard();
+            if (element("dashboard-subtitle")) await loadDashboard();
+            else window.location.reload();
         } catch (error) {
             const detail = error instanceof TypeError
                 ? apiUnavailableMessage
@@ -210,13 +215,16 @@
         button.disabled = true;
         button.classList.add("checking");
         try {
-            const response = await fetch(`${apiBase}/health`, { headers: { Accept: "application/json" } });
+            const response = await fetch(`${apiBase}/health`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
             if (!response.ok) throw new Error(`A API respondeu com status ${response.status}. Verifique a conexão com o banco.`);
-            const swagger = await fetch(`${apiBase}/swagger/v1/swagger.json`, { headers: { Accept: "application/json" } });
+            if ((await response.text()).trim() !== "Healthy") throw new Error("Resposta de saúde inválida. Verifique a URL configurada para a API.");
+            const swagger = await fetch(`${apiBase}/swagger/v1/swagger.json`, { cache: "no-store", signal: AbortSignal.timeout(15000), headers: { Accept: "application/json" } });
             if (!swagger.ok) {
                 toastWarning("Swagger inacessível", `A API está online, mas o Swagger respondeu com status ${swagger.status}.`);
                 return;
             }
+            const specification = await swagger.json();
+            if (typeof specification.openapi !== "string" || !specification.paths) throw new Error("A URL do Swagger não retornou um documento OpenAPI válido.");
             toastSuccess("API e Swagger conectados", "A Agro360.Api, o banco de dados e a documentação estão disponíveis.");
         } catch (error) {
             const detail = error instanceof TypeError
@@ -229,12 +237,24 @@
         }
     }
 
-    function logout() {
+    async function logout() {
         if (!state.session) { showLogin(); return; }
-        persistSession(null);
-        resetDashboard();
-        showLogin();
-        toast("Sessão encerrada", "Os dados locais de autenticação foram removidos.");
+        const refreshToken = state.session.refreshToken;
+        try {
+            const response = await fetch(`${apiBase}/api/v1/auth/logout`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ refreshToken })
+            });
+            if (!response.ok) throw new Error(`Falha HTTP ${response.status}`);
+        } catch {
+            toastWarning("Logout parcial", "A sessão local foi encerrada, mas a API não confirmou a revogação. Revogue as sessões na área de segurança.");
+        } finally {
+            persistSession(null);
+            resetDashboard();
+            showLogin();
+            toast("Sessão encerrada", "O refresh token foi revogado e os dados locais de autenticação foram removidos.");
+        }
     }
 
     async function loadDashboard() {
@@ -300,6 +320,7 @@
 
     function renderOperations(operations) {
         const body = element("recent-operations");
+        if (!body) return;
         body.replaceChildren();
         if (!operations.length) {
             const row = document.createElement("tr");
@@ -496,7 +517,7 @@
         document.addEventListener("keydown", keydown);
         palette.addEventListener("click", event => { if (event.target === palette) closePalette(); });
         if ("serviceWorker" in navigator) navigator.serviceWorker.register("/service-worker.js").catch(() => {});
-        if (state.session) loadDashboard(); else showLogin();
+        if (state.session && element("dashboard-subtitle")) loadDashboard(); else if (!state.session) showLogin();
     }
 
     init();

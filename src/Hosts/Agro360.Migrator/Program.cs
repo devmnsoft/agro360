@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using Dapper;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
@@ -156,7 +157,19 @@ internal sealed record Migration(string Version, string Name, string Checksum, s
     {
         var sql = File.ReadAllText(file);
         var name = Path.GetFileName(file);
-        return new(name, name, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sql))).ToLowerInvariant(), sql);
+        var checksum = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sql))).ToLowerInvariant();
+        // The migrator owns the transaction so applying a file and recording its
+        // checksum are atomic. Some historical scripts carry standalone BEGIN /
+        // COMMIT commands; executing those inside the outer transaction completes
+        // the Npgsql transaction before history can be written. Strip only those
+        // boundary lines at execution time and retain the original bytes for the
+        // checksum, preserving compatibility with already applied migrations.
+        var executableSql = Regex.Replace(
+            sql,
+            @"^\s*(?:begin|commit)\s*;\s*$",
+            string.Empty,
+            RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+        return new(name, name, checksum, executableSql);
     }
 }
 

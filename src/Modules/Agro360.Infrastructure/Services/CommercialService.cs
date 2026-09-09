@@ -47,7 +47,7 @@ public sealed class CommercialService(DatabaseExecutor database, ITenantContext 
                     select s.id as SaleId, r.id as ReceivableId, s.total_amount as TotalAmount,
                            s.currency, s.status, n.id as TraceabilityNodeId
                     from agro360.commercial_sales s
-                    join agro360.finance_receivables r on r.sale_id = s.id and r.tenant_id = s.tenant_id
+                    join agro360.finance_commercial_receivables r on r.sale_id = s.id and r.tenant_id = s.tenant_id
                     join agro360.traceability_nodes n on n.entity_id = s.id and n.entity_type = 'SALE' and n.tenant_id = s.tenant_id
                     where s.tenant_id = @TenantId and s.idempotency_key = @IdempotencyKey;
                     """,
@@ -209,7 +209,7 @@ public sealed class CommercialService(DatabaseExecutor database, ITenantContext 
                      @BuyerDocument, @DueDate, 'CONFIRMED', @IdempotencyKey, now(),
                      now(), @CreatedBy, 1);
 
-                insert into agro360.finance_receivables
+                insert into agro360.finance_commercial_receivables
                     (id, tenant_id, farm_id, sale_id, description, amount, currency,
                      due_date, status, created_at, created_by, version)
                 values

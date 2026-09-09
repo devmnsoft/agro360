@@ -34,7 +34,7 @@ public sealed class DashboardService(
                         join agro360.inventory_warehouses w on w.id = b.warehouse_id and w.tenant_id = b.tenant_id
                         where b.tenant_id = @TenantId
                           and (@FarmId is null or w.farm_id = @FarmId)) as InventoryValue,
-                    (select coalesce(sum(r.amount - r.paid_amount), 0) from agro360.finance_receivables r
+                    (select coalesce(sum(r.amount - r.paid_amount), 0) from agro360.finance_commercial_receivables r
                         where r.tenant_id = @TenantId and r.status in ('OPEN', 'OVERDUE')
                           and (@FarmId is null or r.farm_id = @FarmId)) as Receivables,
                     (select coalesce(sum(c.amount), 0) from agro360.cost_entries c

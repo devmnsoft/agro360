@@ -1,6 +1,6 @@
 namespace Agro360.Application.Contracts;
 
-public sealed record ImportBatchCommand(string Module, string FileName, string Csv, IReadOnlyDictionary<string,string>? Mapping, bool ConfirmCriticalErrors = false);
+public sealed record ImportBatchCommand(string Module, string FileName, string Csv, IReadOnlyDictionary<string, string>? Mapping, bool ConfirmCriticalErrors = false);
 public sealed record ImportBatch(Guid Id, string Module, string FileName, string Status, int TotalRows, int ValidRows, int ErrorRows, DateTimeOffset CreatedAt);
 public sealed record ImportError(int RowNumber, string ColumnName, string Code, string Message, string Severity);
 public sealed record FindingAction(string Status, string Justification);

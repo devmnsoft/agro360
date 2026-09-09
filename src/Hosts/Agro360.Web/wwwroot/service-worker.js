@@ -1,6 +1,45 @@
-const SHELL_CACHE="agro360-shell-v43", LOOKUP_CACHE="agro360-lookups-v43";
-const SHELL=["/","/field","/css/agro360.css","/css/field.css","/js/agro360.js","/js/field.js","/icons/agro360.svg","/manifest.webmanifest"];
-self.addEventListener("install",e=>{e.waitUntil(caches.open(SHELL_CACHE).then(c=>c.addAll(SHELL)));self.skipWaiting()});
-self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>![SHELL_CACHE,LOOKUP_CACHE].includes(k)).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
-self.addEventListener("fetch",e=>{const u=new URL(e.request.url);if(e.request.method!=="GET")return;if(u.pathname==="/api/mobile/bootstrap"){e.respondWith(fetch(e.request).then(r=>{if(r.ok)caches.open(LOOKUP_CACHE).then(c=>c.put(e.request,r.clone()));return r}).catch(()=>caches.match(e.request)));return}if(u.pathname.startsWith("/api/"))return;e.respondWith(fetch(e.request).then(r=>{if(r.ok)caches.open(SHELL_CACHE).then(c=>c.put(e.request,r.clone()));return r}).catch(()=>caches.match(e.request).then(r=>r||caches.match("/field"))))});
-self.addEventListener("sync",e=>{if(e.tag==="agro360-sync")e.waitUntil(self.clients.matchAll({includeUncontrolled:true}).then(cs=>cs.forEach(c=>c.postMessage({type:"SYNC_REQUESTED"}))))});
+const SHELL_CACHE = "agro360-shell-v44";
+const SHELL = ["/", "/field", "/css/agro360.css", "/css/field.css", "/js/agro360.js", "/js/field.js", "/icons/agro360.svg", "/manifest.webmanifest"];
+
+self.addEventListener("install", event => {
+    event.waitUntil(caches.open(SHELL_CACHE).then(cache => cache.addAll(SHELL)));
+    self.skipWaiting();
+});
+
+self.addEventListener("activate", event => {
+    // Remove the former unscoped lookup cache: it was shared between tenants.
+    // Leave caches belonging to other applications alone.
+    event.waitUntil(caches.keys().then(keys => Promise.all(keys
+        .filter(key => key !== SHELL_CACHE && (key.startsWith("agro360-shell-") || key.startsWith("agro360-lookups-")))
+        .map(key => caches.delete(key))))
+        .then(() => self.clients.claim()));
+});
+
+self.addEventListener("fetch", event => {
+    const url = new URL(event.request.url);
+    // Never synthesize a successful response for health, OpenAPI, authenticated
+    // data or another origin. API failure must reach the caller as a failure.
+    if (event.request.method !== "GET"
+        || url.origin !== self.location.origin
+        || event.request.headers.has("Authorization")
+        || !SHELL.includes(url.pathname)) return;
+
+    event.respondWith(fetch(event.request).then(async response => {
+        if (response.ok && response.type === "basic") {
+            const cache = await caches.open(SHELL_CACHE);
+            await cache.put(event.request, response.clone());
+        }
+        return response;
+    }).catch(async () => {
+        const cache = await caches.open(SHELL_CACHE);
+        const cached = await cache.match(event.request) ?? await cache.match(url.pathname);
+        return cached ?? Response.error();
+    }));
+});
+
+self.addEventListener("sync", event => {
+    if (event.tag === "agro360-sync") {
+        event.waitUntil(self.clients.matchAll({ includeUncontrolled: true })
+            .then(clients => clients.forEach(client => client.postMessage({ type: "SYNC_REQUESTED" }))));
+    }
+});

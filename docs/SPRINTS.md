@@ -1,5 +1,11 @@
 # Histórico de sprints
 
+## Plano mestre e maturidade atual
+
+O [plano mestre Agro360](execucao/AGRO360-MASTER-PLAN.md) foi incorporado integralmente. A ordem E0–E10 está no [plano executável](execucao/EXECUTION-PLAN.md); resultados e pendências na [matriz](TRACEABILITY-MATRIX-v0.2.0.md) e no [checkpoint](EXECUTION-CHECKPOINT.md). Estes controles prevalecem sobre rótulos históricos de sprint: presença de código não significa fluxo validado.
+
+O incremento atual entrega readiness de schema e diagnóstico Web sem falso sucesso offline (AG-E0-001/002). Migração incremental canônica (AG-E0-003) é a próxima entrega; identidade/vínculos/MFA/provisionamento seguro e contratação completa continuam pendentes. Não renumerar sprints existentes nem anunciar o sistema inteiro concluído.
+
 ## Sprint 31 — Inteligência Operacional Agro
 
 Central de decisão, recomendações auditáveis, scores com fatores, anomalias com observado/referência, prioridades, regras configuráveis e Agro360 Assistente baseado em dados reais.
@@ -116,7 +122,7 @@ Motor versionado e auditável para etapas, tarefas, aprovações, notificações
 
 ## Sprint 50 — formulários e ajuda contextual
 
-Validação backend continua sendo a fonte da verdade; a interface oferece resumo e erros por campo, loading, confirmação com consequência real e motivo nas ações definidas pela regra. Ajuda curta é recolhível e localizada em pt-BR, en-US e es-ES. Configurações e eventos de UX usam o schema `ui`, auditoria e RLS por tenant. Detalhes: `docs/UX-FORMS-VALIDATION.md` e `docs/CONTEXTUAL-HELP.md`.
+Validação backend continua sendo a fonte da verdade; a interface oferece resumo e erros por campo, loading, confirmação com consequência real e motivo nas ações definidas pela regra. Ajuda curta é recolhível e localizada em pt-BR, en-US e es-ES. Configurações e eventos de UX usam as tabelas `agro360.ui_*`, com auditoria e RLS por tenant. Detalhes: `docs/UX-FORMS-VALIDATION.md` e `docs/CONTEXTUAL-HELP.md`.
 
 ### Sprint corretiva — schema PostgreSQL canônico
 O banco consolidado usa somente `agro360`; nomes de tabela carregam o prefixo do módulo e SQL estático/Dapper deve ser qualificado. A homologação executa restore/build/test, instala o SQL com `ON_ERROR_STOP=1`, confirma a ausência dos schemas legados e testa isolamento: Super Admin enxerga todos os tenants; administradores e usuários permanecem limitados ao tenant ativo. Bloqueios de usuário/cliente, alterações de plano/módulo, cobrança e acesso global exigem confirmação, mensagem clara e auditoria. Login aceita e normaliza e-mail, CPF ou CNPJ; formulários usam seletores em vez de GUIDs e oferecem ajuda contextual em pt-BR, en-US e es-ES.

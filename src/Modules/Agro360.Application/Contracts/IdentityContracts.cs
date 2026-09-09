@@ -10,7 +10,7 @@ public sealed record BootstrapCommand(
 
 public sealed record BootstrapResult(Guid TenantId, Guid OrganizationId, Guid UserId, string TenantSlug);
 
-public sealed record LoginCommand(string TenantSlug, string Email, string Password);
+public sealed record LoginCommand(string TenantSlug, string Email, string Password, string? MfaCode = null, string? NewPassword = null);
 
 public sealed record RefreshTokenCommand(string RefreshToken);
 
@@ -22,7 +22,8 @@ public sealed record AuthenticationResult(
     string AccessToken,
     string RefreshToken,
     DateTimeOffset ExpiresAt,
-    IReadOnlyCollection<string> Permissions);
+    IReadOnlyCollection<string> Permissions,
+    IReadOnlyCollection<string> Roles);
 
 public interface IIdentityService
 {
@@ -31,4 +32,6 @@ public interface IIdentityService
     Task<AuthenticationResult> LoginAsync(LoginCommand command, CancellationToken cancellationToken);
 
     Task<AuthenticationResult> RefreshAsync(RefreshTokenCommand command, CancellationToken cancellationToken);
+
+    Task LogoutAsync(RefreshTokenCommand command, CancellationToken cancellationToken);
 }

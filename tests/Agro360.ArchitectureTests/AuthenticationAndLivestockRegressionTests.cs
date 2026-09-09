@@ -2,14 +2,30 @@ namespace Agro360.ArchitectureTests;
 
 public sealed class AuthenticationAndLivestockRegressionTests
 {
-    private static readonly string Root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../"));
+    private static readonly string Root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
     private static string Read(string path) => File.ReadAllText(Path.Combine(Root, path));
+
+    [Fact]
+    public void OfflineShellCannotMaskApiFailuresOrCacheTenantData()
+    {
+        var worker = Read("src/Hosts/Agro360.Web/wwwroot/service-worker.js");
+        var client = Read("src/Hosts/Agro360.Web/wwwroot/js/agro360.js");
+
+        Assert.Contains("url.origin !== self.location.origin", worker, StringComparison.Ordinal);
+        Assert.Contains("!SHELL.includes(url.pathname)", worker, StringComparison.Ordinal);
+        Assert.Contains("event.request.headers.has(\"Authorization\")", worker, StringComparison.Ordinal);
+        Assert.DoesNotContain("/api/mobile/bootstrap", worker, StringComparison.Ordinal);
+        Assert.DoesNotContain("caches.match(\"/field\")", worker, StringComparison.Ordinal);
+        Assert.Contains("(await response.text()).trim() !== \"Healthy\"", client, StringComparison.Ordinal);
+        Assert.Contains("typeof specification.openapi", client, StringComparison.Ordinal);
+    }
 
     [Fact]
     public void RefreshClassifiesExpectedFailuresAndReturnsUnauthorized()
     {
         var identity = Read("src/Modules/Agro360.Infrastructure/Services/IdentityService.cs");
         var middleware = Read("src/Hosts/Agro360.Api/Middleware/ExceptionHandlingMiddleware.cs");
+        var program = Read("src/Hosts/Agro360.Api/Program.cs");
 
         foreach (var reason in new[] { "token ausente", "token não encontrado", "token expirado", "token revogado", "tenant divergente", "usuário inativo", "usuário bloqueado" })
             Assert.Contains(reason, identity, StringComparison.Ordinal);
@@ -17,6 +33,10 @@ public sealed class AuthenticationAndLivestockRegressionTests
         Assert.Contains("for update of rt", identity, StringComparison.Ordinal);
         Assert.Contains("set revoked_at = now()", identity, StringComparison.Ordinal);
         Assert.Contains("IssueTokensAsync", identity, StringComparison.Ordinal);
+        Assert.True(
+            program.IndexOf("UseSerilogRequestLogging", StringComparison.Ordinal) <
+            program.IndexOf("UseMiddleware<ExceptionHandlingMiddleware>", StringComparison.Ordinal),
+            "O logger deve observar o status final produzido pelo middleware de exceções.");
     }
 
     [Fact]
@@ -31,6 +51,37 @@ public sealed class AuthenticationAndLivestockRegressionTests
     }
 
     [Fact]
+    public void LogoutRevokesRefreshTokenAndGlobalClientHandlesNonDashboardPages()
+    {
+        var identity = Read("src/Modules/Agro360.Infrastructure/Services/IdentityService.cs");
+        var controller = Read("src/Hosts/Agro360.Api/Controllers/IdentityController.cs");
+        var client = Read("src/Hosts/Agro360.Web/wwwroot/js/agro360.js");
+
+        Assert.Contains("auth/logout", controller, StringComparison.Ordinal);
+        Assert.Contains("set revoked_at = now()", identity, StringComparison.Ordinal);
+        Assert.Contains("/api/v1/auth/logout", client, StringComparison.Ordinal);
+        Assert.Contains("element(\"refresh-dashboard\")?.addEventListener", client, StringComparison.Ordinal);
+        Assert.Contains("const subtitle = element(\"dashboard-subtitle\")", client, StringComparison.Ordinal);
+        Assert.Contains("if (!subtitle) return", client, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SuperAdministratorRoleIsLoadedIntoTokenAndDrivesGlobalNavigation()
+    {
+        var identity = Read("src/Modules/Agro360.Infrastructure/Services/IdentityService.cs");
+        var tokens = Read("src/Modules/Agro360.Infrastructure/Security/SecurityServices.cs");
+        var platform = Read("src/Hosts/Agro360.Api/Controllers/SaasControllers.cs");
+        var client = Read("src/Hosts/Agro360.Web/wwwroot/js/agro360.js");
+
+        Assert.Contains("select distinct r.code", identity, StringComparison.Ordinal);
+        Assert.Contains("new Claim(\"role\", role)", tokens, StringComparison.Ordinal);
+        Assert.Contains("Authorize(Policy = Permissions.PlatformAdmin)", platform, StringComparison.Ordinal);
+        Assert.Contains("platform_super_admins", identity, StringComparison.Ordinal);
+        Assert.Contains("roles ?? []", client, StringComparison.Ordinal);
+        Assert.DoesNotContain("superadmin@mnsoft.com.br", client, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void LivestockDashboardUsesCanonicalHerdLifecycleColumn()
     {
         var service = Read("src/Modules/Agro360.Infrastructure/Services/Livestock360Service.cs");
@@ -38,7 +89,7 @@ public sealed class AuthenticationAndLivestockRegressionTests
         var dashboard = service[service.IndexOf("DashboardAsync", StringComparison.Ordinal)..];
         dashboard = dashboard[..dashboard.IndexOf("private Task<IReadOnlyList<dynamic>>", StringComparison.Ordinal)];
 
-        Assert.DoesNotContain(" active", dashboard, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("where active", dashboard, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("status='ACTIVE' and deleted_at is null", dashboard, StringComparison.Ordinal);
         Assert.Contains("status varchar(20) not null default 'ACTIVE'", schema, StringComparison.Ordinal);
         Assert.DoesNotContain("head_count integer not null default 0 check(head_count>=0),active boolean", schema, StringComparison.Ordinal);

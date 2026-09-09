@@ -8,7 +8,7 @@ public sealed class InfrastructureQualityGuardTests
     private static readonly string RepositoryRoot = FindRepositoryRoot();
     private static readonly string ServicesRoot = Path.Combine(RepositoryRoot, "src", "Modules", "Agro360.Infrastructure", "Services");
 
-    
+
     [Fact]
     public void InfrastructureServicesMustUseLoggerMessageInsteadOfDirectLoggingExtensions()
     {
@@ -20,7 +20,7 @@ public sealed class InfrastructureQualityGuardTests
         }
     }
 
-   
+
 
     [Fact]
     public void ServicesMustNotNormalizeCaseWithCultureSensitiveCalls()
@@ -29,9 +29,9 @@ public sealed class InfrastructureQualityGuardTests
         foreach (var file in Directory.EnumerateFiles(ServicesRoot, "*.cs")) Assert.DoesNotMatch(pattern, File.ReadAllText(file));
     }
 
-  
 
-     
+
+
 
     [Fact]
     public void CanonicalInstallerMustOnlyCreateTheAgro360Schema()
@@ -57,7 +57,7 @@ public sealed class InfrastructureQualityGuardTests
         }
     }
 
-    
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

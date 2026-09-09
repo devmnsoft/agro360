@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using System.Threading.RateLimiting;
 using Agro360.Api.Health;
@@ -7,6 +6,8 @@ using Agro360.Application;
 using Agro360.Infrastructure;
 using Agro360.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
@@ -15,16 +16,24 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog((context, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
     .Enrich.FromLogContext()
-    .Enrich.WithProperty("Application", "Agro360.Api")
-    .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture));
+    .Enrich.WithProperty("Application", "Agro360.Api"));
+
+var dataProtection = builder.Services.AddDataProtection();
+var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"];
+if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
+{
+    dataProtection.PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
+}
 
 builder.Services.AddAgro360Infrastructure(builder.Configuration);
+builder.Services.AddHostedService<SuperAdminProvisioner>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 builder.Services.AddHealthChecks()
     .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
 
@@ -61,8 +70,12 @@ builder.Services.AddAuthorization(options =>
     {
         options.AddPolicy(permission, policy => policy
             .RequireAuthenticatedUser()
-            .RequireClaim("permission", permission));
+            .AddRequirements(new PermissionRequirement(permission)));
     }
+    options.AddPolicy(Permissions.PlatformAdmin, policy => policy
+        .RequireAuthenticatedUser()
+        .RequireRole("SUPER_ADMIN")
+        .AddRequirements(new PermissionRequirement(Permissions.PlatformAdmin)));
     options.AddPolicy(Permissions.PortalAccess, policy => policy.RequireAuthenticatedUser().RequireClaim("permission", Permissions.PortalAccess));
 });
 
@@ -96,8 +109,8 @@ builder.Services.AddCors(options => options.AddPolicy("web", policy => policy
 var app = builder.Build();
 
 app.UseMiddleware<CorrelationIdMiddleware>();
-app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseSerilogRequestLogging();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 if (!app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("HttpsRedirection:Enabled"))
 {
     app.UseHttpsRedirection();

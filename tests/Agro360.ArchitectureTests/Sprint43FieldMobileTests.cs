@@ -3,7 +3,7 @@ namespace Agro360.ArchitectureTests;
 public sealed class Sprint43FieldMobileTests
 {
     private static string Root => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
- 
+
     [Fact]
     public void FullSqlContainsTenantSafeFieldMobileModel()
     {
