@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using Agro360.Infrastructure.Persistence;
 using Dapper;
 using Microsoft.Extensions.Configuration;
@@ -63,7 +64,7 @@ try
             Log.Information("Validação concluída sem alterações; checksums e requisitos são compatíveis.");
             break;
         case "migrate":
-            await MigrateAsync(connection, migrations).ConfigureAwait(false);
+            await MigrateAsync(connection, migrations, migrationDirectory).ConfigureAwait(false);
             break;
         case "seed":
             var environment = GetOption(args, "--environment") ?? GetSeedProfile(args)
@@ -100,7 +101,7 @@ static void ValidateChecksums(IEnumerable<Migration> migrations, IReadOnlyDictio
             throw new InvalidOperationException($"Migration aplicada '{migration.Name}' foi alterada (checksum divergente).");
 }
 
-static async Task MigrateAsync(NpgsqlConnection connection, Migration[] migrations)
+static async Task MigrateAsync(NpgsqlConnection connection, Migration[] migrations, string migrationDirectory)
 {
     await connection.ExecuteAsync("select pg_advisory_lock(hashtext('mnsoft-agro360-migrator'));").ConfigureAwait(false);
     try
@@ -111,6 +112,7 @@ static async Task MigrateAsync(NpgsqlConnection connection, Migration[] migratio
             "select version, name, checksum from agro360.platform_schema_migrations order by version;").ConfigureAwait(false))
             .ToDictionary(item => item.Version, StringComparer.Ordinal);
         ValidateChecksums(migrations, applied);
+        await EnsureCanonicalBaselineAsync(connection, migrationDirectory).ConfigureAwait(false);
         foreach (var migration in migrations.Where(item => !applied.ContainsKey(item.Version)))
         {
             Log.Information("Aplicando {Migration}...", migration.Name);
@@ -122,6 +124,41 @@ static async Task MigrateAsync(NpgsqlConnection connection, Migration[] migratio
     }
     finally { await connection.ExecuteAsync("select pg_advisory_unlock(hashtext('mnsoft-agro360-migrator'));").ConfigureAwait(false); }
     Log.Information("Banco Agro 360 atualizado com sucesso.");
+}
+
+static async Task EnsureCanonicalBaselineAsync(NpgsqlConnection connection, string migrationDirectory)
+{
+    const string marker = "__canonical_baseline_v6_5_1";
+    var hasCanonicalSchema = await connection.ExecuteScalarAsync<bool>(
+        "select to_regclass('agro360.tenancy_tenants') is not null;").ConfigureAwait(false);
+    if (hasCanonicalSchema) return;
+
+    var hasLegacyTenantTable = await connection.ExecuteScalarAsync<bool>(
+        "select to_regclass('tenancy.tenants') is not null;").ConfigureAwait(false);
+    if (hasLegacyTenantTable && await connection.ExecuteScalarAsync<bool>("select exists(select 1 from tenancy.tenants);").ConfigureAwait(false))
+        throw new InvalidOperationException(
+            "A base histórica contém tenants. A conversão de dados para o schema agro360 deve ser homologada em uma cópia antes do baseline canônico; nenhuma estrutura canônica foi materializada.");
+
+    var markerExists = await connection.ExecuteScalarAsync<bool>(
+        "select exists(select 1 from agro360.platform_schema_migrations where version=@Marker);",
+        new { Marker = marker }).ConfigureAwait(false);
+    if (markerExists)
+        throw new InvalidOperationException("O baseline canônico está registrado, mas suas tabelas não existem. Restaure o banco antes de continuar.");
+
+    var databaseDirectory = Directory.GetParent(Path.GetFullPath(migrationDirectory))?.FullName
+        ?? throw new InvalidOperationException("Não foi possível localizar o diretório database a partir das migrations.");
+    var installerPath = Path.Combine(databaseDirectory, "agro360-postgres-full.sql");
+    if (!File.Exists(installerPath))
+        throw new FileNotFoundException("O baseline canônico textual não foi encontrado ao lado do diretório de migrations.", installerPath);
+
+    var baseline = Migration.Load(installerPath);
+    Log.Information("Materializando baseline canônico {Marker} antes da convergência dos schemas históricos...", marker);
+    await using var transaction = await connection.BeginTransactionAsync().ConfigureAwait(false);
+    await connection.ExecuteAsync(baseline.Sql, transaction: transaction, commandTimeout: 600).ConfigureAwait(false);
+    await connection.ExecuteAsync(
+        "insert into agro360.platform_schema_migrations(version,name,checksum) values (@Marker,@Name,@Checksum);",
+        new { Marker = marker, Name = Path.GetFileName(installerPath), baseline.Checksum }, transaction).ConfigureAwait(false);
+    await transaction.CommitAsync().ConfigureAwait(false);
 }
 
 static async Task ValidateExtensionsAsync(NpgsqlConnection connection)
@@ -164,7 +201,15 @@ internal sealed record Migration(string Version, string Name, string Checksum, s
     {
         var sql = File.ReadAllText(file);
         var name = Path.GetFileName(file);
-        return new(name, name, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sql))).ToLowerInvariant(), sql);
+        var checksum = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sql))).ToLowerInvariant();
+        // O migrator controla a transação. Remova apenas os delimitadores históricos
+        // durante a execução, preservando os bytes originais para o checksum.
+        var executableSql = Regex.Replace(
+            sql,
+            @"^\s*(?:begin|commit)\s*;\s*$",
+            string.Empty,
+            RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+        return new(name, name, checksum, executableSql);
     }
 }
 

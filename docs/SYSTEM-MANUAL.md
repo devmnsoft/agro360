@@ -1,5 +1,13 @@
 # Manual interno do sistema Agro360
 
+## Diagnóstico de acesso — correção E0
+
+Na tela de acesso, informe o cliente e sua identidade conforme o cadastro atual. **Testar conexão com a API** só anuncia sucesso após validar readiness do banco/schema e um documento OpenAPI válido. Em falha de rede, a mensagem apresenta a URL configurada; banco sem schema retorna indisponibilidade, mesmo que o processo esteja vivo. Não compartilhe senha/token ao pedir suporte.
+
+O shell público pode ser recuperado offline, mas respostas de API, dados autenticados, health e Swagger não são substituídos por páginas em cache. O cache legado de lookups é invalidado; dados operacionais offline seguros continuam pendentes. CNPJ como contexto da organização e seleção pós-login ainda são requisitos E1, não funcionalidades já homologadas.
+
+Plano/estado verificável: [mestre](execucao/AGRO360-MASTER-PLAN.md), [checkpoint](EXECUTION-CHECKPOINT.md) e [matriz](TRACEABILITY-MATRIX-v0.2.0.md).
+
 ## Visão geral
 
 O Agro360 é um SaaS B2B multi-tenant para administrar clientes, usuários e a operação do agronegócio. A API é a fonte das permissões, regras de negócio e validações; o menu apenas reflete os módulos e permissões devolvidos no login. Todos os dados operacionais devem permanecer limitados ao tenant autenticado.
@@ -90,12 +98,12 @@ O usuário precisa poder criar as extensões `pgcrypto`, `pg_trgm` e `unaccent`.
 
 ## Credenciais locais de homologação
 
-| Perfil | Tenant | Login | Senha inicial |
+| Perfil | Tenant | Login de referência | Ativação |
 |---|---|---|---|
-| Super Admin MNSOFT | `agro360-platform` | `superadmin@mnsoft.com.br` | `MNSoft@Agro360#2026` |
-| Administrador Fazenda Santa Clara | `santa-clara` | `admin@santaclara.agro360.local` | `SantaClara@2026!` |
+| Super Admin MNSOFT | `agro360-platform` | `superadmin@mnsoft.com.br` | Provisionador seguro da aplicação, com segredo local |
+| Administrador Fazenda Santa Clara | `santa-clara` | `admin@santaclara.agro360.local` | Convite seguro ou provisionamento explícito |
 
-Essas credenciais existem apenas no instalador de desenvolvimento, com hash compatível com o serviço de login e troca obrigatória. Não devem ser reutilizadas em produção.
+O instalador não distribui senhas fixas: as contas de referência permanecem sem credencial utilizável até a ativação explícita. Nunca grave segredos em documentação, scripts ou código-fonte.
 
 ## Checklist de homologação
 

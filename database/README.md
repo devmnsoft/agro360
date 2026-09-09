@@ -1,5 +1,13 @@
 # PostgreSQL — Agro360
 
+## Estado verificado — E0, setembro de 2026
+
+O [plano mestre](../docs/execucao/AGRO360-MASTER-PLAN.md) e o [checkpoint](../docs/EXECUTION-CHECKPOINT.md) distinguem instalação limpa de upgrade. `scripts/verify-e0.ps1 -CheckMigrations` executa este instalador duas vezes, percorre/reexecuta a cadeia incremental limpa e verifica login real em PostgreSQL descartável. Base histórica populada é bloqueada antes do baseline até a conversão de dados ser homologada; AG-E0-003 permanece parcial.
+
+`/health` retorna 503 se o schema mínimo de login/resumo estiver ausente/inacessível; não executa migrations automaticamente. `ConnectionStrings__Agro360` continua sendo o contrato da API. Não houve alteração de schema nesta correção E0.
+
+O instalador não contém senha conhecida. O gate gera credencial só para seu banco descartável, sem registrar senha/hash/token nos resultados publicados. Demo completamente opt-in e homologação do primeiro acesso ainda permanecem em AG-E1-004.
+
 O arquivo `agro360-postgres-full.sql` é o instalador canônico, único e autocontido do Agro360. Ele cria exclusivamente o schema `agro360`, incluindo tabelas, chaves estrangeiras, constraints, índices, views, funções, triggers, catálogos e dados mínimos de inicialização. Não depende de Docker, migrations externas, `\\i`, caminhos locais ou dados de conexão embutidos.
 
 ## Pré-requisitos
@@ -32,7 +40,7 @@ A opção `ON_ERROR_STOP=1` é obrigatória na validação: o script principal p
 
 Não use a opção **Restore** do pgAdmin para esse arquivo, pois ela aciona o fluxo de `pg_restore` em vez de executar o SQL texto.
 
-## Acesso inicial (somente Development/local)
+## Provisionamento inicial
 
 - **Tenant:** `agro360-platform`
 - **Plataforma:** `MNSOFT / Agro360 Platform`
@@ -40,12 +48,12 @@ Não use a opção **Restore** do pgAdmin para esse arquivo, pois ela aciona o f
 - **Login/e-mail:** `superadmin@mnsoft.com.br`
 - **Documento:** `18.160.057/0001-13` (`CNPJ`)
 - **Perfil:** `SUPER_ADMIN`
-- **Senha inicial:** `MNSoft@Agro360#2026`
-- **Status:** Ativo
+- **Senha inicial:** fornecida somente por segredo local ao `SuperAdminProvisioner`
+- **Status:** ativo somente depois do provisionamento seguro
 
-> **Atenção:** esta senha é exclusivamente para desenvolvimento/local. O usuário é criado com `must_change_password = true`; troque-a no primeiro acesso e nunca reutilize essa credencial em produção.
+> Não há senha universal no SQL ou nesta documentação. Configure `Bootstrap__SuperAdmin__TemporaryPassword` e o segredo TOTP somente no ambiente autorizado; o valor não deve aparecer em linha de comando, Git ou logs.
 
-A senha não é armazenada em texto puro. O instalador contém somente um hash `PBKDF2-HMAC-SHA512`, com 210.000 iterações, salt de 16 bytes e chave de 32 bytes, compatível com `Agro360.Infrastructure.Security.PasswordHasher` — o mesmo componente usado no login.
+O provisionador persiste somente hash `PBKDF2-HMAC-SHA512`, compatível com `Agro360.Infrastructure.Security.PasswordHasher`, e exige troca inicial. Reexecução sem segredo não redefine a conta.
 
 ## Validações depois da restauração
 
@@ -74,9 +82,9 @@ where u.email='superadmin@mnsoft.com.br';
 
 Antes de publicar, execute também `./scripts/validate-full-sql.sh`, `dotnet restore`, `dotnet build --no-restore` e `dotnet test --no-build`.
 
-## Cliente de homologação incluído
+## Cliente de homologação sem credencial universal
 
-O instalador completo também inclui, de forma idempotente, o cliente **Fazenda Santa Clara** no plano Profissional. Para o teste local, use o tenant `santa-clara`, o e-mail `admin@santaclara.agro360.local` e a senha inicial `SantaClara@2026!` (perfil **Administrador do Cliente**). O SQL armazena exclusivamente hashes PBKDF2; as senhas em texto desta documentação são credenciais descartáveis de homologação e não devem ser usadas em produção.
+O instalador registra a fixture **Fazenda Santa Clara** e seu administrador como `INVITED` com hash não autenticável. O gate descartável gera uma senha aleatória em memória e ativa somente a cópia de teste. Para outro ambiente, use o fluxo de convite/provisionamento; não existe senha documentada.
 
 ## Seed operacional opcional de desenvolvimento
 
@@ -95,7 +103,7 @@ Esse arquivo é opcional; `agro360-postgres-full.sql` sozinho já deixa a plataf
 psql "$AGRO360_CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/agro360-postgres-full.sql
 ```
 
-Não use `pg_restore` com esse arquivo; esse comando é destinado a dumps em formatos próprios. O bootstrap é idempotente e inclui o tenant `santa-clara`, o Administrador do Cliente e o Super Administrador com hashes PBKDF2-SHA512 compatíveis com a aplicação.
+Não use `pg_restore` com esse arquivo; esse comando é destinado a dumps em formatos próprios. O bootstrap é idempotente, mas contas de exemplo permanecem não provisionadas até um fluxo seguro definir o segredo local.
 
 ## Comercial Agro 360 (sprint atual)
 
@@ -103,4 +111,4 @@ Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo pers
 
 ## Verificação da recuperação
 
-Após executar o SQL completo, valide os dois acessos documentados acima e confirme que os respectivos perfis retornam permissões de dashboard e menus. O frontend não contém credenciais nem hashes: autenticação e renovação continuam sendo feitas pela API contra os hashes PBKDF2-SHA512 persistidos no PostgreSQL.
+Após executar o SQL completo, provisione as contas pelo fluxo seguro e confirme que os respectivos perfis retornam permissões de dashboard e menus. O frontend não contém credenciais nem hashes: autenticação e renovação continuam sendo feitas pela API.

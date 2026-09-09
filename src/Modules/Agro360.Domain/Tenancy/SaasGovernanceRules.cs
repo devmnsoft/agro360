@@ -22,6 +22,41 @@ public static partial class SaasGovernanceRules
             throw new InvalidOperationException("Ativacao, suspensao, inativacao e reativacao exigem motivo.");
     }
 
+    public static string EnsureUserAccessTransition(
+        string currentStatus,
+        bool activate,
+        bool isSelf,
+        bool isLastActiveAdministrator,
+        string? reason)
+    {
+        var targetStatus = activate ? "ACTIVE" : "DISABLED";
+        var expectedStatus = activate ? "DISABLED" : "ACTIVE";
+        if (!currentStatus.Equals(expectedStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(activate
+                ? "Somente um usuario inativo pode ser reativado por este fluxo."
+                : "Somente um usuario ativo pode ser inativado por este fluxo.");
+        }
+
+        if (!activate && isSelf)
+        {
+            throw new InvalidOperationException("O administrador nao pode inativar o proprio acesso.");
+        }
+
+        if (!activate && isLastActiveAdministrator)
+        {
+            throw new InvalidOperationException("A organizacao deve manter pelo menos um administrador ativo.");
+        }
+
+        var normalizedReason = reason?.Trim();
+        if (normalizedReason is null || normalizedReason.Length is < 5 or > 1000)
+        {
+            throw new ArgumentException("Informe uma justificativa entre 5 e 1000 caracteres.", nameof(reason));
+        }
+
+        return targetStatus;
+    }
+
     public static string NormalizeAndValidateDocument(string document)
     {
         var value = new string((document ?? string.Empty).Where(char.IsDigit).ToArray());

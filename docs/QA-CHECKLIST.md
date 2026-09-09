@@ -1,5 +1,19 @@
 # Checklist de homologação da Release Candidate
 
+## Gate de continuidade E0 (2026-09-08)
+
+Referência atual: [checkpoint](EXECUTION-CHECKPOINT.md), [matriz](TRACEABILITY-MATRIX-v0.2.0.md) e [plano mestre](execucao/AGRO360-MASTER-PLAN.md). As evidências são do ambiente indicado, não de produção.
+
+- [x] Banco descartável vazio: liveness 200/readiness 503; instalado: readiness 200.
+- [x] Instalador completo executado e repetido; login, dashboard, refresh/replay/logout por HTTP real.
+- [x] Navegador: diagnóstico de API inacessível exibe erro, não página offline interpretada como sucesso; ajuda do campo disponível.
+- [x] Worker público: health/API/OpenAPI/auth/outra origem fora do cache; caches legados Agro360 invalidados sem remover caches alheios.
+- [ ] Upgrade incremental com dados de versão anterior (AG-E0-003).
+- [ ] Login completo no navegador, menus por perfil, dois clientes, role PostgreSQL não-superusuária e responsividade móvel.
+- [ ] Demo opt-in e provisionamento seguro; MFA/assistência auditada e política completa E1.
+
+Reproduzir: `pwsh -File scripts/verify-e0.ps1` e `node scripts/verify-offline-shell.mjs`. O último resultado da suíte completa, inclusive falhas concorrentes, está no checkpoint; não suprimir testes.
+
 ## Recuperação emergencial do shell
 
 - [ ] Confirmar que `_Layout.cshtml` renderiza `Styles`, `Head`, `RenderBody()` e `Scripts` uma única vez e nessa ordem.
@@ -323,3 +337,11 @@ Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo pers
 - [ ] Validar login em 320 px, 768 px e desktop a 100% de zoom, sem overflow horizontal.
 - [ ] Confirmar que API `/health` e `/swagger/v1/swagger.json` respondem no ambiente habilitado.
 - [ ] Confirmar que nenhum PNG, JPG, WEBP ou PDF foi adicionado.
+
+## E0 — runner de testes .NET 10
+
+- [ ] Confirmar que cada projeto xUnit v3 define `OutputType=Exe`, `TestingPlatformDotnetTestSupport=true` e `UseMicrosoftTestingPlatformRunner=true`.
+- [ ] Executar `dotnet test MNSOFT.Agro360.sln` e confirmar descoberta maior que zero.
+- [ ] Não passar a opção VSTest `--logger "console;verbosity=minimal"` ao runner Microsoft Testing Platform.
+- [ ] Configurar `AGRO360_TEST_CONNECTION_STRING` por segredo e confirmar que nenhum teste PostgreSQL foi ignorado.
+- [ ] Se um host estiver ativo e bloquear `bin/Debug`, não encerrá-lo sem confirmar o proprietário; validar em `Release` ou parar a instância de forma coordenada.

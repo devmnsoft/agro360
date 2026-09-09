@@ -4,12 +4,26 @@
     const escape = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
     const request = (path, options = {}) => window.agro360Api(`${root}/${path}`, options);
     const badge = value => `<span class="proc-badge">${escape(value)}</span>`;
+    const normalizePermission = value => String(value ?? "").toLowerCase().replace(/^agro360\./, "").replaceAll("_", ".");
+    const session = (() => { try { return JSON.parse(localStorage.getItem("agro360.session")); } catch { return null; } })();
+    const permissions = new Set((session?.permissions ?? []).map(normalizePermission));
+    const isSuperAdministrator = (session?.roles ?? []).includes("SUPER_ADMIN");
+    const can = permission => isSuperAdministrator || permissions.has(permission);
+    const receiptActions = item => {
+        const actions = [];
+        if (item.quality_pending && can("purchasing.receipts.inspect")) {
+            actions.push(`<button type="button" class="proc-link" data-receipt-quality="approve" data-receipt-id="${escape(item.id)}">Liberar</button>`);
+            actions.push(`<button type="button" class="proc-link" data-receipt-quality="reject" data-receipt-id="${escape(item.id)}">Reprovar</button>`);
+        }
+        if (item.status !== "CANCELLED" && can("purchasing.receipts.cancel")) actions.push(`<button type="button" class="proc-link danger" data-receipt-cancel data-receipt-id="${escape(item.id)}">Cancelar</button>`);
+        return actions.join(" ") || "—";
+    };
     const tables = {
         suppliers: { head: ["Fornecedor", "Categoria", "Prazo", "Status"], row: item => [item.legal_name, item.main_category, `${item.average_delivery_days} dias`, badge(item.status)] },
         catalog: { head: ["Código", "Item", "Categoria", "Tipo", "Situação"], row: item => [item.internal_code, item.name, item.category, item.item_type, badge(item.active ? "ATIVO" : "INATIVO")] },
         requisitions: { head: ["Número", "Prioridade", "Necessidade", "Itens", "Status"], row: item => [item.number, badge(item.priority), new Date(`${item.needed_on}T00:00`).toLocaleDateString("pt-BR"), item.item_count, badge(item.status)] },
         orders: { head: ["Número", "Fornecedor", "Entrega", "Total", "Status"], row: item => [item.number, item.supplier_name, new Date(`${item.delivery_on}T00:00`).toLocaleDateString("pt-BR"), Number(item.total).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), badge(item.status)] },
-        receipts: { head: ["Recebimento", "Pedido", "Fornecedor", "Data", "Itens", "Estoque", "Financeiro", "Status"], row: item => [item.number, item.order_number, item.supplier_name, new Date(item.received_at).toLocaleString("pt-BR"), item.item_count, badge(item.stock_integration_status), badge(item.finance_integration_status), badge(item.status)] }
+        receipts: { head: ["Recebimento", "Pedido", "Fornecedor", "Data", "Itens", "Estoque", "Financeiro", "Status", "Ações"], row: item => [item.number, item.order_number, item.supplier_name, new Date(item.received_at).toLocaleString("pt-BR"), item.item_count, badge(item.stock_integration_status), badge(item.finance_integration_status), badge(item.status), receiptActions(item)] }
     };
 
     async function dashboard() {
@@ -84,6 +98,24 @@
         finally { button.disabled = false; }
     }));
     document.querySelector('[data-lookup="orders"]').addEventListener("change", event => loadPendingItems(event.target.value).catch(error => { document.querySelector('[name="purchaseOrderItemId"]').innerHTML = `<option value="">${escape(error.message)}</option>`; }));
+    document.querySelector('[data-content="receipts"]').addEventListener("click", async event => {
+        const qualityButton = event.target.closest("[data-receipt-quality]");
+        const cancelButton = event.target.closest("[data-receipt-cancel]");
+        const button = qualityButton ?? cancelButton;
+        if (!button) return;
+        const reason = window.prompt(qualityButton ? "Informe o parecer da inspeção (mínimo 5 caracteres):" : "Informe o motivo do cancelamento (mínimo 5 caracteres):");
+        if (!reason || reason.trim().length < 5) return window.toastWarning?.("Justificativa obrigatória", "Informe ao menos 5 caracteres para manter a trilha de auditoria.");
+        const approve = qualityButton?.dataset.receiptQuality === "approve";
+        const action = qualityButton ? (approve ? "liberar este recebimento para o estoque" : "reprovar esta inspeção") : "cancelar este recebimento e compensar seus efeitos elegíveis";
+        if (!await window.confirmDialog("Confirmar decisão", `Deseja ${action}? A justificativa será auditada.`, "Confirmar")) return;
+        button.disabled = true;
+        try {
+            await request(`receipts/${encodeURIComponent(button.dataset.receiptId)}/${qualityButton ? "quality" : "cancel"}`, { method: "POST", body: JSON.stringify(qualityButton ? { approve, reason: reason.trim() } : { reason: reason.trim() }) });
+            window.toastSuccess?.("Decisão registrada", qualityButton ? "A situação de qualidade e estoque foi atualizada." : "O recebimento foi cancelado com compensação rastreável.");
+            await Promise.all([dashboard(), list("receipts"), list("orders")]);
+        } catch (error) { window.toastWarning?.("Operação não concluída", error.message); }
+        finally { button.disabled = false; }
+    });
     document.querySelector("#proc-refresh").addEventListener("click", () => Promise.all([dashboard(), ...Object.keys(tables).map(name => list(name))]));
     dashboard(); Object.keys(tables).forEach(name => list(name)); lookups();
 })();

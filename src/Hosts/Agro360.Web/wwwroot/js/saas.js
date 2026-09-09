@@ -1,188 +1,335 @@
 (() => {
-    "use strict";
+    const api = document.querySelector('meta[name="api-base"]').content;
     const content = document.querySelector("#saas-content");
-    if (!content) return;
     const status = document.querySelector("#saas-status");
     const dialog = document.querySelector("#saas-dialog");
-    const form = document.querySelector("#saas-form");
-    const fields = document.querySelector("#dialog-fields");
-    const session = (() => { try { return JSON.parse(localStorage.getItem("agro360.session")); } catch { return null; } })();
-    const request = (path, options = {}) => window.agro360Api(path, options);
-    const cache = { tenants: [], plans: [], users: [], roles: [] };
-    let view = "dashboard";
-    let operation = null;
+    const dialogForm = document.querySelector("#saas-form");
+    const dialogFields = document.querySelector("#dialog-fields");
+    const dialogMessage = dialogForm.querySelector(".form-message");
+    const session = readSession();
+    const permissions = new Set((session?.permissions ?? []).map(normalizePermission));
+    const isSuperAdministrator = (session?.roles ?? []).includes("SUPER_ADMIN");
+    const tenantViews = new Set(["onboarding", "users", "roles", "invitations", "security", "notifications", "settings", "account"]);
+    let view = isSuperAdministrator ? "dashboard" : permissions.has("account.users.read") ? "users" : "account";
 
     const helps = {
         dashboard: "Consulte indicadores globais e alertas. O acesso de suporte e toda ação administrativa são auditados.",
-        tenants: "Cadastre e acompanhe organizações. CPF/CNPJ, responsável e plano são obrigatórios.",
-        plans: "Defina limites, módulos e recursos comerciais. Cobrança externa não é simulada.",
-        billing: "Acompanhe cobranças internas. Baixas são manuais, justificadas e auditadas.",
-        features: "Confira recursos contratados por organização e a origem efetiva de cada liberação.",
-        audit: "Consulte ações críticas e seus responsáveis.",
-        users: "Gerencie somente usuários desta organização. Perfis e permissões são validados pelo backend.",
-        roles: "Perfis de sistema são protegidos e ninguém pode conceder privilégios acima da própria alçada.",
-        usage: "Compare consumo e limites contratados sem apagar dados existentes.",
-        account: "Consulte o plano da organização e solicite upgrade para análise interna.",
-        settings: "Configure preferências da organização; alterações ficam auditadas."
+        tenants: "Cadastre e acompanhe organizações. CPF/CNPJ, responsável e plano são obrigatórios; bloqueios e desbloqueios exigem justificativa.",
+        plans: "Defina limites e recursos comerciais. Somente a super administração pode publicar ou desativar planos.",
+        billing: "Acompanhe vencimentos e inadimplência. Baixas são manuais, justificadas e auditadas; nunca há pagamento automático.",
+        features: "Selecione uma organização para conferir recursos do plano e liberações temporárias justificadas.",
+        audit: "Consulte ações críticas e seus responsáveis. Filtre pela organização durante o atendimento.",
+        users: "Inative ou reative usuários desta organização com justificativa. O próprio acesso e o último administrador ativo são protegidos; sessões do usuário alterado são revogadas.",
+        roles: "Combine permissões por função. Alterações afetam usuários vinculados e são registradas na auditoria.",
+        usage: "Compare consumo e limites contratados. Um limite atingido bloqueia novos registros sem apagar dados.",
+        account: "Consulte plano e consumo da sua organização. Mudanças de plano são solicitações sujeitas à aprovação.",
+        settings: "Configure idioma, moeda, fuso e preferências da organização. Campos obrigatórios são validados ao salvar."
     };
-    const escape = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
-    const cards = values => `<div class="saas-grid">${Object.entries(values).map(([key, value]) => `<article class="saas-card"><small>${escape(key)}</small><strong>${escape(value)}</strong></article>`).join("")}</div>`;
-    const table = (rows, columns, actions) => rows.length
-        ? `<div class="saas-card"><table class="saas-table"><thead><tr>${columns.map(column => `<th>${escape(column[1])}</th>`).join("")}${actions ? "<th>Ações</th>" : ""}</tr></thead><tbody>${rows.map(row => `<tr>${columns.map(column => `<td>${escape(Array.isArray(row[column[0]]) ? row[column[0]].join(", ") : row[column[0]])}</td>`).join("")}${actions ? `<td>${actions(row)}</td>` : ""}</tr>`).join("")}</tbody></table></div>`
-        : '<div class="empty">Nenhum registro encontrado.</div>';
-    const option = (value, label, selected = false) => `<option value="${escape(value)}" ${selected ? "selected" : ""}>${escape(label)}</option>`;
-    const input = (label, name, type = "text", value = "", extra = "required") => `<label>${escape(label)}<input name="${escape(name)}" type="${escape(type)}" value="${escape(value)}" ${extra}></label>`;
+
+    function readSession() {
+        try {
+            return JSON.parse(localStorage.getItem("agro360.session") ?? "null");
+        } catch {
+            return null;
+        }
+    }
+
+    function normalizePermission(value) {
+        return String(value ?? "").trim().toLowerCase().replaceAll("_", ".");
+    }
+
+    function token() {
+        return session?.accessToken ?? localStorage.getItem("agro360.accessToken");
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, character => ({
+            "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"
+        })[character]);
+    }
+
+    async function request(path, options = {}) {
+        const headers = new Headers(options.headers ?? {});
+        headers.set("Authorization", `Bearer ${token()}`);
+        if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+        const response = await fetch(api + path, { ...options, headers });
+        if (!response.ok) {
+            const problem = await response.json().catch(() => null);
+            const trace = problem?.traceId ? ` Referência: ${problem.traceId}.` : "";
+            throw new Error(`${problem?.detail ?? "Não foi possível concluir a operação."}${trace}`);
+        }
+        return response.status === 204 ? null : response.json();
+    }
+
+    async function get(path) {
+        status.textContent = "Carregando…";
+        try {
+            const result = await request(path);
+            status.textContent = "Dados atualizados.";
+            return result;
+        } catch (error) {
+            status.textContent = "Falha no carregamento.";
+            content.innerHTML = `<div class="error" role="alert">${escapeHtml(error.message)} <button id="retry" type="button">Tentar novamente</button></div>`;
+            document.querySelector("#retry")?.addEventListener("click", load);
+            throw error;
+        }
+    }
+
+    function cards(values) {
+        return `<div class="saas-grid">${Object.entries(values).map(([key, value]) =>
+            `<article class="saas-card"><small>${escapeHtml(key)}</small><strong>${escapeHtml(value)}</strong></article>`).join("")}</div>`;
+    }
+
+    function table(rows, columns) {
+        if (!rows.length) return '<div class="empty">Nenhum registro encontrado.</div>';
+        return `<div class="saas-card"><table class="saas-table"><thead><tr>${columns.map(column =>
+            `<th>${escapeHtml(column[1])}</th>`).join("")}</tr></thead><tbody>${rows.map(row =>
+            `<tr>${columns.map(column => `<td>${escapeHtml(row[column[0]])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    }
+
+    function usersTable(rows) {
+        if (!rows.length) return '<div class="empty">Nenhum usuário encontrado.</div>';
+        const canManage = permissions.has("account.users.manage") || isSuperAdministrator;
+        return `<div class="saas-card"><table class="saas-table"><thead><tr><th>Nome</th><th>E-mail</th><th>Status</th><th>Perfis</th><th>Último acesso</th>${canManage ? "<th>Ações</th>" : ""}</tr></thead><tbody>${rows.map(user => {
+            const action = user.status === "ACTIVE" ? "deactivate" : user.status === "DISABLED" ? "activate" : null;
+            const actionLabel = action === "deactivate" ? "Inativar" : "Reativar";
+            const isCurrentUser = String(user.id).toLowerCase() === String(session?.userId ?? "").toLowerCase();
+            const actionButton = canManage && action && !isCurrentUser
+                ? `<button type="button" class="${action === "deactivate" ? "danger-button" : "primary-button"}" data-user-status="${action}" data-user-id="${escapeHtml(user.id)}" data-user-name="${escapeHtml(user.name)}">${actionLabel}</button>`
+                : isCurrentUser ? "Seu usuário" : "";
+            return `<tr><td>${escapeHtml(user.name)}</td><td>${escapeHtml(user.email)}</td><td>${escapeHtml(user.status)}</td><td>${escapeHtml(user.roles)}</td><td>${escapeHtml(user.lastAccess ?? "Nunca")}</td>${canManage ? `<td class="saas-actions">${actionButton}</td>` : ""}</tr>`;
+        }).join("")}</tbody></table></div>`;
+    }
+
+    function wireUserActions() {
+        content.querySelectorAll("[data-user-status]").forEach(button => button.addEventListener("click", () => {
+            openUserStatusDialog(button.dataset.userId, button.dataset.userName, button.dataset.userStatus === "activate");
+        }));
+    }
+
+    function openUserStatusDialog(userId, userName, activate) {
+        document.querySelector("#dialog-title").textContent = activate ? "Reativar usuário" : "Inativar usuário";
+        dialogFields.innerHTML = `<p>${activate ? "O usuário voltará a poder autenticar nesta organização." : "O usuário perderá o acesso e suas sessões atuais serão revogadas."}</p><p><strong>${escapeHtml(userName)}</strong></p><label for="user-status-reason">Justificativa <span aria-hidden="true">*</span><textarea id="user-status-reason" name="reason" minlength="5" maxlength="1000" required aria-describedby="user-status-help"></textarea><small id="user-status-help">Informe entre 5 e 1000 caracteres. A justificativa ficará na auditoria.</small></label>`;
+        dialogMessage.textContent = "";
+        dialogForm.onsubmit = async event => {
+            event.preventDefault();
+            if (event.submitter?.value === "cancel") {
+                dialog.close();
+                return;
+            }
+            const reason = dialogForm.elements.reason.value.trim();
+            if (reason.length < 5 || reason.length > 1000) {
+                dialogMessage.textContent = "Informe uma justificativa entre 5 e 1000 caracteres.";
+                dialogForm.elements.reason.focus();
+                return;
+            }
+            const submit = event.submitter;
+            submit.disabled = true;
+            dialogMessage.textContent = "Salvando…";
+            try {
+                await request(`/api/users/${encodeURIComponent(userId)}/${activate ? "activate" : "deactivate"}`, {
+                    method: "POST",
+                    body: JSON.stringify({ reason })
+                });
+                dialog.close();
+                status.textContent = activate ? "Usuário reativado com sucesso." : "Usuário inativado e sessões revogadas.";
+                await load();
+            } catch (error) {
+                dialogMessage.textContent = error.message;
+            } finally {
+                submit.disabled = false;
+            }
+        };
+        dialog.showModal();
+        dialogForm.elements.reason.focus();
+    }
+
+    function openForm(title, fields, submitAction) {
+        document.querySelector("#dialog-title").textContent = title;
+        dialogFields.innerHTML = fields;
+        dialogMessage.textContent = "";
+        dialogForm.onsubmit = async event => {
+            event.preventDefault();
+            if (event.submitter?.value === "cancel") { dialog.close(); return; }
+            if (!dialogForm.reportValidity()) return;
+            const submit = event.submitter;
+            submit.disabled = true;
+            dialogMessage.textContent = "Salvando…";
+            try {
+                const message = await submitAction(new FormData(dialogForm));
+                if (message) {
+                    dialogMessage.textContent = message;
+                    submit.textContent = "Concluído";
+                    await load();
+                } else {
+                    dialog.close();
+                    await load();
+                }
+            } catch (error) {
+                dialogMessage.textContent = error.message;
+                submit.disabled = false;
+            }
+        };
+        dialog.showModal();
+        dialogForm.querySelector("input,select,textarea")?.focus();
+    }
+
+    function option(value, label) { return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`; }
+
+    async function createUserForm() {
+        const roles = (await request("/api/roles")).filter(role => !role.systemRole || role.level <= 100);
+        openForm("Novo usuário e convite", `<label>Nome <input name="name" maxlength="160" required></label><label>E-mail <input name="email" type="email" maxlength="254" required></label><label>Perfil <select name="role" required><option value="">Selecione…</option>${roles.map(role => option(role.id, role.name)).join("")}</select></label>`, async data => {
+            const payload = { name: data.get("name"), email: data.get("email"), roleIds: [data.get("role")] };
+            await request("/api/users", { method: "POST", body: JSON.stringify(payload) });
+            const invitation = await request("/api/invitations", { method: "POST", body: JSON.stringify({ email: payload.email, roleId: data.get("role"), validForHours: 72 }) });
+            return `Comunicação pendente de provedor. Entregue uma única vez ao destinatário: ${location.origin}/Saas/Accept?token=${encodeURIComponent(invitation.activationToken)}`;
+        });
+    }
+
+    async function createInvitationForm() {
+        const roles = await request("/api/roles");
+        openForm("Novo convite", `<label>E-mail <input name="email" type="email" maxlength="254" required></label><label>Perfil <select name="role" required><option value="">Selecione…</option>${roles.map(role => option(role.id, role.name)).join("")}</select></label><label>Validade em horas <input name="hours" type="number" min="1" max="168" value="72" required></label>`, async data => {
+            const result = await request("/api/invitations", { method: "POST", body: JSON.stringify({ email: data.get("email"), roleId: data.get("role"), validForHours: Number(data.get("hours")) }) });
+            return `Comunicação pendente de provedor. Link de uso único: ${location.origin}/Saas/Accept?token=${encodeURIComponent(result.activationToken)}`;
+        });
+    }
+
+    function createRoleForm() {
+        const assignable = [...permissions].filter(permission => permission !== "platform.admin").sort();
+        openForm("Novo perfil", `<label>Nome <input name="name" maxlength="120" required></label><label>Nível <input name="level" type="number" min="1" max="90" value="10" required></label><fieldset><legend>Permissões</legend><div class="saas-permission-grid">${assignable.map(permission => `<label><input type="checkbox" name="permissions" value="${escapeHtml(permission)}"> ${escapeHtml(permission)}</label>`).join("")}</div></fieldset>`, async data => {
+            const selected = data.getAll("permissions");
+            if (!selected.length) throw new Error("Selecione ao menos uma permissão.");
+            await request("/api/roles", { method: "POST", body: JSON.stringify({ name: data.get("name"), level: Number(data.get("level")), permissions: selected }) });
+        });
+    }
+
+    async function createTenantForm() {
+        const plans = await request("/api/platform/plans");
+        openForm("Nova organização", `<label>Identificador <input name="slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" maxlength="80" required></label><label>Razão social <input name="name" maxlength="180" required></label><label>Tipo <select name="type" required>${["PRODUCER","COOPERATIVE","AGRIBUSINESS","CONSULTANCY","DISTRIBUTOR","CARRIER","OTHER"].map(value => option(value, value)).join("")}</select></label><label>CPF/CNPJ <input name="document" maxlength="18" required></label><label>Responsável <input name="responsibleName" maxlength="160" required></label><label>E-mail do administrador <input name="responsibleEmail" type="email" maxlength="254" required></label><label>Plano <select name="plan" required><option value="">Selecione…</option>${plans.map(plan => option(plan.id, plan.name)).join("")}</select></label>`, async data => {
+            const result = await request("/api/platform/tenants", { method: "POST", body: JSON.stringify({ slug: data.get("slug"), name: data.get("name"), type: data.get("type"), document: data.get("document"), responsibleName: data.get("responsibleName"), responsibleEmail: data.get("responsibleEmail"), planId: data.get("plan") }) });
+            return `Organização provisionada. Comunicação pendente de provedor; link único do administrador: ${location.origin}/Saas/Accept?token=${encodeURIComponent(result.administratorInvitation.activationToken)}`;
+        });
+    }
+
+    function createPlanForm() {
+        openForm("Novo plano", `<label>Nome <input name="name" maxlength="100" required></label><label>Descrição <textarea name="description" maxlength="500" required></textarea></label><label>Mensalidade <input name="monthly" type="number" min="0" step="0.01" required></label><label>Anuidade <input name="annual" type="number" min="0" step="0.01" required></label><label>Usuários <input name="users" type="number" min="1" required></label><label>Propriedades <input name="properties" type="number" min="1" required></label><label>Armazenamento MB <input name="storage" type="number" min="1" required></label><label>Dispositivos <input name="devices" type="number" min="1" required></label><label>Módulos <input name="modules" placeholder="properties, inventory" required></label>`, async data => {
+            await request("/api/platform/plans", { method: "POST", body: JSON.stringify({ name: data.get("name"), description: data.get("description"), monthlyPrice: Number(data.get("monthly")), annualPrice: Number(data.get("annual")), userLimit: Number(data.get("users")), propertyLimit: Number(data.get("properties")), storageLimitMb: Number(data.get("storage")), deviceLimit: Number(data.get("devices")), modules: String(data.get("modules")).split(",").map(value => value.trim()).filter(Boolean), premiumFeatures: [], active: true }) });
+        });
+    }
+
+    async function upgradeForm() {
+        const [plans, current] = await Promise.all([request("/api/platform/plans"), request("/api/account/plan")]);
+        const available = plans.filter(plan => plan.active && plan.id !== current.id);
+        openForm("Solicitar alteração de plano", `<label>Novo plano <select name="plan" required><option value="">Selecione…</option>${available.map(plan => option(plan.id, `${plan.name} — ${plan.monthlyPrice}`)).join("")}</select></label><label>Justificativa <textarea name="reason" minlength="5" maxlength="1000" required></textarea></label>`, async data => {
+            await request("/api/account/upgrade-requests", { method: "POST", body: JSON.stringify({ requestedPlanId: data.get("plan"), reason: data.get("reason") }) });
+        });
+    }
+
+    function wireCreateActions() {
+        content.querySelector('[data-create="user"]')?.addEventListener("click", createUserForm);
+        content.querySelector('[data-create="invitation"]')?.addEventListener("click", createInvitationForm);
+        content.querySelector('[data-create="role"]')?.addEventListener("click", createRoleForm);
+        content.querySelector('[data-create="tenant"]')?.addEventListener("click", createTenantForm);
+        content.querySelector('[data-create="plan"]')?.addEventListener("click", createPlanForm);
+        content.querySelector('[data-create="upgrade"]')?.addEventListener("click", upgradeForm);
+    }
 
     async function load() {
         content.setAttribute("aria-busy", "true");
-        document.querySelector("#saas-help").textContent = helps[view] || "Use os filtros e ações disponíveis.";
-        status.textContent = "Carregando…";
+        document.querySelector("#saas-help").textContent = helps[view] ?? "Use os filtros e ações disponíveis. O acesso respeita tenant, módulo e permissões.";
         try {
             if (view === "dashboard") {
-                const item = await request("/api/platform/dashboard");
+                const item = await get("/api/platform/dashboard");
                 content.innerHTML = cards({ "Organizações": item.totalOrganizations, "Ativas": item.activeOrganizations, "Suspensas": item.suspendedOrganizations, "Novos no mês": item.newThisMonth, "Usuários ativos": item.activeUsers, "Próximos do limite": item.nearLimit, "Acima do limite": item.aboveLimit, "Convites pendentes": item.pendingInvitations, "Logins recentes": item.recentLogins, "Alertas de segurança": item.securityAlerts, "Upgrades": item.upgradeRequests, "Suporte": item.supportRequests });
             } else if (view === "tenants") {
-                cache.tenants = await request("/api/platform/tenants");
-                content.innerHTML = '<button class="primary-button" data-create="tenant">Nova organização</button>' + table(cache.tenants, [["name", "Organização"], ["type", "Tipo"], ["document", "CPF/CNPJ"], ["responsibleName", "Responsável"], ["planName", "Plano"], ["status", "Status"]], row => `<button data-edit="tenant" data-key="${row.id}">Editar</button>`);
+                const rows = await get("/api/platform/tenants");
+                content.innerHTML = '<button class="primary-button" data-create="tenant">Nova organização</button>' + table(rows, [["name", "Organização"], ["type", "Tipo"], ["document", "CPF/CNPJ"], ["responsibleName", "Responsável"], ["planName", "Plano"], ["status", "Status"]]);
             } else if (view === "plans") {
-                cache.plans = await request("/api/platform/plans");
-                content.innerHTML = '<button class="primary-button" data-create="plan">Novo plano</button>' + table(cache.plans, [["name", "Plano"], ["monthlyPrice", "Mensal informativo"], ["userLimit", "Usuários"], ["propertyLimit", "Propriedades"], ["modules", "Módulos"], ["active", "Ativo"]], row => `<button data-edit="plan" data-key="${row.id}">Editar</button>`);
+                const rows = await get("/api/platform/plans");
+                content.innerHTML = '<button class="primary-button" data-create="plan">Novo plano</button>' + table(rows, [["name", "Plano"], ["monthlyPrice", "Mensal informativo"], ["userLimit", "Usuários"], ["propertyLimit", "Propriedades"], ["deviceLimit", "Dispositivos"], ["active", "Ativo"]]);
             } else if (view === "billing") {
-                content.innerHTML = table(await request("/api/platform/billing"), [["tenantName", "Cliente"], ["planName", "Plano"], ["competence", "Período"], ["amount", "Valor"], ["dueOn", "Vencimento"], ["status", "Status"], ["paidOn", "Baixa manual"]]);
+                content.innerHTML = table(await get("/api/platform/billing"), [["tenantName", "Cliente"], ["planName", "Plano"], ["competence", "Período"], ["amount", "Valor"], ["dueOn", "Vencimento"], ["status", "Status"], ["paidOn", "Baixa manual"]]);
             } else if (view === "features") {
-                cache.tenants = await request("/api/platform/tenants");
-                content.innerHTML = `<label class="saas-card" title="Organização cujos módulos contratados serão consultados">Organização <select id="feature-tenant"><option value="">Selecione…</option>${cache.tenants.map(item => option(item.id, item.name)).join("")}</select></label><div id="feature-list" class="empty">Selecione uma organização.</div>`;
-                document.querySelector("#feature-tenant").addEventListener("change", loadFeatures);
+                const tenants = await get("/api/platform/tenants");
+                content.innerHTML = '<label class="saas-card">Cliente <select id="feature-tenant"><option value="">Selecione…</option>' + tenants.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("") + '</select></label><div id="feature-list" class="empty">Selecione um cliente para ver as funcionalidades.</div>';
+                document.querySelector("#feature-tenant").addEventListener("change", async event => {
+                    const box = document.querySelector("#feature-list");
+                    if (!event.target.value) { box.innerHTML = "Selecione um cliente para ver as funcionalidades."; return; }
+                    box.innerHTML = table(await get(`/api/platform/tenants/${encodeURIComponent(event.target.value)}/features`), [["name", "Funcionalidade"], ["planEnabled", "Liberada pelo plano"], ["tenantEnabled", "Override"], ["effectiveOrigin", "Origem efetiva"], ["expiresAt", "Expira em"]]);
+                });
             } else if (view === "audit") {
-                content.innerHTML = table(await request("/api/platform/audit"), [["createdAt", "Data"], ["tenantName", "Cliente"], ["action", "Ação"], ["entityType", "Entidade"], ["reason", "Justificativa"]]);
+                content.innerHTML = table(await get("/api/platform/audit"), [["createdAt", "Data"], ["tenantName", "Cliente"], ["action", "Ação"], ["entityType", "Entidade"], ["reason", "Justificativa"]]);
             } else if (view === "usage") {
-                content.innerHTML = table(await request("/api/platform/usage"), [["tenantName", "Organização"], ["activeUsers", "Usuários atuais"], ["userLimit", "Limite"], ["properties", "Propriedades"], ["propertyLimit", "Limite propriedades"], ["storageUsedMb", "Armazenamento MB"]]);
+                content.innerHTML = table(await get("/api/platform/usage"), [["tenantName", "Organização"], ["activeUsers", "Usuários atuais"], ["userLimit", "Limite"], ["properties", "Propriedades"], ["propertyLimit", "Limite propriedades"], ["storageUsedMb", "Armazenamento MB"]]);
             } else if (view === "users") {
-                cache.users = await request("/api/users");
-                content.innerHTML = '<button class="primary-button" data-create="user">Novo usuário</button>' + table(cache.users, [["name", "Nome"], ["email", "E-mail"], ["status", "Status"], ["roles", "Perfis"], ["lastAccess", "Último acesso"]], row => `<button data-edit="user" data-key="${row.id}">Editar</button>`);
+                content.innerHTML = (permissions.has("account.users.manage") ? '<button class="primary-button" data-create="user">Novo usuário</button>' : "") + usersTable(await get("/api/users"));
+                wireUserActions();
             } else if (view === "roles") {
-                cache.roles = await request("/api/roles");
-                content.innerHTML = '<button class="primary-button" data-create="role">Novo perfil</button>' + table(cache.roles, [["name", "Perfil"], ["level", "Nível"], ["permissions", "Permissões"], ["systemRole", "Sistema"]], row => row.systemRole ? "Protegido" : `<button data-edit="role" data-key="${row.id}">Editar</button>`);
+                const rows = await get("/api/roles");
+                content.innerHTML = (permissions.has("account.roles.manage") ? '<button class="primary-button" data-create="role">Novo perfil</button>' : "") + table(rows, [["name", "Perfil"], ["level", "Nível"], ["permissions", "Permissões"], ["systemRole", "Sistema"]]);
             } else if (view === "invitations") {
-                content.innerHTML = '<button class="primary-button" data-create="invitation">Novo convite</button>' + table(await request("/api/invitations"), [["email", "E-mail"], ["roleName", "Perfil"], ["status", "Status"], ["expiresAt", "Expira em"]]);
+                content.innerHTML = (permissions.has("account.invitations.manage") ? '<button class="primary-button" data-create="invitation">Novo convite</button>' : "") + table(await get("/api/invitations"), [["email", "E-mail"], ["roleName", "Perfil"], ["status", "Status"], ["deliveryStatus", "Comunicação"], ["expiresAt", "Expira em"]]);
             } else if (view === "notifications") {
-                content.innerHTML = table(await request("/api/notifications"), [["priority", "Prioridade"], ["type", "Tipo"], ["title", "Título"], ["message", "Mensagem"], ["createdAt", "Data"]]);
+                content.innerHTML = table(await get("/api/notifications"), [["priority", "Prioridade"], ["type", "Tipo"], ["title", "Título"], ["message", "Mensagem"], ["createdAt", "Data"]]);
             } else if (view === "security") {
-                const [sessions, devices] = await Promise.all([request("/api/security/sessions"), request("/api/security/devices")]);
+                const [sessions, devices] = await Promise.all([get("/api/security/sessions"), get("/api/security/devices")]);
                 content.innerHTML = "<h2>Sessões ativas</h2>" + table(sessions, [["device", "Dispositivo"], ["ipAddress", "IP"], ["lastSeenAt", "Última atividade"]]) + "<h2>Dispositivos autorizados</h2>" + table(devices, [["name", "Nome"], ["platform", "Plataforma"], ["lastSeenAt", "Última atividade"]]);
             } else if (view === "account") {
-                const [organization, plan, usage] = await Promise.all([request("/api/account/organization"), request("/api/account/plan"), request("/api/account/usage")]);
-                content.innerHTML = cards({ "Minha organização": organization.name, "Meu plano": plan.name, "Módulos contratados": plan.modules.join(", "), "Usuários": `${usage.activeUsers} / ${usage.userLimit}`, "Propriedades": `${usage.properties} / ${usage.propertyLimit}`, "Armazenamento": `${usage.storageUsedMb} / ${usage.storageLimitMb} MB` }) + '<button class="primary-button" data-create="upgrade">Solicitar upgrade</button>';
+                const [organization, plan, usage] = await Promise.all([get("/api/account/organization"), get("/api/account/plan"), get("/api/account/usage")]);
+                content.innerHTML = cards({ "Minha organização": organization.name, "Meu plano": plan.name, "Usuários": `${usage.activeUsers} / ${usage.userLimit}`, "Propriedades": `${usage.properties} / ${usage.propertyLimit}`, "Armazenamento": `${usage.storageUsedMb} / ${usage.storageLimitMb} MB` }) + (permissions.has("account.subscription.manage") ? '<button class="primary-button" data-create="upgrade">Solicitar alteração de plano</button>' : "");
             } else if (view === "settings") {
-                const item = await request("/api/settings/organization");
+                const item = await get("/api/settings/organization");
                 content.innerHTML = cards({ "Organização": item.organizationName, "Unidades": item.unitSystem, "Moeda": item.currency, "Fuso horário": item.timeZone, "Cultura": item.mainCulture, "Atividades": item.mainActivities.join(", ") });
             } else if (view === "onboarding") {
-                const [organization, users, invitations] = await Promise.all([request("/api/account/organization"), request("/api/users"), request("/api/invitations")]);
-                const administrator = users.some(item => item.roles.some(role => role.includes("Administrador")));
+                const [organization, users, invitations] = await Promise.all([get("/api/account/organization"), get("/api/users"), get("/api/invitations")]);
+                const administrator = users.some(item => item.roles.some(role => role === "Administrador do Cliente"));
                 content.innerHTML = cards({ "Organização e responsável": organization.responsibleName ? "Concluído" : "Pendente", "Plano selecionado": organization.planName, "Administrador": administrator ? "Concluído" : "Pendente", "Convites de equipe": invitations.filter(item => item.status === "PENDING").length, "Situação": organization.status });
             }
-            status.textContent = "Dados atualizados.";
-        } catch (error) {
-            status.textContent = "Falha no carregamento.";
-            content.innerHTML = `<div class="error" role="alert">${escape(error.message)} <button id="retry">Tentar novamente</button></div>`;
-            document.querySelector("#retry")?.addEventListener("click", load);
+        } catch {
+            // get() já apresenta erro recuperável e referência de atendimento.
         } finally {
             content.setAttribute("aria-busy", "false");
+            wireCreateActions();
         }
     }
 
-    async function loadFeatures(event) {
-        const box = document.querySelector("#feature-list");
-        if (!event.target.value) { box.textContent = "Selecione uma organização."; return; }
-        const flags = await request(`/api/platform/tenants/${encodeURIComponent(event.target.value)}/features`);
-        box.innerHTML = table(flags, [["name", "Funcionalidade"], ["planEnabled", "Plano"], ["tenantEnabled", "Override"], ["effectiveOrigin", "Origem efetiva"], ["expiresAt", "Expira em"]]);
+    const ui = {
+        "en-US": { title: "SaaS Platform", help: "How to use this screen", refresh: "Refresh", loading: "Loading data…" },
+        "es-ES": { title: "Plataforma SaaS", help: "Cómo usar esta pantalla", refresh: "Actualizar", loading: "Cargando datos…" },
+        "pt-BR": { title: "Plataforma SaaS", help: "Como usar esta tela", refresh: "Atualizar", loading: "Carregando dados…" }
+    };
+
+    function applyCulture(culture) {
+        const translation = ui[culture] ?? ui["pt-BR"];
+        document.documentElement.lang = culture;
+        document.querySelector(".saas-page h1").textContent = isSuperAdministrator ? translation.title : "Administração da conta";
+        document.querySelector(".contextual-help summary").textContent = translation.help;
+        document.querySelector("#saas-refresh").textContent = translation.refresh;
+        if (["Carregando", "Loading", "Cargando"].some(term => status.textContent.includes(term))) status.textContent = translation.loading;
     }
 
-    async function ensurePlans() { if (!cache.plans.length) cache.plans = await request("/api/platform/plans"); }
-    async function ensureRoles() { if (!cache.roles.length) cache.roles = await request("/api/roles"); }
-    function selected(kind, key) { return cache[`${kind}s`]?.find(item => item.id === key) ?? null; }
-
-    async function openForm(kind, item = null) {
-        operation = { kind, item };
-        form.querySelector(".form-message").textContent = "";
-        document.querySelector("#dialog-title").textContent = `${item ? "Editar" : "Novo"} ${kind === "tenant" ? "organização" : kind === "plan" ? "plano" : kind === "user" ? "usuário" : kind === "role" ? "perfil" : kind === "invitation" ? "convite" : "pedido de upgrade"}`;
-        if (kind === "tenant") {
-            await ensurePlans();
-            fields.innerHTML = input("Nome da organização", "organizationName", "text", item?.name) + (!item ? input("Identificador", "organizationSlug", "text", "", 'required pattern="[a-z0-9]+(?:-[a-z0-9]+)*"') + input("CPF/CNPJ", "organizationDocument", "text") : "") + input("Tipo", "organizationType", "text", item?.type || "RURAL_PRODUCER") + input("Responsável", "responsibleName", "text", item?.responsibleName) + input("E-mail do responsável", "responsibleEmail", "email", item?.responsibleEmail) + `<label>Plano<select name="planChoice" required>${cache.plans.filter(plan => plan.active || plan.id === item?.planId).map(plan => option(plan.id, `${plan.name} · ${plan.modules.join(", ")}`, plan.id === item?.planId)).join("")}</select></label>`;
-        } else if (kind === "plan") {
-            fields.innerHTML = input("Nome", "planName", "text", item?.name) + input("Descrição", "planDescription", "text", item?.description) + input("Mensalidade informativa", "monthlyPrice", "number", item?.monthlyPrice ?? 0, 'required min="0" step="0.01"') + input("Anuidade informativa", "annualPrice", "number", item?.annualPrice ?? 0, 'required min="0" step="0.01"') + input("Limite de usuários", "userLimit", "number", item?.userLimit ?? 1, 'required min="1"') + input("Limite de propriedades", "propertyLimit", "number", item?.propertyLimit ?? 1, 'required min="1"') + input("Armazenamento (MB)", "storageLimitMb", "number", item?.storageLimitMb ?? 1024, 'required min="1"') + input("Dispositivos", "deviceLimit", "number", item?.deviceLimit ?? 1, 'required min="1"') + input("Módulos contratados (separados por vírgula)", "moduleSelection", "text", item?.modules?.join(", ") || "dashboard") + input("Recursos premium (separados por vírgula)", "premiumSelection", "text", item?.premiumFeatures?.join(", ") || "", "") + `<label><input name="active" type="checkbox" ${item?.active !== false ? "checked" : ""}> Plano ativo</label>`;
-        } else if (kind === "user") {
-            await ensureRoles();
-            fields.innerHTML = input("Nome", "userName", "text", item?.name) + input("E-mail", "userEmail", "email", item?.email) + `<fieldset><legend>Perfis</legend>${cache.roles.map(role => `<label><input type="checkbox" name="roleChoice" value="${role.id}" ${item?.roles?.includes(role.name) ? "checked" : ""}> ${escape(role.name)}</label>`).join("")}</fieldset>`;
-        } else if (kind === "role") {
-            const permissions = [...new Set([...(session?.permissions ?? []), ...(item?.permissions ?? [])])].sort();
-            fields.innerHTML = input("Nome", "roleName", "text", item?.name) + input("Nível", "roleLevel", "number", item?.level ?? 10, 'required min="1" max="90"') + `<fieldset><legend>Permissões</legend>${permissions.map(permission => `<label><input type="checkbox" name="permissionChoice" value="${escape(permission)}" ${item?.permissions?.includes(permission) ? "checked" : ""}> ${escape(permission)}</label>`).join("")}</fieldset>`;
-        } else if (kind === "invitation") {
-            await ensureRoles();
-            fields.innerHTML = input("E-mail", "invitationEmail", "email") + `<label>Perfil<select name="invitationRole" required>${cache.roles.map(role => option(role.id, role.name)).join("")}</select></label>` + input("Validade em horas", "validForHours", "number", 72, 'required min="1" max="168"');
-        } else {
-            await ensurePlans();
-            fields.innerHTML = `<label>Plano desejado<select name="upgradePlan" required>${cache.plans.filter(plan => plan.active).map(plan => option(plan.id, `${plan.name} · ${plan.modules.join(", ")}`)).join("")}</select></label>` + `<label>Justificativa<textarea name="upgradeReason" required minlength="5"></textarea></label><p>Nenhuma cobrança ou pagamento será executado. A solicitação seguirá para análise interna.</p>`;
-        }
-        dialog.showModal();
-        fields.querySelector("input,select,textarea")?.focus();
-    }
-
-    form.addEventListener("submit", async event => {
-        event.preventDefault();
-        if (!form.reportValidity() || !operation) return;
-        const button = form.querySelector(".primary-button");
-        const message = form.querySelector(".form-message");
-        const data = new FormData(form);
-        button.disabled = true;
-        message.textContent = "Salvando…";
-        try {
-            let path;
-            let method = operation.item ? "PUT" : "POST";
-            let body;
-            if (operation.kind === "tenant") {
-                path = operation.item ? `/api/platform/tenants/${operation.item.id}` : "/api/platform/tenants";
-                body = { name: data.get("organizationName"), type: data.get("organizationType"), responsibleName: data.get("responsibleName"), responsibleEmail: data.get("responsibleEmail"), planId: data.get("planChoice") };
-                if (!operation.item) Object.assign(body, { slug: data.get("organizationSlug"), document: data.get("organizationDocument") });
-            } else if (operation.kind === "plan") {
-                path = operation.item ? `/api/platform/plans/${operation.item.id}` : "/api/platform/plans";
-                body = { name: data.get("planName"), description: data.get("planDescription"), monthlyPrice: Number(data.get("monthlyPrice")), annualPrice: Number(data.get("annualPrice")), userLimit: Number(data.get("userLimit")), propertyLimit: Number(data.get("propertyLimit")), storageLimitMb: Number(data.get("storageLimitMb")), deviceLimit: Number(data.get("deviceLimit")), modules: String(data.get("moduleSelection")).split(",").map(value => value.trim()).filter(Boolean), premiumFeatures: String(data.get("premiumSelection")).split(",").map(value => value.trim()).filter(Boolean), active: data.has("active") };
-            } else if (operation.kind === "user") {
-                path = operation.item ? `/api/users/${operation.item.id}` : "/api/users";
-                body = { name: data.get("userName"), email: data.get("userEmail"), roleIds: data.getAll("roleChoice") };
-            } else if (operation.kind === "role") {
-                path = operation.item ? `/api/roles/${operation.item.id}` : "/api/roles";
-                body = { name: data.get("roleName"), level: Number(data.get("roleLevel")), permissions: data.getAll("permissionChoice") };
-            } else if (operation.kind === "invitation") {
-                path = "/api/invitations";
-                body = { email: data.get("invitationEmail"), roleId: data.get("invitationRole"), validForHours: Number(data.get("validForHours")) };
-            } else {
-                path = "/api/account/upgrade-requests";
-                body = { requestedPlanId: data.get("upgradePlan"), reason: data.get("upgradeReason") };
-            }
-            await request(path, { method, body: JSON.stringify(body) });
-            dialog.close();
-            cache.tenants = []; cache.plans = []; cache.users = []; cache.roles = [];
-            window.toastSuccess?.("Alteração salva", "A operação foi persistida e registrada para auditoria.");
-            await load();
-        } catch (error) {
-            message.textContent = error.message;
-        } finally {
-            button.disabled = false;
-        }
+    document.querySelectorAll(".saas-tabs button").forEach(button => {
+        const requiredPermission = normalizePermission(button.dataset.permission);
+        const visible = isSuperAdministrator
+            ? button.dataset.global === "true"
+            : tenantViews.has(button.dataset.view) && button.dataset.global !== "true" && (!requiredPermission || permissions.has(requiredPermission));
+        button.hidden = !visible;
+        button.classList.toggle("active", visible && button.dataset.view === view);
+        button.addEventListener("click", () => {
+            document.querySelector(".saas-tabs .active")?.classList.remove("active");
+            button.classList.add("active");
+            view = button.dataset.view;
+            load();
+        });
     });
-
-    content.addEventListener("click", event => {
-        const create = event.target.closest("[data-create]");
-        if (create) { openForm(create.dataset.create); return; }
-        const edit = event.target.closest("[data-edit]");
-        if (edit) openForm(edit.dataset.edit, selected(edit.dataset.edit, edit.dataset.key));
+    document.querySelector("#saas-culture")?.addEventListener("change", event => {
+        localStorage.setItem("agro360.culture", event.target.value);
+        applyCulture(event.target.value);
+        load();
     });
-    document.querySelectorAll(".saas-tabs button").forEach(button => button.addEventListener("click", () => { document.querySelector(".saas-tabs .active").classList.remove("active"); button.classList.add("active"); view = button.dataset.view; load(); }));
-    document.querySelector("#saas-refresh").addEventListener("click", load);
-    document.querySelector("#saas-culture")?.addEventListener("change", event => { localStorage.setItem("agro360.culture", event.target.value); document.documentElement.lang = event.target.value; });
-    const culture = localStorage.getItem("agro360.culture") || "pt-BR";
+    const culture = localStorage.getItem("agro360.culture") ?? "pt-BR";
     document.querySelector("#saas-culture").value = culture;
-    document.documentElement.lang = culture;
+    applyCulture(culture);
+    document.querySelector("#saas-refresh").addEventListener("click", load);
     load();
 })();

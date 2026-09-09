@@ -1,8 +1,18 @@
 # MNSOFT Agro 360
 
+## Continuidade do plano mestre Agro360
+
+Plano aprovado incorporado integralmente em [docs/execucao/AGRO360-MASTER-PLAN.md](docs/execucao/AGRO360-MASTER-PLAN.md). Consulte [checkpoint](docs/EXECUTION-CHECKPOINT.md), [matriz atual](docs/TRACEABILITY-MATRIX-v0.2.0.md) e [plano de execução](docs/execucao/EXECUTION-PLAN.md) antes de retomar. Declarações históricas de sprint não certificam fluxos.
+
+Gate E0 sem Docker: `pwsh -File scripts/verify-e0.ps1 -PostgresBin 'C:\Program Files\PostgreSQL\18\bin'`; cria banco descartável, instala/reexecuta SQL, inicia API/Web, valida login/dashboard/refresh/logout e executa os testes. Não usa nem modifica o banco configurado da aplicação. `node scripts/verify-offline-shell.mjs` verifica o cache público. Readiness `/health` exige schema mínimo; `/health/live` verifica somente o processo.
+
+Não há credencial universal suportada. O gate usa credencial aleatória apenas no banco descartável, não a publica e não redefine contas reais; SuperAdmin e demos devem ser provisionados por segredo/convite local.
+
 > **Sprint 31:** **Inteligência Agro360** entrega recomendações rastreáveis, scores, anomalias, Prioridades do Dia e assistente interno sem exigir IA externa. Veja [a documentação operacional](docs/INTELIGENCIA-AGRO360.md).
 
 Plataforma modular e multi-tenant para gestão do agronegócio, em .NET 10 e PostgreSQL/PostGIS. **A execução principal é nativa e não requer Docker.** Docker Compose permanece somente como conveniência opcional.
+
+O estado verificável mais recente, os bloqueios reais e a ordem segura de retomada estão no [checkpoint de execução](docs/EXECUTION-CHECKPOINT.md). A maturidade por capacidade permanece na [matriz de rastreabilidade](docs/TRACEABILITY-MATRIX-v0.2.0.md); uma sprint declarada no histórico não substitui os gates de execução e E2E.
 
 ## Início rápido sem Docker
 
@@ -107,7 +117,7 @@ Os valores são apenas exemplos locais. Em pgAdmin/DBeaver, abra e execute o mes
 
 ### Homologação guiada local
 
-O instalador completo é idempotente e inclui o cliente interno **Fazenda Santa Clara** no plano Profissional. Para validar autenticação real no banco, use o tenant `santa-clara`, o usuário `admin@santaclara.agro360.local` e a senha inicial `SantaClara@2026!`; a troca é obrigatória no primeiro acesso. O acesso global usa o tenant `agro360-platform`, o usuário `superadmin@mnsoft.com.br` e a senha inicial `MNSoft@Agro360#2026`. Essas credenciais e os documentos matematicamente válidos do seed são exclusivamente locais e não devem existir em produção.
+O instalador deixa contas de exemplo não provisionadas. Para validar autenticação real sem guardar segredo, use `scripts/verify-e0.ps1`: ele gera senha aleatória em memória somente para a fixture do banco descartável. Em um ambiente persistente, provisione o SuperAdmin por `Bootstrap__SuperAdmin__TemporaryPassword`/TOTP e usuários de cliente pelo fluxo de convite; nunca use uma senha documentada ou compartilhada.
 
 Depois de aplicar o SQL, inicie API e Web, abra `/swagger` somente em Development e execute o login. A navegação é derivada das permissões devolvidas pela API; ocultar um item no cliente não substitui a autorização do endpoint.
 
@@ -122,7 +132,7 @@ dotnet run --project src/Hosts/Agro360.Migrator -- seed demo # nunca em produç�
 # migrations externas: --migrations /caminho/fornecido
 ```
 
-O Migrator usa lock consultivo, checksum, histórico e uma transação por migration. Um checksum alterado ou PostGIS indisponível gera erro específico e exit code não zero.
+O Migrator usa lock consultivo, checksum, histórico e uma transação por migration. Em cadeia histórica vazia, registra o instalador como baseline canônico antes de convergir as migrations; se detectar tenant legado populado sem schema canônico, interrompe sem materialização parcial até a conversão ser homologada. Um checksum alterado ou PostGIS indisponível gera erro específico e exit code não zero.
 
 ### B — SQL consolidado
 

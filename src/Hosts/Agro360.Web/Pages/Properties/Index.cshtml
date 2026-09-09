@@ -1,0 +1,98 @@
+@page "/properties"
+@model Agro360.Web.Pages.Properties.IndexModel
+@{ ViewData["Title"] = "Fazendas e Talhões"; }
+
+@section Styles { <link rel="stylesheet" href="~/css/properties.css" asp-append-version="true" /> }
+
+<section class="page-content properties-page" id="properties-app">
+    <header class="page-heading">
+        <div>
+            <span class="eyebrow">Cadastro territorial · fase 2</span>
+            <h1>Fazendas <span>e talhões</span></h1>
+            <p>Estruture as unidades produtivas antes de planejar safras, estoque e operação de campo.</p>
+        </div>
+        <button class="primary-button" id="new-farm" type="button">Nova fazenda</button>
+    </header>
+
+    <details class="screen-help contextual-help">
+        <summary>Como usar esta tela</summary>
+        <div class="properties-help-grid">
+            <p><strong>Fazenda:</strong> selecione a organização pelo nome, informe UF e área total. Matrícula e CAR são opcionais.</p>
+            <p><strong>Talhão:</strong> selecione uma fazenda e cadastre suas áreas. A soma dos talhões não pode ultrapassar a área da fazenda.</p>
+            <p><strong>Editar ou arquivar:</strong> alterações usam controle de versão. Uma fazenda só pode ser arquivada depois de seus talhões.</p>
+        </div>
+    </details>
+
+    <div class="properties-metrics" aria-label="Resumo cadastral">
+        <article><small>Fazendas ativas</small><strong id="farm-count">—</strong></article>
+        <article><small>Área cadastrada</small><strong id="farm-area">—</strong></article>
+        <article><small>Talhões da seleção</small><strong id="field-count">—</strong></article>
+        <article><small>Área disponível</small><strong id="available-area">—</strong></article>
+    </div>
+
+    <section class="panel properties-panel">
+        <header class="panel-header properties-toolbar">
+            <div><span class="eyebrow">Unidades produtivas</span><h2>Fazendas</h2></div>
+            <form id="farm-search" role="search">
+                <label for="farm-search-text">Buscar por nome</label>
+                <input id="farm-search-text" name="search" type="search" maxlength="160" autocomplete="off" placeholder="Ex.: Santa Clara" />
+                <button class="secondary-button" type="submit">Buscar</button>
+            </form>
+        </header>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Fazenda</th><th>UF</th><th>Área total</th><th>Matrícula / CAR</th><th>Ações</th></tr></thead>
+                <tbody id="farm-list"><tr><td colspan="5" class="empty-state">Carregando fazendas…</td></tr></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel properties-panel fields-panel">
+        <header class="panel-header">
+            <div><span class="eyebrow">Divisão operacional</span><h2 id="fields-title">Talhões</h2></div>
+            <button class="primary-button" id="new-field" type="button" disabled>Novo talhão</button>
+        </header>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Talhão</th><th>Área</th><th>Geometria</th><th>Ações</th></tr></thead>
+                <tbody id="field-list"><tr><td colspan="4" class="empty-state">Selecione uma fazenda para consultar seus talhões.</td></tr></tbody>
+            </table>
+        </div>
+    </section>
+
+    <dialog id="farm-dialog" class="properties-dialog" aria-labelledby="farm-dialog-title">
+        <form id="farm-form" novalidate>
+            <header><div><span class="eyebrow">Cadastro territorial</span><h2 id="farm-dialog-title">Nova fazenda</h2></div><button type="button" class="dialog-close" data-close="farm-dialog" aria-label="Fechar">×</button></header>
+            <div class="properties-form-grid">
+                <label>Organização
+                    <select name="organizationId" required data-help="Escolha a empresa ou unidade responsável. O identificador técnico é resolvido automaticamente."><option value="">Selecione pelo nome</option></select>
+                </label>
+                <label>Nome da fazenda<input name="name" required minlength="2" maxlength="160" autocomplete="organization" data-help="Use o nome conhecido na operação e nos documentos cadastrais." /></label>
+                <label>UF<select name="state" required data-help="Unidade federativa onde está localizada a fazenda."></select></label>
+                <label>Área total (ha)<input name="totalAreaHa" type="number" required min="0.0001" max="99999999999999" step="0.0001" inputmode="decimal" data-help="Área total em hectares. Ela não pode ser menor que a soma dos talhões ativos." /></label>
+                <label>Matrícula do imóvel<input name="registrationNumber" maxlength="80" autocomplete="off" data-help="Número da matrícula ou registro rural, quando disponível." /></label>
+                <label>Número do CAR<input name="carNumber" maxlength="100" autocomplete="off" data-help="Código do Cadastro Ambiental Rural, quando disponível." /></label>
+            </div>
+            <p class="properties-form-message" role="alert" aria-live="assertive"></p>
+            <footer><button class="secondary-button" type="button" data-close="farm-dialog">Cancelar</button><button class="primary-button" type="submit"><span>Salvar fazenda</span></button></footer>
+        </form>
+    </dialog>
+
+    <dialog id="field-dialog" class="properties-dialog" aria-labelledby="field-dialog-title">
+        <form id="field-form" novalidate>
+            <header><div><span class="eyebrow">Área produtiva</span><h2 id="field-dialog-title">Novo talhão</h2></div><button type="button" class="dialog-close" data-close="field-dialog" aria-label="Fechar">×</button></header>
+            <p class="field-context">Fazenda: <strong id="field-farm-name">—</strong></p>
+            <div class="properties-form-grid">
+                <label>Nome do talhão<input name="name" required minlength="2" maxlength="120" autocomplete="off" data-help="Use um nome curto e único dentro da fazenda." /></label>
+                <label>Área (ha)<input name="areaHa" type="number" required min="0.0001" max="99999999999999" step="0.0001" inputmode="decimal" data-help="A soma dos talhões ativos deve caber na área total da fazenda." /></label>
+                <label class="wide">Limite GeoJSON (opcional)<textarea name="boundaryGeoJson" rows="5" data-help="Informe somente Polygon ou MultiPolygon válido. Deixe em branco se a geometria ainda não foi levantada."></textarea></label>
+            </div>
+            <p class="properties-form-message" role="alert" aria-live="assertive"></p>
+            <footer><button class="secondary-button" type="button" data-close="field-dialog">Cancelar</button><button class="primary-button" type="submit"><span>Salvar talhão</span></button></footer>
+        </form>
+    </dialog>
+
+    <div class="properties-toast" id="properties-toast" role="status" aria-live="polite" hidden></div>
+</section>
+
+@section Scripts { <script src="~/js/properties.js" asp-append-version="true" defer></script> }

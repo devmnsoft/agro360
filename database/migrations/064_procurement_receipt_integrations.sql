@@ -57,8 +57,16 @@ create table if not exists agro360.procurement_order_financial_links(
     foreign key(tenant_id,payable_id) references agro360.finance_payables(tenant_id,id)
 );
 
-select agro360.platform_enable_tenant_rls('agro360.procurement_receipt_stock_links');
-select agro360.platform_enable_tenant_rls('agro360.procurement_order_financial_links');
+do $$
+declare target text;
+begin
+    foreach target in array array['procurement_receipt_stock_links','procurement_order_financial_links'] loop
+        execute format('alter table agro360.%I enable row level security',target);
+        execute format('alter table agro360.%I force row level security',target);
+        execute format('drop policy if exists tenant_isolation on agro360.%I',target);
+        execute format('create policy tenant_isolation on agro360.%I using (tenant_id=agro360.platform_current_tenant_id()) with check (tenant_id=agro360.platform_current_tenant_id())',target);
+    end loop;
+end $$;
 
 insert into agro360.platform_schema_versions(version,description,installed_at)
 values('6.4.1','Recebimento de compras integrado a estoque e previsão financeira idempotente',now())

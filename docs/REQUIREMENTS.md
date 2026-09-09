@@ -1,5 +1,11 @@
 # Requisitos da release candidate
 
+## Plano mestre e maturidade atual
+
+O [plano mestre Agro360](execucao/AGRO360-MASTER-PLAN.md) foi incorporado integralmente. A ordem E0–E10 está no [plano executável](execucao/EXECUTION-PLAN.md); resultados e pendências na [matriz](TRACEABILITY-MATRIX-v0.2.0.md) e no [checkpoint](EXECUTION-CHECKPOINT.md). Estes controles prevalecem sobre rótulos históricos de sprint: presença de código não significa fluxo validado.
+
+O incremento atual entrega readiness de schema e diagnóstico Web sem falso sucesso offline (AG-E0-001/002). Migração incremental canônica (AG-E0-003) é a próxima entrega; identidade/vínculos/MFA/provisionamento seguro e contratação completa continuam pendentes. Não renumerar sprints existentes nem anunciar o sistema inteiro concluído.
+
 ## Inteligência operacional
 
 - Recomendações exigem motivo, fonte, módulo, severidade e aprovação antes de ações.

@@ -13,7 +13,7 @@ public sealed class Farm : TenantEntity
     {
         OrganizationId = Guard.Required(organizationId, nameof(organizationId));
         Name = Guard.Required(name, nameof(name), 160);
-        State = Guard.Required(state, nameof(state), 2).ToUpperInvariant();
+        State = PropertyRules.NormalizeState(state);
         TotalAreaHa = Guard.Positive(totalAreaHa, nameof(totalAreaHa));
     }
 

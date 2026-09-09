@@ -6,6 +6,21 @@ public sealed class AuthenticationAndLivestockRegressionTests
     private static string Read(string path) => File.ReadAllText(Path.Combine(Root, path));
 
     [Fact]
+    public void OfflineShellCannotMaskApiFailuresOrCacheTenantData()
+    {
+        var worker = Read("src/Hosts/Agro360.Web/wwwroot/service-worker.js");
+        var client = Read("src/Hosts/Agro360.Web/wwwroot/js/agro360.js");
+
+        Assert.Contains("url.origin !== self.location.origin", worker, StringComparison.Ordinal);
+        Assert.Contains("!SHELL.includes(url.pathname)", worker, StringComparison.Ordinal);
+        Assert.Contains("event.request.headers.has(\"Authorization\")", worker, StringComparison.Ordinal);
+        Assert.DoesNotContain("/api/mobile/bootstrap", worker, StringComparison.Ordinal);
+        Assert.DoesNotContain("caches.match(\"/field\")", worker, StringComparison.Ordinal);
+        Assert.Contains("(await response.text()).trim() !== \"Healthy\"", client, StringComparison.Ordinal);
+        Assert.Contains("typeof specification.openapi", client, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RefreshClassifiesExpectedFailuresAndReturnsUnauthorized()
     {
         var identity = Read("src/Modules/Agro360.Infrastructure/Services/IdentityService.cs");
@@ -60,7 +75,8 @@ public sealed class AuthenticationAndLivestockRegressionTests
 
         Assert.Contains("select distinct r.code", identity, StringComparison.Ordinal);
         Assert.Contains("new Claim(\"role\", role)", tokens, StringComparison.Ordinal);
-        Assert.Contains("Authorize(Roles = \"SUPER_ADMIN\")", platform, StringComparison.Ordinal);
+        Assert.Contains("Authorize(Policy = Permissions.PlatformAdmin)", platform, StringComparison.Ordinal);
+        Assert.Contains("platform_super_admins", identity, StringComparison.Ordinal);
         Assert.Contains("roles ?? []", client, StringComparison.Ordinal);
         Assert.DoesNotContain("superadmin@mnsoft.com.br", client, StringComparison.OrdinalIgnoreCase);
     }
