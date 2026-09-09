@@ -4,6 +4,31 @@ namespace Agro360.Domain.Commercial;
 
 public static class CommercialRules
 {
+    private static readonly IReadOnlyDictionary<string, string[]> OrderTransitions = new Dictionary<string, string[]>
+    {
+        ["DRAFT"] = ["UNDER_REVIEW", "CANCELLED"],
+        ["UNDER_REVIEW"] = ["DRAFT", "APPROVED", "CANCELLED"],
+        ["APPROVED"] = ["FULFILLMENT", "CANCELLED"],
+        ["FULFILLMENT"] = ["INVOICED", "CANCELLED"],
+        ["INVOICED"] = ["DELIVERED"]
+    };
+
+    public static string NormalizeOrderStatus(string? status)
+    {
+        var normalized = status?.Trim().ToUpperInvariant();
+        if (string.IsNullOrEmpty(normalized) || !OrderTransitions.Values.SelectMany(x => x).Append("DRAFT").Contains(normalized))
+            throw new DomainException("Status do pedido inválido.", "sales.order_status_invalid");
+        return normalized;
+    }
+
+    public static void ValidateOrderTransition(string current, string next, string? reason)
+    {
+        if (!OrderTransitions.TryGetValue(current, out var allowed) || !allowed.Contains(next))
+            throw new DomainException($"Transição de {current} para {next} não é permitida.", "sales.order_transition_invalid");
+        if (next == "CANCELLED" && string.IsNullOrWhiteSpace(reason))
+            throw new DomainException("Cancelamento exige motivo.", "sales.order_cancel_reason_required");
+    }
+
     public static void ValidateTaxDocument(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return;

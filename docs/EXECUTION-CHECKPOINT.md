@@ -109,3 +109,11 @@ O build `Debug` posterior encontrou a API do usuário já ativa no PID 17912 e n
 ## Prompt de continuidade
 
 > Continue em `C:\MNSOFT\agro360`. Leia `docs/EXECUTION-CHECKPOINT.md`, `docs/TRACEABILITY-MATRIX-v0.2.0.md` e `docs/execucao/{AGRO360-MASTER-PLAN,EXECUTION-PLAN,DECISIONS}.md`. Preserve alterações concorrentes, revalide E0 e conclua AG-E0-003: migração incremental canônica, sem alterar checksums publicados, testada com dados anteriores. Atualize matriz/checkpoint e avance para E1 somente após os gates. Não faça push.
+
+## Entrega de integridade — 2026-09-09
+
+- **Causa:** limites eram aceitos do payload, comparações ocorriam antes da normalização e apontamentos podiam reabrir ordens finais.
+- **Arquivos/regras:** contratos e serviços Commercial360/IndustrialProduction, regras comerciais, layout, gate SQL e testes arquiteturais existentes.
+- **Aceite coberto estaticamente:** variações de caixa usam a mesma transição; transições inválidas são negadas; desconto usa política vigente no servidor; ordem industrial é bloqueada antes do apontamento; qualidade exige evidência positiva; clima demonstrativo foi removido.
+- **Evidência:** rotas, shell offline e validação estrutural do SQL passaram. Build/test não foi executado porque o SDK .NET não está instalado; PostgreSQL não foi homologado neste ambiente.
+- **Continuidade:** AG-E5-001 permanece parcial (recebimento/estoque/financeiro); AG-E7-001 permanece parcial (idempotência, reservas, consumo e retificação auditada). Esta entrega não declara as jornadas completas.
