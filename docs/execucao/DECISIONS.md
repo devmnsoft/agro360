@@ -31,3 +31,10 @@ O botão de diagnóstico valida `Healthy` e JSON OpenAPI, não só status HTTP, 
 A branch `codex/agro360-e0-runtime` foi criada nesta execução a partir do HEAD local, preservando os três commits à frente de `origin/main`. Durante a inspeção, outras execuções alteraram propriedades, usuários/SaaS, SQL, layout e documentação. Erros de compilação transitórios decorrentes desses edits não foram corrigidos/revertidos por esta entrega. Os três ajustes MTP nos projetos de teste já existiam na baseline.
 
 Somente health check, diagnóstico/cache Web, método de regressão na classe existente, gate `verify-e0.ps1` e seções documentais de consolidação são desta entrega. Não atribuir as classes novas de testes de propriedades a esta rodada; não removê-las. Antes de commit futuro, revisar arquivo e hunk individualmente. Nenhum commit/push/PR foi criado aqui.
+
+## ADR-E5-01 — Integridade comercial e de apontamentos (2026-09-09)
+
+- A alçada máxima de desconto é exclusivamente a configuração vigente do item da tabela de preços do segmento do cliente. O contrato do pedido não recebe esse limite; ausência de política para produto/unidade bloqueia a operação.
+- Estados de pedido são normalizados uma vez e submetidos a matriz fechada. A ordem é lida com bloqueio na transação antes das precondições e da atualização; estados finais não reabrem implicitamente.
+- Apontamento só é aceito em ordem `RELEASED`, `IN_PRODUCTION` ou `PAUSED`, com validação de linha, operador e etapa. A conformidade decorre dos critérios configurados; etapa crítica sem critério permanece pendente.
+- Conclusão industrial exige evidência positiva: apontamento crítico concluído/conforme e inspeção obrigatória aprovada para cada lote. Ausência de reprovação não representa aprovação.
