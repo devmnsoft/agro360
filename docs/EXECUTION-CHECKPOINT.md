@@ -126,3 +126,10 @@ O build `Debug` posterior encontrou a API do usuário já ativa no PID 17912 e n
 - **UI comercial:** `commercial.js` foi formatado, corrigiu `returnform.reset()` e evita duplicação de opções nos lookups ao reabrir o formulário.
 - **Testes acrescentados em classes existentes:** cálculo comercial cobre dois itens de `0,005` e desconto efetivo; testes arquiteturais cobrem snapshot comercial, read model de etapa e qualidade efetiva por lote.
 - **Não homologado ainda:** banco PostgreSQL descartável, navegador, API/Web, concorrência e cenários E2E do prompt. Roteiro versionado receita → etapas esperadas → ordem, geração operacional de lote acabado, reservas industriais e sequência comercial reserva → entrega → recebível continuam pendentes.
+
+## Provisionamento seguro de homologação — 2026-09-09
+
+- O comando explícito `scripts/provision-homologation.sh` passou a receber senhas sem eco, gerar segredo TOTP individual e exigir confirmação no autenticador antes da persistência.
+- O Migrator recusa Production, identifica host/porta/base/usuário sem revelar a connection string, valida os IDs/slugs das fixtures, usa o `PasswordHasher` real e Data Protection persistente, corrige os vínculos, revoga sessões e registra auditoria sem material secreto.
+- O SQL consolidado permanece sem credencial conhecida e a documentação contraditória foi removida. Reexecução ocorre somente por comando operacional explícito; nunca no startup/seed.
+- **Contas ainda não provisionadas neste ambiente:** não há SDK .NET nem cliente/servidor PostgreSQL instalados no contêiner. Retomada: `ConnectionStrings__Agro360='<segredo local>' ASPNETCORE_ENVIRONMENT=Homologation ./scripts/provision-homologation.sh`; depois iniciar API/Web e concluir login, troca, refresh e logout pelo navegador.

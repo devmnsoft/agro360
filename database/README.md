@@ -40,7 +40,7 @@ A opção `ON_ERROR_STOP=1` é obrigatória na validação: o script principal p
 
 Não use a opção **Restore** do pgAdmin para esse arquivo, pois ela aciona o fluxo de `pg_restore` em vez de executar o SQL texto.
 
-## Acesso inicial (somente Development/local)
+## Provisionamento de acesso (somente Development/homologação)
 
 - **Tenant:** `agro360-platform`
 - **Plataforma:** `MNSOFT / Agro360 Platform`
@@ -48,12 +48,17 @@ Não use a opção **Restore** do pgAdmin para esse arquivo, pois ela aciona o f
 - **Login/e-mail:** `superadmin@mnsoft.com.br`
 - **Documento:** `18.160.057/0001-13` (`CNPJ`)
 - **Perfil:** `SUPER_ADMIN`
-- **Senha inicial:** `MNSoft@Agro360#2026`
-- **Status:** Ativo
+- **Status após provisionamento:** Ativo, com troca obrigatória no primeiro acesso
 
-> **Atenção:** esta senha é exclusivamente para desenvolvimento/local. O usuário é criado com `must_change_password = true`; troque-a no primeiro acesso e nunca reutilize essa credencial em produção.
+O SQL consolidado cria apenas fixtures sem credencial utilizável. Execute
+`scripts/provision-homologation.sh`; o comando solicita as duas senhas sem eco,
+gera um segredo TOTP individual e somente persiste depois que um código do
+aplicativo autenticador for confirmado. A connection string e os segredos são
+recebidos exclusivamente pelo ambiente/secret manager local.
 
-A senha não é armazenada em texto puro. O instalador contém somente um hash `PBKDF2-HMAC-SHA512`, com 210.000 iterações, salt de 16 bytes e chave de 32 bytes, compatível com `Agro360.Infrastructure.Security.PasswordHasher` — o mesmo componente usado no login.
+O provisionador usa `Agro360.Infrastructure.Security.PasswordHasher` e Data
+Protection persistente. Ele recusa Production, valida a identidade canônica dos
+tenants, revoga sessões, exige troca das senhas e audita apenas metadados.
 
 ## Validações depois da restauração
 
@@ -84,7 +89,10 @@ Antes de publicar, execute também `./scripts/validate-full-sql.sh`, `dotnet res
 
 ## Cliente de homologação incluído
 
-O instalador completo também inclui, de forma idempotente, o cliente **Fazenda Santa Clara** no plano Profissional. Para o teste local, use o tenant `santa-clara`, o e-mail `admin@santaclara.agro360.local` e a senha inicial `SantaClara@2026!` (perfil **Administrador do Cliente**). O SQL armazena exclusivamente hashes PBKDF2; as senhas em texto desta documentação são credenciais descartáveis de homologação e não devem ser usadas em produção.
+O instalador completo inclui de forma idempotente a fixture **Fazenda Santa
+Clara**, tenant `santa-clara`, e o login
+`admin@santaclara.agro360.local` (perfil **Administrador do Cliente**), mas não
+uma senha conhecida. Ative a credencial exclusivamente com o provisionador.
 
 ## Seed operacional opcional de desenvolvimento
 

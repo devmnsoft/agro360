@@ -100,8 +100,8 @@ O usuário precisa poder criar as extensões `pgcrypto`, `pg_trgm` e `unaccent`.
 
 | Perfil | Tenant | Login | Senha inicial |
 |---|---|---|---|
-| Super Admin MNSOFT | `agro360-platform` | `superadmin@mnsoft.com.br` | `MNSoft@Agro360#2026` |
-| Administrador Fazenda Santa Clara | `santa-clara` | `admin@santaclara.agro360.local` | `SantaClara@2026!` |
+| Super Admin MNSOFT | `agro360-platform` | `superadmin@mnsoft.com.br` | Definida localmente pelo provisionador |
+| Administrador Fazenda Santa Clara | `santa-clara` | `admin@santaclara.agro360.local` | Definida localmente pelo provisionador |
 
 Essas credenciais existem apenas no instalador de desenvolvimento, com hash compatível com o serviço de login e troca obrigatória. Não devem ser reutilizadas em produção.
 
