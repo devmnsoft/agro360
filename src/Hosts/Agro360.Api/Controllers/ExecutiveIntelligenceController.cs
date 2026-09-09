@@ -15,5 +15,5 @@ public sealed class ExecutiveIntelligenceController(IExecutiveIntelligenceServic
     [HttpPost("alerts/{id:guid}/decision"), Authorize(Policy = Permissions.IntelligenceWrite)] public async Task<IActionResult> Alert(Guid id, AlertDecisionCommand command, CancellationToken ct) { await service.DecideAlertAsync(id, command, UserId(), ct); return NoContent(); }
     [HttpPost("recommendations/{id:guid}/decision"), Authorize(Policy = Permissions.IntelligenceWrite)] public async Task<IActionResult> Recommendation(Guid id, RecommendationStatusCommand command, CancellationToken ct) { await service.DecideRecommendationAsync(id, command, UserId(), ct); return NoContent(); }
     [HttpGet("reports/{report}.csv"), Authorize(Policy = Permissions.IntelligenceExport)] public async Task<IActionResult> Export(string report, [FromQuery] IntelligencePageFilter filter, CancellationToken ct) => File(await service.ExportAsync(report, filter, UserId(), ct), "text/csv; charset=utf-8", $"agro360-{report}.csv");
-    private Guid UserId() => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : throw new UnauthorizedAccessException("Usuário inválido.");
+    private Guid UserId() => Guid.TryParse(User.FindFirstValue("sub"), out var id) ? id : throw new UnauthorizedAccessException("Usuário inválido.");
 }

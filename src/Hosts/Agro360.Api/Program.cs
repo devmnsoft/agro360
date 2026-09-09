@@ -7,6 +7,7 @@ using Agro360.Infrastructure;
 using Agro360.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
@@ -25,12 +26,14 @@ if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
 }
 
 builder.Services.AddAgro360Infrastructure(builder.Configuration);
+builder.Services.AddHostedService<SuperAdminProvisioner>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 builder.Services.AddHealthChecks()
     .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
 
@@ -67,8 +70,12 @@ builder.Services.AddAuthorization(options =>
     {
         options.AddPolicy(permission, policy => policy
             .RequireAuthenticatedUser()
-            .RequireClaim("permission", permission));
+            .AddRequirements(new PermissionRequirement(permission)));
     }
+    options.AddPolicy(Permissions.PlatformAdmin, policy => policy
+        .RequireAuthenticatedUser()
+        .RequireRole("SUPER_ADMIN")
+        .AddRequirements(new PermissionRequirement(Permissions.PlatformAdmin)));
     options.AddPolicy(Permissions.PortalAccess, policy => policy.RequireAuthenticatedUser().RequireClaim("permission", Permissions.PortalAccess));
 });
 

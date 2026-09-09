@@ -127,6 +127,21 @@ public static class Permissions
     public const string GovernanceExport = "governance.export";
     public const string LgpdManage = "lgpd.manage";
     public const string SecuritySessions = "security.sessions";
+    public const string AccountUsersRead = "account.users.read";
+    public const string AccountUsersManage = "account.users.manage";
+    public const string AccountRolesRead = "account.roles.read";
+    public const string AccountRolesManage = "account.roles.manage";
+    public const string AccountInvitationsRead = "account.invitations.read";
+    public const string AccountInvitationsManage = "account.invitations.manage";
+    public const string AccountSettingsRead = "account.settings.read";
+    public const string AccountSettingsManage = "account.settings.manage";
+    public const string AccountSecurityRead = "account.security.read";
+    public const string AccountSecurityManage = "account.security.manage";
+    public const string AccountSubscriptionRead = "account.subscription.read";
+    public const string AccountSubscriptionManage = "account.subscription.manage";
+    public const string AccountNotificationsRead = "account.notifications.read";
+    public const string AccountNotificationsManage = "account.notifications.manage";
+    public const string PlatformAdmin = "platform.admin";
 
     public static IReadOnlyCollection<string> Administrator =>
     [
@@ -157,6 +172,13 @@ public static class Permissions
         SupportRead, SupportWrite, SupportManage, SstRead, SstWrite, SstMedicalRead,
         ExportRead, ExportWrite, ExportApprove, ExportReports,
         FiscalRead, FiscalWrite, FiscalApprove, FiscalReports,
-        GovernanceRead, GovernanceWrite, GovernanceExport, LgpdManage, SecuritySessions
+        GovernanceRead, GovernanceWrite, GovernanceExport, LgpdManage, SecuritySessions,
+        AccountUsersRead, AccountUsersManage,
+        AccountRolesRead, AccountRolesManage,
+        AccountInvitationsRead, AccountInvitationsManage,
+        AccountSettingsRead, AccountSettingsManage,
+        AccountSecurityRead, AccountSecurityManage,
+        AccountSubscriptionRead, AccountSubscriptionManage,
+        AccountNotificationsRead, AccountNotificationsManage
     ];
 }

@@ -1,0 +1,15 @@
+@page "/Saas/Accept"
+@model Agro360.Web.Pages.Saas.AcceptModel
+@{ ViewData["Title"] = "Aceitar convite"; }
+<section class="saas-page auth-card">
+    <header><div><span class="eyebrow">Administração da conta</span><h1>Ativar meu acesso</h1><p>Use o link de uso único entregue pelo administrador da sua organização.</p></div></header>
+    <form id="invitation-accept-form" class="portal-form">
+        <label>Token do convite<input name="token" autocomplete="off" required></label>
+        <label>Nome completo<input name="name" autocomplete="name" maxlength="160" required></label>
+        <label>Nova senha<input name="password" type="password" autocomplete="new-password" minlength="12" required></label>
+        <label>Confirmar senha<input name="confirmation" type="password" autocomplete="new-password" minlength="12" required></label>
+        <p class="form-message" role="alert"></p>
+        <button class="primary-button" type="submit">Ativar acesso</button>
+    </form>
+</section>
+@section Scripts { <script src="~/js/accept-invitation.js" asp-append-version="true" defer></script> }

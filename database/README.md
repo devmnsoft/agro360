@@ -1,5 +1,13 @@
 # PostgreSQL — Agro360
 
+## Estado verificado — E0, setembro de 2026
+
+O [plano mestre](../docs/execucao/AGRO360-MASTER-PLAN.md) e o [checkpoint](../docs/EXECUTION-CHECKPOINT.md) distinguem instalação limpa de upgrade. `scripts/verify-e0.ps1` executa este instalador duas vezes em PostgreSQL descartável e verifica login real; não homologa replay das migrations legadas nem upgrade com dados anteriores. Esse caminho é a próxima entrega AG-E0-003.
+
+`/health` retorna 503 se o schema mínimo de login/resumo estiver ausente/inacessível; não executa migrations automaticamente. `ConnectionStrings__Agro360` continua sendo o contrato da API. Não houve alteração de schema nesta correção E0.
+
+A seção histórica de acesso inicial abaixo descreve bootstrap fixo ainda presente no produto. Não é o modelo seguro aprovado: demo opt-in, senha temporária por ambiente, troca inicial e seed sem reset são pendências AG-E1-004. Não reutilize as credenciais históricas em produção. O gate gera credenciais só para seu banco descartável, sem registrar senha/hash/token nos resultados publicados.
+
 O arquivo `agro360-postgres-full.sql` é o instalador canônico, único e autocontido do Agro360. Ele cria exclusivamente o schema `agro360`, incluindo tabelas, chaves estrangeiras, constraints, índices, views, funções, triggers, catálogos e dados mínimos de inicialização. Não depende de Docker, migrations externas, `\\i`, caminhos locais ou dados de conexão embutidos.
 
 ## Pré-requisitos
