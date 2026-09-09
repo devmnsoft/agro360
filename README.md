@@ -19,17 +19,24 @@ Prepare um servidor externo (os nomes são exemplos; a senha deve ser digitada c
 createuser --host localhost --port 5432 --pwprompt agro360_app
 createdb --host localhost --port 5432 --owner agro360_app agro360
 psql --host localhost --port 5432 --dbname agro360 --file database/bootstrap/003-enable-extensions.sql
-export ConnectionStrings__Agro360='Host=localhost;Port=5432;Database=agro360;Username=agro360_app;Password=ALTERAR;Pooling=true;Timeout=15;Command Timeout=30'
+export ConnectionStrings__Agro360='Host=localhost;Port=5432;Database=agro360;Username=agro360_app;Pooling=true;Timeout=15;Command Timeout=30'
+export PostgreSql__Password='DEFINA_EM_SEGREDO_LOCAL'
 ```
 
 Não versione essa variável. Em desenvolvimento também é possível usar User Secrets:
 
 ```bash
-dotnet user-secrets --project src/Hosts/Agro360.Api set ConnectionStrings:Agro360 'SUA_CONEXAO'
-dotnet user-secrets --project src/Hosts/Agro360.Migrator set ConnectionStrings:Agro360 'SUA_CONEXAO'
+dotnet user-secrets --project src/Hosts/Agro360.Api set ConnectionStrings:Agro360 'Host=localhost;Port=5432;Database=agro360;Username=agro360_app;Pooling=true;Timeout=15;Command Timeout=30'
+dotnet user-secrets --project src/Hosts/Agro360.Api set PostgreSql:Password 'SUA_SENHA_LOCAL'
+dotnet user-secrets --project src/Hosts/Agro360.Worker set ConnectionStrings:Agro360 'Host=localhost;Port=5432;Database=agro360;Username=agro360_app;Pooling=true;Timeout=15;Command Timeout=30'
+dotnet user-secrets --project src/Hosts/Agro360.Worker set PostgreSql:Password 'SUA_SENHA_LOCAL'
+dotnet user-secrets --project src/Hosts/Agro360.Migrator set ConnectionStrings:Agro360 'Host=localhost;Port=5432;Database=agro360;Username=agro360_app;Pooling=true;Timeout=15;Command Timeout=30'
+dotnet user-secrets --project src/Hosts/Agro360.Migrator set PostgreSql:Password 'SUA_SENHA_LOCAL'
 ```
 
-Um `appsettings.Development.json` local ignorado pelo Git ou o secret manager da plataforma de produção são igualmente suportados. API, Worker e Migrator usam a chave única `ConnectionStrings:Agro360`; nenhum host de container é assumido.
+API, Worker e Migrator usam a chave canônica `ConnectionStrings:Agro360`. A senha pode estar na própria conexão, em `PostgreSql:Password`, em `PostgreSql:Passfile`/`PGPASSFILE`, ou no provider PostgreSQL padrão. Valores são montados por `NpgsqlConnectionStringBuilder`, portanto caracteres especiais não são concatenados nem interpretados manualmente. A chave antiga `ConnectionStrings:DefaultConnection` tem compatibilidade temporária apenas quando a canônica não existe; se as duas divergirem, o processo falha sem escolher silenciosamente.
+
+A precedência efetiva do host .NET é: argumentos, variáveis de ambiente, User Secrets em Development, `appsettings.{Environment}.json` e `appsettings.json`. O log inicial informa somente chave, origem, ambiente e mecanismo de autenticação, nunca a conexão ou o segredo. Verifique especialmente variáveis antigas persistidas no perfil de depuração do Visual Studio. Depois de alterar segredo, variável, passfile ou `launchSettings.json`, encerre e reinicie API, Worker e Migrator; o Web só usa `ApiBaseUrl` e não abre PostgreSQL.
 
 Execute a preparação e, depois, os hosts:
 
@@ -55,30 +62,30 @@ dotnet run --project src/Hosts/Agro360.Web
 
 ### Portas da API em desenvolvimento
 
-O único perfil de inicialização da API, `Agro360.Api`, usa
-`http://localhost:5046` e `https://localhost:7046`. O Visual Studio e o comando
+O perfil de inicialização da API, `Agro360.Api`, usa
+`http://localhost:8081` e `https://localhost:7081`. O Visual Studio e o comando
 `dotnet run --project src/Hosts/Agro360.Api/Agro360.Api.csproj` usam esse perfil
 por padrão. O documento OpenAPI fica disponível em
-`https://localhost:7046/openapi/v1.json` durante o desenvolvimento.
+`https://localhost:7081/openapi/v1.json` durante o desenvolvimento; o Swagger fica em `https://localhost:7081/swagger`.
 
 Para trocar a porta apenas na execução atual, sem alterar arquivos versionados,
 informe `--urls` (esse argumento prevalece sobre o perfil):
 
 ```bash
-dotnet run --project src/Hosts/Agro360.Api/Agro360.Api.csproj --urls "http://localhost:5046"
+dotnet run --project src/Hosts/Agro360.Api/Agro360.Api.csproj --urls "http://localhost:8081"
 ```
 
 No Windows, se uma porta estiver ocupada, identifique o processo antes de
 encerrá-lo:
 
 ```powershell
-Get-NetTCPConnection -LocalPort 5046 | Select-Object LocalAddress,LocalPort,State,OwningProcess
+Get-NetTCPConnection -LocalPort 8081 | Select-Object LocalAddress,LocalPort,State,OwningProcess
 Get-Process -Id <PID>
 # Somente se for uma instância antiga ou presa do Agro360:
 Stop-Process -Id <PID> -Force
 ```
 
-Em CMD, use `netstat -ano | findstr :5046` e depois, somente após conferir o
+Em CMD, use `netstat -ano | findstr :8081` e depois, somente após conferir o
 processo, `taskkill /PID <PID> /F`. Evite iniciar simultaneamente a API pelo
 Visual Studio e pelo terminal; pare a instância anterior antes de iniciar outra.
 
@@ -87,7 +94,8 @@ Visual Studio e pelo terminal; pare a instância anterior antes de iniciar outra
 O instalador canônico da release candidate pode ser aplicado diretamente pela mesma connection string usada pela aplicação:
 
 ```bash
-export ConnectionStrings__Agro360="Host=localhost;Port=5432;Database=agro360;Username=postgres;Password=postgres"
+export ConnectionStrings__Agro360="Host=localhost;Port=5432;Database=agro360;Username=postgres"
+# Forneça a senha por pgpass/.pgpass, secret store ou PGPASSWORD temporário.
 psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql
 dotnet restore
 dotnet build
@@ -133,7 +141,8 @@ Conecte ao banco de destino, abra o editor SQL, carregue `database/releases/v0.2
 Use somente banco descartável cujo nome contenha `test` ou `teste`; o script recusa outro destino:
 
 ```bash
-export AGRO360_TEST_CONNECTION_STRING='Host=localhost;Port=5432;Database=agro360_test;Username=agro360_app;Password=ALTERAR'
+export AGRO360_TEST_CONNECTION_STRING='Host=localhost;Port=5432;Database=agro360_test;Username=agro360_app'
+# Forneça a senha por pgpass/.pgpass ou PGPASSWORD temporário.
 ./scripts/test-local.sh
 # PowerShell: $env:AGRO360_TEST_CONNECTION_STRING='...'; ./scripts/test-local.ps1
 ```
@@ -244,7 +253,7 @@ A instalação continua sem Docker: configure `ConnectionStrings__Agro360`, apli
 A central em `/Integrations` oferece API pública, webhooks assinados, importação/exportação CSV, documentos fiscais como metadados, IoT, split manual, mensageria e monitoramento. Consulte [`docs/sprint-16-integrations.md`](docs/sprint-16-integrations.md). Para rodar sem Docker, defina uma connection string PostgreSQL e execute:
 
 ```bash
-export ConnectionStrings__Agro360='Host=localhost;Port=5432;Database=agro360;Username=agro360;Password=troque-me'
+export ConnectionStrings__Agro360='Host=localhost;Port=5432;Database=agro360;Username=agro360'
 psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql
 dotnet run --project src/Hosts/Agro360.Api
 dotnet run --project src/Hosts/Agro360.Web
@@ -266,7 +275,7 @@ A área `/RuralHr` entrega pessoas, equipes, jornada, alocações, produtividade
 Execução local sem Docker:
 
 ```bash
-export ConnectionStrings__Agro360='Host=localhost;Port=5432;Database=agro360;Username=agro360;Password=senha'
+export ConnectionStrings__Agro360='Host=localhost;Port=5432;Database=agro360;Username=agro360'
 psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql
 dotnet run --project src/Hosts/Agro360.Api
 dotnet run --project src/Hosts/Agro360.Web
@@ -281,7 +290,7 @@ Sem Docker: instale o SDK definido em `global.json` e PostgreSQL comum, defina `
 ## Sprint 22 — CRM Agro e Comercial B2B
 O Agro360 inclui CRM, força de vendas, funil, atividades, preços, pedidos, contratos, metas, comissões e split interno em `/Commercial`. Use PostgreSQL externo em `ConnectionStrings__Agro360` e instale sem Docker:
 ```bash
-export ConnectionStrings__Agro360='Host=localhost;Port=5432;Database=agro360;Username=agro360;Password=...'
+export ConnectionStrings__Agro360='Host=localhost;Port=5432;Database=agro360;Username=agro360'
 psql "$ConnectionStrings__Agro360" -f database/agro360-postgres-full.sql
 dotnet run --project src/Hosts/Agro360.Api
 dotnet run --project src/Hosts/Agro360.Web

@@ -28,17 +28,11 @@ public sealed partial class DatabaseExecutor(
         CancellationToken cancellationToken) =>
         InTenantTransactionAsync(tenantContext.TenantId, action, cancellationToken);
 
-    public async Task<T> InTenantTransactionAsync<T>(
+    public Task<T> InTenantTransactionAsync<T>(
         Guid tenantId,
         Func<NpgsqlConnection, NpgsqlTransaction, Task<T>> action,
-        CancellationToken cancellationToken)
-    {
-        await using var connection = (NpgsqlConnection)await connectionFactory
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        try
+        CancellationToken cancellationToken) =>
+        ExecuteTransactionAsync(tenantId, "tenant-transaction", async (connection, transaction) =>
         {
             await connection.ExecuteAsync(new CommandDefinition(
                 "select set_config('app.tenant_id', @TenantId, true);",
@@ -56,69 +50,79 @@ public sealed partial class DatabaseExecutor(
                 throw new ForbiddenException("O tenant está suspenso, cancelado ou indisponível.");
             }
 
-            var result = await action(connection, transaction).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return result;
-        }
-        catch (PostgresException exception)
-        {
-            await SafeRollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
-            LogPostgresFailure(logger, exception.SqlState, exception.MessageText, SafeDiagnostic(exception.Detail),
-                SafeDiagnostic(exception.Hint), exception.ColumnName, exception.TableName, exception.ConstraintName,
-                exception.SchemaName, tenantId, "tenant-transaction", exception);
-            throw Translate(exception);
-        }
-        catch (NpgsqlException exception)
-        {
-            await SafeRollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
-            LogCommunicationFailure(logger, tenantId, "tenant-transaction", exception);
-            throw new PersistenceException("Falha de comunicação com o PostgreSQL.", exception);
-        }
-        catch
-        {
-            await SafeRollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
-            throw;
-        }
-    }
+            return await action(connection, transaction).ConfigureAwait(false);
+        }, cancellationToken);
 
-    public async Task<T> InSystemTransactionAsync<T>(
+    public Task<T> InSystemTransactionAsync<T>(
+        Func<NpgsqlConnection, NpgsqlTransaction, Task<T>> action,
+        CancellationToken cancellationToken) =>
+        ExecuteTransactionAsync(null, "system-transaction", action, cancellationToken);
+
+    private async Task<T> ExecuteTransactionAsync<T>(
+        Guid? tenantId,
+        string operation,
         Func<NpgsqlConnection, NpgsqlTransaction, Task<T>> action,
         CancellationToken cancellationToken)
     {
-        await using var connection = (NpgsqlConnection)await connectionFactory
-            .OpenConnectionAsync(cancellationToken)
-            .ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
+        NpgsqlConnection? connection = null;
+        NpgsqlTransaction? transaction = null;
         try
         {
+            connection = (NpgsqlConnection)await connectionFactory
+                .OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
             var result = await action(connection, transaction).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await SafeRollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
+            throw;
         }
         catch (PostgresException exception)
         {
             await SafeRollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
             LogPostgresFailure(logger, exception.SqlState, exception.MessageText, SafeDiagnostic(exception.Detail),
                 SafeDiagnostic(exception.Hint), exception.ColumnName, exception.TableName, exception.ConstraintName,
-                exception.SchemaName, null, "system-transaction", exception);
+                exception.SchemaName, tenantId, operation, exception);
             throw Translate(exception);
         }
         catch (NpgsqlException exception)
         {
             await SafeRollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
-            LogCommunicationFailure(logger, null, "system-transaction", exception);
-            throw new PersistenceException("Falha de comunicação com o PostgreSQL.", exception);
+            var translated = Translate(exception);
+            LogCommunicationFailure(logger, tenantId, operation, translated.Code, exception);
+            throw translated;
+        }
+        catch (TimeoutException exception)
+        {
+            await SafeRollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
+            LogCommunicationFailure(logger, tenantId, operation, "database_timeout", exception);
+            throw new DatabaseTimeoutException("O PostgreSQL excedeu o tempo limite da operação.", exception);
         }
         catch
         {
             await SafeRollbackAsync(transaction, cancellationToken).ConfigureAwait(false);
             throw;
+        }
+        finally
+        {
+            await SafeDisposeAsync(transaction, operation).ConfigureAwait(false);
+            await SafeDisposeAsync(connection, operation).ConfigureAwait(false);
         }
     }
 
     private static Exception Translate(PostgresException exception) => exception.SqlState switch
     {
+        PostgresErrorCodes.InvalidPassword or PostgresErrorCodes.InvalidAuthorizationSpecification =>
+            new DatabaseAuthenticationException("O PostgreSQL rejeitou a autenticação configurada.", exception),
+        "08000" or "08003" or "08006" or "08001" or "08004" =>
+            new DatabaseUnavailableException("O PostgreSQL está indisponível.", exception),
+        PostgresErrorCodes.QueryCanceled =>
+            new DatabaseTimeoutException("O PostgreSQL cancelou a operação por limite de tempo.", exception),
         PostgresErrorCodes.UniqueViolation => new ConflictException(
             "Já existe um registro com os mesmos dados únicos.",
             "persistence.unique_violation"),
@@ -133,18 +137,45 @@ public sealed partial class DatabaseExecutor(
         _ => new PersistenceException($"Falha PostgreSQL ({exception.SqlState}).", exception)
     };
 
-    private static async Task SafeRollbackAsync(NpgsqlTransaction transaction, CancellationToken cancellationToken)
+    private static PersistenceException Translate(NpgsqlException exception)
     {
+        if (exception.Message.Contains("password has been provided", StringComparison.OrdinalIgnoreCase)
+            || exception.Message.Contains("password authentication failed", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DatabaseAuthenticationException("A autenticação PostgreSQL configurada não pôde ser utilizada.", exception);
+        }
+
+        if (exception.InnerException is TimeoutException || exception.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DatabaseTimeoutException("O PostgreSQL excedeu o tempo limite da operação.", exception);
+        }
+
+        return new DatabaseUnavailableException("Falha de comunicação com o PostgreSQL.", exception);
+    }
+
+    private static async Task SafeRollbackAsync(NpgsqlTransaction? transaction, CancellationToken cancellationToken)
+    {
+        if (transaction?.Connection is null) return;
         try
         {
-            if (transaction.Connection is not null)
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (NpgsqlException)
+        catch (Exception exception) when (exception is NpgsqlException or InvalidOperationException or ObjectDisposedException or OperationCanceledException)
         {
-            // A conexão original já falhou; o erro de rollback não substitui a causa raiz.
+            // Preserva sempre a falha original; rollback é apenas a compensação de melhor esforço.
+        }
+    }
+
+    private async Task SafeDisposeAsync(IAsyncDisposable? resource, string operation)
+    {
+        if (resource is null) return;
+        try
+        {
+            await resource.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is NpgsqlException or InvalidOperationException or ObjectDisposedException)
+        {
+            LogDisposeFailure(logger, operation, resource.GetType().Name, exception);
         }
     }
 
@@ -161,6 +192,9 @@ public sealed partial class DatabaseExecutor(
         string? detail, string? hint, string? columnName, string? tableName, string? constraintName,
         string? schemaName, Guid? tenantId, string operation, Exception exception);
 
-    [LoggerMessage(2002, LogLevel.Error, "Falha de comunicação PostgreSQL. TenantId: {TenantId}; Operation: {Operation}")]
-    private static partial void LogCommunicationFailure(ILogger logger, Guid? tenantId, string operation, Exception exception);
+    [LoggerMessage(2002, LogLevel.Error, "Falha de dependência PostgreSQL. TenantId: {TenantId}; Operation: {Operation}; Code: {Code}")]
+    private static partial void LogCommunicationFailure(ILogger logger, Guid? tenantId, string operation, string code, Exception exception);
+
+    [LoggerMessage(2003, LogLevel.Warning, "Falha ao liberar recurso PostgreSQL. Operation: {Operation}; Resource: {Resource}")]
+    private static partial void LogDisposeFailure(ILogger logger, string operation, string resource, Exception exception);
 }

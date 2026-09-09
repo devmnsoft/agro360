@@ -27,13 +27,20 @@ public sealed partial class ExceptionHandlingMiddleware(RequestDelegate next, IL
             ConflictException => (StatusCodes.Status409Conflict, "business_conflict", "Conflito de negócio"),
             ForbiddenException => (StatusCodes.Status403Forbidden, "forbidden", "Acesso negado"),
             DomainException => (StatusCodes.Status422UnprocessableEntity, "business_rule", "Regra de negócio não atendida"),
+            DatabaseAuthenticationException => (StatusCodes.Status503ServiceUnavailable, "database_authentication_failed", "Dependência indisponível"),
+            DatabaseTimeoutException => (StatusCodes.Status503ServiceUnavailable, "database_timeout", "Dependência temporariamente indisponível"),
+            DatabaseUnavailableException => (StatusCodes.Status503ServiceUnavailable, "database_unavailable", "Dependência temporariamente indisponível"),
+            PersistenceException => (StatusCodes.Status500InternalServerError, "persistence_error", "Erro de persistência"),
             BadHttpRequestException => (StatusCodes.Status400BadRequest, "invalid_request", "Requisição inválida"),
             _ => (StatusCodes.Status500InternalServerError, "internal_error", "Erro interno")
         };
 
         if (status >= 500)
         {
-            LogUnhandledError(logger, context.TraceIdentifier, exception);
+            if (exception is not PersistenceException)
+            {
+                LogUnhandledError(logger, context.TraceIdentifier, exception);
+            }
         }
         else
         {
@@ -52,6 +59,15 @@ public sealed partial class ExceptionHandlingMiddleware(RequestDelegate next, IL
         if (exception is DomainException domainException)
         {
             problem.Extensions["code"] = domainException.Code;
+        }
+
+        if (exception is PersistenceException persistenceException)
+        {
+            problem.Extensions["code"] = persistenceException.Code;
+            if (status == StatusCodes.Status503ServiceUnavailable)
+            {
+                context.Response.Headers.RetryAfter = "30";
+            }
         }
 
         if (exception is ValidationException validationException)

@@ -1,7 +1,89 @@
-(()=>{const api='/api/procurement';const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));async function req(path,opt){const r=await fetch(api+'/'+path,{headers:{'Content-Type':'application/json'},...opt});if(!r.ok){let x;try{x=await r.json()}catch{x={}}throw new Error(x.detail||x.title||'Não foi possível concluir a operação.')}return r.status===204?null:r.json()}const badge=x=>`<span class="proc-badge">${esc(x)}</span>`;
-async function dashboard(){const el=document.querySelector('#proc-kpis');try{const d=await req('dashboard');const cards=[['Requisições abertas',d.requisitions_open],['Urgentes',d.requisitions_urgent],['Cotações em andamento',d.quotations_running],['Pedidos para aprovar',d.orders_awaiting_approval],['Recebimentos divergentes',d.divergent_receipts],['Fornecedores ativos',d.active_suppliers],['Fornecedores bloqueados',d.blocked_suppliers],['Parcialmente recebidos',d.orders_partially_received],['Comprado no mês',Number(d.purchased_month).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})]];el.innerHTML=cards.map(x=>`<article class="proc-kpi"><strong>${esc(x[1]??0)}</strong><span>${x[0]}</span></article>`).join('')}catch(e){el.innerHTML=`<div class="proc-empty">${esc(e.message)}</div>`}}
-const tables={suppliers:{head:['Fornecedor','Categoria','Prazo','Status'],row:x=>[x.legal_name,x.main_category,`${x.average_delivery_days} dias`,badge(x.status)]},catalog:{head:['Código','Item','Categoria','Tipo','Situação'],row:x=>[x.internal_code,x.name,x.category,x.item_type,badge(x.active?'ATIVO':'INATIVO')]},requisitions:{head:['Número','Prioridade','Necessidade','Itens','Status'],row:x=>[x.number,badge(x.priority),new Date(x.needed_on+'T00:00').toLocaleDateString('pt-BR'),x.item_count,badge(x.status)]},orders:{head:['Número','Fornecedor','Entrega','Total','Status'],row:x=>[x.number,x.supplier_name,new Date(x.delivery_on+'T00:00').toLocaleDateString('pt-BR'),Number(x.total).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),badge(x.status)]}};
-async function list(name,form){const box=document.querySelector(`[data-content="${name}"]`);box.innerHTML='<div class="proc-loading">Carregando…</div>';try{const query=form?new URLSearchParams(new FormData(form)):'';const rows=await req(`${name}?${query}`),t=tables[name];box.innerHTML=rows.length?`<table><thead><tr>${t.head.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${t.row(r).map(x=>`<td>${x??'—'}</td>`).join('')}</tr>`).join('')}</tbody></table>`:'<div class="proc-empty">Nenhum registro encontrado para os filtros aplicados.</div>'}catch(e){box.innerHTML=`<div class="proc-empty">${esc(e.message)}</div>`}}
-async function lookups(){try{const [s,c,o]=await Promise.all([req('suppliers?status=ACTIVE&pageSize=100'),req('catalog?status=ACTIVE&pageSize=100'),req('orders?status=APPROVED&pageSize=100')]);document.querySelectorAll('[data-lookup="suppliers"]').forEach(el=>el.innerHTML='<option value="">Selecione pelo nome</option>'+s.map(x=>`<option value="${x.id}">${esc(x.legal_name)}</option>`).join(''));document.querySelectorAll('[data-lookup="catalog"]').forEach(el=>el.innerHTML='<option value="">Selecione pelo nome ou código</option>'+c.map(x=>`<option value="${x.id}">${esc(x.internal_code)} · ${esc(x.name)}</option>`).join(''));document.querySelectorAll('[data-lookup="orders"]').forEach(el=>el.innerHTML='<option value="">Selecione pelo número</option>'+o.map(x=>`<option value="${x.id}" data-item="${x.pending_item_id||''}">${esc(x.number)} · ${esc(x.supplier_name)}</option>`).join(''))}catch{}}
-function body(form){const f=new FormData(form),x=Object.fromEntries(f);for(const n of ['averageDeliveryDays'])x[n]=Number(x[n]||0);for(const n of ['minimumStock','quantity','unitPrice','discount','freight','taxes'])if(n in x)x[n]=x[n]===''?null:Number(x[n]);for(const n of ['requiresLot','requiresExpiry','requiresDocument','requiresInspection','requiresApprovedSupplier'])x[n]=f.has(n);if(form.dataset.endpoint==='suppliers')Object.assign(x,{stateRegistration:null,address:null,city:null,state:null,mainContact:null,paymentTerms:null,rejectionReason:null,tags:[]});if(form.dataset.endpoint==='catalog')Object.assign(x,{active:true,costCenterId:null,description:null,notes:null});if(form.dataset.endpoint==='requisitions')Object.assign(x,{costCenterId:null,propertyId:null,items:[{catalogItemId:x.catalogItemId,quantity:x.quantity,unit:x.unit,notes:null}]});if(form.dataset.endpoint==='orders')Object.assign(x,{requisitionId:null,quotationId:null,costCenterId:null,propertyId:null,items:[{catalogItemId:x.catalogItemId,quantity:x.quantity,unit:x.unit,unitPrice:x.unitPrice,discount:x.discount}]});if(form.dataset.endpoint==='receipts')Object.assign(x,{overrideExcess:false,excessJustification:null,items:[{purchaseOrderItemId:x.purchaseOrderItemId,quantity:x.quantity,supplierLot:x.supplierLot||null,expiresOn:x.expiresOn||null,notes:x.notes||null}]});return x}
-document.querySelectorAll('.proc-tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.proc-tabs button,.proc-panel').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelector('#'+b.dataset.tab).classList.add('active')});document.querySelectorAll('[data-dialog]').forEach(b=>b.onclick=()=>document.querySelector('#'+b.dataset.dialog).showModal());document.querySelectorAll('.proc-filter').forEach(f=>f.onsubmit=e=>{e.preventDefault();list(f.dataset.list,f)});document.querySelectorAll('.proc-form').forEach(f=>f.onsubmit=async e=>{e.preventDefault();if(!f.reportValidity())return;const m=f.querySelector('.form-message');m.textContent='Salvando…';try{await req(f.dataset.endpoint,{method:'POST',body:JSON.stringify(body(f))});f.closest('dialog').close();f.reset();m.textContent='';await Promise.all([dashboard(),list(f.dataset.endpoint),lookups()])}catch(ex){m.textContent=ex.message}});const orderSelect=document.querySelector('[data-lookup="orders"]');orderSelect.addEventListener('change',()=>{const item=document.querySelector('[name="purchaseOrderItemId"]'),id=orderSelect.selectedOptions[0]?.dataset.item;item.innerHTML=id?`<option value="${id}">Saldo pendente do pedido selecionado</option>`:'<option value="">Pedido sem item pendente</option>'});document.querySelector('#proc-refresh').onclick=()=>Promise.all([dashboard(),...Object.keys(tables).map(x=>list(x))]);dashboard();Object.keys(tables).forEach(x=>list(x));lookups();})();
+(() => {
+    "use strict";
+    const root = "/api/procurement";
+    const escape = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+    const request = (path, options = {}) => window.agro360Api(`${root}/${path}`, options);
+    const badge = value => `<span class="proc-badge">${escape(value)}</span>`;
+    const tables = {
+        suppliers: { head: ["Fornecedor", "Categoria", "Prazo", "Status"], row: item => [item.legal_name, item.main_category, `${item.average_delivery_days} dias`, badge(item.status)] },
+        catalog: { head: ["Código", "Item", "Categoria", "Tipo", "Situação"], row: item => [item.internal_code, item.name, item.category, item.item_type, badge(item.active ? "ATIVO" : "INATIVO")] },
+        requisitions: { head: ["Número", "Prioridade", "Necessidade", "Itens", "Status"], row: item => [item.number, badge(item.priority), new Date(`${item.needed_on}T00:00`).toLocaleDateString("pt-BR"), item.item_count, badge(item.status)] },
+        orders: { head: ["Número", "Fornecedor", "Entrega", "Total", "Status"], row: item => [item.number, item.supplier_name, new Date(`${item.delivery_on}T00:00`).toLocaleDateString("pt-BR"), Number(item.total).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), badge(item.status)] },
+        receipts: { head: ["Recebimento", "Pedido", "Fornecedor", "Data", "Itens", "Estoque", "Financeiro", "Status"], row: item => [item.number, item.order_number, item.supplier_name, new Date(item.received_at).toLocaleString("pt-BR"), item.item_count, badge(item.stock_integration_status), badge(item.finance_integration_status), badge(item.status)] }
+    };
+
+    async function dashboard() {
+        const element = document.querySelector("#proc-kpis");
+        try {
+            const data = await request("dashboard");
+            const values = [["Requisições abertas", data.requisitions_open], ["Urgentes", data.requisitions_urgent], ["Cotações em andamento", data.quotations_running], ["Pedidos para aprovar", data.orders_awaiting_approval], ["Recebimentos divergentes", data.divergent_receipts], ["Fornecedores ativos", data.active_suppliers], ["Fornecedores bloqueados", data.blocked_suppliers], ["Parcialmente recebidos", data.orders_partially_received], ["Comprado no mês", Number(data.purchased_month).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })]];
+            element.innerHTML = values.map(item => `<article class="proc-kpi"><strong>${escape(item[1] ?? 0)}</strong><span>${item[0]}</span></article>`).join("");
+        } catch (error) { element.innerHTML = `<div class="proc-empty">${escape(error.message)}</div>`; }
+    }
+
+    async function list(name, form) {
+        const box = document.querySelector(`[data-content="${name}"]`);
+        box.innerHTML = '<div class="proc-loading">Carregando…</div>';
+        try {
+            const query = form ? new URLSearchParams(new FormData(form)) : "";
+            const rows = await request(`${name}?${query}`);
+            const definition = tables[name];
+            box.innerHTML = rows.length ? `<table><thead><tr>${definition.head.map(item => `<th>${item}</th>`).join("")}</tr></thead><tbody>${rows.map(row => `<tr>${definition.row(row).map(value => `<td>${value ?? "—"}</td>`).join("")}</tr>`).join("")}</tbody></table>` : '<div class="proc-empty">Nenhum registro encontrado para os filtros aplicados.</div>';
+        } catch (error) { box.innerHTML = `<div class="proc-empty">${escape(error.message)}</div>`; }
+    }
+
+    async function lookups() {
+        try {
+            const [suppliers, catalog, orders, options] = await Promise.all([request("suppliers?status=ACTIVE&pageSize=100"), request("catalog?status=ACTIVE&pageSize=100"), request("orders?status=APPROVED&pageSize=100"), request("receipt-options")]);
+            document.querySelectorAll('[data-lookup="suppliers"]').forEach(element => { element.innerHTML = '<option value="">Selecione pelo nome</option>' + suppliers.map(item => `<option value="${item.id}">${escape(item.legal_name)}</option>`).join(""); });
+            document.querySelectorAll('[data-lookup="catalog"]').forEach(element => { element.innerHTML = '<option value="">Selecione pelo nome ou código</option>' + catalog.map(item => `<option value="${item.id}">${escape(item.internal_code)} · ${escape(item.name)}</option>`).join(""); });
+            document.querySelectorAll('[data-lookup="orders"]').forEach(element => { element.innerHTML = '<option value="">Selecione pelo número</option>' + orders.map(item => `<option value="${item.id}">${escape(item.number)} · ${escape(item.supplier_name)}</option>`).join(""); });
+            document.querySelectorAll('[data-lookup="warehouses"]').forEach(element => { element.innerHTML = '<option value="">Não aplicável a serviço</option>' + options.warehouses.map(item => `<option value="${item.id}">${escape(item.code)} · ${escape(item.name)}</option>`).join(""); });
+            document.querySelectorAll('[data-lookup="finance-accounts"]').forEach(element => { element.innerHTML = '<option value="">Selecione a conta</option>' + options.financeAccounts.map(item => `<option value="${item.id}">${escape(item.code)} · ${escape(item.name)}</option>`).join(""); });
+            document.querySelectorAll('[data-lookup="products"]').forEach(element => { element.innerHTML = '<option value="">Selecione para material/ativo</option>' + options.products.map(item => `<option value="${item.id}">${escape(item.sku)} · ${escape(item.name)}</option>`).join(""); });
+        } catch { window.toastWarning?.("Listas indisponíveis", "Não foi possível carregar todos os seletores autorizados."); }
+    }
+
+    async function loadPendingItems(orderId) {
+        const element = document.querySelector('[name="purchaseOrderItemId"]');
+        if (!orderId) { element.innerHTML = '<option value="">Selecione o pedido</option>'; return; }
+        const rows = await request(`orders/${encodeURIComponent(orderId)}/pending-items`);
+        element.innerHTML = rows.length ? rows.map(item => `<option value="${item.id}" data-lot="${item.requires_lot}" data-expiry="${item.requires_expiry}">${escape(item.name)} · saldo ${escape(item.pending_quantity)} ${escape(item.unit)}</option>`).join("") : '<option value="">Pedido sem saldo pendente</option>';
+    }
+
+    function body(form) {
+        const values = new FormData(form);
+        const result = Object.fromEntries(values);
+        for (const name of ["averageDeliveryDays", "installments"]) if (name in result) result[name] = Number(result[name] || 0);
+        for (const name of ["minimumStock", "quantity", "unitPrice", "discount", "freight", "taxes"]) if (name in result) result[name] = result[name] === "" ? null : Number(result[name]);
+        for (const name of ["requiresLot", "requiresExpiry", "requiresDocument", "requiresInspection", "requiresApprovedSupplier", "overrideExcess"]) result[name] = values.has(name);
+        if (form.dataset.endpoint === "suppliers") Object.assign(result, { stateRegistration: null, address: null, city: null, state: null, mainContact: null, paymentTerms: null, rejectionReason: null, tags: [] });
+        if (form.dataset.endpoint === "catalog") Object.assign(result, { active: true, costCenterId: null, description: null, notes: null, relatedProductId: result.relatedProductId || null });
+        if (form.dataset.endpoint === "requisitions") Object.assign(result, { costCenterId: null, propertyId: null, items: [{ catalogItemId: result.catalogItemId, quantity: result.quantity, unit: result.unit, notes: null }] });
+        if (form.dataset.endpoint === "orders") Object.assign(result, { requisitionId: null, quotationId: null, costCenterId: null, propertyId: null, items: [{ catalogItemId: result.catalogItemId, quantity: result.quantity, unit: result.unit, unitPrice: result.unitPrice, discount: result.discount }] });
+        if (form.dataset.endpoint === "receipts") Object.assign(result, { idempotencyKey: crypto.randomUUID(), warehouseId: result.warehouseId || null, financeAccountId: result.financeAccountId || null, excessJustification: result.excessJustification || null, items: [{ purchaseOrderItemId: result.purchaseOrderItemId, quantity: result.quantity, supplierLot: result.supplierLot || null, expiresOn: result.expiresOn || null, notes: result.notes || null }] });
+        return result;
+    }
+
+    document.querySelectorAll(".proc-tabs button").forEach(button => button.addEventListener("click", () => { document.querySelectorAll(".proc-tabs button,.proc-panel").forEach(item => item.classList.remove("active")); button.classList.add("active"); document.querySelector(`#${button.dataset.tab}`).classList.add("active"); }));
+    document.querySelectorAll("[data-dialog]").forEach(button => button.addEventListener("click", () => document.querySelector(`#${button.dataset.dialog}`).showModal()));
+    document.querySelectorAll(".proc-filter").forEach(form => form.addEventListener("submit", event => { event.preventDefault(); list(form.dataset.list, form); }));
+    document.querySelectorAll(".proc-form").forEach(form => form.addEventListener("submit", async event => {
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+        const message = form.querySelector(".form-message");
+        const button = form.querySelector(".proc-primary");
+        if (form.dataset.endpoint === "receipts" && !await window.confirmDialog("Confirmar recebimento", "A operação fará a entrada física e criará previsões financeiras abertas. Escritas não são repetidas automaticamente.", "Receber")) return;
+        button.disabled = true; message.textContent = "Salvando…";
+        try {
+            await request(form.dataset.endpoint, { method: "POST", body: JSON.stringify(body(form)) });
+            form.closest("dialog").close(); form.reset(); message.textContent = "";
+            window.toastSuccess?.("Operação concluída", "Os vínculos de estoque e financeiro foram persistidos sem duplicação.");
+            await Promise.all([dashboard(), list(form.dataset.endpoint), lookups()]);
+        } catch (error) { message.textContent = error.message; }
+        finally { button.disabled = false; }
+    }));
+    document.querySelector('[data-lookup="orders"]').addEventListener("change", event => loadPendingItems(event.target.value).catch(error => { document.querySelector('[name="purchaseOrderItemId"]').innerHTML = `<option value="">${escape(error.message)}</option>`; }));
+    document.querySelector("#proc-refresh").addEventListener("click", () => Promise.all([dashboard(), ...Object.keys(tables).map(name => list(name))]));
+    dashboard(); Object.keys(tables).forEach(name => list(name)); lookups();
+})();

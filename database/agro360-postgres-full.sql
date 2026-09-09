@@ -2707,8 +2707,8 @@ values ('00000000-0000-0000-0000-000000000001','MNSOFT / Agro360 Platform','agro
 on conflict(id) do update set name=excluded.name, status=excluded.status;
 insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status)
 values ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','Super Administrador MNSOFT','superadmin@mnsoft.com.br','pbkdf2-sha512$210000$QWdybzM2ME1OU09GVDI2IQ==$XPdvwPxWZJO1J6BgBee2oNx3qEmuDipAFEqE+RRiaos=','ACTIVE')
-on conflict(id) do update set tenant_id=excluded.tenant_id,name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,status='ACTIVE';
-update agro360.identity_users set normalized_document='18160057000113',document_type='CNPJ',must_change_password=true
+on conflict(id) do update set tenant_id=excluded.tenant_id,name=excluded.name,email=excluded.email;
+update agro360.identity_users set normalized_document='18160057000113',document_type='CNPJ'
 where id='00000000-0000-0000-0000-000000000002';
 insert into agro360.identity_roles(id,tenant_id,code,name,is_system)
 values ('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000001','SUPER_ADMIN','Super Administrador',true)
@@ -3191,7 +3191,7 @@ on conflict(tenant_id) do update set unit_system='METRIC',currency='BRL',time_zo
 -- PBKDF2-SHA512, 210.000 iterações e salt de 16 bytes, no formato de PasswordHasher.
 insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,normalized_document,document_type,must_change_password,created_by)
 values ('30000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000001','Administrador Santa Clara','admin@santaclara.agro360.local','pbkdf2-sha512$210000$QWdybzM2MFNhbnRhMjYhIQ==$4UDbHTJM4k2raurPMDeniCv/McIHqZ1BxdqSD1I7GKc=','ACTIVE','52998224725','CPF',true,'30000000-0000-0000-0000-000000000003')
-on conflict(id) do update set name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,status='ACTIVE',normalized_document=excluded.normalized_document,document_type='CPF',must_change_password=true,deleted_at=null,updated_at=now();
+on conflict(id) do update set name=excluded.name,email=excluded.email,normalized_document=excluded.normalized_document,document_type='CPF',updated_at=now();
 -- A organização referencia o usuário criador; por isso deve ser criada somente
 -- depois do usuário para manter a restauração compatível com FKs imediatas.
 insert into agro360.organization_organizations(id,tenant_id,type,name,legal_name,document_number,created_by)
@@ -3225,7 +3225,7 @@ select set_config('app.tenant_id','20000000-0000-0000-0000-000000000001',true);
 -- Hash PBKDF2-SHA512 (210.000 iterações) da credencial local documentada TroqueAgora!123.
 insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,must_change_password)
 values ('20000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000001','Administrador Agro360','admin@agro360.local','pbkdf2-sha512$210000$QWdybzM2MERlbW9TZWVkIQ==$4VCMfY7wCNXW1YUuFkEKSgVnzQbUIYI0ThMD8anitDQ=','ACTIVE',true)
-on conflict(id) do update set name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,status='ACTIVE',deleted_at=null;
+on conflict(id) do update set name=excluded.name,email=excluded.email;
 insert into agro360.identity_roles(id,tenant_id,code,name,is_system)
 values ('20000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000001','tenant-administrator','Administrador do tenant',true)
 on conflict(id) do update set name=excluded.name,is_system=true;
@@ -3355,4 +3355,45 @@ create table if not exists agro360.fiscal_correction_letters(
 create index if not exists ix_fiscal_corrections_document on agro360.fiscal_correction_letters(tenant_id,fiscal_document_id,created_at desc);
 insert into agro360.platform_schema_versions(version,description,installed_at)
 values('6.4.0','Sprint Fiscal Agro360 - cartas de correção e fluxos auditáveis',now()) on conflict(version) do nothing;
+commit;
+
+-- Recebimento de compras: idempotência e vínculos transacionais com estoque/financeiro.
+begin;
+alter table agro360.procurement_receipts
+    add column if not exists finance_integration_status varchar(20) not null default 'PENDING',
+    add column if not exists idempotency_key varchar(100),
+    add column if not exists warehouse_id uuid;
+do $$ begin
+    alter table agro360.procurement_receipts add constraint ck_procurement_receipt_finance_status
+        check (finance_integration_status in ('PENDING','COMPLETED','FAILED','NOT_APPLICABLE'));
+exception when duplicate_object then null; end $$;
+do $$ begin
+    alter table agro360.procurement_receipts add constraint fk_procurement_receipt_warehouse
+        foreign key (tenant_id,warehouse_id) references agro360.inventory_warehouses(tenant_id,id);
+exception when duplicate_object then null; end $$;
+create unique index if not exists uq_procurement_receipt_idempotency
+    on agro360.procurement_receipts(tenant_id,idempotency_key) where idempotency_key is not null;
+create unique index if not exists uq_procurement_receipt_items_tenant_id
+    on agro360.procurement_receipt_items(tenant_id,id);
+create unique index if not exists uq_finance_payables_tenant_id
+    on agro360.finance_payables(tenant_id,id);
+create table if not exists agro360.procurement_receipt_stock_links(
+    tenant_id uuid not null references agro360.tenancy_tenants(id),
+    receipt_item_id uuid not null,stock_movement_id uuid not null,
+    created_at timestamptz not null default now(),created_by uuid not null,
+    primary key(tenant_id,receipt_item_id),unique(tenant_id,stock_movement_id),
+    foreign key(tenant_id,receipt_item_id) references agro360.procurement_receipt_items(tenant_id,id),
+    foreign key(tenant_id,stock_movement_id) references agro360.inventory_stock_movements(tenant_id,id));
+create table if not exists agro360.procurement_order_financial_links(
+    tenant_id uuid not null references agro360.tenancy_tenants(id),
+    purchase_order_id uuid not null,installment integer not null check(installment>0),payable_id uuid not null,
+    amount numeric(18,2) not null check(amount>0),created_at timestamptz not null default now(),created_by uuid not null,
+    primary key(tenant_id,purchase_order_id,installment),unique(tenant_id,payable_id),
+    foreign key(tenant_id,purchase_order_id) references agro360.procurement_purchase_orders(tenant_id,id),
+    foreign key(tenant_id,payable_id) references agro360.finance_payables(tenant_id,id));
+select agro360.platform_enable_tenant_rls('agro360.procurement_receipt_stock_links');
+select agro360.platform_enable_tenant_rls('agro360.procurement_order_financial_links');
+insert into agro360.platform_schema_versions(version,description,installed_at)
+values('6.4.1','Recebimento de compras integrado a estoque e previsão financeira idempotente',now())
+on conflict(version) do update set description=excluded.description;
 commit;

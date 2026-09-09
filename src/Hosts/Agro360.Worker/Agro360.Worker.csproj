@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <UserSecretsId>mnsoft-agro360-worker</UserSecretsId>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Dapper" />
     <PackageReference Include="Npgsql" />

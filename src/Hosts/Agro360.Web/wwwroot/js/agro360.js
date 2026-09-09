@@ -4,7 +4,7 @@
     const apiBase = document.querySelector('meta[name="api-base"]')?.content?.replace(/\/$/, "") ?? "http://localhost:8081";
     const apiUnavailableMessage = "Não foi possível conectar à API. Confirme se a Agro360.Api está rodando em http://localhost:8081 e abra http://localhost:8081/swagger.";
     const storageKeys = { session: "agro360.session", theme: "agro360.theme" };
-    const state = { session: readJson(storageKeys.session), searchTimer: 0, selectedSearch: -1, refreshPromise: null, refreshStopped: false };
+    const state = { session: readJson(storageKeys.session), searchTimer: 0, selectedSearch: -1, refreshPromise: null, refreshStopped: false, activeIncidents: new Set() };
     const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
     const number = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
     const relativeTime = new Intl.RelativeTimeFormat("pt-BR", { numeric: "auto" });
@@ -85,13 +85,15 @@
     }
 
     async function api(path, options = {}, retry = true) {
+        const method = String(options.method ?? "GET").toUpperCase();
+        const canReplay = method === "GET" || method === "HEAD" || method === "OPTIONS";
         const headers = new Headers(options.headers ?? {});
         if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
         if (state.session?.accessToken) headers.set("Authorization", `Bearer ${state.session.accessToken}`);
         headers.set("X-Timezone", Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Belem");
         const response = await fetch(`${apiBase}${path}`, { ...options, headers });
 
-        if (response.status === 401 && retry && !state.refreshStopped && state.session?.refreshToken) {
+        if (response.status === 401 && canReplay && retry && !state.refreshStopped && state.session?.refreshToken) {
             const refreshed = await refreshSession();
             if (refreshed) return api(path, options, false);
         }
@@ -125,16 +127,37 @@
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ refreshToken: state.session.refreshToken })
             });
-            if (!response.ok) throw new Error("Sessão expirada");
+            if (response.status === 401 || response.status === 403) {
+                state.refreshStopped = true;
+                persistSession(null);
+                showLogin();
+                showToast("warning", "Sessão expirada", "Sua sessão expirou. Faça login novamente.", "refresh-rejected");
+                return false;
+            }
+            if (!response.ok) {
+                const problem = await response.json().catch(() => ({}));
+                const supportCode = problem.traceId ? ` Código de suporte: ${problem.traceId}.` : "";
+                const error = new Error(`${problem.detail || "A renovação está temporariamente indisponível."}${supportCode}`);
+                error.status = response.status;
+                throw error;
+            }
             persistSession(await response.json());
             return true;
-        } catch {
+        } catch (error) {
             state.refreshStopped = true;
-            persistSession(null);
-            showLogin();
-            toastWarning("Sessão expirada", "Sua sessão expirou. Faça login novamente.");
-            return false;
+            const detail = error instanceof TypeError
+                ? "Não foi possível renovar a sessão por falha de rede. Seus dados locais foram preservados; tente novamente quando a API voltar."
+                : error.message;
+            showToast("warning", "Sessão não renovada", detail, "refresh-unavailable");
+            error.handled = true;
+            throw error;
         }
+    }
+
+    async function retrySessionRefresh() {
+        state.refreshStopped = false;
+        state.activeIncidents.delete("refresh-unavailable");
+        return refreshSession();
     }
 
     function showLogin() {
@@ -186,7 +209,13 @@
                     || Object.values(result.errors || {}).flat().join(" ");
                 throw new Error(validationMessage || "Confira os dados informados.");
             }
-            if (!response.ok) throw new Error(result.detail || "Não foi possível entrar.");
+            if (!response.ok) {
+                const supportCode = result.traceId ? ` Código de suporte: ${result.traceId}.` : "";
+                const message = response.status === 503
+                    ? "O banco de dados está temporariamente indisponível. Tente novamente em instantes."
+                    : result.detail || "Não foi possível entrar.";
+                throw new Error(message + supportCode);
+            }
             persistSession(result);
             hideLogin();
             toastSuccess("Acesso confirmado", "Bem-vindo. Os dados respeitam sua organização e suas permissões.");
@@ -262,7 +291,7 @@
             await loadStorageDashboard();
             element("sync-time").textContent = "sincronizado agora";
         } catch (error) {
-            if (error.status !== 401) toast("Não foi possível atualizar", error.message, true);
+            if (error.status !== 401 && !error.handled) toast("Não foi possível atualizar", error.message, true);
             subtitle.textContent = "Não foi possível consolidar os indicadores agora.";
         }
     }
@@ -447,14 +476,17 @@
         localStorage.setItem(storageKeys.theme, next);
     }
 
-    function showToast(severity, title, detail) {
+    function showToast(severity, title, detail, incidentKey = "") {
+        if (incidentKey && state.activeIncidents.has(incidentKey)) return;
+        if (incidentKey) state.activeIncidents.add(incidentKey);
         const item = document.createElement("div");
         item.className = `toast ${severity}`;
         item.setAttribute("role", severity === "error" ? "alert" : "status");
         item.innerHTML = `<span class="toast-icon" aria-hidden="true"></span><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small></div><button type="button" aria-label="Fechar mensagem">×</button>`;
-        item.querySelector("button").addEventListener("click", () => item.remove());
+        const dismiss = () => { item.remove(); if (incidentKey) state.activeIncidents.delete(incidentKey); };
+        item.querySelector("button").addEventListener("click", dismiss);
         element("toast-region").append(item);
-        window.setTimeout(() => item.remove(), 5200);
+        window.setTimeout(dismiss, 5200);
     }
 
     const toastSuccess = (title, detail) => showToast("success", title, detail);
@@ -473,7 +505,7 @@
         return new Promise(resolve => dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true }));
     }
 
-    Object.assign(window, { toastSuccess, toastWarning, toastError, toastInfo, confirmDialog });
+    Object.assign(window, { toastSuccess, toastWarning, toastError, toastInfo, confirmDialog, agro360Api: api, retrySessionRefresh });
 
     function setText(id, value) {
         const target = element(id);
@@ -528,6 +560,6 @@
             set("ops-fuel", number.format(data.fuelThisMonth));
         } catch (error) { console.error("Falha ao carregar dashboard operacional", error); }
     }
-    loadOperationalDashboard();
+    if (state.session && element("ops-open-purchases")) loadOperationalDashboard();
 
 })();

@@ -105,7 +105,23 @@ public sealed class AuthenticationException(string message, string code = "authe
 {
 }
 
-public sealed class PersistenceException(string message, Exception innerException)
+public class PersistenceException(string message, Exception innerException, string code = "persistence_error")
     : Exception(message, innerException)
+{
+    public string Code { get; } = code;
+}
+
+public sealed class DatabaseAuthenticationException(string message, Exception innerException)
+    : PersistenceException(message, innerException, "database_authentication_failed")
+{
+}
+
+public sealed class DatabaseUnavailableException(string message, Exception innerException)
+    : PersistenceException(message, innerException, "database_unavailable")
+{
+}
+
+public sealed class DatabaseTimeoutException(string message, Exception innerException)
+    : PersistenceException(message, innerException, "database_timeout")
 {
 }

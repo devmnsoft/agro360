@@ -8,7 +8,7 @@ values ('20000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-00000000
 on conflict(id) do nothing;
 insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,normalized_document,document_type,must_change_password)
 values ('20000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000001','Administrador Agro360','admin@agro360.local','pbkdf2-sha512$210000$QWdybzM2MERlbW9TZWVkIQ==$4VCMfY7wCNXW1YUuFkEKSgVnzQbUIYI0ThMD8anitDQ=','ACTIVE','00000000000191','CNPJ',true)
-on conflict(id) do update set name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,status='ACTIVE',deleted_at=null;
+on conflict(id) do update set name=excluded.name,email=excluded.email;
 insert into agro360.identity_roles(id,tenant_id,code,name,is_system)
 values ('20000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000001','tenant-administrator','Administrador do tenant',true)
 on conflict(id) do nothing;

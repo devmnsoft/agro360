@@ -1,6 +1,8 @@
 using System.Globalization;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using Agro360.Infrastructure.Persistence;
 using Dapper;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
@@ -12,10 +14,14 @@ var migrationDirectory = GetOption(args, "--migrations")
     ?? Environment.GetEnvironmentVariable("AGRO360_MIGRATIONS_PATH")
     ?? Path.Combine(AppContext.BaseDirectory, "database", "migrations");
 
+var runtimeEnvironment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
+    ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+    ?? "Production";
 var configuration = new ConfigurationBuilder()
     .SetBasePath(AppContext.BaseDirectory)
     .AddJsonFile("appsettings.json", optional: true)
-    .AddJsonFile("appsettings.Development.json", optional: true)
+    .AddJsonFile($"appsettings.{runtimeEnvironment}.json", optional: true)
+    .AddUserSecrets(Assembly.GetExecutingAssembly(), optional: true)
     .AddEnvironmentVariables()
     .Build();
 
@@ -24,9 +30,11 @@ Log.Logger = new LoggerConfiguration().MinimumLevel.Information()
 
 try
 {
-    var connectionString = configuration.GetConnectionString("Agro360")
-        ?? throw new InvalidOperationException("Defina ConnectionStrings__Agro360 (ou User Secrets). Nenhuma conexão padrão é assumida.");
-    await using var connection = new NpgsqlConnection(connectionString);
+    var postgres = PostgreSqlConnectionConfiguration.Resolve(configuration);
+    Log.Information(
+        "Configuração PostgreSQL carregada. Key: {Key}; Source: {Source}; Environment: {Environment}; AuthenticationMechanism: {AuthenticationMechanism}; AuthenticationSource: {AuthenticationSource}; LegacyKey: {LegacyKey}",
+        postgres.Key, postgres.Source, postgres.Environment, postgres.AuthenticationMechanism, postgres.AuthenticationSource, postgres.UsesLegacyKey);
+    await using var connection = new NpgsqlConnection(postgres.ConnectionString);
     await connection.OpenAsync().ConfigureAwait(false);
     if (connection.PostgreSqlVersion.Major < MinimumPostgresVersion)
     {
