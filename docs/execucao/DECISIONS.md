@@ -46,3 +46,11 @@ O checkout real estava em `main`, HEAD `74a2d5b0d016606e9ee957081b0fa91bb21fa110
 Preço comercial efetivo agora combina preço negociado e desconto explícito contra o `base_price` e o `maximum_discount` vigentes da tabela de preço do segmento. O total é soma de linhas arredondadas com `MidpointRounding.AwayFromZero`, alinhado ao `round(numeric,2)` do PostgreSQL, e cada item preserva `price_table_id`, `base_unit_price` e `pricing_snapshot`.
 
 Na produção, a existência da etapa deixou de depender de tupla/default e passou a usar read model anulável. A conclusão industrial avalia a situação efetiva do lote em `production_batches.quality_status`; uma aprovação histórica não libera lote bloqueado/reprovado depois. Ordem sem etapa crítica registrada não cria obrigação fictícia no modelo atual, mas o snapshot versionado de roteiro receita → ordem continua pendente.
+
+## ADR-E1-06 — Credenciais demo por comando explícito e MFA confirmado
+
+Fixtures SQL não contêm credenciais utilizáveis. O provisionamento local de
+SuperAdmin e Santa Clara é uma operação consciente do Migrator, restrita a
+Development/Homologation, com segredos em variáveis locais e confirmação TOTP
+antes da ativação. A redefinição revoga sessões e exige troca no primeiro
+login; reexecução nunca é efeito colateral de seed ou inicialização.

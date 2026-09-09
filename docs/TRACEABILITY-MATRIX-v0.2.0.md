@@ -6,6 +6,12 @@ Esta é a matriz canônica de execução; o nome do arquivo e as seções anteri
 
 Estados: **não iniciado**, **parcial**, **com defeito**, **implementado não validado**, **validado**, **bloqueado**. Não há percentual de conclusão. O inventário abaixo cobre famílias identificadas em código, não certifica cada ação de todos os controllers. O detalhamento de cada ação/DTO/query é obrigatório antes de promover sua família a validada.
 
+**Atualização AG-E1-004 (2026-09-09): implementado não validado.** O
+provisionamento das duas fixtures agora é opt-in, bloqueia Production, usa o
+hasher real e MFA/Data Protection persistente, revoga sessões e audita sem
+segredos. O ambiente atual não possui .NET/PostgreSQL; portanto nenhum login foi
+declarado ativo e os gates de banco/navegador permanecem obrigatórios.
+
 ### Fatia verificada e lacunas prioritárias
 
 | ID | Jornada / atores | Cadeia e efeitos | Estado e evidência |

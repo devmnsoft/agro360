@@ -2,7 +2,9 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using Agro360.Infrastructure.Security;
 using Dapper;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using Serilog;
@@ -63,8 +65,11 @@ try
                 ?? throw new ArgumentException("Use seed minimal|demo ou seed --environment Development|Homologation|Production.");
             await SeedAsync(connection, environment).ConfigureAwait(false);
             break;
+        case "provision-homologation":
+            await ProvisionHomologationAsync(connection, configuration, args).ConfigureAwait(false);
+            break;
         default:
-            throw new ArgumentException("Comando inválido. Use status, validate, migrate, seed minimal ou seed demo.");
+            throw new ArgumentException("Comando inválido. Use status, validate, migrate, seed minimal, seed demo ou provision-homologation.");
     }
 
     return 0;
@@ -75,6 +80,71 @@ catch (Exception exception)
     return 1;
 }
 finally { await Log.CloseAndFlushAsync().ConfigureAwait(false); }
+
+static async Task ProvisionHomologationAsync(NpgsqlConnection connection, IConfiguration configuration, string[] args)
+{
+    var environment = (GetOption(args, "--environment") ?? configuration["DOTNET_ENVIRONMENT"] ?? configuration["ASPNETCORE_ENVIRONMENT"] ?? "").Trim();
+    if (string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase) ||
+        (!string.Equals(environment, "Development", StringComparison.OrdinalIgnoreCase) && !string.Equals(environment, "Homologation", StringComparison.OrdinalIgnoreCase)))
+        throw new InvalidOperationException("O provisionamento demonstrativo exige --environment Development ou Homologation e é proibido em Production.");
+
+    var superPassword = RequireSecret("AGRO360_PROVISION_SUPERADMIN_PASSWORD");
+    var tenantPassword = RequireSecret("AGRO360_PROVISION_SANTA_CLARA_PASSWORD");
+    var totpSecret = RequireSecret("AGRO360_PROVISION_SUPERADMIN_TOTP_SECRET");
+    var totpCode = RequireSecret("AGRO360_PROVISION_SUPERADMIN_TOTP_CODE");
+    if (!TotpVerifier.IsValidSecret(totpSecret) || !TotpVerifier.Verify(totpSecret, totpCode, DateTimeOffset.UtcNow))
+        throw new InvalidOperationException("Confirme no aplicativo autenticador um código TOTP atual antes de provisionar o SuperAdmin.");
+
+    var dataProtectionPath = configuration["DataProtection:KeysPath"] ?? Environment.GetEnvironmentVariable("AGRO360_DATA_PROTECTION_KEYS_PATH");
+    if (string.IsNullOrWhiteSpace(dataProtectionPath))
+        throw new InvalidOperationException("Defina AGRO360_DATA_PROTECTION_KEYS_PATH para um diretório local persistente e não versionado.");
+    Directory.CreateDirectory(dataProtectionPath);
+    var protector = DataProtectionProvider.Create(new DirectoryInfo(dataProtectionPath)).CreateProtector("Agro360.Identity.Mfa.v1");
+    var hasher = new PasswordHasher();
+    var builder = new NpgsqlConnectionStringBuilder(connection.ConnectionString);
+    Log.Information("Provisionamento {Environment} no PostgreSQL {Host}:{Port}/{Database} como {Username}. Senhas, hashes, tokens e segredo MFA não serão registrados.",
+        environment, builder.Host, builder.Port, builder.Database, builder.Username);
+
+    await using var transaction = await connection.BeginTransactionAsync().ConfigureAwait(false);
+    var fixturesValid = await connection.ExecuteScalarAsync<bool>(
+        "select exists(select 1 from agro360.tenancy_tenants where id='00000000-0000-0000-0000-000000000001' and slug='agro360-platform') and exists(select 1 from agro360.tenancy_tenants where id='30000000-0000-0000-0000-000000000001' and slug='santa-clara');", transaction: transaction);
+    if (!fixturesValid)
+        throw new InvalidOperationException("Os tenants canônicos de homologação não existem ou sua identidade diverge; execute a instalação/seed apropriada em uma base de homologação.");
+    var identities = (await connection.QueryAsync<ProvisionedIdentity>(
+        "select id,tenant_id as TenantId,email from agro360.identity_users where lower(email)=any(@Emails) for update;",
+        new { Emails = new[] { "superadmin@mnsoft.com.br", "admin@santaclara.agro360.local" } }, transaction)).ToArray();
+    foreach (var identity in identities)
+    {
+        var expectedTenant = identity.Email.Equals("superadmin@mnsoft.com.br", StringComparison.OrdinalIgnoreCase)
+            ? Guid.Parse("00000000-0000-0000-0000-000000000001") : Guid.Parse("30000000-0000-0000-0000-000000000001");
+        if (identity.TenantId != expectedTenant)
+            throw new InvalidOperationException($"Identidade {identity.Email} não corresponde à fixture de homologação; nenhuma alteração foi aplicada.");
+    }
+
+    await connection.ExecuteAsync(
+        """
+        select set_config('app.tenant_id','00000000-0000-0000-0000-000000000001',true);
+        insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,mfa_enabled,mfa_secret_encrypted,must_change_password)
+        values ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','Super Administrador MNSOFT','superadmin@mnsoft.com.br',@SuperHash,'ACTIVE',true,@MfaSecret,true)
+        on conflict(id) do update set name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,status='ACTIVE',deleted_at=null,mfa_enabled=true,mfa_secret_encrypted=excluded.mfa_secret_encrypted,must_change_password=true,updated_at=now(),version=agro360.identity_users.version+1;
+        insert into agro360.identity_user_roles(tenant_id,user_id,role_id) values ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000003') on conflict do nothing;
+        insert into agro360.platform_super_admins(id,user_id,active) values ('00000000-0000-0000-0000-000000000004','00000000-0000-0000-0000-000000000002',true) on conflict(user_id) do update set active=true,deleted_at=null,updated_at=now();
+        update agro360.identity_refresh_tokens set revoked_at=coalesce(revoked_at,now()) where tenant_id='00000000-0000-0000-0000-000000000001' and user_id='00000000-0000-0000-0000-000000000002';
+        insert into agro360.audit_logs(id,tenant_id,user_id,action,entity_type,entity_id,after_data) values (gen_random_uuid(),'00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002','homologation_access_provisioned','IdentityUser','00000000-0000-0000-0000-000000000002',jsonb_build_object('environment',@Environment,'sessionsRevoked',true,'mustChangePassword',true,'mfaConfirmed',true));
+        select set_config('app.tenant_id','30000000-0000-0000-0000-000000000001',true);
+        insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,normalized_document,document_type,must_change_password)
+        values ('30000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000001','Administrador Santa Clara','admin@santaclara.agro360.local',@TenantHash,'ACTIVE','52998224725','CPF',true)
+        on conflict(id) do update set name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,status='ACTIVE',deleted_at=null,must_change_password=true,updated_at=now(),version=agro360.identity_users.version+1;
+        insert into agro360.identity_user_roles(tenant_id,user_id,role_id) values ('30000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000004') on conflict do nothing;
+        update agro360.identity_refresh_tokens set revoked_at=coalesce(revoked_at,now()) where tenant_id='30000000-0000-0000-0000-000000000001' and user_id='30000000-0000-0000-0000-000000000003';
+        insert into agro360.audit_logs(id,tenant_id,user_id,action,entity_type,entity_id,after_data) values (gen_random_uuid(),'30000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000003','homologation_access_provisioned','IdentityUser','30000000-0000-0000-0000-000000000003',jsonb_build_object('environment',@Environment,'sessionsRevoked',true,'mustChangePassword',true));
+        """, new { SuperHash = hasher.Hash(superPassword), TenantHash = hasher.Hash(tenantPassword), MfaSecret = protector.Protect(totpSecret), Environment = environment }, transaction).ConfigureAwait(false);
+    await transaction.CommitAsync().ConfigureAwait(false);
+    Log.Information("Duas identidades de homologação foram ativadas; sessões anteriores revogadas e troca de senha exigida.");
+}
+
+static string RequireSecret(string name) => Environment.GetEnvironmentVariable(name) is { Length: > 0 } value
+    ? value : throw new InvalidOperationException($"Defina {name} no ambiente local; o valor não deve ser versionado.");
 
 static async Task EnsureHistoryAsync(NpgsqlConnection connection) => await connection.ExecuteAsync(
     """
@@ -150,6 +220,8 @@ static string? GetSeedProfile(string[] values)
         _ => throw new ArgumentException("Perfil de seed inválido. Use minimal ou demo.")
     };
 }
+
+internal sealed record ProvisionedIdentity(Guid Id, Guid TenantId, string Email);
 
 internal sealed record Migration(string Version, string Name, string Checksum, string Sql)
 {
