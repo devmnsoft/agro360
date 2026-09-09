@@ -1,10 +1,32 @@
+using Agro360.Domain.Commercial;
+using Agro360.Domain.Properties;
 using Agro360.Infrastructure.Services;
+using Agro360.SharedKernel;
 using Xunit;
 
 namespace Agro360.UnitTests;
 
 public sealed class DashboardMappingTests
 {
+    [Fact]
+    public void PropertyRulesValidateStateAreaAndGeoJson()
+    {
+        Assert.Equal("PA", PropertyRules.NormalizeState("pa"));
+        Assert.Equal(
+            "agro360.properties_state_invalid",
+            Assert.Throws<DomainException>(() => PropertyRules.NormalizeState("Pará")).Code);
+
+        PropertyRules.EnsureFieldsFit(100m, 60m, 40m);
+        Assert.Equal(
+            "agro360.properties_field_area_exceeded",
+            Assert.Throws<DomainException>(() => PropertyRules.EnsureFieldsFit(100m, 60m, 40.0001m)).Code);
+
+        Assert.Contains("Polygon", PropertyRules.NormalizeBoundary("""{"type":"Polygon","coordinates":[[[-48,-1],[-47,-1],[-48,-1]]]}"""));
+        Assert.Equal(
+            "agro360.properties_boundary_invalid",
+            Assert.Throws<DomainException>(() => PropertyRules.NormalizeBoundary("""{"type":"Point","coordinates":[-48,-1]}""")).Code);
+    }
+
     [Theory]
     [InlineData(DateTimeKind.Utc)]
     [InlineData(DateTimeKind.Unspecified)]
@@ -48,5 +70,22 @@ public sealed class DashboardMappingTests
         });
 
         Assert.Null(result.Amount);
+    }
+
+    [Fact]
+    public void CommercialOrderCalculationUsesLineRoundingAndEffectiveDiscount()
+    {
+        var lines = CommercialRules.CalculateOrder([
+            (1m, 0.005m, 0m, 0.005m, 0m),
+            (1m, 0.005m, 0m, 0.005m, 0m)
+        ]);
+
+        Assert.Equal(0.01m, lines[0].LineTotal);
+        Assert.Equal(0.01m, lines[1].LineTotal);
+        Assert.Equal(0.02m, CommercialRules.OrderTotal(lines, 0m));
+
+        Assert.Equal(
+            "sales.discount_exceeded",
+            Assert.Throws<DomainException>(() => CommercialRules.CalculateOrder([(1m, 90m, 0m, 100m, 5m)])).Code);
     }
 }

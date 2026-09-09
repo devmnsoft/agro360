@@ -10,6 +10,11 @@ namespace Agro360.Api.Controllers;
 [Authorize]
 public sealed class PropertiesController(IPropertyService properties) : ControllerBase
 {
+    [HttpGet("property-organizations")]
+    [Authorize(Policy = Permissions.PropertiesRead)]
+    public Task<IReadOnlyList<PropertyOrganizationDto>> ListOrganizations(CancellationToken cancellationToken) =>
+        properties.ListOrganizationsAsync(cancellationToken);
+
     [HttpPost("properties")]
     [Authorize(Policy = Permissions.PropertiesWrite)]
     public async Task<IActionResult> CreateFarm(CreateFarmCommand command, CancellationToken cancellationToken)
@@ -27,6 +32,19 @@ public sealed class PropertiesController(IPropertyService properties) : Controll
         CancellationToken cancellationToken = default) =>
         properties.ListFarmsAsync(page, pageSize, search, cancellationToken);
 
+    [HttpPut("properties/{id:guid}")]
+    [Authorize(Policy = Permissions.PropertiesWrite)]
+    public Task<FarmDto> UpdateFarm(Guid id, UpdateFarmCommand command, CancellationToken cancellationToken) =>
+        properties.UpdateFarmAsync(id, command, cancellationToken);
+
+    [HttpDelete("properties/{id:guid}")]
+    [Authorize(Policy = Permissions.PropertiesWrite)]
+    public async Task<IActionResult> ArchiveFarm(Guid id, [FromQuery] long version, CancellationToken cancellationToken)
+    {
+        await properties.ArchiveFarmAsync(id, version, cancellationToken).ConfigureAwait(false);
+        return NoContent();
+    }
+
     [HttpPost("fields")]
     [Authorize(Policy = Permissions.PropertiesWrite)]
     public async Task<IActionResult> CreateField(CreateFieldCommand command, CancellationToken cancellationToken)
@@ -43,4 +61,17 @@ public sealed class PropertiesController(IPropertyService properties) : Controll
         [FromQuery] int pageSize = 50,
         CancellationToken cancellationToken = default) =>
         properties.ListFieldsAsync(farmId, page, pageSize, cancellationToken);
+
+    [HttpPut("fields/{id:guid}")]
+    [Authorize(Policy = Permissions.PropertiesWrite)]
+    public Task<FieldDto> UpdateField(Guid id, UpdateFieldCommand command, CancellationToken cancellationToken) =>
+        properties.UpdateFieldAsync(id, command, cancellationToken);
+
+    [HttpDelete("fields/{id:guid}")]
+    [Authorize(Policy = Permissions.PropertiesWrite)]
+    public async Task<IActionResult> ArchiveField(Guid id, [FromQuery] long version, CancellationToken cancellationToken)
+    {
+        await properties.ArchiveFieldAsync(id, version, cancellationToken).ConfigureAwait(false);
+        return NoContent();
+    }
 }

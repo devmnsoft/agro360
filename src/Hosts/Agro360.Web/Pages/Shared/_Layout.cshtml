@@ -55,9 +55,8 @@
                 <span class="nav-label">Visão geral</span>
                 <a class="active" href="/" data-permissions="dashboard.read"><svg><use href="#i-grid" /></svg><span>Início / Dashboard</span></a>
                 <a href="/Saas" data-super-admin="true"><svg><use href="#i-grid" /></svg><span>Administração SaaS MNSOFT</span><i>global</i></a>
-                <a href="/Saas" data-super-admin="true"><svg><use href="#i-chart" /></svg><span>Clientes / Tenants</span></a>
-                <a href="/Saas" data-permissions="governance.read,security.sessions"><svg><use href="#i-grid" /></svg><span>Usuários e Perfis</span></a>
-                <a href="/Agriculture" data-permissions="properties.read"><svg><use href="#i-map" /></svg><span>Fazendas e Unidades</span></a>
+                <a href="/Saas" data-permissions="account.users.read"><svg><use href="#i-grid" /></svg><span>Usuários e Perfis</span></a>
+                <a href="/Properties" data-permissions="properties.read"><svg><use href="#i-map" /></svg><span>Fazendas e Unidades</span></a>
                 <span class="nav-label">Operação</span>
                 <a href="/Agriculture" data-permissions="agriculture.read"><svg><use href="#i-leaf" /></svg><span>Agricultura</span></a>
                 <a href="/#livestock" data-permissions="livestock.read"><svg><use href="#i-animal" /></svg><span>Pecuária</span></a>
@@ -74,7 +73,6 @@
                 <a href="/Deployment" data-permissions="deployment.read"><svg><use href="#i-chart" /></svg><span>Central de Implantação</span></a>
                 <a href="/Work" data-permissions="work.read"><svg><use href="#i-bell" /></svg><span>Tarefas e Alertas</span></a>
                 <span class="nav-label">Sistema</span>
-                <a href="/Deployment" data-permissions="deployment.read"><svg><use href="#i-chart" /></svg><span>Central de Implantação</span></a>
                 <a href="/Governance" data-permissions="governance.read,integrations.read"><svg><use href="#i-grid" /></svg><span>Configurações</span></a>
                 <a href="/Support" data-public-menu="true"><svg><use href="#i-bell" /></svg><span>Ajuda / Manual do Sistema</span></a>
             </nav>
@@ -94,7 +92,6 @@
                     <svg><use href="#i-search" /></svg><span>Buscar animal, fazenda, produto, safra...</span><kbd>Ctrl K</kbd>
                 </button>
                 <div class="top-actions">
-                    <span class="weather-pill"><small>Belém, PA</small><strong>29°</strong><i>tempo</i></span>
                     <button class="icon-button" type="button" id="theme-button" aria-label="Alternar tema"><svg><use href="#i-sun" /></svg></button>
                     <a class="icon-button notification-button" href="/Compliance" aria-label="Alertas de conformidade"><svg><use href="#i-bell" /></svg><span></span></a>
                 </div>
@@ -131,8 +128,9 @@
             <h2 id="login-title">Bem-vindo ao Agro360</h2>
             <p>Seu acesso é validado diretamente no banco e as permissões são carregadas conforme o seu perfil.</p>
             <label>Cliente / Organização<input name="tenantSlug" autocomplete="organization" placeholder="ex.: minha-fazenda" aria-describedby="tenantSlug-help tenantSlug-error" data-help="Informe o identificador do ambiente fornecido pelo administrador; não use CNPJ ou um ID técnico." required /><small class="login-field-help" id="tenantSlug-help">Identificador exclusivo do ambiente da sua empresa.</small><span class="login-field-error" id="tenantSlug-error"></span></label>
-            <label>E-mail, CPF ou CNPJ<input name="email" type="text" inputmode="text" autocomplete="username" maxlength="254" placeholder="voce@empresa.com.br" aria-describedby="email-help email-error" data-help="Use o e-mail ou documento habilitado pelo administrador do seu cliente." required /><small class="login-field-help" id="email-help">CPF/CNPJ só funciona quando previamente configurado no seu cadastro.</small><span class="login-field-error" id="email-error"></span></label>
+            <label>E-mail ou CPF<input name="email" type="text" inputmode="text" autocomplete="username" maxlength="254" placeholder="voce@empresa.com.br" aria-describedby="email-help email-error" data-help="Use o e-mail ou CPF pessoal habilitado pelo administrador do seu cliente." required /><small class="login-field-help" id="email-help">CNPJ identifica a organização e não substitui a identificação pessoal.</small><span class="login-field-error" id="email-error"></span></label>
             <label>Senha<input name="password" type="password" autocomplete="current-password" minlength="12" placeholder="••••••••••••" aria-describedby="password-error" data-help="Digite sua senha de acesso. O Agro360 nunca exibe nem envia a senha em mensagens." required /><span class="login-field-error" id="password-error"></span></label>
+            <details class="contextual-help"><summary>Primeiro acesso ou administração global</summary><label>Código MFA<input name="mfaCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"><small>Obrigatório para a administração global.</small></label><label>Nova senha<input name="newPassword" type="password" autocomplete="new-password" minlength="12"><small>Preencha quando o acesso inicial exigir troca de senha.</small></label><label>Confirmar nova senha<input name="newPasswordConfirmation" type="password" autocomplete="new-password" minlength="12"></label></details>
             <button class="primary-button" type="submit"><span>Entrar no Agro360</span><svg><use href="#i-arrow" /></svg></button>
             <button class="connection-button" id="test-api-connection" type="button"><i></i><span>Testar conexão com a API</span></button>
             @if (HostEnvironment.IsDevelopment())

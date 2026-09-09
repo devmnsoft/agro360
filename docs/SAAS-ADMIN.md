@@ -1,5 +1,11 @@
 # Administracao SaaS — Sprint 29
 
+## Estado frente ao plano mestre
+
+Este é o equivalente local de SAAS-ADMINISTRATION.md; não criar manual duplicado. [Plano mestre](execucao/AGRO360-MASTER-PLAN.md), [matriz](TRACEABILITY-MATRIX-v0.2.0.md) e [checkpoint](EXECUTION-CHECKPOINT.md) prevalecem sobre alegações históricas de conclusão.
+
+Login tenant-first e administração SaaS existem; identidade global/vínculos, MFA real, contexto assistido auditado e ciclo contratual completo permanecem requisitos E1/E2. Alterações concorrentes em usuários/perfis precisam de validação própria. SuperAdmin do instalador não foi autenticado no gate E0 desta entrega; não confundir o sucesso do administrador Santa Clara no banco descartável com homologação global. Provisionamento seguro e demo opt-in são AG-E1-004.
+
 A area `/saas` e a API `/api/platform` sao exclusivas do perfil **Super Admin Plataforma**. A operacao cobre tenants, planos, uso e auditoria; usuarios de tenant usam somente `/api/account`. Toda consulta operacional permanece vinculada ao `ITenantContext`, transacao tenant-scoped e RLS.
 
 ## Operacao

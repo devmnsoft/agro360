@@ -1,8 +1,18 @@
 # MNSOFT Agro 360
 
+## Continuidade do plano mestre Agro360
+
+Plano aprovado incorporado integralmente em [docs/execucao/AGRO360-MASTER-PLAN.md](docs/execucao/AGRO360-MASTER-PLAN.md). Consulte [checkpoint](docs/EXECUTION-CHECKPOINT.md), [matriz atual](docs/TRACEABILITY-MATRIX-v0.2.0.md) e [plano de execução](docs/execucao/EXECUTION-PLAN.md) antes de retomar. Declarações históricas de sprint não certificam fluxos.
+
+Gate E0 sem Docker: `pwsh -File scripts/verify-e0.ps1 -PostgresBin 'C:\Program Files\PostgreSQL\18\bin'`; cria banco descartável, instala/reexecuta SQL, inicia API/Web, valida login/dashboard/refresh/logout e executa os testes. Não usa nem modifica o banco configurado da aplicação. `node scripts/verify-offline-shell.mjs` verifica o cache público. Readiness `/health` exige schema mínimo; `/health/live` verifica somente o processo.
+
+As credenciais fixas descritas nas seções históricas abaixo não atendem ao plano mestre e não devem ser usadas em produção. A migração para demo opt-in e provisionamento seguro é pendência AG-E1-004; o gate usa credenciais aleatórias, não as publica e não redefine contas reais.
+
 > **Sprint 31:** **Inteligência Agro360** entrega recomendações rastreáveis, scores, anomalias, Prioridades do Dia e assistente interno sem exigir IA externa. Veja [a documentação operacional](docs/INTELIGENCIA-AGRO360.md).
 
 Plataforma modular e multi-tenant para gestão do agronegócio, em .NET 10 e PostgreSQL/PostGIS. **A execução principal é nativa e não requer Docker.** Docker Compose permanece somente como conveniência opcional.
+
+O estado verificável mais recente, os bloqueios reais e a ordem segura de retomada estão no [checkpoint de execução](docs/EXECUTION-CHECKPOINT.md). A maturidade por capacidade permanece na [matriz de rastreabilidade](docs/TRACEABILITY-MATRIX-v0.2.0.md); uma sprint declarada no histórico não substitui os gates de execução e E2E.
 
 ## Início rápido sem Docker
 

@@ -1,8 +1,7 @@
 using System.Globalization;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
-using Agro360.Infrastructure.Persistence;
+using System.Text.RegularExpressions;
 using Dapper;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
@@ -14,14 +13,10 @@ var migrationDirectory = GetOption(args, "--migrations")
     ?? Environment.GetEnvironmentVariable("AGRO360_MIGRATIONS_PATH")
     ?? Path.Combine(AppContext.BaseDirectory, "database", "migrations");
 
-var runtimeEnvironment = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
-    ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
-    ?? "Production";
 var configuration = new ConfigurationBuilder()
     .SetBasePath(AppContext.BaseDirectory)
     .AddJsonFile("appsettings.json", optional: true)
-    .AddJsonFile($"appsettings.{runtimeEnvironment}.json", optional: true)
-    .AddUserSecrets(Assembly.GetExecutingAssembly(), optional: true)
+    .AddJsonFile("appsettings.Development.json", optional: true)
     .AddEnvironmentVariables()
     .Build();
 
@@ -30,11 +25,9 @@ Log.Logger = new LoggerConfiguration().MinimumLevel.Information()
 
 try
 {
-    var postgres = PostgreSqlConnectionConfiguration.Resolve(configuration);
-    Log.Information(
-        "Configuração PostgreSQL carregada. Key: {Key}; Source: {Source}; Environment: {Environment}; AuthenticationMechanism: {AuthenticationMechanism}; AuthenticationSource: {AuthenticationSource}; LegacyKey: {LegacyKey}",
-        postgres.Key, postgres.Source, postgres.Environment, postgres.AuthenticationMechanism, postgres.AuthenticationSource, postgres.UsesLegacyKey);
-    await using var connection = new NpgsqlConnection(postgres.ConnectionString);
+    var connectionString = configuration.GetConnectionString("Agro360")
+        ?? throw new InvalidOperationException("Defina ConnectionStrings__Agro360 (ou User Secrets). Nenhuma conexão padrão é assumida.");
+    await using var connection = new NpgsqlConnection(connectionString);
     await connection.OpenAsync().ConfigureAwait(false);
     if (connection.PostgreSqlVersion.Major < MinimumPostgresVersion)
     {
@@ -164,7 +157,19 @@ internal sealed record Migration(string Version, string Name, string Checksum, s
     {
         var sql = File.ReadAllText(file);
         var name = Path.GetFileName(file);
-        return new(name, name, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sql))).ToLowerInvariant(), sql);
+        var checksum = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sql))).ToLowerInvariant();
+        // The migrator owns the transaction so applying a file and recording its
+        // checksum are atomic. Some historical scripts carry standalone BEGIN /
+        // COMMIT commands; executing those inside the outer transaction completes
+        // the Npgsql transaction before history can be written. Strip only those
+        // boundary lines at execution time and retain the original bytes for the
+        // checksum, preserving compatibility with already applied migrations.
+        var executableSql = Regex.Replace(
+            sql,
+            @"^\s*(?:begin|commit)\s*;\s*$",
+            string.Empty,
+            RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+        return new(name, name, checksum, executableSql);
     }
 }
 

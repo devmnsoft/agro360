@@ -4,6 +4,31 @@ namespace Agro360.Domain.Commercial;
 
 public static class CommercialRules
 {
+    private static readonly IReadOnlyDictionary<string, string[]> OrderTransitions = new Dictionary<string, string[]>
+    {
+        ["DRAFT"] = ["UNDER_REVIEW", "CANCELLED"],
+        ["UNDER_REVIEW"] = ["DRAFT", "APPROVED", "CANCELLED"],
+        ["APPROVED"] = ["FULFILLMENT", "CANCELLED"],
+        ["FULFILLMENT"] = ["INVOICED", "CANCELLED"],
+        ["INVOICED"] = ["DELIVERED"]
+    };
+
+    public static string NormalizeOrderStatus(string? status)
+    {
+        var normalized = status?.Trim().ToUpperInvariant();
+        if (string.IsNullOrEmpty(normalized) || !OrderTransitions.Values.SelectMany(x => x).Append("DRAFT").Contains(normalized))
+            throw new DomainException("Status do pedido inválido.", "sales.order_status_invalid");
+        return normalized;
+    }
+
+    public static void ValidateOrderTransition(string current, string next, string? reason)
+    {
+        if (!OrderTransitions.TryGetValue(current, out var allowed) || !allowed.Contains(next))
+            throw new DomainException($"Transição de {current} para {next} não é permitida.", "sales.order_transition_invalid");
+        if (next == "CANCELLED" && string.IsNullOrWhiteSpace(reason))
+            throw new DomainException("Cancelamento exige motivo.", "sales.order_cancel_reason_required");
+    }
+
     public static void ValidateTaxDocument(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return;
@@ -24,16 +49,31 @@ public static class CommercialRules
         if (string.Equals(stage, "LOST", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(lossReason)) throw new DomainException("Informe o motivo da perda.");
     }
 
-    public static decimal ValidateOrder(IEnumerable<(decimal Quantity, decimal Price, decimal Discount, decimal MaximumDiscount)> items)
+    public static CommercialOrderLineCalculation[] CalculateOrder(IEnumerable<(decimal Quantity, decimal UnitPrice, decimal Discount, decimal BasePrice, decimal MaximumDiscount)> items)
     {
         var rows = items.ToArray();
         if (rows.Length == 0) throw new DomainException("O pedido precisa ter ao menos um item.", "sales.order_without_items");
+        var calculated = new List<CommercialOrderLineCalculation>(rows.Length);
         foreach (var item in rows)
         {
-            if (item.Quantity <= 0 || item.Price <= 0) throw new DomainException("Quantidade e preço devem ser positivos.");
-            if (item.Discount is < 0 or > 100 || item.Discount > item.MaximumDiscount) throw new DomainException("Desconto acima do limite comercial.", "sales.discount_exceeded");
+            if (item.Quantity <= 0 || item.UnitPrice <= 0 || item.BasePrice <= 0) throw new DomainException("Quantidade e preços devem ser positivos.");
+            if (item.Discount is < 0 or > 100 || item.MaximumDiscount is < 0 or > 100) throw new DomainException("Desconto acima do limite comercial.", "sales.discount_exceeded");
+
+            var netUnitPrice = item.UnitPrice * (1 - item.Discount / 100);
+            var effectiveDiscount = Math.Max(0, (1 - netUnitPrice / item.BasePrice) * 100);
+            if (effectiveDiscount > item.MaximumDiscount)
+                throw new DomainException("Preço negociado e desconto excedem o limite comercial.", "sales.discount_exceeded");
+
+            var lineTotal = decimal.Round(item.Quantity * netUnitPrice, 2, MidpointRounding.AwayFromZero);
+            calculated.Add(new CommercialOrderLineCalculation(item.Quantity, item.UnitPrice, item.Discount, item.BasePrice, item.MaximumDiscount, lineTotal, effectiveDiscount));
         }
-        return decimal.Round(rows.Sum(x => x.Quantity * x.Price * (1 - x.Discount / 100)), 2);
+        return calculated.ToArray();
+    }
+
+    public static decimal OrderTotal(IEnumerable<CommercialOrderLineCalculation> lines, decimal freight)
+    {
+        if (freight < 0) throw new DomainException("Frete não pode ser negativo.", "sales.freight_invalid");
+        return decimal.Round(lines.Sum(x => x.LineTotal) + freight, 2, MidpointRounding.AwayFromZero);
     }
 
     public static decimal Commission(decimal basis, decimal? percentage, decimal? fixedValue)
@@ -81,3 +121,5 @@ public static class CommercialRules
         return remainder < 2 ? 0 : 11 - remainder;
     }
 }
+
+public sealed record CommercialOrderLineCalculation(decimal Quantity, decimal UnitPrice, decimal Discount, decimal BasePrice, decimal MaximumDiscount, decimal LineTotal, decimal EffectiveDiscount);

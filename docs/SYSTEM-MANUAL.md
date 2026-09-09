@@ -1,5 +1,13 @@
 # Manual interno do sistema Agro360
 
+## Diagnóstico de acesso — correção E0
+
+Na tela de acesso, informe o cliente e sua identidade conforme o cadastro atual. **Testar conexão com a API** só anuncia sucesso após validar readiness do banco/schema e um documento OpenAPI válido. Em falha de rede, a mensagem apresenta a URL configurada; banco sem schema retorna indisponibilidade, mesmo que o processo esteja vivo. Não compartilhe senha/token ao pedir suporte.
+
+O shell público pode ser recuperado offline, mas respostas de API, dados autenticados, health e Swagger não são substituídos por páginas em cache. O cache legado de lookups é invalidado; dados operacionais offline seguros continuam pendentes. CNPJ como contexto da organização e seleção pós-login ainda são requisitos E1, não funcionalidades já homologadas.
+
+Plano/estado verificável: [mestre](execucao/AGRO360-MASTER-PLAN.md), [checkpoint](EXECUTION-CHECKPOINT.md) e [matriz](TRACEABILITY-MATRIX-v0.2.0.md).
+
 ## Visão geral
 
 O Agro360 é um SaaS B2B multi-tenant para administrar clientes, usuários e a operação do agronegócio. A API é a fonte das permissões, regras de negócio e validações; o menu apenas reflete os módulos e permissões devolvidos no login. Todos os dados operacionais devem permanecer limitados ao tenant autenticado.

@@ -86,6 +86,54 @@ public sealed class JwtOptions
     public int RefreshTokenDays { get; init; } = 14;
 }
 
+public static class TotpVerifier
+{
+    public static bool Verify(string base32Secret, string? code, DateTimeOffset now)
+    {
+        if (string.IsNullOrWhiteSpace(code) || code.Length != 6 || !code.All(char.IsDigit)) return false;
+        byte[] secret;
+        try { secret = DecodeBase32(base32Secret); }
+        catch (FormatException) { return false; }
+        var counter = now.ToUnixTimeSeconds() / 30;
+        var input = new byte[8];
+        for (var offset = -1; offset <= 1; offset++)
+        {
+            System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(input, counter + offset);
+            var hash = HMACSHA256.HashData(secret, input);
+            var index = hash[^1] & 0x0f;
+            var value = ((hash[index] & 0x7f) << 24) | (hash[index + 1] << 16) | (hash[index + 2] << 8) | hash[index + 3];
+            if ((value % 1_000_000).ToString("D6", System.Globalization.CultureInfo.InvariantCulture) == code) return true;
+        }
+        return false;
+    }
+
+    public static bool IsValidSecret(string value)
+    {
+        try { return DecodeBase32(value).Length >= 20; }
+        catch (FormatException) { return false; }
+    }
+
+    private static byte[] DecodeBase32(string value)
+    {
+        const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+        var normalized = value.Trim().TrimEnd('=').Replace(" ", string.Empty).ToUpperInvariant();
+        if (normalized.Length == 0 || normalized.Any(character => !alphabet.Contains(character))) throw new FormatException("Segredo TOTP inválido.");
+        var output = new List<byte>();
+        var buffer = 0;
+        var bits = 0;
+        foreach (var character in normalized)
+        {
+            buffer = (buffer << 5) | alphabet.IndexOf(character);
+            bits += 5;
+            if (bits < 8) continue;
+            output.Add((byte)(buffer >> (bits - 8)));
+            bits -= 8;
+            buffer &= (1 << bits) - 1;
+        }
+        return output.ToArray();
+    }
+}
+
 public sealed class JwtTokenService(IOptions<JwtOptions> options, IClock clock) : ITokenService
 {
     private readonly JwtOptions _options = Validate(options.Value);

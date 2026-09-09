@@ -75,6 +75,7 @@ create table if not exists agro360.identity_users (
     password_hash varchar(500) not null,
     status varchar(24) not null default 'ACTIVE',
     mfa_enabled boolean not null default false,
+    mfa_secret_encrypted text null,
     last_login_at timestamptz null,
     created_at timestamptz not null default now(),
     created_by uuid null,
@@ -1557,7 +1558,7 @@ insert into agro360.saas_plans(name,description,monthly_price,annual_price,user_
 create table if not exists agro360.saas_organizations(tenant_id uuid primary key references agro360.tenancy_tenants(id),organization_type varchar(30) not null check(organization_type in('PRODUCER','COOPERATIVE','AGRIBUSINESS','CONSULTANCY','DISTRIBUTOR','CARRIER','OTHER')),document varchar(14) not null unique,responsible_name varchar(160) not null,responsible_email varchar(254) not null,plan_id uuid not null references agro360.saas_plans(id),status varchar(20) not null default 'IMPLEMENTING' check(status in('IMPLEMENTING','ACTIVE','SUSPENDED','BLOCKED','CANCELLED')),activated_at timestamptz,blocked_at timestamptz,block_reason varchar(500),onboarding_status varchar(30) not null default 'ORGANIZATION',created_at timestamptz not null default now(),updated_at timestamptz,check(status<>'BLOCKED' or (blocked_at is not null and length(trim(block_reason))>0)));
 create table if not exists agro360.saas_usage_metrics(tenant_id uuid primary key references agro360.tenancy_tenants(id),storage_used_mb bigint not null default 0,tracked_lots bigint not null default 0,certificates bigint not null default 0,offline_records bigint not null default 0,ledger_events bigint not null default 0,exported_reports bigint not null default 0,measured_at timestamptz not null default now());
 create table if not exists agro360.saas_role_metadata(tenant_id uuid not null,role_id uuid not null,level int not null check(level between 1 and 100),primary key(tenant_id,role_id),foreign key(tenant_id,role_id) references agro360.identity_roles(tenant_id,id));
-create table if not exists agro360.saas_invitations(id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),email varchar(254) not null,role_id uuid not null,token_hash char(64) not null unique,status varchar(20) not null default 'PENDING' check(status in('PENDING','ACCEPTED','CANCELLED')),expires_at timestamptz not null,invited_by uuid not null,created_at timestamptz not null default now(),foreign key(tenant_id,role_id) references agro360.identity_roles(tenant_id,id));
+create table if not exists agro360.saas_invitations(id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),email varchar(254) not null,role_id uuid not null,token_hash char(64) not null unique,status varchar(20) not null default 'PENDING' check(status in('PENDING','ACCEPTED','CANCELLED')),expires_at timestamptz not null,invited_by uuid not null,delivery_status varchar(30) not null default 'PENDING_PROVIDER',accepted_at timestamptz,accepted_by_user_id uuid,created_at timestamptz not null default now(),foreign key(tenant_id,role_id) references agro360.identity_roles(tenant_id,id));
 create unique index if not exists ux_saas_pending_invitation on agro360.saas_invitations(tenant_id,lower(email)) where status='PENDING';
 create table if not exists agro360.saas_sessions(id uuid primary key,tenant_id uuid not null,user_id uuid not null,device varchar(160) not null,ip_address inet not null,created_at timestamptz not null default now(),last_seen_at timestamptz not null default now(),revoked_at timestamptz,revoked_by uuid,foreign key(tenant_id,user_id) references agro360.identity_users(tenant_id,id));
 create table if not exists agro360.saas_devices(id uuid primary key,tenant_id uuid not null,user_id uuid not null,name varchar(160) not null,platform varchar(80) not null,last_seen_at timestamptz not null default now(),revoked_at timestamptz,revoked_by uuid,foreign key(tenant_id,user_id) references agro360.identity_users(tenant_id,id));
@@ -1782,7 +1783,7 @@ create table if not exists agro360.sales_price_table_items(id uuid primary key,t
 create table if not exists agro360.sales_contracts(id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),customer_id uuid not null,product_id uuid,representative_id uuid,name varchar(180) not null,type varchar(30) not null check(type in('FUTURE_SALE','RECURRING_SUPPLY','EXPORT','COOPERATIVE','INSTITUTIONAL_PURCHASE','PARTNERSHIP')),contracted_quantity numeric(20,6) not null check(contracted_quantity>0),delivered_quantity numeric(20,6) not null default 0,contracted_value numeric(18,2) not null check(contracted_value>=0),valid_from date not null,valid_to date not null,payment_terms text,delivery_frequency varchar(50),status varchar(20) not null check(status in('DRAFT','ACTIVE','EXPIRED','CANCELLED')),notes text,cancellation_reason text,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid,updated_by uuid,deleted_at timestamptz,unique(tenant_id,id),foreign key(tenant_id,customer_id) references agro360.crm_customers(tenant_id,id),foreign key(tenant_id,product_id) references agro360.inventory_products(tenant_id,id),foreign key(tenant_id,representative_id) references agro360.sales_representatives(tenant_id,id),check(delivered_quantity<=contracted_quantity),check(valid_to>=valid_from),check(status<>'CANCELLED' or cancellation_reason is not null));
 create table if not exists agro360.sales_orders(id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),customer_id uuid not null,representative_id uuid,property_id uuid,contract_id uuid,order_number varchar(40) not null,status varchar(24) not null check(status in('DRAFT','UNDER_REVIEW','APPROVED','FULFILLMENT','INVOICED','DELIVERED','CANCELLED')),total_amount numeric(18,2) not null check(total_amount>=0),freight numeric(18,2) not null default 0 check(freight>=0),payment_terms text,expected_delivery date,notes text,cancellation_reason text,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid,updated_by uuid,deleted_at timestamptz,unique(tenant_id,id),unique(tenant_id,order_number),foreign key(tenant_id,customer_id) references agro360.crm_customers(tenant_id,id),foreign key(tenant_id,representative_id) references agro360.sales_representatives(tenant_id,id),foreign key(tenant_id,contract_id) references agro360.sales_contracts(tenant_id,id),check(status<>'CANCELLED' or cancellation_reason is not null));
 create unique index if not exists uq_stock_lots_tenant_id on agro360.inventory_stock_lots(tenant_id,id);
-create table if not exists agro360.sales_order_items(id uuid primary key,tenant_id uuid not null,order_id uuid not null,product_id uuid not null,lot_id uuid,quantity numeric(20,6) not null check(quantity>0),unit varchar(20) not null,unit_price numeric(18,4) not null check(unit_price>=0),discount_percentage numeric(7,4) not null default 0 check(discount_percentage between 0 and 100),total_amount numeric(18,2) not null check(total_amount>=0),created_at timestamptz not null default now(),updated_at timestamptz not null default now(),unique(tenant_id,id),foreign key(tenant_id,order_id) references agro360.sales_orders(tenant_id,id),foreign key(tenant_id,product_id) references agro360.inventory_products(tenant_id,id),foreign key(tenant_id,lot_id) references agro360.inventory_stock_lots(tenant_id,id));
+create table if not exists agro360.sales_order_items(id uuid primary key,tenant_id uuid not null,order_id uuid not null,product_id uuid not null,lot_id uuid,quantity numeric(20,6) not null check(quantity>0),unit varchar(20) not null,unit_price numeric(18,4) not null check(unit_price>=0),discount_percentage numeric(7,4) not null default 0 check(discount_percentage between 0 and 100),total_amount numeric(18,2) not null check(total_amount>=0),price_table_id uuid,base_unit_price numeric(18,4),pricing_snapshot jsonb not null default '{}',created_at timestamptz not null default now(),updated_at timestamptz not null default now(),unique(tenant_id,id),foreign key(tenant_id,order_id) references agro360.sales_orders(tenant_id,id),foreign key(tenant_id,product_id) references agro360.inventory_products(tenant_id,id),foreign key(tenant_id,lot_id) references agro360.inventory_stock_lots(tenant_id,id),foreign key(tenant_id,price_table_id) references agro360.sales_price_tables(tenant_id,id));
 create table if not exists agro360.sales_commission_plans(id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),name varchar(140) not null,status varchar(16) not null default 'ACTIVE',valid_from date not null,valid_to date,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid,updated_by uuid,deleted_at timestamptz,unique(tenant_id,id));
 create table if not exists agro360.sales_commission_rules(id uuid primary key,tenant_id uuid not null,plan_id uuid not null,name varchar(140) not null,basis_type varchar(30) not null,trigger_type varchar(40) not null,product_id uuid,customer_id uuid,percentage numeric(7,4),fixed_value numeric(18,2),status varchar(16) not null default 'ACTIVE',created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid,updated_by uuid,deleted_at timestamptz,unique(tenant_id,id),foreign key(tenant_id,plan_id) references agro360.sales_commission_plans(tenant_id,id),check((percentage is null)<>(fixed_value is null)),check(percentage between 0 and 100 or percentage is null),check(fixed_value>=0 or fixed_value is null));
 create table if not exists agro360.sales_commissions(id uuid primary key,tenant_id uuid not null,order_id uuid not null,rule_id uuid not null,representative_id uuid not null,basis numeric(18,2) not null check(basis>=0),percentage numeric(7,4),fixed_value numeric(18,2),amount numeric(18,2) not null check(amount>=0),status varchar(20) not null check(status in('EXPECTED','APPROVED','BLOCKED','PAID','CANCELLED','REVERSED')),status_reason text,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid,updated_by uuid,deleted_at timestamptz,unique(tenant_id,id),unique(tenant_id,order_id,rule_id,representative_id),foreign key(tenant_id,order_id) references agro360.sales_orders(tenant_id,id),foreign key(tenant_id,rule_id) references agro360.sales_commission_rules(tenant_id,id),foreign key(tenant_id,representative_id) references agro360.sales_representatives(tenant_id,id));
@@ -2696,33 +2697,23 @@ create table if not exists agro360.platform_super_admins (
 );
 create unique index if not exists ux_platform_single_active_super_admin on agro360.platform_super_admins ((active)) where active and deleted_at is null;
 
--- Bootstrap idempotente do Super Administrador local. O hash abaixo e PBKDF2-SHA512
--- (210.000 iteracoes), exatamente o formato aceito por Infrastructure.PasswordHasher.
--- A credencial de desenvolvimento MNSoft@Agro360#2026 deve ser trocada no primeiro acesso.
+-- O usuário Super Administrador não é criado pelo SQL. A API o provisiona somente
+-- quando SuperAdmin__Email, SuperAdmin__Password e SuperAdmin__TotpSecret são
+-- fornecidos por secret manager local; reexecuções preservam senha e status.
 alter table agro360.identity_users add column if not exists document_type varchar(10);
 alter table agro360.identity_users add column if not exists must_change_password boolean not null default false;
+alter table agro360.identity_users add column if not exists mfa_secret_encrypted text;
 select set_config('app.tenant_id','00000000-0000-0000-0000-000000000001',false);
 insert into agro360.tenancy_tenants(id,name,slug,status,plan_code)
 values ('00000000-0000-0000-0000-000000000001','MNSOFT / Agro360 Platform','agro360-platform',1,'ENTERPRISE')
 on conflict(id) do update set name=excluded.name, status=excluded.status;
-insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status)
-values ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','Super Administrador MNSOFT','superadmin@mnsoft.com.br','pbkdf2-sha512$210000$QWdybzM2ME1OU09GVDI2IQ==$XPdvwPxWZJO1J6BgBee2oNx3qEmuDipAFEqE+RRiaos=','ACTIVE')
-on conflict(id) do update set tenant_id=excluded.tenant_id,name=excluded.name,email=excluded.email;
-update agro360.identity_users set normalized_document='18160057000113',document_type='CNPJ'
-where id='00000000-0000-0000-0000-000000000002';
 insert into agro360.identity_roles(id,tenant_id,code,name,is_system)
 values ('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000001','SUPER_ADMIN','Super Administrador',true)
 on conflict(id) do update set name=excluded.name,is_system=true;
-insert into agro360.identity_user_roles(tenant_id,user_id,role_id)
-values ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000003')
-on conflict do nothing;
 insert into agro360.identity_role_permissions(tenant_id,role_id,permission_id)
 select '00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000003',id
 from agro360.identity_permissions
 on conflict do nothing;
-insert into agro360.platform_super_admins(id,user_id,active)
-values ('00000000-0000-0000-0000-000000000004','00000000-0000-0000-0000-000000000002',true)
-on conflict(user_id) do update set active=true,deleted_at=null,updated_at=now();
 
 
 create table if not exists agro360.platform_languages (
@@ -3188,9 +3179,9 @@ on conflict(tenant_id) do nothing;
 insert into agro360.saas_organization_settings(tenant_id,unit_system,currency,time_zone,main_culture,main_activities,notification_preferences)
 values ('30000000-0000-0000-0000-000000000001','METRIC','BRL','America/Belem','pt-BR',array['AGRICULTURE','LIVESTOCK'],array['SYSTEM','SECURITY'])
 on conflict(tenant_id) do update set unit_system='METRIC',currency='BRL',time_zone='America/Belem',main_culture='pt-BR',main_activities=excluded.main_activities,notification_preferences=excluded.notification_preferences,updated_at=now();
--- PBKDF2-SHA512, 210.000 iterações e salt de 16 bytes, no formato de PasswordHasher.
+-- Fixture sem credencial universal. O acesso é ativado somente por convite seguro.
 insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,normalized_document,document_type,must_change_password,created_by)
-values ('30000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000001','Administrador Santa Clara','admin@santaclara.agro360.local','pbkdf2-sha512$210000$QWdybzM2MFNhbnRhMjYhIQ==$4UDbHTJM4k2raurPMDeniCv/McIHqZ1BxdqSD1I7GKc=','ACTIVE','52998224725','CPF',true,'30000000-0000-0000-0000-000000000003')
+values ('30000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000001','Administrador Santa Clara','admin@santaclara.agro360.local','unprovisioned$'||encode(gen_random_bytes(32),'hex'),'INVITED','52998224725','CPF',true,'30000000-0000-0000-0000-000000000003')
 on conflict(id) do update set name=excluded.name,email=excluded.email,normalized_document=excluded.normalized_document,document_type='CPF',updated_at=now();
 -- A organização referencia o usuário criador; por isso deve ser criada somente
 -- depois do usuário para manter a restauração compatível com FKs imediatas.
@@ -3222,9 +3213,9 @@ insert into agro360.platform_tenants(id,legal_name,trade_name,normalized_documen
 values ('20000000-0000-0000-0000-000000000001','Agro360 Demonstração Ltda','Agro360 Demonstração','00000000000191','RURAL_PRODUCER','AGRICULTURE','admin@agro360.local','Administrador Agro360','10000000-0000-0000-0000-000000000001','ACTIVE')
 on conflict(id) do update set trade_name=excluded.trade_name,plan_id=excluded.plan_id,status='ACTIVE';
 select set_config('app.tenant_id','20000000-0000-0000-0000-000000000001',true);
--- Hash PBKDF2-SHA512 (210.000 iterações) da credencial local documentada TroqueAgora!123.
+-- Fixture sem credencial universal. O acesso é ativado somente por convite seguro.
 insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,must_change_password)
-values ('20000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000001','Administrador Agro360','admin@agro360.local','pbkdf2-sha512$210000$QWdybzM2MERlbW9TZWVkIQ==$4VCMfY7wCNXW1YUuFkEKSgVnzQbUIYI0ThMD8anitDQ=','ACTIVE',true)
+values ('20000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000001','Administrador Agro360','admin@agro360.local','unprovisioned$'||encode(gen_random_bytes(32),'hex'),'INVITED',true)
 on conflict(id) do update set name=excluded.name,email=excluded.email;
 insert into agro360.identity_roles(id,tenant_id,code,name,is_system)
 values ('20000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000001','tenant-administrator','Administrador do tenant',true)
@@ -3357,43 +3348,190 @@ insert into agro360.platform_schema_versions(version,description,installed_at)
 values('6.4.0','Sprint Fiscal Agro360 - cartas de correção e fluxos auditáveis',now()) on conflict(version) do nothing;
 commit;
 
--- Recebimento de compras: idempotência e vínculos transacionais com estoque/financeiro.
+-- Entrega E2E de Fazendas e Talhões. Restrições novas valem para novas gravações;
+-- NOT VALID preserva a instalação sobre bases legadas até a saneamento controlado.
 begin;
+do $$
+begin
+    if not exists (select 1 from pg_constraint where conname = 'ck_geo_farms_state_format') then
+        alter table agro360.geo_farms add constraint ck_geo_farms_state_format check (state ~ '^[A-Z]{2}$') not valid;
+    end if;
+    if not exists (select 1 from pg_constraint where conname = 'ck_geo_farms_registration_not_blank') then
+        alter table agro360.geo_farms add constraint ck_geo_farms_registration_not_blank check (registration_number is null or length(trim(registration_number)) > 0) not valid;
+    end if;
+    if not exists (select 1 from pg_constraint where conname = 'ck_geo_farms_car_not_blank') then
+        alter table agro360.geo_farms add constraint ck_geo_farms_car_not_blank check (car_number is null or length(trim(car_number)) > 0) not valid;
+    end if;
+    if not exists (select 1 from pg_constraint where conname = 'ck_geo_fields_boundary_type') then
+        alter table agro360.geo_fields add constraint ck_geo_fields_boundary_type check (boundary is null or boundary->>'type' in ('Polygon', 'MultiPolygon')) not valid;
+    end if;
+end $$;
+create index if not exists ix_geo_farms_tenant_active_name on agro360.geo_farms (tenant_id, lower(name)) where deleted_at is null;
+create index if not exists ix_geo_fields_tenant_farm_active_name on agro360.geo_fields (tenant_id, farm_id, lower(name)) where deleted_at is null;
+insert into agro360.platform_schema_versions(version,description,installed_at)
+values('5.1.1','Fluxo E2E de fazendas e talhões com validações cadastrais',now())
+on conflict(version) do update set description=excluded.description;
+commit;
+
+-- E1: controle auditavel do acesso de usuarios da conta cliente.
+begin;
+
+insert into agro360.identity_permissions(code,module,description) values
+ ('account.users.read','Administracao da Conta','Consultar usuarios e seus perfis no proprio cliente.'),
+ ('account.users.manage','Administracao da Conta','Gerenciar usuarios no proprio cliente.'),
+ ('account.roles.read','Administracao da Conta','Consultar perfis no proprio cliente.'),
+ ('account.roles.manage','Administracao da Conta','Gerenciar perfis dentro da propria autoridade.'),
+ ('account.invitations.read','Administracao da Conta','Consultar convites do proprio cliente.'),
+ ('account.invitations.manage','Administracao da Conta','Emitir, reenviar e cancelar convites.'),
+ ('account.settings.read','Administracao da Conta','Consultar configuracoes da organizacao.'),
+ ('account.settings.manage','Administracao da Conta','Alterar configuracoes da organizacao.'),
+ ('account.security.read','Administracao da Conta','Consultar sessoes e dispositivos.'),
+ ('account.security.manage','Administracao da Conta','Revogar sessoes e dispositivos.'),
+ ('account.subscription.read','Administracao da Conta','Consultar plano, contrato e uso.'),
+ ('account.subscription.manage','Administracao da Conta','Solicitar alteracao de contratacao.'),
+ ('account.notifications.read','Administracao da Conta','Consultar notificacoes da conta.'),
+ ('account.notifications.manage','Administracao da Conta','Tratar notificacoes da conta.'),
+ ('platform.admin','Plataforma','Administrar a plataforma com autoridade global comprovada.')
+on conflict(code) do update set module=excluded.module,description=excluded.description;
+
+insert into agro360.identity_role_permissions(tenant_id,role_id,permission_id)
+select r.tenant_id,r.id,p.id
+from agro360.identity_roles r
+cross join agro360.identity_permissions p
+where lower(r.code) in ('tenant-administrator','super_admin')
+  and p.code like 'account.%'
+on conflict do nothing;
+
+insert into agro360.identity_role_permissions(tenant_id,role_id,permission_id)
+select r.tenant_id,r.id,p.id from agro360.identity_roles r cross join agro360.identity_permissions p
+where lower(r.code)='super_admin' and p.code='platform.admin'
+on conflict do nothing;
+
+insert into agro360.saas_role_metadata(tenant_id,role_id,level)
+select tenant_id,id,100 from agro360.identity_roles where lower(code)='tenant-administrator'
+on conflict(tenant_id,role_id) do update set level=greatest(agro360.saas_role_metadata.level,excluded.level);
+
+alter table agro360.identity_users add column if not exists must_change_password boolean not null default false;
+alter table agro360.identity_users add column if not exists mfa_secret_encrypted text;
+alter table agro360.saas_invitations add column if not exists delivery_status varchar(30) not null default 'PENDING_PROVIDER';
+alter table agro360.saas_invitations add column if not exists accepted_at timestamptz;
+alter table agro360.saas_invitations add column if not exists accepted_by_user_id uuid;
+
+update agro360.identity_users
+set password_hash='unprovisioned$'||encode(gen_random_bytes(32),'hex'),must_change_password=true,updated_at=now()
+where password_hash in (
+ 'pbkdf2-sha512$210000$QWdybzM2ME1OU09GVDI2IQ==$XPdvwPxWZJO1J6BgBee2oNx3qEmuDipAFEqE+RRiaos=',
+ 'pbkdf2-sha512$210000$QWdybzM2MFNhbnRhMjYhIQ==$4UDbHTJM4k2raurPMDeniCv/McIHqZ1BxdqSD1I7GKc=',
+ 'pbkdf2-sha512$210000$QWdybzM2MERlbW9TZWVkIQ==$4VCMfY7wCNXW1YUuFkEKSgVnzQbUIYI0ThMD8anitDQ='
+);
+
+update agro360.identity_refresh_tokens rt set revoked_at=coalesce(rt.revoked_at,now())
+where rt.revoked_at is null and exists(select 1 from agro360.identity_users u where u.id=rt.user_id and u.tenant_id=rt.tenant_id and u.password_hash like 'unprovisioned$%');
+
+create table if not exists agro360.identity_user_status_events(
+ id uuid primary key default gen_random_uuid(),
+ tenant_id uuid not null references agro360.tenancy_tenants(id),
+ user_id uuid not null,
+ previous_status varchar(24) not null,
+ new_status varchar(24) not null,
+ reason varchar(1000) not null,
+ created_at timestamptz not null default now(),
+ created_by uuid not null,
+ foreign key(tenant_id,user_id) references agro360.identity_users(tenant_id,id),
+ foreign key(tenant_id,created_by) references agro360.identity_users(tenant_id,id),
+ check(previous_status in('INVITED','ACTIVE','LOCKED','DISABLED')),
+ check(new_status in('ACTIVE','DISABLED')),
+ check(length(trim(reason)) between 5 and 1000)
+);
+create index if not exists ix_identity_user_status_events_target
+ on agro360.identity_user_status_events(tenant_id,user_id,created_at desc);
+
+alter table agro360.identity_user_status_events enable row level security;
+alter table agro360.identity_user_status_events force row level security;
+drop policy if exists tenant_isolation on agro360.identity_user_status_events;
+drop policy if exists identity_user_status_events_tenant on agro360.identity_user_status_events;
+drop policy if exists identity_user_status_events_tenant_isolation on agro360.identity_user_status_events;
+create policy tenant_isolation on agro360.identity_user_status_events
+ using (tenant_id=nullif(current_setting('app.tenant_id',true),'')::uuid)
+ with check (tenant_id=nullif(current_setting('app.tenant_id',true),'')::uuid);
+
+insert into agro360.platform_schema_versions(version,description,installed_at)
+values('6.5.0','E1 - controle auditavel de acesso de usuarios do cliente',now())
+on conflict(version) do nothing;
+
+commit;
+
+-- Recebimento de compras: idempotencia e vinculos transacionais com estoque/financeiro.
+begin;
+
 alter table agro360.procurement_receipts
     add column if not exists finance_integration_status varchar(20) not null default 'PENDING',
     add column if not exists idempotency_key varchar(100),
     add column if not exists warehouse_id uuid;
-do $$ begin
-    alter table agro360.procurement_receipts add constraint ck_procurement_receipt_finance_status
+
+do $$
+begin
+    alter table agro360.procurement_receipts
+        add constraint ck_procurement_receipt_finance_status
         check (finance_integration_status in ('PENDING','COMPLETED','FAILED','NOT_APPLICABLE'));
-exception when duplicate_object then null; end $$;
-do $$ begin
-    alter table agro360.procurement_receipts add constraint fk_procurement_receipt_warehouse
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+    alter table agro360.procurement_receipts
+        add constraint fk_procurement_receipt_warehouse
         foreign key (tenant_id,warehouse_id) references agro360.inventory_warehouses(tenant_id,id);
-exception when duplicate_object then null; end $$;
+exception when duplicate_object then null;
+end $$;
+
 create unique index if not exists uq_procurement_receipt_idempotency
-    on agro360.procurement_receipts(tenant_id,idempotency_key) where idempotency_key is not null;
+    on agro360.procurement_receipts(tenant_id,idempotency_key)
+    where idempotency_key is not null;
+
 create unique index if not exists uq_procurement_receipt_items_tenant_id
     on agro360.procurement_receipt_items(tenant_id,id);
+
 create unique index if not exists uq_finance_payables_tenant_id
     on agro360.finance_payables(tenant_id,id);
+
 create table if not exists agro360.procurement_receipt_stock_links(
     tenant_id uuid not null references agro360.tenancy_tenants(id),
-    receipt_item_id uuid not null,stock_movement_id uuid not null,
-    created_at timestamptz not null default now(),created_by uuid not null,
-    primary key(tenant_id,receipt_item_id),unique(tenant_id,stock_movement_id),
+    receipt_item_id uuid not null,
+    stock_movement_id uuid not null,
+    created_at timestamptz not null default now(),
+    created_by uuid not null,
+    primary key(tenant_id,receipt_item_id),
+    unique(tenant_id,stock_movement_id),
     foreign key(tenant_id,receipt_item_id) references agro360.procurement_receipt_items(tenant_id,id),
-    foreign key(tenant_id,stock_movement_id) references agro360.inventory_stock_movements(tenant_id,id));
+    foreign key(tenant_id,stock_movement_id) references agro360.inventory_stock_movements(tenant_id,id)
+);
+
 create table if not exists agro360.procurement_order_financial_links(
     tenant_id uuid not null references agro360.tenancy_tenants(id),
-    purchase_order_id uuid not null,installment integer not null check(installment>0),payable_id uuid not null,
-    amount numeric(18,2) not null check(amount>0),created_at timestamptz not null default now(),created_by uuid not null,
-    primary key(tenant_id,purchase_order_id,installment),unique(tenant_id,payable_id),
+    purchase_order_id uuid not null,
+    installment integer not null check(installment>0),
+    payable_id uuid not null,
+    amount numeric(18,2) not null check(amount>0),
+    created_at timestamptz not null default now(),
+    created_by uuid not null,
+    primary key(tenant_id,purchase_order_id,installment),
+    unique(tenant_id,payable_id),
     foreign key(tenant_id,purchase_order_id) references agro360.procurement_purchase_orders(tenant_id,id),
-    foreign key(tenant_id,payable_id) references agro360.finance_payables(tenant_id,id));
+    foreign key(tenant_id,payable_id) references agro360.finance_payables(tenant_id,id)
+);
+
 select agro360.platform_enable_tenant_rls('agro360.procurement_receipt_stock_links');
 select agro360.platform_enable_tenant_rls('agro360.procurement_order_financial_links');
+
 insert into agro360.platform_schema_versions(version,description,installed_at)
-values('6.4.1','Recebimento de compras integrado a estoque e previsão financeira idempotente',now())
+values('6.4.1','Recebimento de compras integrado a estoque e previsao financeira idempotente',now())
+on conflict(version) do update set description=excluded.description;
+
+commit;
+
+begin;
+insert into agro360.platform_schema_versions(version,description,installed_at)
+values('6.6.0','Snapshot de politica de preco comercial nos itens do pedido',now())
 on conflict(version) do update set description=excluded.description;
 commit;
