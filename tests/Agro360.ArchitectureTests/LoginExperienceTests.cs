@@ -19,6 +19,7 @@ public sealed class LoginExperienceTests
         Assert.Contains("tokenService.Create", service);
         Assert.Contains("set last_login_at = now()", service);
         Assert.Contains("u.normalized_document = @Identifier", service);
+        Assert.Contains("lower(u.email) = @Identifier", service);
         Assert.Contains("document.Length != 11", service);
         Assert.Contains("CNPJ identifica a organização", service);
         Assert.Contains("ck_identity_users_normalized_document", Read("database/agro360-postgres-full.sql"));
@@ -65,5 +66,23 @@ public sealed class LoginExperienceTests
         Assert.Contains("Fechar mensagem", client);
         Assert.Contains("E-mail ou CPF", layout);
         Assert.Contains("CNPJ identifica a organização", layout);
+        Assert.DoesNotContain("abra ${apiBase}/swagger", client, StringComparison.Ordinal);
+        Assert.Contains("Código MFA inválido ou expirado.", client, StringComparison.Ordinal);
+        Assert.Contains("Credenciais inválidas.", client, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void HomologationProvisioningPreservesMfaAndRejectsAdministrativeStateChanges()
+    {
+        var migrator = Read("src/Hosts/Agro360.Migrator/Program.cs");
+
+        Assert.Contains("protector.Unprotect(existingSuperAdmin.MfaSecretEncrypted)", migrator, StringComparison.Ordinal);
+        Assert.Contains("está excluída logicamente", migrator, StringComparison.Ordinal);
+        Assert.Contains("está com status administrativo", migrator, StringComparison.Ordinal);
+        Assert.DoesNotContain("status='ACTIVE',deleted_at=null,mfa_enabled=true", migrator, StringComparison.Ordinal);
+        Assert.Contains("identity_refresh_tokens set revoked_at", migrator, StringComparison.Ordinal);
+        Assert.Contains("must_change_password=true", migrator, StringComparison.Ordinal);
+        Assert.Contains("diagnose-homologation", migrator, StringComparison.Ordinal);
+        Assert.Contains("[switch]$DiagnosticOnly", Read("scripts/provision-homologation-local.ps1"), StringComparison.Ordinal);
     }
 }

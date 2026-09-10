@@ -2,7 +2,7 @@
     "use strict";
 
     const apiBase = document.querySelector('meta[name="api-base"]')?.content?.replace(/\/$/, "") ?? "http://localhost:8081";
-    const apiUnavailableMessage = `Não foi possível conectar à API. Confirme se a Agro360.Api está rodando em ${apiBase} e abra ${apiBase}/swagger.`;
+    const apiUnavailableMessage = "A API do Agro360 está indisponível. Tente novamente em instantes ou contate o suporte.";
     const storageKeys = { session: "agro360.session", theme: "agro360.theme" };
     const state = { session: readJson(storageKeys.session), searchTimer: 0, selectedSearch: -1, refreshPromise: null, refreshStopped: false, activeIncidents: new Set() };
     const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
@@ -205,8 +205,12 @@
                 body: JSON.stringify(data)
             });
             const result = await response.json().catch(() => ({}));
-            if (response.status === 401 || response.status === 403) {
-                throw new Error(result.detail || "Cliente, identificação ou senha inválidos.");
+            if (response.status === 401) {
+                const code = result.code || "";
+                throw new Error(code === "mfa_invalid" ? "Código MFA inválido ou expirado." : "Credenciais inválidas.");
+            }
+            if (response.status === 403) {
+                throw new Error(result.detail || "A conta ou organização não está autorizada para este acesso.");
             }
             if (response.status === 400) {
                 const validationMessage = result.detail
@@ -216,8 +220,8 @@
             if (!response.ok) {
                 const supportCode = result.traceId ? ` Código de suporte: ${result.traceId}.` : "";
                 const message = response.status === 503
-                    ? "O banco de dados está temporariamente indisponível. Tente novamente em instantes."
-                    : result.detail || "Não foi possível entrar.";
+                    ? "A API está temporariamente indisponível. Tente novamente em instantes."
+                    : "Ocorreu uma falha interna. Tente novamente ou informe o código de atendimento ao suporte.";
                 throw new Error(message + supportCode);
             }
             persistSession(result);
