@@ -170,7 +170,9 @@ public sealed class IdentityService(
 
             if (user is null)
             {
-                InfrastructureLogMessages.LoginRejected(logger, "invalid_credentials", tenant.Id, identifierType, traceId);
+                // Keep the public contract deliberately opaque, but retain enough
+                // internal information to distinguish lookup failures from a bad hash.
+                InfrastructureLogMessages.LoginRejected(logger, "user_not_found", tenant.Id, identifierType, traceId);
                 throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
             }
 
@@ -184,7 +186,7 @@ public sealed class IdentityService(
 
             if (!passwordHasher.Verify(command.Password, user.PasswordHash))
             {
-                InfrastructureLogMessages.LoginRejected(logger, "invalid_credentials", tenant.Id, identifierType, traceId);
+                InfrastructureLogMessages.LoginRejected(logger, "password_verification_failed", tenant.Id, identifierType, traceId);
                 throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
             }
 

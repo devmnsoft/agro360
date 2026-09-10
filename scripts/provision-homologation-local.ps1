@@ -57,12 +57,22 @@ function New-TotpSecret {
 }
 
 try {
-    if (-not $env:AGRO360_PROVISION_SUPERADMIN_PASSWORD) {
-        $env:AGRO360_PROVISION_SUPERADMIN_PASSWORD = Read-PlainSecret 'Senha temporária do SuperAdmin'
-    }
     if (-not $env:AGRO360_PROVISION_SANTA_CLARA_PASSWORD) {
         $env:AGRO360_PROVISION_SANTA_CLARA_PASSWORD = Read-PlainSecret 'Senha temporária do administrador Santa Clara'
     }
+
+    # O cliente é confirmado em uma transação independente. Assim, uma matrícula
+    # MFA pendente do SuperAdmin não impede criar, verificar e usar Santa Clara.
+    dotnet run --project src/Hosts/Agro360.Migrator -- provision-santa-clara --environment $Environment
+    if ($LASTEXITCODE) { throw "Provisionamento da Santa Clara falhou com código $LASTEXITCODE." }
+    Remove-Item Env:\AGRO360_PROVISION_SANTA_CLARA_PASSWORD -ErrorAction SilentlyContinue
+
+    if (-not $env:AGRO360_PROVISION_SUPERADMIN_PASSWORD) {
+        $env:AGRO360_PROVISION_SUPERADMIN_PASSWORD = Read-PlainSecret 'Senha temporária do SuperAdmin'
+    }
+    # O comando combinado continua disponível para compatibilidade. Ele somente é
+    # chamado após a etapa independente acima e recebe novamente a senha em memória.
+    $env:AGRO360_PROVISION_SANTA_CLARA_PASSWORD = Read-PlainSecret 'Confirme a senha temporária do administrador Santa Clara'
     if (-not $env:AGRO360_PROVISION_SUPERADMIN_TOTP_SECRET) {
         $env:AGRO360_PROVISION_SUPERADMIN_TOTP_SECRET = New-TotpSecret
     }
