@@ -143,6 +143,7 @@ public interface ILivestockHerdService
     Task ChangeTagAsync(Guid id, ChangeTagCommand command, CancellationToken ct);
     Task InactivateAsync(Guid id, InactivateAnimalCommand command, CancellationToken ct);
     Task SoftDeleteAsync(Guid id, string reason, CancellationToken ct);
+    Task RestoreAsync(Guid id, string reason, CancellationToken ct);
     Task<IReadOnlyList<dynamic>> ListMovementsAsync(Guid? farmId, string? kind, DateOnly? from, DateOnly? until, CancellationToken ct);
     Task<Guid> RegisterMovementAsync(HerdMovementCommand command, CancellationToken ct);
     Task<IReadOnlyList<dynamic>> ListHandlingOrdersAsync(string? status, Guid? farmId, CancellationToken ct);

@@ -21,11 +21,17 @@ public sealed class FleetOperationsService(DatabaseExecutor db, ITenantContext t
                    a.odometer, a.hour_meter as "hourMeter", a.fuel_capacity as "fuelCapacity", a.energy_source as "energySource",
                    a.commissioned_on as "commissionedOn", a.notes, t.name as "typeName", t.kind as "typeKind",
                    p.name as "propertyName",
+                   a.created_at as "createdAt", cu.name as "createdByName",
+                   a.updated_at as "updatedAt", uu.name as "updatedByName",
+                   a.deleted_at as "deletedAt", du.name as "deletedByName", a.deletion_reason as "deletionReason",
                    exists(select 1 from agro360.fleet_operational_blocks b where b.tenant_id=a.tenant_id and b.asset_id=a.id and b.status='ACTIVE') as "hasActiveBlock"
             from agro360.fleet_assets a
             left join agro360.fleet_asset_types t on t.id=a.asset_type_id and t.tenant_id=a.tenant_id
             left join agro360.geo_farms p on p.id=a.property_id and p.tenant_id=a.tenant_id
-            where a.tenant_id=@TenantId and a.id=@Id and a.deleted_at is null
+            left join agro360.identity_users cu on cu.tenant_id=a.tenant_id and cu.id=a.created_by
+            left join agro360.identity_users uu on uu.tenant_id=a.tenant_id and uu.id=a.updated_by
+            left join agro360.identity_users du on du.tenant_id=a.tenant_id and du.id=a.deleted_by
+            where a.tenant_id=@TenantId and a.id=@Id
             """, new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
         if (asset is null) return null;
         var meters = await c.QueryAsync(new CommandDefinition(
@@ -37,7 +43,15 @@ public sealed class FleetOperationsService(DatabaseExecutor db, ITenantContext t
         var events = await c.QueryAsync(new CommandDefinition(
             "select event_type as \"eventType\", description, created_at as \"createdAt\" from agro360.fleet_asset_events where tenant_id=@TenantId and asset_id=@Id order by created_at desc limit 50",
             new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
-        return (object)new { asset, meters, blocks, events };
+        var audit = await c.QueryAsync(new CommandDefinition(
+            """
+            select action, occurred_at as "occurredAt", u.name as "actorName", before_data as "beforeData", after_data as "afterData"
+            from agro360.audit_logs l
+            left join agro360.identity_users u on u.tenant_id=l.tenant_id and u.id=l.user_id
+            where l.tenant_id=@TenantId and l.entity_type='FleetAsset' and l.entity_id=@Id
+            order by l.occurred_at desc limit 50
+            """, new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
+        return (object)new { asset, meters, blocks, events, audit };
     }, ct);
 
     public Task<IReadOnlyList<dynamic>> ListReadingsAsync(Guid assetId, string? meterKind, CancellationToken ct) =>

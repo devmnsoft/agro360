@@ -39,5 +39,13 @@ public sealed class Sprint50UxTests
         Assert.Contains("blocks_asset", fleetService, StringComparison.Ordinal);
         Assert.Contains("cadastralStatus", js, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("duePolicy", js, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SoftDeleteAssetAsync", fleetService, StringComparison.Ordinal);
+        Assert.Contains("RestoreAssetAsync", fleetService, StringComparison.Ordinal);
+        Assert.Contains("/assets/", js, StringComparison.Ordinal);
+        Assert.Contains("data-archive-asset", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("<<<<<<<", fleetService, StringComparison.Ordinal);
+        var migration070 = Read("database/migrations/070_audit_soft_delete.sql");
+        Assert.Contains("deletion_reason", migration070, StringComparison.Ordinal);
+        Assert.Contains("7.0.0", migration070, StringComparison.Ordinal);
     }
 }

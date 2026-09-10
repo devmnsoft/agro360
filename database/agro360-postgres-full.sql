@@ -3546,11 +3546,22 @@ insert into agro360.identity_permissions(code,module,description) values ('purch
 insert into agro360.identity_role_permissions(tenant_id,role_id,permission_id) select r.tenant_id,r.id,p.id from agro360.identity_roles r cross join agro360.identity_permissions p where r.code in ('SUPER_ADMIN','TENANT_ADMIN') and p.code='purchasing.receipts.override-excess' on conflict do nothing;
 insert into agro360.platform_schema_versions(version,description,installed_at) values('6.7.0','Integridade de idempotencia, unidade e autorizacao no recebimento',now()) on conflict(version) do update set description=excluded.description;
 commit;
-<<<<<<< HEAD
 
 
 begin;
 
+
+-- Colunas aditivas da fundação pecuária (merge reconciliado; não substitui o modelo operacional).
+alter table agro360.livestock_animals
+    add column if not exists internal_identifier varchar(80),
+    add column if not exists origin varchar(160);
+update agro360.livestock_animals
+set internal_identifier = coalesce(nullif(internal_identifier, ''), tag)
+where internal_identifier is null or internal_identifier = '';
+-- Mantém nullable no instalador para seeds aditivos; unicidade só quando preenchido.
+create unique index if not exists ux_livestock_animals_tenant_internal_identifier
+    on agro360.livestock_animals(tenant_id, lower(internal_identifier))
+    where deleted_at is null and internal_identifier is not null;
 -- Pecuária integrada: cadastros, controle individual vs quantidade, movimentações,
 -- ordens de manejo, pesagens, restrições, alimentação, reserva comercial e custos.
 -- Idempotente. Não altera checksums de migrations anteriores.
@@ -3637,54 +3648,11 @@ create table if not exists agro360.livestock_facilities (
     capacity_head integer check (capacity_head is null or capacity_head >= 0),
     status varchar(20) not null default 'AVAILABLE' check (status in ('AVAILABLE', 'IN_USE', 'INACTIVE')),
     notes text,
-=======
--- Pecuária integrada: identidade, locais, controle coletivo e trilha operacional.
--- Migração aditiva e reexecutável; não altera migrations publicadas.
-
-alter table agro360.livestock_animals
-    add column if not exists internal_identifier varchar(80),
-    add column if not exists birth_date_estimated boolean not null default false,
-    add column if not exists origin varchar(160),
-    add column if not exists notes text;
-
-update agro360.livestock_animals set internal_identifier=tag where internal_identifier is null;
-alter table agro360.livestock_animals alter column internal_identifier set not null;
-create unique index if not exists ux_livestock_animals_tenant_internal_identifier
-    on agro360.livestock_animals(tenant_id, lower(internal_identifier)) where deleted_at is null;
-
-create table if not exists agro360.livestock_identifier_history (
-    id uuid primary key,
-    tenant_id uuid not null references agro360.tenancy_tenants(id),
-    animal_id uuid not null references agro360.livestock_animals(id),
-    identifier_type varchar(20) not null check(identifier_type in ('INTERNAL','EAR_TAG','RFID')),
-    identifier varchar(80) not null,
-    valid_from timestamptz not null,
-    valid_until timestamptz,
-    change_reason text not null,
-    created_at timestamptz not null default now(),
-    created_by uuid not null,
-    check(valid_until is null or valid_until >= valid_from)
-);
-create unique index if not exists ux_livestock_identifier_current
-    on agro360.livestock_identifier_history(tenant_id, identifier_type, lower(identifier)) where valid_until is null;
-
-create table if not exists agro360.livestock_locations (
-    id uuid primary key,
-    tenant_id uuid not null references agro360.tenancy_tenants(id),
-    farm_id uuid not null references agro360.geo_farms(id),
-    parent_id uuid references agro360.livestock_locations(id),
-    name varchar(120) not null,
-    location_type varchar(20) not null check(location_type in ('PASTURE','PADDOCK','CORRAL','FACILITY')),
-    status varchar(20) not null default 'ACTIVE' check(status in ('ACTIVE','INACTIVE','QUARANTINE')),
-    capacity numeric(14,3),
-    capacity_unit varchar(16),
->>>>>>> b310c3827c606181d79abc2d8d710c9b0f35295d
     created_at timestamptz not null default now(),
     created_by uuid not null,
     updated_at timestamptz,
     updated_by uuid,
     deleted_at timestamptz,
-<<<<<<< HEAD
     unique (tenant_id, id),
     unique (tenant_id, farm_id, name),
     foreign key (tenant_id, farm_id) references agro360.geo_farms(tenant_id, id)
@@ -4840,64 +4808,63 @@ values ('30000000-0000-4000-8000-000000000395', '30000000-0000-0000-0000-0000000
 on conflict do nothing;
 
 commit;
-=======
-    unique(tenant_id, farm_id, name),
-    check(capacity is null or capacity > 0)
-);
 
-alter table agro360.livestock_herds
-    add column if not exists control_mode varchar(16) not null default 'COLLECTIVE',
-    add column if not exists location_id uuid references agro360.livestock_locations(id),
-    add column if not exists version bigint not null default 1;
-do $$ begin
-    if not exists(select 1 from pg_constraint where conname='ck_livestock_herds_control_mode') then
-        alter table agro360.livestock_herds add constraint ck_livestock_herds_control_mode check(control_mode in ('COLLECTIVE','INDIVIDUAL'));
-    end if;
+-- === migration 070_audit_soft_delete ===
+begin;
+
+-- Auditoria e exclusão lógica padronizadas para pecuária e frota.
+-- Não inventa created_by/updated_by para registros legados (colunas nullable).
+-- deleted_at é a fonte única de exclusão lógica; status/active permanecem operacionais.
+
+do $$
+declare
+    t text;
+begin
+    for t in
+        select tablename
+        from pg_tables
+        where schemaname = 'agro360'
+          and (tablename like 'fleet_%' or tablename like 'livestock_%')
+    loop
+        execute format('
+            alter table agro360.%I
+                add column if not exists created_at timestamptz not null default now(),
+                add column if not exists created_by uuid,
+                add column if not exists updated_at timestamptz not null default now(),
+                add column if not exists updated_by uuid,
+                add column if not exists deleted_at timestamptz,
+                add column if not exists deleted_by uuid,
+                add column if not exists deletion_reason text;
+        ', t);
+    end loop;
 end $$;
 
-create table if not exists agro360.livestock_group_movements (
-    id uuid primary key,
-    tenant_id uuid not null references agro360.tenancy_tenants(id),
-    herd_id uuid not null references agro360.livestock_herds(id),
-    movement_type varchar(20) not null check(movement_type in ('ENTRY','TRANSFER','LOT_CHANGE','LOCATION_CHANGE','SALE','DEATH','DISCARD','ADJUSTMENT','REVERSAL')),
-    quantity integer not null check(quantity > 0),
-    from_farm_id uuid references agro360.geo_farms(id),
-    to_farm_id uuid references agro360.geo_farms(id),
-    from_location_id uuid references agro360.livestock_locations(id),
-    to_location_id uuid references agro360.livestock_locations(id),
-    reason varchar(160) not null,
-    occurred_at timestamptz not null,
-    responsible_id uuid not null,
-    reverses_id uuid references agro360.livestock_group_movements(id),
-    idempotency_key varchar(120),
-    created_at timestamptz not null default now(),
-    created_by uuid not null,
-    unique(tenant_id, idempotency_key)
-);
+-- Unicidade apenas entre registros ativos (exclusão lógica não libera o histórico).
+create unique index if not exists ux_fleet_assets_internal_code_active
+    on agro360.fleet_assets (tenant_id, lower(internal_code))
+    where deleted_at is null and internal_code is not null;
 
-create table if not exists agro360.livestock_individualization_reconciliations (
-    id uuid primary key,
-    tenant_id uuid not null references agro360.tenancy_tenants(id),
-    herd_id uuid not null references agro360.livestock_herds(id),
-    collective_quantity integer not null check(collective_quantity >= 0),
-    identified_quantity integer not null check(identified_quantity >= 0),
-    difference integer generated always as (collective_quantity - identified_quantity) stored,
-    occurred_at timestamptz not null,
-    reason text not null,
-    status varchar(16) not null check(status in ('DRAFT','CONFIRMED','REVERSED')),
-    created_at timestamptz not null default now(),
-    created_by uuid not null,
-    confirmed_at timestamptz,
-    confirmed_by uuid,
-    check(status <> 'CONFIRMED' or collective_quantity = identified_quantity)
-);
+create unique index if not exists ux_fleet_assets_plate_active
+    on agro360.fleet_assets (tenant_id, upper(plate))
+    where deleted_at is null and plate is not null;
 
-select agro360.platform_enable_tenant_rls('agro360.livestock_identifier_history');
-select agro360.platform_enable_tenant_rls('agro360.livestock_locations');
-select agro360.platform_enable_tenant_rls('agro360.livestock_group_movements');
-select agro360.platform_enable_tenant_rls('agro360.livestock_individualization_reconciliations');
+create unique index if not exists ux_livestock_animals_tag_active
+    on agro360.livestock_animals (tenant_id, lower(tag))
+    where deleted_at is null and tag is not null;
+
+-- Histórico de auditoria: sem exclusão pela interface comum (app role).
+do $$
+begin
+    if exists (select 1 from pg_roles where rolname = 'agro360_app') then
+        revoke delete, truncate on agro360.audit_logs from agro360_app;
+        execute 'grant select, insert on agro360.audit_logs to agro360_app';
+    end if;
+exception when undefined_object then
+    null;
+end $$;
 
 insert into agro360.platform_schema_versions(version, description, installed_at)
-values ('0.6.8', 'Pecuária integrada - fundações de rebanho e rastreabilidade', now())
-on conflict(version) do nothing;
->>>>>>> b310c3827c606181d79abc2d8d710c9b0f35295d
+values ('7.0.0', 'Auditoria e exclusao logica padronizadas (pecuaria/frota)', now())
+on conflict (version) do update set description = excluded.description;
+
+commit;

@@ -14,19 +14,14 @@ public sealed record RegisterAnimalCommand(
     Guid? MotherId,
     Guid? FatherId,
     string? Category = null,
-<<<<<<< HEAD
     string? OriginType = null,
     string? OriginNotes = null,
     bool BirthDateEstimated = false,
+    string? Origin = null,
     string? Notes = null,
     Guid? PaddockId = null,
     Guid? FacilityId = null,
     string? InternalIdentifier = null);
-=======
-    bool BirthDateEstimated = false,
-    string? Origin = null,
-    string? Notes = null);
->>>>>>> b310c3827c606181d79abc2d8d710c9b0f35295d
 
 public sealed record AnimalDto(
     Guid Id,
@@ -50,7 +45,14 @@ public sealed record AnimalDto(
     bool BirthDateEstimated = false,
     string? Notes = null,
     long? InternalCode = null,
-    Guid? HandlingLotId = null);
+    Guid? HandlingLotId = null,
+    DateTimeOffset? CreatedAt = null,
+    string? CreatedByName = null,
+    DateTimeOffset? UpdatedAt = null,
+    string? UpdatedByName = null,
+    DateTimeOffset? DeletedAt = null,
+    string? DeletedByName = null,
+    string? DeletionReason = null);
 
 public sealed record WeighAnimalCommand(Guid AnimalId, decimal WeightKg, DateOnly MeasuredOn, string? Notes, string? IdempotencyKey);
 

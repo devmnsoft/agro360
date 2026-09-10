@@ -128,11 +128,7 @@ static async Task ProvisionHomologationAsync(NpgsqlConnection connection, IConfi
 
     var occupiedFixtureIds = await connection.QueryAsync<ProvisionedIdentity>(
         "select id,tenant_id as TenantId,email from agro360.identity_users where id=any(@Ids) for update;",
-<<<<<<< HEAD
         new { Ids = HomologationFixtures.UserIds }, transaction);
-=======
-        new { Ids = new[] { Guid.Parse("00000000-0000-0000-0000-000000000002"), Guid.Parse("30000000-0000-0000-0000-000000000003") } }, transaction);
->>>>>>> b310c3827c606181d79abc2d8d710c9b0f35295d
     if (occupiedFixtureIds.Any(identity =>
             (identity.Id == Guid.Parse("00000000-0000-0000-0000-000000000002") &&
              (!identity.Email.Equals("superadmin@mnsoft.com.br", StringComparison.OrdinalIgnoreCase) || identity.TenantId != Guid.Parse("00000000-0000-0000-0000-000000000001"))) ||
@@ -282,6 +278,6 @@ internal static class HomologationFixtures
     internal static readonly Guid[] UserIds =
     [
         Guid.Parse("00000000-0000-0000-0000-000000000002"),
-        Guid.Parse("30000000-0000-0000-0000-000000000002")
+        Guid.Parse("30000000-0000-0000-0000-000000000003")
     ];
 }

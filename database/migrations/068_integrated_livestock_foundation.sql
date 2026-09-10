@@ -7,10 +7,13 @@ alter table agro360.livestock_animals
     add column if not exists origin varchar(160),
     add column if not exists notes text;
 
-update agro360.livestock_animals set internal_identifier=tag where internal_identifier is null;
-alter table agro360.livestock_animals alter column internal_identifier set not null;
+update agro360.livestock_animals
+set internal_identifier = coalesce(nullif(internal_identifier, ''), tag)
+where internal_identifier is null or internal_identifier = '';
+-- Nullable para permitir seeds aditivos posteriores; unicidade apenas quando preenchido.
 create unique index if not exists ux_livestock_animals_tenant_internal_identifier
-    on agro360.livestock_animals(tenant_id, lower(internal_identifier)) where deleted_at is null;
+    on agro360.livestock_animals(tenant_id, lower(internal_identifier))
+    where deleted_at is null and internal_identifier is not null;
 
 create table if not exists agro360.livestock_identifier_history (
     id uuid primary key,

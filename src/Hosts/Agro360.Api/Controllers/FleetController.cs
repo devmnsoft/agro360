@@ -12,11 +12,13 @@ public sealed class FleetController(IFleetService service, IFleetOperationsServi
 {
     [HttpGet("dashboard")] public Task<FleetDashboard> Dashboard(CancellationToken ct) => service.DashboardAsync(ct);
     [HttpGet("lookups/{kind}")] public Task<IReadOnlyList<FleetLookup>> Lookups(string kind, string? search, CancellationToken ct) => service.LookupsAsync(kind, search, ct);
-    [HttpGet("assets")] public Task<IReadOnlyList<FleetAsset>> Assets(string? search, string? status, int page = 1, int pageSize = 25, CancellationToken ct = default) => service.AssetsAsync(search, status, page, pageSize, ct);
+    [HttpGet("assets")] public Task<IReadOnlyList<FleetAsset>> Assets(string? search, string? status, int page = 1, int pageSize = 25, bool includeDeleted = false, CancellationToken ct = default) => service.AssetsAsync(search, status, page, pageSize, ct, includeDeleted);
     [HttpGet("assets/{id:guid}/detail")] public async Task<IActionResult> AssetDetail(Guid id, CancellationToken ct) => await operations.AssetDetailAsync(id, ct) is { } detail ? Ok(detail) : NotFound();
     [HttpPost("assets"), Authorize(Policy = Permissions.FleetWrite)] public Task<IActionResult> Asset(FleetAssetCommand x, CancellationToken ct) => Created("assets", () => service.SaveAssetAsync(null, x, ct));
     [HttpPut("assets/{id:guid}"), Authorize(Policy = Permissions.FleetWrite)] public async Task<IActionResult> Asset(Guid id, FleetAssetCommand x, CancellationToken ct) { await service.SaveAssetAsync(id, x, ct); return NoContent(); }
     [HttpPost("assets/{id:guid}/release"), Authorize(Policy = Permissions.FleetWrite)] public async Task<IActionResult> Release(Guid id, [FromBody] string reason, CancellationToken ct) { await operations.ReleaseAssetAsync(id, reason, ct); return NoContent(); }
+    [HttpPost("assets/{id:guid}/archive"), Authorize(Policy = Permissions.FleetWrite)] public async Task<IActionResult> Archive(Guid id, [FromBody] string reason, CancellationToken ct) { await service.SoftDeleteAssetAsync(id, reason, ct); return NoContent(); }
+    [HttpPost("assets/{id:guid}/restore"), Authorize(Policy = Permissions.FleetWrite)] public async Task<IActionResult> Restore(Guid id, [FromBody] string reason, CancellationToken ct) { await service.RestoreAssetAsync(id, reason, ct); return NoContent(); }
 
     [HttpPost("operators"), Authorize(Policy = Permissions.FleetWrite)] public Task<IActionResult> Operator(FleetOperatorCommand x, CancellationToken ct) => Created("operators", () => service.CreateOperatorAsync(x, ct));
     [HttpGet("maintenance-plans")] public Task<IReadOnlyList<dynamic>> Plans(Guid? assetId, CancellationToken ct) => operations.ListPlansAsync(assetId, ct);

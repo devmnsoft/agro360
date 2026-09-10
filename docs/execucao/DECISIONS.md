@@ -51,6 +51,14 @@ Preço comercial efetivo agora combina preço negociado e desconto explícito co
 
 Na produção, a existência da etapa deixou de depender de tupla/default e passou a usar read model anulável. A conclusão industrial avalia a situação efetiva do lote em `production_batches.quality_status`; uma aprovação histórica não libera lote bloqueado/reprovado depois. Ordem sem etapa crítica registrada não cria obrigação fictícia no modelo atual, mas o snapshot versionado de roteiro receita → ordem continua pendente.
 
+## ADR-E0/E8-02 — Exclusão lógica e merge reconciliado (2026-09-10)
+
+Nenhum registro de negócio/histórico da aplicação deve ser apagado fisicamente pela operação comum. `deleted_at`/`deleted_by`/`deletion_reason` são a fonte de exclusão lógica; `status`/`active` permanecem significados operacionais distintos. Soft-delete não cancela/estorna efeitos de estoque, financeiro ou OS.
+
+Autoria (`created_*`/`updated_*`) vem do contexto autenticado do servidor. Dados legados sem ator permanecem com `created_by` nulo; novas operações exigem ator. Auditoria reutiliza `agro360.audit_logs` (sem senhas/tokens) e não é apagável pela role `agro360_app` quando essa role existe.
+
+No merge commitado incompleto: pecuária operacional (`INDIVIDUAL`/`QUANTITY`, facilities) prevalece sobre o modelo alternativo `COLLECTIVE`/`livestock_locations` no consolidado; colunas aditivas `origin`/`internal_identifier` foram preservadas.
+
 ## ADR-E8-01 — Frota: cadastral ≠ operacional ≠ agenda (2026-09-10)
 
 Equipamentos usam um único cadastro (`fleet_assets`) compartilhado com produção/ordens de campo. Situação cadastral (`ACTIVE`/`INACTIVE`/baixa/venda), status operacional (`AVAILABLE`/`MAINTENANCE`/…) e ocupação na agenda (reservas) são conceitos distintos. Placa e medidores só se aplicam quando o tipo os possui.

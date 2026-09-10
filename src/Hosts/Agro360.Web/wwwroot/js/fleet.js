@@ -94,14 +94,28 @@
                 return;
             }
             if (tab === "assets") {
+                const showDeleted = document.getElementById("status-filter")?.value === "DELETED";
+                if (showDeleted) q.set("includeDeleted", "true");
                 const rows = await request(`/assets?${q}`);
-                content.innerHTML = table(["Código", "Nome", "Tipo", "Operacional", "Placa", "Medidores", "Ações"],
-                    (rows ?? []).map(x => `<tr>
+                const visible = showDeleted ? (rows ?? []).filter(x => x.deletedAt) : (rows ?? []).filter(x => !x.deletedAt);
+                content.innerHTML = `<div class="preview-box"><p>Exclusão é lógica: preserva OS, custos e abastecimentos. Restauração exige permissão e verifica unicidade de código/placa.</p>
+                    <label><input type="checkbox" id="toggle-deleted" ${showDeleted ? "checked" : ""}/> Mostrar excluídos</label></div>` +
+                    table(["Código", "Nome", "Tipo", "Situação", "Criado por", "Criado em", "Alterado por", "Alterado em", "Ações"],
+                    visible.map(x => `<tr>
                         <td>${escapeHtml(x.internalCode)}</td><td>${escapeHtml(x.name)}</td><td>${escapeHtml(x.type)}</td>
-                        <td>${statusPill(x.status)}</td><td>${escapeHtml(x.plate || "—")}</td>
-                        <td>${x.odometer} km · ${x.hourMeter} h</td>
-                        <td><button type="button" data-detail="${x.id}">Detalhe</button></td></tr>`),
-                    "Nenhum equipamento autorizado. Cadastre o primeiro ativo.");
+                        <td>${x.deletedAt ? statusPill("EXCLUIDO") : statusPill(x.status)}</td>
+                        <td>${escapeHtml(x.createdByName || "—")}</td><td>${x.createdAt ? new Date(x.createdAt).toLocaleString("pt-BR") : "—"}</td>
+                        <td>${escapeHtml(x.updatedByName || "—")}</td><td>${x.updatedAt ? new Date(x.updatedAt).toLocaleString("pt-BR") : "—"}</td>
+                        <td><button type="button" data-detail="${x.id}">Detalhe</button>
+                            ${x.deletedAt
+                                ? `<button type="button" data-restore-asset="${x.id}" data-name="${escapeHtml(x.name)}">Restaurar</button>`
+                                : `<button type="button" class="danger" data-archive-asset="${x.id}" data-name="${escapeHtml(x.name)}">Excluir</button>`}
+                        </td></tr>`),
+                    showDeleted ? "Nenhum equipamento excluído." : "Nenhum equipamento autorizado. Cadastre o primeiro ativo.");
+                document.getElementById("toggle-deleted")?.addEventListener("change", e => {
+                    document.getElementById("status-filter").value = e.target.checked ? "DELETED" : "";
+                    render();
+                });
                 return;
             }
             if (tab === "agenda") {
@@ -329,12 +343,23 @@
             try {
                 const data = await request(`/assets/${selectedAsset}/detail`);
                 const blocks = (data.blocks ?? []).map(b => `<p>${escapeHtml(b.kind)}: ${escapeHtml(b.reason)}${b.dispensable ? " (dispensável)" : " (impeditivo)"}</p>`).join("") || "<p>Sem bloqueios ativos.</p>";
+                const auditRows = (data.audit ?? []).map(a => `<tr><td>${escapeHtml(a.occurredAt)}</td><td>${escapeHtml(a.action)}</td><td>${escapeHtml(a.actorName || "—")}</td></tr>`).join("") || `<tr><td colspan="3">Sem eventos de auditoria.</td></tr>`;
                 content.innerHTML = `<article class="preview-box">
                     <h3>${escapeHtml(data.asset.name)} (${escapeHtml(data.asset.internalCode)})</h3>
-                    <p>Operacional ${statusPill(data.asset.status)} · Cadastral ${escapeHtml(data.asset.cadastralStatus)} · Tipo ${escapeHtml(data.asset.typeKind || data.asset.typeName)}</p>
+                    <p>Operacional ${statusPill(data.asset.deletedAt ? "EXCLUIDO" : data.asset.status)} · Cadastral ${escapeHtml(data.asset.cadastralStatus)} · Tipo ${escapeHtml(data.asset.typeKind || data.asset.typeName)}</p>
                     <p>Por que indisponível:</p>${blocks}
+                    <section class="history-box">
+                        <h4>Histórico do registro</h4>
+                        <p>Criado por ${escapeHtml(data.asset.createdByName || "legado/desconhecido")} em ${data.asset.createdAt ? new Date(data.asset.createdAt).toLocaleString("pt-BR") : "—"}.</p>
+                        <p>Última alteração por ${escapeHtml(data.asset.updatedByName || "—")} em ${data.asset.updatedAt ? new Date(data.asset.updatedAt).toLocaleString("pt-BR") : "—"}.</p>
+                        ${data.asset.deletedAt ? `<p>Excluído logicamente por ${escapeHtml(data.asset.deletedByName || "—")} em ${new Date(data.asset.deletedAt).toLocaleString("pt-BR")}. Motivo: ${escapeHtml(data.asset.deletionReason || "—")}.</p>` : ""}
+                        <div class="table-wrap"><table><thead><tr><th>Quando</th><th>Ação</th><th>Responsável</th></tr></thead><tbody>${auditRows}</tbody></table></div>
+                    </section>
                     <p><button type="button" data-tab-jump="readings">Ver leituras</button>
                     <button type="button" data-availability="${selectedAsset}">Consultar agenda</button>
+                    ${data.asset.deletedAt
+                        ? `<button type="button" data-restore-asset="${selectedAsset}" data-name="${escapeHtml(data.asset.name)}">Restaurar</button>`
+                        : `<button type="button" class="danger" data-archive-asset="${selectedAsset}" data-name="${escapeHtml(data.asset.name)}">Excluir logicamente</button>`}
                     <button type="button" id="back-list">Voltar</button></p>
                 </article>`;
                 document.getElementById("back-list")?.addEventListener("click", () => { tab = "assets"; render(); });
@@ -350,6 +375,32 @@
             try {
                 const rows = await request(`/assets/${availability.dataset.availability}/availability?from=${encodeURIComponent(from)}&until=${encodeURIComponent(until)}`);
                 content.insertAdjacentHTML("afterbegin", `<div class="preview-box"><h4>Agenda (7 dias)</h4>${(rows ?? []).map(r => `<p>${escapeHtml(r.kind)} · ${escapeHtml(r.startsAt)} → ${escapeHtml(r.endsAt)} · ${escapeHtml(r.detail || r.status)}</p>`).join("") || "<p>Sem conflitos no período.</p>"}</div>`);
+            } catch (e) { notify(e.message, true); }
+            return;
+        }
+        const archive = event.target.closest("[data-archive-asset]");
+        if (archive) {
+            const name = archive.dataset.name || "equipamento";
+            const reason = window.prompt(`Excluir logicamente "${name}"?\nO histórico (OS, custos, abastecimentos) será preservado.\nInforme o motivo (mín. 3 caracteres):`);
+            if (!reason || reason.trim().length < 3) { notify("Exclusão cancelada: motivo obrigatório.", true); return; }
+            try {
+                await request(`/assets/${archive.dataset.archiveAsset}/archive`, { method: "POST", body: JSON.stringify(reason.trim()) });
+                notify("Registro excluído logicamente.");
+                tab = "assets";
+                await render();
+            } catch (e) { notify(e.message, true); }
+            return;
+        }
+        const restore = event.target.closest("[data-restore-asset]");
+        if (restore) {
+            const name = restore.dataset.name || "equipamento";
+            const reason = window.prompt(`Restaurar "${name}"?\nVerifica unicidade de código/placa ativos.\nInforme o motivo:`);
+            if (!reason || reason.trim().length < 3) { notify("Restauração cancelada: motivo obrigatório.", true); return; }
+            try {
+                await request(`/assets/${restore.dataset.restoreAsset}/restore`, { method: "POST", body: JSON.stringify(reason.trim()) });
+                notify("Registro restaurado.");
+                tab = "assets";
+                await render();
             } catch (e) { notify(e.message, true); }
             return;
         }

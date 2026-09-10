@@ -22,7 +22,6 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
 
         return database.InTenantTransactionAsync(async (connection, transaction) =>
         {
-<<<<<<< HEAD
             LivestockRules.EnsureNoSelfParent(animal.Id, command.MotherId, command.FatherId);
             LivestockRules.EnsureDistinctParents(command.MotherId, command.FatherId);
             var duplicated = await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
@@ -42,36 +41,24 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
                     ?? throw new NotFoundException("Grupo", herdId);
                 LivestockRules.PreventDoubleCount(mode, true);
             }
-
-=======
             await ValidateRegistrationReferencesAsync(connection, transaction, command, cancellationToken).ConfigureAwait(false);
->>>>>>> b310c3827c606181d79abc2d8d710c9b0f35295d
             await connection.ExecuteAsync(new CommandDefinition(
                 """
                 insert into agro360.livestock_animals
                     (id, tenant_id, farm_id, herd_id, tag, rfid, species, breed, sex,
-<<<<<<< HEAD
                      birth_date, birth_date_estimated, mother_id, father_id, status, category,
-                     origin_type, origin_notes, notes, paddock_id, facility_id,
+                     origin, origin_type, origin_notes, notes, paddock_id, facility_id,
                      created_at, created_by, version)
                 values
                     (@Id, @TenantId, @FarmId, @HerdId, @Tag, @Rfid, @Species, @Breed, @Sex,
                      @BirthDate, @BirthDateEstimated, @MotherId, @FatherId, 1, @Category,
-                     @OriginType, @OriginNotes, @Notes, @PaddockId, @FacilityId,
+                     @Origin, @OriginType, @OriginNotes, @Notes, @PaddockId, @FacilityId,
                      now(), @CreatedBy, 1);
 
                 insert into agro360.livestock_animal_identifiers
                     (id, tenant_id, animal_id, kind, value, assigned_on, created_by)
                 values
                     (@IdentId, @TenantId, @Id, 'TAG', @Tag, @BirthDate, @CreatedBy);
-=======
-                     birth_date, mother_id, father_id, category, birth_date_estimated, origin, notes,
-                     status, created_at, created_by, version)
-                values
-                    (@Id, @TenantId, @FarmId, @HerdId, @Tag, @Rfid, @Species, @Breed, @Sex,
-                     @BirthDate, @MotherId, @FatherId, @Category, @BirthDateEstimated, @Origin, @Notes,
-                     1, now(), @CreatedBy, 1);
->>>>>>> b310c3827c606181d79abc2d8d710c9b0f35295d
 
                 insert into agro360.livestock_animal_events
                     (id, tenant_id, animal_id, event_type, occurred_on, data, created_at, created_by)
@@ -92,22 +79,16 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
                     Breed = Guard.Required(command.Breed, nameof(command.Breed), 80),
                     animal.Sex,
                     animal.BirthDate,
-                    command.BirthDateEstimated,
+                    BirthDateEstimated = command.BirthDateEstimated,
                     command.MotherId,
                     command.FatherId,
-<<<<<<< HEAD
-                    command.Category,
+                    Category = string.IsNullOrWhiteSpace(command.Category) ? null : command.Category.Trim(),
+                    Origin = string.IsNullOrWhiteSpace(command.Origin) ? null : command.Origin.Trim(),
                     OriginType = string.IsNullOrWhiteSpace(command.OriginType) ? null : command.OriginType.ToUpperInvariant(),
-                    command.OriginNotes,
-                    command.Notes,
+                    OriginNotes = string.IsNullOrWhiteSpace(command.OriginNotes) ? null : command.OriginNotes.Trim(),
+                    Notes = string.IsNullOrWhiteSpace(command.Notes) ? null : command.Notes.Trim(),
                     command.PaddockId,
                     command.FacilityId,
-=======
-                    Category = string.IsNullOrWhiteSpace(command.Category) ? null : command.Category.Trim(),
-                    command.BirthDateEstimated,
-                    Origin = string.IsNullOrWhiteSpace(command.Origin) ? null : command.Origin.Trim(),
-                    Notes = string.IsNullOrWhiteSpace(command.Notes) ? null : command.Notes.Trim(),
->>>>>>> b310c3827c606181d79abc2d8d710c9b0f35295d
                     CreatedBy = tenantContext.UserId,
                     IdentId = Guid.CreateVersion7(),
                     EventId = Guid.CreateVersion7()
@@ -437,17 +418,21 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
                   and (@FarmId is null or farm_id = @FarmId)
                   and (@Search is null or tag ilike '%' || @Search || '%' or rfid ilike '%' || @Search || '%');
 
-                select id, farm_id as FarmId, tag, rfid, species, breed, sex,
-                       birth_date as BirthDate,
-                       case status when 1 then 'ACTIVE' when 2 then 'QUARANTINE'
+                select a.id, a.farm_id as FarmId, a.tag, a.rfid, a.species, a.breed, a.sex,
+                       a.birth_date as BirthDate,
+                       case a.status when 1 then 'ACTIVE' when 2 then 'QUARANTINE'
                            when 3 then 'SOLD' when 4 then 'DEAD' when 6 then 'RESERVED' else 'SLAUGHTERED' end as Status,
-                       current_weight_kg as CurrentWeightKg, last_weight_date as LastWeightDate,
-                       withdrawal_until as WithdrawalUntil, version
-                from agro360.livestock_animals
-                where tenant_id = @TenantId and deleted_at is null
-                  and (@FarmId is null or farm_id = @FarmId)
-                  and (@Search is null or tag ilike '%' || @Search || '%' or rfid ilike '%' || @Search || '%')
-                order by tag
+                       a.current_weight_kg as CurrentWeightKg, a.last_weight_date as LastWeightDate,
+                       a.withdrawal_until as WithdrawalUntil, a.version,
+                       a.created_at as CreatedAt, cu.name as CreatedByName,
+                       a.updated_at as UpdatedAt, uu.name as UpdatedByName
+                from agro360.livestock_animals a
+                left join agro360.identity_users cu on cu.tenant_id=a.tenant_id and cu.id=a.created_by
+                left join agro360.identity_users uu on uu.tenant_id=a.tenant_id and uu.id=a.updated_by
+                where a.tenant_id = @TenantId and a.deleted_at is null
+                  and (@FarmId is null or a.farm_id = @FarmId)
+                  and (@Search is null or a.tag ilike '%' || @Search || '%' or a.rfid ilike '%' || @Search || '%')
+                order by a.tag
                 limit @PageSize offset @Offset;
                 """,
                 new

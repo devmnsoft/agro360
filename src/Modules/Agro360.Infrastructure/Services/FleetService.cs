@@ -2,6 +2,7 @@ using Agro360.Application.Contracts;
 using Agro360.Domain.Fleet;
 using Agro360.Infrastructure.Persistence;
 using Agro360.Multitenancy;
+using Agro360.SharedKernel;
 using Dapper;
 
 namespace Agro360.Infrastructure.Services;
@@ -44,8 +45,39 @@ from agro360.fleet_assets where tenant_id=@TenantId and deleted_at is null
         };
         return (IReadOnlyList<FleetLookup>)(await c.QueryAsync<FleetLookup>($"select id,name from {source} where tenant_id=@TenantId and {active} and (@Search is null or name ilike '%'||@Search||'%') order by name limit 50", new { tenant.TenantId, Search = search }, t)).ToArray();
     }, ct);
-    public Task<IReadOnlyList<FleetAsset>> AssetsAsync(string? search, string? status, int page, int pageSize, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => (IReadOnlyList<FleetAsset>)(await c.QueryAsync<FleetAsset>("select a.id,a.internal_code internalcode,a.name,t.name type,a.status,a.brand,a.model,a.plate,a.odometer,a.hour_meter hourmeter,p.name propertyname,cc.name costcentername from agro360.fleet_assets a join agro360.fleet_asset_types t on t.tenant_id=a.tenant_id and t.id=a.asset_type_id left join agro360.geo_farms p on p.tenant_id=a.tenant_id and p.id=a.property_id left join agro360.finance_cost_centers cc on cc.tenant_id=a.tenant_id and cc.id=a.cost_center_id where a.tenant_id=@TenantId and a.deleted_at is null and (@Search is null or a.name ilike '%'||@Search||'%' or a.internal_code ilike '%'||@Search||'%' or a.plate ilike '%'||@Search||'%') and (@Status is null or a.status=@Status) order by a.name limit @Take offset @Skip", Page(search, status, page, pageSize), t)).ToArray(), ct);
-    public Task<Guid> SaveAssetAsync(Guid? id, FleetAssetCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+        public Task<IReadOnlyList<FleetAsset>> AssetsAsync(string? search, string? status, int page, int pageSize, CancellationToken ct, bool includeDeleted = false) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        var sql = """
+            select a.id, a.internal_code internalcode, a.name, t.name type, a.status, a.brand, a.model, a.plate,
+                   a.odometer, a.hour_meter hourmeter, p.name propertyname, cc.name costcentername,
+                   a.created_at createdat, cu.name createdbyname, a.updated_at updatedat, uu.name updatedbyname,
+                   a.deleted_at deletedat, du.name deletedbyname, a.deletion_reason deletionreason
+            from agro360.fleet_assets a
+            join agro360.fleet_asset_types t on t.tenant_id=a.tenant_id and t.id=a.asset_type_id
+            left join agro360.geo_farms p on p.tenant_id=a.tenant_id and p.id=a.property_id
+            left join agro360.finance_cost_centers cc on cc.tenant_id=a.tenant_id and cc.id=a.cost_center_id
+            left join agro360.identity_users cu on cu.tenant_id=a.tenant_id and cu.id=a.created_by
+            left join agro360.identity_users uu on uu.tenant_id=a.tenant_id and uu.id=a.updated_by
+            left join agro360.identity_users du on du.tenant_id=a.tenant_id and du.id=a.deleted_by
+            where a.tenant_id=@TenantId
+              and (@IncludeDeleted or a.deleted_at is null)
+              and (@Search is null or a.name ilike '%'||@Search||'%' or a.internal_code ilike '%'||@Search||'%' or a.plate ilike '%'||@Search||'%')
+              and (@Status is null or a.status=@Status)
+            order by a.name
+            limit @Take offset @Skip
+            """;
+        var rows = await c.QueryAsync<FleetAsset>(sql, new
+        {
+            tenant.TenantId,
+            Search = search,
+            Status = status,
+            IncludeDeleted = includeDeleted,
+            Take = Math.Clamp(pageSize, 1, 100),
+            Skip = (Math.Max(page, 1) - 1) * Math.Clamp(pageSize, 1, 100)
+        }, t);
+        return (IReadOnlyList<FleetAsset>)rows.ToArray();
+    }, ct);
+public Task<Guid> SaveAssetAsync(Guid? id, FleetAssetCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
     {
         FleetRules.ValidateAsset(command.InternalCode, command.Status, command.Odometer, command.HourMeter);
         var cadastral = string.IsNullOrWhiteSpace(command.CadastralStatus) ? "ACTIVE" : command.CadastralStatus.Trim().ToUpperInvariant();
@@ -129,6 +161,28 @@ from agro360.fleet_assets where tenant_id=@TenantId and deleted_at is null
             }, t);
         return assetId;
     }, ct);
+    public Task SoftDeleteAssetAsync(Guid id, string reason, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        var activeBlocks = await c.ExecuteScalarAsync<bool>("select exists(select 1 from agro360.fleet_operational_blocks where tenant_id=@TenantId and asset_id=@Id and status='ACTIVE')", new { tenant.TenantId, Id = id }, t);
+        if (activeBlocks) throw new InvalidOperationException("Não é possível excluir um ativo com bloqueios operacionais ativos.");
+        var updated = await c.ExecuteAsync("update agro360.fleet_assets set deleted_at=now(), deleted_by=@UserId, deletion_reason=@Reason, updated_at=now(), updated_by=@UserId where tenant_id=@TenantId and id=@Id and deleted_at is null", new { tenant.TenantId, Id = id, tenant.UserId, Reason = Guard.Required(reason, nameof(reason), 240) }, t);
+        if (updated == 0) throw new KeyNotFoundException("Ativo não encontrado.");
+        await c.WriteAuditAsync(t, tenant, "soft-delete", "FleetAsset", id, null, new { reason }, ct);
+    }, ct);
+
+    public Task RestoreAssetAsync(Guid id, string reason, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        var row = await c.QuerySingleOrDefaultAsync<dynamic>("select internal_code, plate, deleted_at from agro360.fleet_assets where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id }, t);
+        if (row == null) throw new KeyNotFoundException("Ativo não encontrado.");
+        if (row.deleted_at == null) return;
+        var duplicate = await c.ExecuteScalarAsync<bool>(
+            "select exists(select 1 from agro360.fleet_assets where tenant_id=@TenantId and deleted_at is null and id<>@Id and (upper(internal_code)=upper(@InternalCode) or (plate is not null and upper(plate)=upper(@Plate))))",
+            new { tenant.TenantId, Id = id, InternalCode = (string)row.internal_code, Plate = (string)row.plate }, t);
+        if (duplicate) throw new InvalidOperationException("Não é possível restaurar pois já existe outro ativo com o mesmo código ou placa.");
+        await c.ExecuteAsync("update agro360.fleet_assets set deleted_at=null, deleted_by=null, deletion_reason=null, updated_at=now(), updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id, tenant.UserId }, t);
+        await c.WriteAuditAsync(t, tenant, "restore", "FleetAsset", id, null, new { reason = Guard.Required(reason, nameof(reason), 240) }, ct);
+    }, ct);
+
     public Task<Guid> CreateOperatorAsync(FleetOperatorCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { var id = Guid.NewGuid(); await c.ExecuteAsync("insert into agro360.fleet_operators(id,tenant_id,name,document,employment_type,role,status,property_id,license_categories,license_expires_on,notes,created_by,updated_by) values(@Id,@TenantId,@Name,@Document,@EmploymentType,@Role,@Status,@PropertyId,@LicenseCategories,@LicenseExpiresOn,@Notes,@UserId,@UserId)", new { id, tenant.TenantId, tenant.UserId, command.Name, command.Document, command.EmploymentType, command.Role, command.Status, command.PropertyId, command.LicenseCategories, command.LicenseExpiresOn, command.Notes }, t); return id; }, ct);
     public Task<Guid> CreateMaintenancePlanAsync(MaintenancePlanCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
     {

@@ -30,6 +30,8 @@ declarado ativo e os gates de banco/navegador permanecem obrigatórios.
 
 **Atualização frota/manutenção (2026-09-10):** AG-E8-003 passou a **implementado não validado** com página `/Fleet`, `IFleetOperationsService`, migration 069, seed Santa Clara e instalador consolidado corrigido (`platform_enable_tenant_rls` preservada). Restore/build Release e 124 testes existentes aprovados; instalação limpa SQL em cluster descartável **PASS**. Navegador, login real e concorrência de reserva **não** homologados.
 
+**Atualização merge + exclusão lógica (2026-09-10):** marcadores commitados reconciliados em pecuária/Migrator/SQL/docs; migration `070` (`7.0.0`) padroniza soft-delete/auditoria em `fleet_%`/`livestock_%`; UI de archive/restore e autoria nas listagens/detalhes. Build/testes 127/4; SQL limpo PASS com `7.0.0`. E2E autenticado e soft-delete fora desses módulos **não** homologados.
+
 **Atualização pós-PR #97 (2026-09-10):** AG-E1-004 permanece **implementado não validado**, agora com contrato explícito de Data Protection, validação de identidade/tenant/ID e provisionador PowerShell. AG-E5-001 permanece **parcial / implementado não validado**: fingerprint de idempotência, bloqueio de unidade incompatível, parcelas positivas e autorização específica de excesso estão na migration 067 e no serviço/controller. Quarentena, liberação única, estado agregado completo, reversão e homologação PostgreSQL continuam pendentes.
 
 ### Fatia verificada e lacunas prioritárias

@@ -245,13 +245,19 @@ public sealed class LivestockHerdService(
                        a.inactivated_reason as "inactivatedReason", a.reservation_id as "reservationId",
                        a.mother_id as "motherId", a.father_id as "fatherId", a.version,
                        h.name as "herdName", h.control_mode as "herdControlMode",
-                       f.name as "facilityName", p.name as "paddockName", farm.name as "farmName"
+                       f.name as "facilityName", p.name as "paddockName", farm.name as "farmName",
+                       a.created_at as "createdAt", cu.name as "createdByName",
+                       a.updated_at as "updatedAt", uu.name as "updatedByName",
+                       a.deleted_at as "deletedAt", du.name as "deletedByName", a.deletion_reason as "deletionReason"
                 from agro360.livestock_animals a
                 left join agro360.livestock_herds h on h.id=a.herd_id and h.tenant_id=a.tenant_id
                 left join agro360.livestock_facilities f on f.id=a.facility_id and f.tenant_id=a.tenant_id
                 left join agro360.livestock_paddocks p on p.id=a.paddock_id and p.tenant_id=a.tenant_id
                 join agro360.geo_farms farm on farm.id=a.farm_id and farm.tenant_id=a.tenant_id
-                where a.tenant_id=@TenantId and a.id=@Id and a.deleted_at is null
+                left join agro360.identity_users cu on cu.tenant_id=a.tenant_id and cu.id=a.created_by
+                left join agro360.identity_users uu on uu.tenant_id=a.tenant_id and uu.id=a.updated_by
+                left join agro360.identity_users du on du.tenant_id=a.tenant_id and du.id=a.deleted_by
+                where a.tenant_id=@TenantId and a.id=@Id
                 """,
                 new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
             if (animal is null) return null;
@@ -305,10 +311,21 @@ public sealed class LivestockHerdService(
                 order by assigned_on desc
                 """,
                 new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
+            var audit = await c.QueryAsync(new CommandDefinition(
+                """
+                select action, occurred_at as "occurredAt", u.name as "actorName"
+                from agro360.audit_logs l
+                left join agro360.identity_users u on u.tenant_id=l.tenant_id and u.id=l.user_id
+                where l.tenant_id=@TenantId and l.entity_type='Animal' and l.entity_id=@Id
+                order by l.occurred_at desc
+                limit 50
+                """,
+                new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
             return (object)new
             {
                 animal,
                 timeline = events,
+                audit,
                 weighings,
                 movements,
                 restrictions,
@@ -392,14 +409,42 @@ public sealed class LivestockHerdService(
             await c.ExecuteAsync(new CommandDefinition(
                 """
                 update agro360.livestock_animals
-                set deleted_at=now(), deleted_by=@UserId, inactivated_reason=@Reason, updated_at=now(), updated_by=@UserId, version=version+1
-                where tenant_id=@TenantId and id=@Id;
+                set deleted_at=now(), deleted_by=@UserId, deletion_reason=@Reason, updated_at=now(), updated_by=@UserId, version=version+1
+                where tenant_id=@TenantId and id=@Id and deleted_at is null;
                 insert into agro360.livestock_animal_events(id,tenant_id,animal_id,event_type,occurred_on,data,created_at,created_by)
                 values(@Event,@TenantId,@Id,'SOFT_DELETE',current_date,jsonb_build_object('reason',@Reason,'preservedHistory',@History),now(),@UserId)
                 """,
                 new { tenant.UserId, Reason = text, tenant.TenantId, Id = id, Event = Guid.CreateVersion7(), History = hasHistory },
                 t, cancellationToken: ct));
             await Audit(c, t, "soft-delete", "Animal", id, new { reason = text, hasHistory }, ct);
+        }, ct);
+    }
+
+    public Task RestoreAsync(Guid id, string reason, CancellationToken ct)
+    {
+        var text = Guard.Required(reason, nameof(reason), 240);
+        return Tx(async (c, t) =>
+        {
+            var animal = await LockAnimalAsync(c, t, id, ct, true);
+            if (animal.DeletedAt is null) return;
+            var duplicate = await c.ExecuteScalarAsync<bool>(new CommandDefinition(
+                "select exists(select 1 from agro360.livestock_animals where tenant_id=@TenantId and tag=@Tag and id<>@Id and deleted_at is null)",
+                new { tenant.TenantId, animal.Tag, Id = id }, t, cancellationToken: ct));
+            if (duplicate)
+                throw new ConflictException(
+                    "Não é possível restaurar pois já existe outro animal ativo com a mesma identificação.",
+                    "livestock.restore_conflict");
+            await c.ExecuteAsync(new CommandDefinition(
+                """
+                update agro360.livestock_animals
+                set deleted_at=null, deleted_by=null, deletion_reason=null, updated_at=now(), updated_by=@UserId, version=version+1
+                where tenant_id=@TenantId and id=@Id;
+                insert into agro360.livestock_animal_events(id,tenant_id,animal_id,event_type,occurred_on,data,created_at,created_by)
+                values(@Event,@TenantId,@Id,'RESTORE',current_date,jsonb_build_object('reason',@Reason),now(),@UserId)
+                """,
+                new { tenant.UserId, Reason = text, tenant.TenantId, Id = id, Event = Guid.CreateVersion7() },
+                t, cancellationToken: ct));
+            await Audit(c, t, "restore", "Animal", id, new { reason = text }, ct);
         }, ct);
     }
 
@@ -1533,15 +1578,15 @@ public sealed class LivestockHerdService(
             new { tenant.TenantId, Id = herdId }, t, cancellationToken: ct));
     }
 
-    private async Task<AnimalLockRow> LockAnimalAsync(NpgsqlConnection c, NpgsqlTransaction t, Guid id, CancellationToken ct)
+    private async Task<AnimalLockRow> LockAnimalAsync(NpgsqlConnection c, NpgsqlTransaction t, Guid id, CancellationToken ct, bool includeDeleted = false)
     {
         var animal = await c.QuerySingleOrDefaultAsync<AnimalLockRow>(new CommandDefinition(
-            """
+            $"""
             select id, farm_id as FarmId, herd_id as HerdId, tag, species, status, birth_date as BirthDate,
                    birth_date_estimated as BirthDateEstimated, paddock_id as PaddockId, facility_id as FacilityId,
-                   withdrawal_until as WithdrawalUntil, version
+                   withdrawal_until as WithdrawalUntil, version, deleted_at as DeletedAt
             from agro360.livestock_animals
-            where tenant_id=@TenantId and id=@Id and deleted_at is null
+            where tenant_id=@TenantId and id=@Id {(includeDeleted ? "" : "and deleted_at is null")}
             for update
             """,
             new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
@@ -1698,6 +1743,7 @@ public sealed class LivestockHerdService(
         public Guid? FacilityId { get; set; }
         public DateOnly? WithdrawalUntil { get; set; }
         public long Version { get; set; }
+        public DateTimeOffset? DeletedAt { get; set; }
     }
     private sealed class HandlingOrderRow
     {

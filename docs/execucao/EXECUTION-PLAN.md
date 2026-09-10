@@ -1,12 +1,6 @@
 # Plano de execução Agro360
 
-<<<<<<< HEAD
-> Atualização de 2026-09-10 (frota): AG-E8-003 recebeu o recorte operacional de equipamentos, medidores, preventiva, OS, disponibilidade, peças, abastecimento e custos (`/Fleet`, migration 069). Instalação limpa do SQL consolidado passou em cluster descartável; resta homologar login/navegador e jornadas autenticadas. Próximo recorte: logística com reservas/movimentos confiáveis e, depois, sincronização móvel (AG-E9). AG-E6-002 (pecuária) permanece implementado não validado em E2E. AG-E0-003 (`due_on`) permanece defeito conhecido. Estados e bloqueios ficam nos documentos canônicos `../EXECUTION-CHECKPOINT.md` e `../TRACEABILITY-MATRIX-v0.2.0.md`.
-=======
-> Atualização 2026-09-10: o reparo de código de AG-E0-003 foi implementado por migrations aditivas `006z`/`007z`, preservando 001/007. O gate PostgreSQL de instalação incremental continua obrigatório. Também foi alinhado o ID canônico `...003` da conta Santa Clara no provisionador. Após o gate, o próximo bloco é AG-E1-002 (MFA e assistência auditada), sem promover jornadas parciais por presença de camadas.
-
-> Atualização de 2026-09-10: o próximo gate é identidade/SaaS em PostgreSQL real (migration 067, provisionamento PowerShell/Bash, MFA após reinício, login/refresh e isolamento). Depois vêm quarentena/liberação/reversão de compras; somente então comercial e produção. Estados e bloqueios ficam nos documentos canônicos `../EXECUTION-CHECKPOINT.md` e `../TRACEABILITY-MATRIX-v0.2.0.md`.
->>>>>>> b310c3827c606181d79abc2d8d710c9b0f35295d
+> Atualização de 2026-09-10 (merge + soft-delete): reconciliados contratos/serviços de pecuária e frota com marcadores commitados; instalador SQL limpo PASS com versões 6.8.0/6.9.0/7.0.0; exclusão lógica e autoria aplicadas às telas de pecuária/frota. AG-E8-003 e AG-E6-002 seguem **implementados não validados em E2E autenticado**. AG-E0-003 permanece com gate incremental obrigatório (`due_on` / `006z`/`007z` quando aplicável). Próximo recorte: logística confiável e, depois, MFA/assistência (AG-E1-002) / sync móvel (AG-E9). Estados em `../EXECUTION-CHECKPOINT.md` e `../TRACEABILITY-MATRIX-v0.2.0.md`.
 
 Fonte aprovada: [plano mestre integral](AGRO360-MASTER-PLAN.md), incorporado em 2026-09-08. Requisitos não são evidências de implementação. Não reutilizar regras, namespaces ou diagnósticos do SIGOV-PLUS.
 

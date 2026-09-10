@@ -3,7 +3,26 @@ namespace Agro360.Application.Contracts;
 
 public sealed record FleetLookup(Guid Id, string Name);
 public sealed record FleetDashboard(int AvailableAssets, int OperatingAssets, int MaintenanceAssets, int UnavailableAssets, int OverdueMaintenances, int UpcomingMaintenances, int OpenWorkOrders, int CriticalWorkOrders, int OverdueWorkOrders, decimal MonthFuelQuantity, decimal MonthFuelCost, int OpenDowntimes, decimal DowntimeHours, decimal AvailabilityPercent, decimal TotalCost, int WaitingParts = 0, int ActiveBlocks = 0, int ActiveReservations = 0);
-public sealed record FleetAsset(Guid Id, string InternalCode, string Name, string Type, string Status, string? Brand, string? Model, string? Plate, decimal Odometer, decimal HourMeter, string? PropertyName, string? CostCenterName);
+public sealed record FleetAsset(
+    Guid Id,
+    string InternalCode,
+    string Name,
+    string Type,
+    string Status,
+    string? Brand,
+    string? Model,
+    string? Plate,
+    decimal Odometer,
+    decimal HourMeter,
+    string? PropertyName,
+    string? CostCenterName,
+    DateTimeOffset? CreatedAt = null,
+    string? CreatedByName = null,
+    DateTimeOffset? UpdatedAt = null,
+    string? UpdatedByName = null,
+    DateTimeOffset? DeletedAt = null,
+    string? DeletedByName = null,
+    string? DeletionReason = null);
 public sealed record FleetAssetCommand(
     [Required, MaxLength(40)] string InternalCode,
     [Required, MaxLength(160)] string Name,
@@ -53,10 +72,13 @@ public sealed record DowntimeCommand([Required] Guid AssetId, [Required] string 
 public interface IFleetService
 {
     Task<FleetDashboard> DashboardAsync(CancellationToken ct); Task<IReadOnlyList<FleetLookup>> LookupsAsync(string kind, string? search, CancellationToken ct);
-    Task<IReadOnlyList<FleetAsset>> AssetsAsync(string? search, string? status, int page, int pageSize, CancellationToken ct); Task<Guid> SaveAssetAsync(Guid? id, FleetAssetCommand command, CancellationToken ct);
+    Task<IReadOnlyList<FleetAsset>> AssetsAsync(string? search, string? status, int page, int pageSize, CancellationToken ct, bool includeDeleted = false);
+    Task<Guid> SaveAssetAsync(Guid? id, FleetAssetCommand command, CancellationToken ct);
+    Task SoftDeleteAssetAsync(Guid id, string reason, CancellationToken ct); Task RestoreAssetAsync(Guid id, string reason, CancellationToken ct);
     Task<Guid> CreateOperatorAsync(FleetOperatorCommand command, CancellationToken ct); Task<Guid> CreateMaintenancePlanAsync(MaintenancePlanCommand command, CancellationToken ct);
     Task<IReadOnlyList<WorkOrder>> WorkOrdersAsync(string? search, string? status, int page, int pageSize, CancellationToken ct); Task<Guid> OpenWorkOrderAsync(WorkOrderCommand command, CancellationToken ct); Task TransitionWorkOrderAsync(Guid id, WorkOrderTransitionCommand command, bool meterOverride, CancellationToken ct);
-    Task<Guid> RefuelAsync(RefuelingCommand command, bool meterOverride, CancellationToken ct); Task<Guid> OpenDowntimeAsync(DowntimeCommand command, CancellationToken ct);
+    Task<Guid> RefuelAsync(RefuelingCommand command, bool meterOverride, CancellationToken ct);
+    Task<Guid> OpenDowntimeAsync(DowntimeCommand command, CancellationToken ct);
 }
 
 public sealed record MeterReadingCommand(Guid AssetId, string MeterKind, DateTimeOffset OccurredAt, decimal PhysicalValue, string Unit, string Origin, bool IsReset, Guid? ResponsibleId, string? Justification, string? IdempotencyKey);

@@ -72,6 +72,8 @@ public sealed class Livestock360Controller(ILivestock360Service service, ILivest
     public async Task<IActionResult> Inactivate(Guid id, InactivateAnimalCommand x, CancellationToken ct) { await herd.InactivateAsync(id, x, ct); return NoContent(); }
     [HttpPost("api/livestock/animals/{id:guid}/archive"), Authorize(Policy = Permissions.LivestockWrite)]
     public async Task<IActionResult> Archive(Guid id, InactivateAnimalCommand x, CancellationToken ct) { await herd.SoftDeleteAsync(id, x.Reason, ct); return NoContent(); }
+    [HttpPost("api/livestock/animals/{id:guid}/restore"), Authorize(Policy = Permissions.LivestockWrite)]
+    public async Task<IActionResult> Restore(Guid id, InactivateAnimalCommand x, CancellationToken ct) { await herd.RestoreAsync(id, x.Reason, ct); return NoContent(); }
 
     [HttpGet("api/livestock/movements"), Authorize(Policy = Permissions.LivestockRead)]
     public Task<IReadOnlyList<dynamic>> Movements(Guid? farmId, string? kind, DateOnly? from, DateOnly? to, CancellationToken ct) =>

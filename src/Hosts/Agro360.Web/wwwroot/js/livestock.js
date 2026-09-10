@@ -110,15 +110,18 @@
                 return;
             }
             if (tab === "animals") {
-                const page = await request(`/api/v1/livestock/animals?pageSize=50${farmId() ? `&farmId=${farmId()}` : ""}${searchValue()}`);
-                content.innerHTML = table(["Brinco", "Espécie", "Situação", "Peso", "Carência", "Ações"],
+                const page = await request(`/api/livestock/animals?pageSize=50${farmId() ? `&farmId=${farmId()}` : ""}${searchValue()}`);
+                content.innerHTML = table(["Brinco", "Espécie", "Situação", "Criado por", "Criado em", "Alterado por", "Peso", "Ações"],
                     (page.items ?? []).map(item => `<tr>
                         <td><button type="button" data-open-animal="${item.id}">${escapeHtml(item.tag)}</button></td>
                         <td>${escapeHtml(item.species)} · ${escapeHtml(item.breed)}</td>
                         <td>${statusPill(item.status)}</td>
+                        <td>${escapeHtml(item.createdByName || "—")}</td>
+                        <td>${item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : "—"}</td>
+                        <td>${escapeHtml(item.updatedByName || "—")}</td>
                         <td>${item.currentWeightKg ?? "—"} kg</td>
-                        <td>${item.withdrawalUntil ?? "—"}</td>
-                        <td><button type="button" data-open-animal="${item.id}">Detalhe</button></td>
+                        <td><button type="button" data-open-animal="${item.id}">Detalhe</button>
+                            ${canWrite() ? `<button type="button" class="danger" data-archive-animal="${item.id}" data-name="${escapeHtml(item.tag)}">Excluir</button>` : ""}</td>
                     </tr>`), "Nenhum animal autorizado neste filtro.");
                 return;
             }
@@ -367,13 +370,55 @@
         if (animal) {
             try {
                 const detail = await request(`/api/livestock/animals/${animal.dataset.openAnimal}/detail`);
-                content.innerHTML = `<article class="preview-box"><h3>${escapeHtml(detail.animal.tag)}</h3>
-                    <p>Situação ${escapeHtml(detail.animal.status)}. Origem ${escapeHtml(detail.animal.originType || "não informada")}. Nascimento ${detail.animal.birthDateEstimated ? "estimado" : "conhecido"} em ${escapeHtml(detail.animal.birthDate)}.</p>
-                    <p>Propriedade ${escapeHtml(detail.animal.farmName)}. Grupo ${escapeHtml(detail.animal.herdName || "—")} (${escapeHtml(detail.animal.herdControlMode || "—")}).</p>
+                const a = detail.animal;
+                const auditRows = (detail.audit ?? []).map(item => `<tr><td>${escapeHtml(item.occurredAt)}</td><td>${escapeHtml(item.action)}</td><td>${escapeHtml(item.actorName || "—")}</td></tr>`).join("") || `<tr><td colspan="3">Sem eventos de auditoria.</td></tr>`;
+                content.innerHTML = `<article class="preview-box"><h3>${escapeHtml(a.tag)}</h3>
+                    <p>Situação ${a.deletedAt ? statusPill("EXCLUIDO") : statusPill(a.status)}. Origem ${escapeHtml(a.originType || "não informada")}. Nascimento ${a.birthDateEstimated ? "estimado" : "conhecido"} em ${escapeHtml(a.birthDate)}.</p>
+                    <p>Propriedade ${escapeHtml(a.farmName)}. Grupo ${escapeHtml(a.herdName || "—")} (${escapeHtml(a.herdControlMode || "—")}).</p>
+                    <section class="history-box">
+                        <h4>Histórico do registro</h4>
+                        <p>Criado por ${escapeHtml(a.createdByName || "legado/desconhecido")} em ${a.createdAt ? new Date(a.createdAt).toLocaleString("pt-BR") : "—"}.</p>
+                        <p>Última alteração por ${escapeHtml(a.updatedByName || "—")} em ${a.updatedAt ? new Date(a.updatedAt).toLocaleString("pt-BR") : "—"}.</p>
+                        ${a.deletedAt ? `<p>Excluído logicamente por ${escapeHtml(a.deletedByName || "—")} em ${new Date(a.deletedAt).toLocaleString("pt-BR")}. Motivo: ${escapeHtml(a.deletionReason || "—")}.</p>` : ""}
+                        <div class="table-wrap"><table><thead><tr><th>Quando</th><th>Ação</th><th>Responsável</th></tr></thead><tbody>${auditRows}</tbody></table></div>
+                    </section>
                     <h4>Linha do tempo</h4>${(detail.timeline ?? []).map(item => `<p>${escapeHtml(item.occurredOn || item.occurred_on)} · ${escapeHtml(item.eventType || item.event_type)}</p>`).join("") || "<p>Sem eventos.</p>"}
                     <h4>Pesagens</h4>${(detail.weighings ?? []).map(item => `<p>${escapeHtml(item.weighedAt || item.weighed_at)} · ${item.weightKg || item.weight_kg} kg</p>`).join("") || "<p>Sem pesagens comparáveis.</p>"}
+                    ${canWrite()
+                        ? (a.deletedAt
+                            ? `<button type="button" data-restore-animal="${a.id}" data-name="${escapeHtml(a.tag)}">Restaurar</button>`
+                            : `<button type="button" class="danger" data-archive-animal="${a.id}" data-name="${escapeHtml(a.tag)}">Excluir logicamente</button>`)
+                        : ""}
                     <button type="button" id="back-list">Voltar à lista</button></article>`;
                 document.getElementById("back-list").addEventListener("click", render);
+            } catch (error) { notify(error.message, true); }
+            return;
+        }
+        const archiveAnimal = event.target.closest("[data-archive-animal]");
+        if (archiveAnimal) {
+            const reason = window.prompt(`Excluir logicamente "${archiveAnimal.dataset.name}"?\nHistórico e eventos serão preservados.\nInforme o motivo:`);
+            if (!reason || reason.trim().length < 3) { notify("Exclusão cancelada: motivo obrigatório.", true); return; }
+            try {
+                await request(`/api/livestock/animals/${archiveAnimal.dataset.archiveAnimal}/archive`, {
+                    method: "POST",
+                    body: JSON.stringify({ reason: reason.trim() })
+                });
+                notify("Registro excluído logicamente.");
+                await render();
+            } catch (error) { notify(error.message, true); }
+            return;
+        }
+        const restoreAnimal = event.target.closest("[data-restore-animal]");
+        if (restoreAnimal) {
+            const reason = window.prompt(`Restaurar "${restoreAnimal.dataset.name}"?\nVerifica unicidade do brinco ativo.\nInforme o motivo:`);
+            if (!reason || reason.trim().length < 3) { notify("Restauração cancelada: motivo obrigatório.", true); return; }
+            try {
+                await request(`/api/livestock/animals/${restoreAnimal.dataset.restoreAnimal}/restore`, {
+                    method: "POST",
+                    body: JSON.stringify({ reason: reason.trim() })
+                });
+                notify("Registro restaurado.");
+                await render();
             } catch (error) { notify(error.message, true); }
             return;
         }

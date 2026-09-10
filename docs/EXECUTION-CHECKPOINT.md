@@ -1,6 +1,38 @@
 # Checkpoint de execução do plano mestre
 
-<<<<<<< HEAD
+## Correção de merge + exclusão lógica (pecuária/frota) — 2026-09-10
+
+Estado observado: branch `main`, HEAD `bf13d55` alinhado a `origin/main`. **Não havia merge/rebase Git ativo** (`git ls-files -u` vazio), porém marcadores `<<<<<<<`/`=======`/`>>>>>>>` estavam **commitados** em contratos/serviços pecuários, Migrator e no instalador SQL/documentação. Working tree reconciliada sem `git reset --hard` e **sem commit** (autorização explícita).
+
+### Causas e reconciliação
+
+| Sintoma | Causa | Resolução |
+|---|---|---|
+| CS8300 / contratos quebrados | Marcadores entre pecuária operacional e fundação | União de `OriginType`/`OriginNotes`/`PaddockId`/`FacilityId` com `Origin`/`BirthDateEstimated`; validações de ambos os lados |
+| CS8999 / SQL cortado | Literal quebrada pelos marcadores | SQL único com parâmetros completos, incluindo `BirthDateEstimated` |
+| Tipos de frota “ausentes” | Confusão pós-merge | Confirmados `IFleetOperationsService`, comandos e DI |
+| CS0103 `Guard` | Soft-delete sem `using Agro360.SharedKernel` | Using adicionado |
+| Full SQL / docs com marcadores | Merge commitado incompleto | HEAD operacional preservado; colunas aditivas `origin`/`internal_identifier`; bloco incoming alternativo (COLLECTIVE/locations) descartado do consolidado por não ser o modelo do código atual |
+| Seed `internal_identifier` NOT NULL | Fundação forçava NOT NULL antes do seed | Coluna permanece nullable no instalador; índice único parcial |
+
+### Exclusão lógica e auditoria
+
+- Migration `070_audit_soft_delete.sql` (`7.0.0`): colunas de auditoria/exclusão em `fleet_%` e `livestock_%`; índices únicos ativos; `REVOKE DELETE/TRUNCATE` em `audit_logs` para `agro360_app` quando existir.
+- Frota/pecuária: archive/restore com motivo, sem apagar histórico; restauração valida unicidade; listagens com autoria; detalhe com timeline de `audit_logs`.
+- `deleted_at` é a fonte única de exclusão lógica. Cancelamento/estorno operacional **não** é substituído por soft-delete.
+
+### Evidências
+
+| Área | Resultado |
+|---|---|
+| Build Release | 0 avisos / 0 erros |
+| Testes | 127 aprovados, 4 ignorados |
+| JS | `node --check` fleet.js e livestock.js OK |
+| SQL limpo + reexecução | **PASS** `artifacts/fleet-sql-d546c7b31e034946beb900dca7d97982` (`CHECK 4\|2\|2\|2\|3` com `7.0.0`) |
+| Navegador autenticado / DELETE físico pela role app | **não executados** |
+
+Pendências: E2E login/jornadas; AG-E0-003 incremental; soft-delete fora de pecuária/frota; gate `006z`/`007z` se presente no histórico remoto.
+
 ## Incremento frota / manutenção / abastecimento — 2026-09-10
 
 Estado observado: branch `main`, HEAD `b6bfd4d` alinhado a `origin/main`. Alterações locais de pecuária (068) e frota (069) preservadas junto com `database/maintenance/provision-homologation-access.sql` e `scripts/provision-homologation-local.ps1`. Nenhum reset, commit, push ou PR nesta entrega.
@@ -58,17 +90,14 @@ Não homologado: login, MFA, jornadas no navegador, concorrência real de reserv
 ### Continuidade
 
 Próximo recorte operacional, preservando dependências: manutenção de equipamentos, logística e sincronização móvel (AG-E8/AG-E9), sem reabrir o modelo de rebanho. AG-E0-003 (migration 007 `due_on`) permanece com defeito conhecido e fora deste incremento.
-=======
+
 ## Incremento E0 — atualização incremental e correção da fixture — 2026-09-10
 
-Baseline confirmado: branch `work`, HEAD inicial `b6bfd4d` (merge do PR #98), sem alterações locais e com `001eadf` posterior à referência `38bf393` do PR #97. Não há `AGENTS.md` no repositório ou em seu diretório pai.
+Baseline histórico (outro ambiente): branch `work`, HEAD inicial `b6bfd4d` (merge do PR #98). Relato preservado do lado remoto do merge:
 
-- **AG-E0-003 implementado sem homologação:** as migrations novas `006z`/`007z` resolvem a colisão entre o formato de `finance.receivables` publicado na 001 e o formato esperado pela 007 sem alterar os arquivos publicados. A tabela antiga é preservada, títulos positivos são migrados de modo reexecutável e títulos zero permanecem no arquivo por violarem o novo invariante. Instalação/upgrade PostgreSQL ainda precisa ser executado em ambiente com `psql`/servidor.
-- **AG-E1-004 corrigido sem homologação:** o provisionador comparava a conta Santa Clara com o ID `...002`, embora o instalador e o próprio upsert usem `...003`; a validação de identidade e a proteção contra ocupação do ID agora usam a fixture canônica.
-- **Classificação das jornadas:** Administração MNSOFT, Administração do Cliente, contratação modular, compras/recebimento, comercial/entrega e produção permanecem **parciais**; estoque, financeiro, CRM e qualidade permanecem **implementados sem homologação** como discriminado na matriz. Nenhuma jornada foi promovida a homologada neste ambiente.
-
-Próximo passo concreto: executar `verify-e0.ps1 -CheckMigrations` em PostgreSQL descartável, incluindo base somente com 001 e registros legados; depois fechar AG-E1-002 (MFA e acesso assistido auditado) antes de ampliar jornadas operacionais.
->>>>>>> b310c3827c606181d79abc2d8d710c9b0f35295d
+- **AG-E0-003 implementado sem homologação:** migrations aditivas `006z`/`007z` (quando presentes) resolvem a colisão `due_date`/`due_on` sem alterar 001/007 publicadas. Gate PostgreSQL incremental continua obrigatório.
+- **AG-E1-004:** fixture Santa Clara alinhada ao ID `...003` no provisionador.
+- Nenhuma jornada foi promovida a homologada apenas por esse relato.
 
 ## Incremento de estabilização pós-PR #97 — 2026-09-10
 
