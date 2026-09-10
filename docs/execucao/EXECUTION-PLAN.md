@@ -1,5 +1,7 @@
 # Plano de execução Agro360
 
+> Atualização 2026-09-10: o reparo de código de AG-E0-003 foi implementado por migrations aditivas `006z`/`007z`, preservando 001/007. O gate PostgreSQL de instalação incremental continua obrigatório. Também foi alinhado o ID canônico `...003` da conta Santa Clara no provisionador. Após o gate, o próximo bloco é AG-E1-002 (MFA e assistência auditada), sem promover jornadas parciais por presença de camadas.
+
 > Atualização de 2026-09-10: o próximo gate é identidade/SaaS em PostgreSQL real (migration 067, provisionamento PowerShell/Bash, MFA após reinício, login/refresh e isolamento). Depois vêm quarentena/liberação/reversão de compras; somente então comercial e produção. Estados e bloqueios ficam nos documentos canônicos `../EXECUTION-CHECKPOINT.md` e `../TRACEABILITY-MATRIX-v0.2.0.md`.
 
 Fonte aprovada: [plano mestre integral](AGRO360-MASTER-PLAN.md), incorporado em 2026-09-08. Requisitos não são evidências de implementação. Não reutilizar regras, namespaces ou diagnósticos do SIGOV-PLUS.
