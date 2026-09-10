@@ -1,5 +1,6 @@
 # Checkpoint de execução do plano mestre
 
+<<<<<<< HEAD
 ## Incremento frota / manutenção / abastecimento — 2026-09-10
 
 Estado observado: branch `main`, HEAD `b6bfd4d` alinhado a `origin/main`. Alterações locais de pecuária (068) e frota (069) preservadas junto com `database/maintenance/provision-homologation-access.sql` e `scripts/provision-homologation-local.ps1`. Nenhum reset, commit, push ou PR nesta entrega.
@@ -57,6 +58,17 @@ Não homologado: login, MFA, jornadas no navegador, concorrência real de reserv
 ### Continuidade
 
 Próximo recorte operacional, preservando dependências: manutenção de equipamentos, logística e sincronização móvel (AG-E8/AG-E9), sem reabrir o modelo de rebanho. AG-E0-003 (migration 007 `due_on`) permanece com defeito conhecido e fora deste incremento.
+=======
+## Incremento E0 — atualização incremental e correção da fixture — 2026-09-10
+
+Baseline confirmado: branch `work`, HEAD inicial `b6bfd4d` (merge do PR #98), sem alterações locais e com `001eadf` posterior à referência `38bf393` do PR #97. Não há `AGENTS.md` no repositório ou em seu diretório pai.
+
+- **AG-E0-003 implementado sem homologação:** as migrations novas `006z`/`007z` resolvem a colisão entre o formato de `finance.receivables` publicado na 001 e o formato esperado pela 007 sem alterar os arquivos publicados. A tabela antiga é preservada, títulos positivos são migrados de modo reexecutável e títulos zero permanecem no arquivo por violarem o novo invariante. Instalação/upgrade PostgreSQL ainda precisa ser executado em ambiente com `psql`/servidor.
+- **AG-E1-004 corrigido sem homologação:** o provisionador comparava a conta Santa Clara com o ID `...002`, embora o instalador e o próprio upsert usem `...003`; a validação de identidade e a proteção contra ocupação do ID agora usam a fixture canônica.
+- **Classificação das jornadas:** Administração MNSOFT, Administração do Cliente, contratação modular, compras/recebimento, comercial/entrega e produção permanecem **parciais**; estoque, financeiro, CRM e qualidade permanecem **implementados sem homologação** como discriminado na matriz. Nenhuma jornada foi promovida a homologada neste ambiente.
+
+Próximo passo concreto: executar `verify-e0.ps1 -CheckMigrations` em PostgreSQL descartável, incluindo base somente com 001 e registros legados; depois fechar AG-E1-002 (MFA e acesso assistido auditado) antes de ampliar jornadas operacionais.
+>>>>>>> b310c3827c606181d79abc2d8d710c9b0f35295d
 
 ## Incremento de estabilização pós-PR #97 — 2026-09-10
 
@@ -202,3 +214,16 @@ O build `Debug` posterior encontrou a API do usuário já ativa no PID 17912 e n
 - O Migrator recusa Production, identifica host/porta/base/usuário sem revelar a connection string, valida os IDs/slugs das fixtures, usa o `PasswordHasher` real e Data Protection persistente, corrige os vínculos, revoga sessões e registra auditoria sem material secreto.
 - O SQL consolidado permanece sem credencial conhecida e a documentação contraditória foi removida. Reexecução ocorre somente por comando operacional explícito; nunca no startup/seed.
 - **Contas ainda não provisionadas neste ambiente:** não há SDK .NET nem cliente/servidor PostgreSQL instalados no contêiner. Retomada: `ConnectionStrings__Agro360='<segredo local>' ASPNETCORE_ENVIRONMENT=Homologation ./scripts/provision-homologation.sh`; depois iniciar API/Web e concluir login, troca, refresh e logout pelo navegador.
+
+## Incremento E6 — fundação de Pecuária Integrada — 2026-09-10
+
+Baseline: branch `work`, HEAD `770e1f9`, árvore inicialmente limpa. Não foram encontrados `AGENTS.md`. O ambiente desta execução não dispõe de `dotnet` nem `psql`, portanto código e banco permanecem **implementados sem homologação**.
+
+- **Utilizável após migration 068:** cadastro individual preserva categoria, indicação de nascimento estimado, origem e observações; valida referências do tenant e impede evento anterior ao nascimento. `GET /api/v1/livestock/animals/{id}` retorna o cadastro e timeline ordenada pela data operacional, combinando eventos, transferências, manejos e sanidade.
+- **Modelo criado:** localizações próprias; modo explícito de controle coletivo/individual; movimentos quantitativos auditáveis; histórico de identificadores; conciliação obrigatória antes da individualização. Lotes de estoque continuam independentes.
+- **Integrações preservadas:** tratamento existente segue consumindo estoque e apropriando custo na mesma transação; rastreabilidade existente liga produto, aplicação e animal. Não foi criado financeiro paralelo.
+- **Parciais:** cadastro/histórico, pesagem individual, tratamento/estoque/custo, propriedades/pastos e dashboard.
+- **Não iniciadas neste recorte:** ordem de manejo completa, pesagem coletiva, alimentação com devolução/perda, reservas pecuárias, saída comercial integrada, rateios e exports CSV.
+- **Sem homologação:** migration limpa/incremental, API/Web, Swagger, login/MFA, isolamento com role não proprietária, concorrência e navegador/mobile. Retomada: executar restore/build/test, `scripts/validate-full-sql.sh` e migration 068 em PostgreSQL descartável antes de ampliar os fluxos.
+
+Continuidade ordenada: homologar 068; implementar movimentação individual/coletiva com estorno; depois ordens de manejo e pesagens; só então alimentação/estoque, comercial/financeiro e custos. Manutenção de equipamentos, logística e sincronização móvel permanecem posteriores a essas dependências.

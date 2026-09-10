@@ -1,5 +1,9 @@
 # Decisões de execução
 
+## ADR-E0-07 — Ponte aditiva para formato financeiro publicado (2026-09-10)
+
+As migrations 001 e 007 permanecem imutáveis para preservar checksums. Uma migration ordenada antes da 007 renomeia somente a tabela `finance.receivables` com a assinatura legada; outra, imediatamente posterior, cria uma conta técnica por tenant e copia títulos positivos de forma idempotente para o formato Sprint 8. Registros antigos de valor zero ficam preservados na tabela legada, pois convertê-los criaria títulos inválidos. A ponte não declara upgrade homologado sem execução PostgreSQL descartável.
+
 ## ADR-E0-01 — Produto, precedência e controles
 
 Em 2026-09-08 foi confirmado `C:\MNSOFT\agro360`, remoto `https://github.com/devmnsoft/agro360.git`, HEAD inicial `4b650fb74fc6d73050a5d84d0540f3962bf75f8c`. O plano anexado é requisito aprovado, não certificação do estado. A cópia integral está em `AGRO360-MASTER-PLAN.md`. O texto original não precisa ser reenviado.
@@ -72,3 +76,9 @@ SuperAdmin e Santa Clara é uma operação consciente do Migrator, restrita a
 Development/Homologation, com segredos em variáveis locais e confirmação TOTP
 antes da ativação. A redefinição revoga sessões e exige troca no primeiro
 login; reexecução nunca é efeito colateral de seed ou inicialização.
+
+## ADR-E6-01 — Separação do controle pecuário e detalhe histórico (2026-09-10)
+
+O incremento mantém quatro identidades distintas: animal individual em `livestock_animals`, grupo operacional em `livestock_herds`, localização em `livestock_locations` e lote de insumo no estoque existente. Grupos declaram `COLLECTIVE` ou `INDIVIDUAL`; a passagem para indivíduos exige conciliação confirmada com quantidades iguais, em vez de criar cabeças implicitamente. Movimentos coletivos são eventos imutáveis com motivo, responsável, idempotência e eventual estorno referenciado.
+
+A data de nascimento continua obrigatória no contrato atual, mas pode ser marcada como estimada. Cadastro valida propriedade, grupo e filiação no tenant; pesagem e tratamento anteriores ao nascimento são rejeitados. O detalhe individual agrega fontes históricas sem apagar ou recalcular eventos. Esta fundação não declara implementadas as jornadas de ordens, reserva comercial, alimentação completa ou rateio.

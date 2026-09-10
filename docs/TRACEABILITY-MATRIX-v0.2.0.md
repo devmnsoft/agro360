@@ -1,5 +1,19 @@
 # Matriz de rastreabilidade v0.2.0
 
+## Atualização pós-PR #98 — 2026-09-10
+
+| Jornada | Estado | Camadas presentes | Lacunas para avanço |
+|---|---|---|---|
+| Administração MNSOFT | **parcial** | tela/API/serviço/tabelas SaaS e policies | MFA e assistência auditada persistente; uso/cobrança real; homologação de autorização por URL/export |
+| Administração do Cliente | **parcial** | usuários/perfis/convites em SaaS | limites delegáveis, unidade, último administrador, revogação de sessões e E2E multi-tenant |
+| Contratação modular | **parcial** | catálogo/planos/entitlements e cobrança interna | consolidar fontes, snapshot/dependências/transições e confirmação real de pagamento |
+| Compras → qualidade → estoque → financeiro | **parcial** | tela, endpoint, serviço transacional, persistência e permissões | inspeção/liberação/rejeição/estorno completos e homologação de concorrência/rollback |
+| Comercial → reserva → entrega → financeiro | **parcial** | pedido/preço/snapshot e camadas comerciais | reserva, entrega/devolução, recebível parcial e E2E concorrente |
+| Produção agroindustrial | **parcial** | ordem/apontamento/qualidade e persistência | roteiro versionado, reservas/consumo, lote idempotente, rendimento/custo e E2E |
+| Estoque, financeiro, CRM e qualidade isolados | **implementado sem homologação** | interface/API/serviço/persistência/autorização | integração ponta a ponta e execução em PostgreSQL/navegador |
+
+AG-E0-003 passa de **com defeito** para **implementado não validado**: `006z_finance_receivables_legacy_bridge.sql` preserva a tabela da 001 antes da 007 e `007z_finance_receivables_legacy_data.sql` migra títulos válidos sem modificar checksums publicados. AG-E1-004 permanece **implementado não validado**; foi corrigida a divergência do ID Santa Clara (`...003`) entre validação e upsert.
+
 ## Consolidação atual — plano mestre Agro360 (2026-09-08)
 
 Esta é a matriz canônica de execução; o nome do arquivo e as seções anteriores de sprint são preservados por compatibilidade. A seção atual prevalece sobre registros históricos, sem transformar resultados do banco descartável em certificação do ambiente do usuário. Fonte: [mestre integral](execucao/AGRO360-MASTER-PLAN.md); prioridades/aceites: [plano](execucao/EXECUTION-PLAN.md); execução: [checkpoint](EXECUTION-CHECKPOINT.md).
@@ -102,3 +116,14 @@ Esta seção registra maturidade observada em execução e prevalece sobre decla
 | Isolamento e seed | RLS, Dapper tenant-safe e testes PostgreSQL | 4 testes de integração ignorados | NÃO HOMOLOGADO |
 | Fluxos verticais | camadas declaradas nas linhas anteriores | sem E2E autenticado neste checkpoint | FOUNDATION |
 | Próxima entrega do plano mestre | não aplicável | anexo ausente na sessão/repositório | BLOQUEADO |
+
+## Atualização Pecuária Integrada — 2026-09-10
+
+| Jornada pecuária | Estado | Evidência presente | Gate pendente |
+|---|---|---|---|
+| Modelo animal/grupo/localização/insumo | **implementado sem homologação** | migration 068 separa entidades, modo de controle e conciliação | PostgreSQL limpo e incremental, concorrência |
+| Cadastro e histórico individual | **implementado sem homologação** | contrato enriquecido, validação tenant/filiação e detalhe com timeline | API/Swagger/navegador e troca auditada de identificador |
+| Pesagem individual e sanidade | **parcial** | idempotência, data de nascimento, estoque/custo/transação | correção auditada, limites configuráveis e restrições por finalidade |
+| Movimentações | **parcial** | transferência individual anterior e ledger coletivo na migration | serviços de grupo, retroatividade, ajuste/estorno E2E |
+| Manejos, alimentação, comercial e custos | **parcial** | eventos simples e integrações anteriores | ordens completas, devoluções/perdas, reserva/expedição e rateio |
+| Dashboard, relatórios e UX | **parcial** | dashboard consolidado anterior | data de referência histórica, drill-down completo, CSV e telas operacionais |

@@ -28,6 +28,14 @@ public sealed class LivestockController(ILivestockService livestock) : Controlle
         CancellationToken cancellationToken = default) =>
         livestock.ListAnimalsAsync(farmId, page, pageSize, search, cancellationToken);
 
+    [HttpGet("animals/{animalId:guid}")]
+    [Authorize(Policy = Permissions.LivestockRead)]
+    public async Task<IActionResult> GetAnimal(Guid animalId, CancellationToken cancellationToken)
+    {
+        var result = await livestock.GetAnimalDetailAsync(animalId, cancellationToken).ConfigureAwait(false);
+        return result is null ? NotFound() : Ok(result);
+    }
+
     [HttpPost("animals/{animalId:guid}/weights")]
     [Authorize(Policy = Permissions.LivestockWrite)]
     public Task<AnimalEventResult> Weigh(

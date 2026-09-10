@@ -121,18 +121,22 @@ static async Task ProvisionHomologationAsync(NpgsqlConnection connection, IConfi
         var expectedTenant = identity.Email.Equals("superadmin@mnsoft.com.br", StringComparison.OrdinalIgnoreCase)
             ? Guid.Parse("00000000-0000-0000-0000-000000000001") : Guid.Parse("30000000-0000-0000-0000-000000000001");
         var expectedId = identity.Email.Equals("superadmin@mnsoft.com.br", StringComparison.OrdinalIgnoreCase)
-            ? Guid.Parse("00000000-0000-0000-0000-000000000002") : Guid.Parse("30000000-0000-0000-0000-000000000002");
+            ? Guid.Parse("00000000-0000-0000-0000-000000000002") : Guid.Parse("30000000-0000-0000-0000-000000000003");
         if (identity.TenantId != expectedTenant || identity.Id != expectedId)
             throw new InvalidOperationException($"Identidade {identity.Email} não corresponde à fixture de homologação; nenhuma alteração foi aplicada.");
     }
 
     var occupiedFixtureIds = await connection.QueryAsync<ProvisionedIdentity>(
         "select id,tenant_id as TenantId,email from agro360.identity_users where id=any(@Ids) for update;",
+<<<<<<< HEAD
         new { Ids = HomologationFixtures.UserIds }, transaction);
+=======
+        new { Ids = new[] { Guid.Parse("00000000-0000-0000-0000-000000000002"), Guid.Parse("30000000-0000-0000-0000-000000000003") } }, transaction);
+>>>>>>> b310c3827c606181d79abc2d8d710c9b0f35295d
     if (occupiedFixtureIds.Any(identity =>
             (identity.Id == Guid.Parse("00000000-0000-0000-0000-000000000002") &&
              (!identity.Email.Equals("superadmin@mnsoft.com.br", StringComparison.OrdinalIgnoreCase) || identity.TenantId != Guid.Parse("00000000-0000-0000-0000-000000000001"))) ||
-            (identity.Id == Guid.Parse("30000000-0000-0000-0000-000000000002") &&
+            (identity.Id == Guid.Parse("30000000-0000-0000-0000-000000000003") &&
              (!identity.Email.Equals("admin@santaclara.agro360.local", StringComparison.OrdinalIgnoreCase) || identity.TenantId != Guid.Parse("30000000-0000-0000-0000-000000000001")))))
         throw new InvalidOperationException("Um ID reservado de homologação pertence a outra identidade; nenhuma alteração foi aplicada.");
 

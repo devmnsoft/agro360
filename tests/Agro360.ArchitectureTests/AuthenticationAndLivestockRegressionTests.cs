@@ -172,4 +172,32 @@ public sealed class AuthenticationAndLivestockRegressionTests
             Assert.Contains($"{{{field}}}", executor, StringComparison.Ordinal);
         Assert.DoesNotContain("Parameters", executor, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void IntegratedLivestockKeepsAnimalsGroupsLocationsAndStockLotsSeparate()
+    {
+        var migration = Read("database/migrations/068_integrated_livestock_foundation.sql");
+
+        Assert.Contains("livestock_animals", migration, StringComparison.Ordinal);
+        Assert.Contains("livestock_herds", migration, StringComparison.Ordinal);
+        Assert.Contains("livestock_locations", migration, StringComparison.Ordinal);
+        Assert.Contains("control_mode", migration, StringComparison.Ordinal);
+        Assert.DoesNotContain("inventory_stock_lots", migration, StringComparison.Ordinal);
+        Assert.Contains("livestock_individualization_reconciliations", migration, StringComparison.Ordinal);
+        Assert.Contains("collective_quantity = identified_quantity", migration, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnimalDetailIsTenantScopedAndCombinesAuditableSources()
+    {
+        var service = Read("src/Modules/Agro360.Infrastructure/Services/LivestockService.cs");
+
+        Assert.Contains("GetAnimalDetailAsync", service, StringComparison.Ordinal);
+        Assert.Contains("tenant_id=@TenantId and animal_id=@AnimalId", service, StringComparison.Ordinal);
+        Assert.Contains("'ANIMAL_EVENT' as Source", service, StringComparison.Ordinal);
+        Assert.Contains("'MOVEMENT' as Source", service, StringComparison.Ordinal);
+        Assert.Contains("'HANDLING' as Source", service, StringComparison.Ordinal);
+        Assert.Contains("'HEALTH' as Source", service, StringComparison.Ordinal);
+        Assert.Contains("order by OccurredOn desc", service, StringComparison.Ordinal);
+    }
 }
