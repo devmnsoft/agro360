@@ -1,5 +1,15 @@
 # Checkpoint de execução do plano mestre
 
+## Incremento E0 — atualização incremental e correção da fixture — 2026-09-10
+
+Baseline confirmado: branch `work`, HEAD inicial `b6bfd4d` (merge do PR #98), sem alterações locais e com `001eadf` posterior à referência `38bf393` do PR #97. Não há `AGENTS.md` no repositório ou em seu diretório pai.
+
+- **AG-E0-003 implementado sem homologação:** as migrations novas `006z`/`007z` resolvem a colisão entre o formato de `finance.receivables` publicado na 001 e o formato esperado pela 007 sem alterar os arquivos publicados. A tabela antiga é preservada, títulos positivos são migrados de modo reexecutável e títulos zero permanecem no arquivo por violarem o novo invariante. Instalação/upgrade PostgreSQL ainda precisa ser executado em ambiente com `psql`/servidor.
+- **AG-E1-004 corrigido sem homologação:** o provisionador comparava a conta Santa Clara com o ID `...002`, embora o instalador e o próprio upsert usem `...003`; a validação de identidade e a proteção contra ocupação do ID agora usam a fixture canônica.
+- **Classificação das jornadas:** Administração MNSOFT, Administração do Cliente, contratação modular, compras/recebimento, comercial/entrega e produção permanecem **parciais**; estoque, financeiro, CRM e qualidade permanecem **implementados sem homologação** como discriminado na matriz. Nenhuma jornada foi promovida a homologada neste ambiente.
+
+Próximo passo concreto: executar `verify-e0.ps1 -CheckMigrations` em PostgreSQL descartável, incluindo base somente com 001 e registros legados; depois fechar AG-E1-002 (MFA e acesso assistido auditado) antes de ampliar jornadas operacionais.
+
 ## Incremento de estabilização pós-PR #97 — 2026-09-10
 
 Estado observado: branch `work`, HEAD inicial `38bf393`. Não havia alterações locais. O ambiente não oferece `dotnet`, `pwsh` nem `psql`; acesso, banco e jornadas permanecem **implementados sem homologação**.
