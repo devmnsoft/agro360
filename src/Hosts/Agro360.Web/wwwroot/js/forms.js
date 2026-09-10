@@ -7,6 +7,8 @@ const copy={
 const helps={
 default:'Use esta tela para consultar e manter os dados autorizados do tenant ativo. Preencha os campos marcados como obrigatórios e use os seletores para localizar cadastros, sem digitar IDs técnicos. As ações disponíveis dependem do seu perfil e regras do módulo. Antes de salvar, revise os dados; cancelamentos e ações críticas pedem confirmação. Depois da conclusão, o registro é auditado e os indicadores relacionados são atualizados.',
 Agriculture:'Cadastre propriedades, produtores, talhões e safras do tenant ativo. Use os filtros para localizar registros; campos marcados são obrigatórios e alterações dependem da sua permissão.',
+livestock:'Gerencie rebanho, grupos, manejos, pesagens e restrições do cliente ativo. Use os seletores por nome; GUID não é informado. Ações críticas pedem confirmação e a trilha não é apagada.',
+fleet:'Gerencie equipamentos, leituras, preventiva, OS, peças e abastecimentos. Disponibilidade e bloqueios são explicados na tela; ações críticas pedem confirmação e preservam histórico.',
 Finance:'Consulte títulos e fluxo financeiro do tenant. Valores usam a cultura selecionada; baixar, cancelar ou alterar lançamentos exige permissão e confirmação.',
 Fiscal:'Emita e acompanhe documentos fiscais vinculados à operação real. Confira destinatário, impostos e totais antes de autorizar; rejeições não alteram estoque ou financeiro.',
 Production:'Planeje ordens e aponte produção e qualidade. Selecione cadastros do tenant; encerrar uma ordem impede novos apontamentos e exige confirmação.',

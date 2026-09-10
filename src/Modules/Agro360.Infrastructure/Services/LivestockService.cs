@@ -22,20 +22,50 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
 
         return database.InTenantTransactionAsync(async (connection, transaction) =>
         {
+            LivestockRules.EnsureNoSelfParent(animal.Id, command.MotherId, command.FatherId);
+            LivestockRules.EnsureDistinctParents(command.MotherId, command.FatherId);
+            var duplicated = await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
+                "select exists(select 1 from agro360.livestock_animals where tenant_id=@TenantId and lower(tag)=lower(@Tag) and deleted_at is null)",
+                new { animal.TenantId, animal.Tag },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+            if (duplicated)
+                throw new ConflictException("O identificador do animal deve ser único no cliente.", "livestock.tag_not_unique");
+            if (command.HerdId is Guid herdId)
+            {
+                var mode = await connection.ExecuteScalarAsync<string?>(new CommandDefinition(
+                    "select control_mode from agro360.livestock_herds where tenant_id=@TenantId and id=@HerdId and deleted_at is null",
+                    new { animal.TenantId, HerdId = herdId },
+                    transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false)
+                    ?? throw new NotFoundException("Grupo", herdId);
+                LivestockRules.PreventDoubleCount(mode, true);
+            }
+
             await connection.ExecuteAsync(new CommandDefinition(
                 """
                 insert into agro360.livestock_animals
                     (id, tenant_id, farm_id, herd_id, tag, rfid, species, breed, sex,
-                     birth_date, mother_id, father_id, status, created_at, created_by, version)
+                     birth_date, birth_date_estimated, mother_id, father_id, status, category,
+                     origin_type, origin_notes, notes, paddock_id, facility_id,
+                     created_at, created_by, version)
                 values
                     (@Id, @TenantId, @FarmId, @HerdId, @Tag, @Rfid, @Species, @Breed, @Sex,
-                     @BirthDate, @MotherId, @FatherId, 1, now(), @CreatedBy, 1);
+                     @BirthDate, @BirthDateEstimated, @MotherId, @FatherId, 1, @Category,
+                     @OriginType, @OriginNotes, @Notes, @PaddockId, @FacilityId,
+                     now(), @CreatedBy, 1);
+
+                insert into agro360.livestock_animal_identifiers
+                    (id, tenant_id, animal_id, kind, value, assigned_on, created_by)
+                values
+                    (@IdentId, @TenantId, @Id, 'TAG', @Tag, @BirthDate, @CreatedBy);
 
                 insert into agro360.livestock_animal_events
                     (id, tenant_id, animal_id, event_type, occurred_on, data, created_at, created_by)
                 values
                     (@EventId, @TenantId, @Id, 'REGISTRATION', @BirthDate,
-                     jsonb_build_object('tag', @Tag, 'species', @Species), now(), @CreatedBy);
+                     jsonb_build_object('tag', @Tag, 'species', @Species, 'originType', @OriginType,
+                         'birthDateEstimated', @BirthDateEstimated), now(), @CreatedBy);
                 """,
                 new
                 {
@@ -49,9 +79,17 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
                     Breed = Guard.Required(command.Breed, nameof(command.Breed), 80),
                     animal.Sex,
                     animal.BirthDate,
+                    command.BirthDateEstimated,
                     command.MotherId,
                     command.FatherId,
+                    command.Category,
+                    OriginType = string.IsNullOrWhiteSpace(command.OriginType) ? null : command.OriginType.ToUpperInvariant(),
+                    command.OriginNotes,
+                    command.Notes,
+                    command.PaddockId,
+                    command.FacilityId,
                     CreatedBy = tenantContext.UserId,
+                    IdentId = Guid.CreateVersion7(),
                     EventId = Guid.CreateVersion7()
                 },
                 transaction,
@@ -221,6 +259,20 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
                 throw new DomainException("O medicamento exige número de lote.", "agro360.inventory_lot_required");
             }
 
+            if (!string.IsNullOrWhiteSpace(command.LotNumber))
+            {
+                var lotStatus = await connection.ExecuteScalarAsync<string?>(new CommandDefinition(
+                    """
+                    select quality_status from agro360.inventory_stock_lots
+                    where tenant_id=@TenantId and warehouse_id=@WarehouseId and product_id=@ProductId and lot_number=@LotNumber
+                    """,
+                    new { tenantContext.TenantId, command.WarehouseId, command.ProductId, command.LotNumber },
+                    transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+                if (lotStatus is "BLOCKED" or "PENDING" or "REJECTED" or "QUARANTINE")
+                    throw new ConflictException("Produto bloqueado, em quarentena ou incompatível não pode ser consumido.", "agro360.inventory_lot_blocked");
+            }
+
             if (!string.Equals(balance.Unit, unit, StringComparison.OrdinalIgnoreCase))
             {
                 throw new DomainException("A unidade informada difere do saldo do produto.", "agro360.inventory_unit_mismatch");
@@ -364,7 +416,7 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
                 select id, farm_id as FarmId, tag, rfid, species, breed, sex,
                        birth_date as BirthDate,
                        case status when 1 then 'ACTIVE' when 2 then 'QUARANTINE'
-                           when 3 then 'SOLD' when 4 then 'DEAD' else 'SLAUGHTERED' end as Status,
+                           when 3 then 'SOLD' when 4 then 'DEAD' when 6 then 'RESERVED' else 'SLAUGHTERED' end as Status,
                        current_weight_kg as CurrentWeightKg, last_weight_date as LastWeightDate,
                        withdrawal_until as WithdrawalUntil, version
                 from agro360.livestock_animals

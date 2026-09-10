@@ -1,5 +1,63 @@
 # Checkpoint de execução do plano mestre
 
+## Incremento frota / manutenção / abastecimento — 2026-09-10
+
+Estado observado: branch `main`, HEAD `b6bfd4d` alinhado a `origin/main`. Alterações locais de pecuária (068) e frota (069) preservadas junto com `database/maintenance/provision-homologation-access.sql` e `scripts/provision-homologation-local.ps1`. Nenhum reset, commit, push ou PR nesta entrega.
+
+**AG-E8-003 avançado (implementado não validado em navegador/API autenticada).** A frota deixou de ser só KPI: há jornada utilizável em `/Fleet` (menu “Frota e Manutenção”), `IFleetOperationsService`/`FleetOperationsService`, evolução de `FleetService`/`FleetController`/`FleetRules`, migration `069_fleet_maintenance_operations.sql` e seed demonstrativo Santa Clara.
+
+- **Modelo:** situação cadastral ≠ status operacional ≠ ocupação na agenda. Placa e horímetro não são obrigatórios para implementos/estacionários. Inativação preserva OS, custos, abastecimentos e histórico.
+- **Jornadas no código:** cadastro com propriedade/locação/energia/entrada em operação; leituras com reinicialização explícita e idempotência; planos preventivos com política `FIRST_CRITERION`/`CALENDAR_FIXED`/`METER_FIXED` e avaliação sem duplicar OS; solicitação → OS → reserva/consumo/devolução de peças; apontamento de tempo; inspeção (reprovação mantém bloqueio); liberação só sem impedimento não dispensável; reserva de ativo com conflito; abastecimento interno (baixa estoque uma vez) e externo (sem baixa); custos com origem; CSV com proteção de fórmula.
+- **Correções desta rodada:** `OpenWorkOrder` grava `blocks_asset` e cria `fleet_operational_blocks`; cancelamento/conclusão liberam o bloqueio da OS e só tornam o ativo `AVAILABLE` se não houver outro impedimento; instalador consolidado deixou de dropar `platform_enable_tenant_rls` antes das seções 6.4.1/6.8.0/6.9.0.
+- **Demo Santa Clara:** SC-TR-01 disponível, SC-IMP-01 em manutenção, leituras, plano próximo do vencimento, solicitação corretiva, OS aguardando peça, OS com inspeção pendente, abastecimentos interno/externo, reserva agrícola afetada. Usuários/senhas/MFA não foram alterados.
+
+### Evidências desta máquina
+
+| Área | Resultado |
+|---|---|
+| Restore | `dotnet restore MNSOFT.Agro360.sln`: sucesso |
+| Build Release | `dotnet build -c Release --no-restore`: 0 avisos, 0 erros |
+| Testes | `dotnet test`: 128 descobertos; 124 aprovados; 4 ignorados (PostgreSQL `AGRO360_TEST_CONNECTION_STRING`); 0 falhas |
+| JS frota | `node --check src/Hosts/Agro360.Web/wwwroot/js/fleet.js`: sucesso |
+| PostgreSQL 18 | instalador limpo + reexecução em cluster descartável `artifacts/fleet-sql-b22cac1c6ec84eb5afffda77e42204de`: **PASS** (`CHECK 4\|2\|2\|2\|2` — tabelas frota, ativos SC, OS, abastecimentos, versões 6.8.0/6.9.0) |
+| Web HTTP `/Fleet` | host Release em loopback: **200** com marcadores `fleet-app`/`Como usar`/`fleet.js` (não substitui navegador autenticado) |
+| Navegador / login real / jornadas API autenticadas | **não executados neste incremento** |
+
+Não homologado: login, MFA, jornadas no navegador, reserva concorrente real, isolamento RLS com role de aplicação, upgrade incremental completo (AG-E0-003 `due_on` permanece). Compilação e inspeção estática não substituem E2E.
+
+### Continuidade
+
+Próximo recorte: logística (reservas/disponibilidade/movimentos confiáveis) e depois sincronização móvel com conflitos/replay controlados (AG-E8/AG-E9). Não introduzir edição offline de movimentos críticos sem essas garantias. AG-E0-003 permanece fora deste incremento.
+
+## Incremento pecuário integrado — 2026-09-10
+
+Estado observado: branch `main`, HEAD `b6bfd4d` alinhado a `origin/main`. Alterações locais preexistentes preservadas (`database/maintenance/provision-homologation-access.sql`, `scripts/provision-homologation-local.ps1`). Nenhum reset, commit, push ou PR nesta entrega.
+
+**AG-E6-002 avançado (implementado não validado em PostgreSQL/navegador).** A pecuária deixou de ser só KPI no dashboard: há página `/livestock`, contratos operacionais, migration `068_livestock_herd_operations.sql` e seed demonstrativo da Fazenda Santa Clara.
+
+- **Modelo:** animal identificado, lote de manejo, instalação/localização e lote de produto permanecem entidades distintas. Grupo `INDIVIDUAL` deriva cabeças dos animais; grupo `QUANTITY` movimenta quantidade e não recebe indivíduos sem conciliação explícita.
+- **Jornadas no código:** cadastro/histórico/troca de brinco; entrada/transferência interna/saída; ordens de manejo com população planejada congelada e execução parcial; pesagem individual e coletiva (sem peso fictício por cabeça); restrições com liberação criteriosa; alimentação com devolução que não rebaixa estoque duas vezes; reserva comercial ≠ saída física ≠ obrigação financeira (recebível em `finance_commercial_receivables`); custos rastreados; CSV filtrado com proteção de fórmula.
+- **SaaS:** rotas de escrita comercial usam `livestock.sell`; lookups pecuários não exigem `agriculture.read`; SuperAdmin não é promovido por payload.
+- **Demo Santa Clara:** animais SC-N-1001..1004, lote coletivo de 40 cabeças, duas instalações, compra, transferência interna, manejo parcial, pesagens em datas distintas, consumo de ração, restrição operacional identificada como demonstrativa (não é orientação veterinária) e reserva comercial. Usuários/senhas/MFA não foram alterados.
+
+### Evidências desta máquina
+
+| Área | Resultado |
+|---|---|
+| Restore | `dotnet restore MNSOFT.Agro360.sln`: sucesso |
+| Build Release | `dotnet build -c Release --no-restore`: 0 avisos, 0 erros |
+| Testes | `dotnet test`: 126 descobertos; 122 aprovados; 4 ignorados (PostgreSQL `AGRO360_TEST_CONNECTION_STRING`); 0 falhas |
+| JS pecuário | `node --check src/Hosts/Agro360.Web/wwwroot/js/livestock.js`: sucesso |
+| `git diff --check` | sem erro de espaço |
+| PostgreSQL 18 | `C:\Program Files\PowerShell\7\pwsh.exe -File scripts/verify-e0.ps1 -SkipBuild`: **PASS SQL fixture** no cluster `artifacts/e0-5e0bd13e60df4ab3aaa20bf3efc28c87` (instalador completo com 068). API não subiu: `ConnectionStrings:Agro360` e a chave legada `DefaultConnection` conflitam no ambiente Development desta máquina — falha pré-existente de configuração, não do SQL pecuário. |
+| Navegador / login real | **não executado neste incremento** |
+
+Não homologado: login, MFA, jornadas no navegador, concorrência real de reservas, isolamento RLS com role de aplicação. A instalação limpa do SQL consolidado (incluindo pecuária 068) passou no cluster descartável; a API isolada não foi exercitada por conflito de connection string no ambiente local.
+
+### Continuidade
+
+Próximo recorte operacional, preservando dependências: manutenção de equipamentos, logística e sincronização móvel (AG-E8/AG-E9), sem reabrir o modelo de rebanho. AG-E0-003 (migration 007 `due_on`) permanece com defeito conhecido e fora deste incremento.
+
 ## Incremento de estabilização pós-PR #97 — 2026-09-10
 
 Estado observado: branch `work`, HEAD inicial `38bf393`. Não havia alterações locais. O ambiente não oferece `dotnet`, `pwsh` nem `psql`; acesso, banco e jornadas permanecem **implementados sem homologação**.

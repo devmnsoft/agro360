@@ -1,0 +1,78 @@
+@page "/livestock"
+@model Agro360.Web.Pages.Livestock.IndexModel
+@{ ViewData["Title"] = "Pecuária"; }
+
+@section Styles { <link rel="stylesheet" href="~/css/livestock.css" asp-append-version="true" /> }
+
+<section class="page-content livestock-page" id="livestock-app">
+    <header class="page-heading">
+        <div>
+            <span class="eyebrow">Operação pecuária integrada</span>
+            <h1>Gestão do <span>rebanho</span></h1>
+            <p>Animais, grupos, instalações, manejos, pesagens, alimentação, restrições, comercialização e custos no mesmo contexto do cliente.</p>
+        </div>
+        <button class="primary-button" id="refresh" type="button">Atualizar</button>
+    </header>
+
+    <details class="screen-help contextual-help" open>
+        <summary>Como usar esta tela</summary>
+        <div class="livestock-help" id="tab-help">
+            <p><strong>Para que serve:</strong> acompanhar o rebanho na data de referência e executar a operação do dia.</p>
+            <p><strong>O que precisa estar cadastrado:</strong> propriedade, espécie/categoria, instalação ou piquete e responsável ativo.</p>
+            <p><strong>Como operar:</strong> escolha a aba, filtre pelo nome (nunca por GUID) e confirme ações críticas.</p>
+            <p><strong>O que muda:</strong> cada gravação gera histórico, pode movimentar estoque ou financeiro e respeita o isolamento do cliente.</p>
+            <p><strong>Como corrigir:</strong> troca de brinco, estorno auditado, devolução de alimento ou cancelamento de reserva vigente — a trilha não é apagada.</p>
+        </div>
+    </details>
+
+    <div class="livestock-metrics" id="metrics" aria-live="polite">
+        <article><small>Data de referência</small><strong id="kpi-date">—</strong></article>
+        <article><small>Animais no rebanho</small><strong id="kpi-animals">—</strong></article>
+        <article><small>Grupos ativos</small><strong id="kpi-herds">—</strong></article>
+        <article><small>Com restrição</small><strong id="kpi-restrictions">—</strong></article>
+        <article><small>Reservas comerciais</small><strong id="kpi-reservations">—</strong></article>
+        <article><small>Manejos pendentes</small><strong id="kpi-handlings">—</strong></article>
+    </div>
+
+    <nav class="livestock-tabs" aria-label="Áreas da pecuária">
+        <button type="button" data-tab="overview" class="active">Visão geral</button>
+        <button type="button" data-tab="animals">Rebanho</button>
+        <button type="button" data-tab="groups">Grupos e instalações</button>
+        <button type="button" data-tab="movements">Movimentações</button>
+        <button type="button" data-tab="handling">Manejos</button>
+        <button type="button" data-tab="weighings">Pesagens</button>
+        <button type="button" data-tab="feeding">Alimentação</button>
+        <button type="button" data-tab="restrictions">Restrições</button>
+        <button type="button" data-tab="commercial">Comercialização</button>
+        <button type="button" data-tab="costs">Custos</button>
+        <button type="button" data-tab="reports">Relatórios</button>
+    </nav>
+
+    <section class="toolbar">
+        <label>Buscar<input id="search" type="search" maxlength="120" placeholder="Nome, brinco ou grupo" autocomplete="off" /></label>
+        <label>Propriedade<select id="farm-filter"><option value="">Todas as autorizadas</option></select></label>
+        <button class="primary-button" id="primary-action" type="button">Novo registro</button>
+        <button class="secondary-button" id="export" type="button">Exportar CSV filtrado</button>
+    </section>
+
+    <section class="panel" id="content" aria-live="polite"><p class="empty-state">Carregando dados reais do rebanho…</p></section>
+    <p id="selection-count" class="selection-count" hidden>0 selecionados</p>
+</section>
+
+<dialog id="livestock-dialog" class="livestock-dialog" aria-labelledby="dialog-title">
+    <form id="livestock-form" novalidate>
+        <header>
+            <div><span class="eyebrow" id="dialog-eyebrow">Operação</span><h2 id="dialog-title">Novo registro</h2></div>
+            <button type="button" class="dialog-close" data-close aria-label="Fechar">×</button>
+        </header>
+        <div class="livestock-form-grid" id="dialog-fields"></div>
+        <p class="form-message" id="dialog-error" role="alert"></p>
+        <footer>
+            <button class="secondary-button" type="button" data-close>Cancelar</button>
+            <button class="primary-button" type="submit"><span>Salvar</span></button>
+        </footer>
+    </form>
+</dialog>
+
+<div id="livestock-toast" class="livestock-toast" hidden role="status"></div>
+<script src="~/js/livestock.js" asp-append-version="true"></script>

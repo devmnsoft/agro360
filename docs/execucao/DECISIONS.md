@@ -47,6 +47,24 @@ Preço comercial efetivo agora combina preço negociado e desconto explícito co
 
 Na produção, a existência da etapa deixou de depender de tupla/default e passou a usar read model anulável. A conclusão industrial avalia a situação efetiva do lote em `production_batches.quality_status`; uma aprovação histórica não libera lote bloqueado/reprovado depois. Ordem sem etapa crítica registrada não cria obrigação fictícia no modelo atual, mas o snapshot versionado de roteiro receita → ordem continua pendente.
 
+## ADR-E8-01 — Frota: cadastral ≠ operacional ≠ agenda (2026-09-10)
+
+Equipamentos usam um único cadastro (`fleet_assets`) compartilhado com produção/ordens de campo. Situação cadastral (`ACTIVE`/`INACTIVE`/baixa/venda), status operacional (`AVAILABLE`/`MAINTENANCE`/…) e ocupação na agenda (reservas) são conceitos distintos. Placa e medidores só se aplicam quando o tipo os possui.
+
+Bloqueio operacional (`fleet_operational_blocks`) é separado do estado da OS: nem toda solicitação impede uso; OS pausada pode manter indisponibilidade; conclusão/cancelamento da OS libera só o bloqueio daquela OS; liberação do ativo exige ausência de impedimento não dispensável. Inspeção reprovada com falha impeditiva recria/mantém bloqueio.
+
+Leituras preservam valor físico e acumulado operacional; reinicialização é evento explícito (`is_reset`), não redução silenciosa. Planos versionam a política aplicada; alterar plano não reescreve OS existentes. Abastecimento interno baixa estoque uma vez; externo não baixa. Peça removida não retorna como material novo. Custos carregam `origin_type`/`origin_id` para evitar duplicação compra/consumo/pagamento.
+
+Continuidade: antes de offline móvel, garantir reservas, disponibilidade e movimentos confiáveis (logística).
+
+## ADR-E6-01 — Controle do rebanho sem misturar entidades (2026-09-10)
+
+Animal identificado, lote de manejo, localização (pasto/piquete/curral/instalação) e lote de produto/insumo são tabelas distintas. Grupos `livestock_herds.control_mode` são `INDIVIDUAL` (cabeças derivadas dos animais) ou `QUANTITY` (saldo por quantidade). Atribuir animal a grupo coletivo é recusado; a passagem coletiva→individual exige conciliação com a mesma quantidade, sem criar cadastros artificiais.
+
+Saída comercial não usa transferência interna: reserva vigente → confirmação física → obrigação em `commercial_sales` + `finance_commercial_receivables`. Transferência só entre propriedades do mesmo tenant. Protocolos/doses não são inventados; a restrição demonstrativa da Santa Clara está marcada `demo_only` e o texto declara que não é orientação veterinária.
+
+Pesagem coletiva não gera pesos individuais. Correções e estornos preservam a trilha. CSV de exportação prefixa valores que planilhas interpretariam como fórmula.
+
 ## ADR-E1-06 — Credenciais demo por comando explícito e MFA confirmado
 
 Fixtures SQL não contêm credenciais utilizáveis. O provisionamento local de

@@ -36,6 +36,7 @@ public static class DependencyInjection
         services.AddScoped<IAgriculture360Service, Agriculture360Service>();
         services.AddScoped<ILivestockService, LivestockService>();
         services.AddScoped<ILivestock360Service, Livestock360Service>();
+        services.AddScoped<ILivestockHerdService, LivestockHerdService>();
         services.AddScoped<ICommercialService, CommercialService>();
         services.AddScoped<ICommercial360Service, Commercial360Service>();
         services.AddScoped<ICrmSaasService, CrmSaasService>();
@@ -72,6 +73,7 @@ public static class DependencyInjection
         services.AddScoped<ISupportCustomerSuccessService, SupportCustomerSuccessService>();
         services.AddScoped<ISstService, SstService>();
         services.AddScoped<IFleetService, FleetService>();
+        services.AddScoped<IFleetOperationsService, FleetOperationsService>();
         services.AddScoped<IProcurementService, ProcurementService>();
         services.AddScoped<IIndustrialProductionService, IndustrialProductionService>();
         services.AddScoped<IExportTradingService, ExportTradingService>();

@@ -12,7 +12,15 @@ public sealed record RegisterAnimalCommand(
     DateOnly BirthDate,
     Guid? HerdId,
     Guid? MotherId,
-    Guid? FatherId);
+    Guid? FatherId,
+    string? Category = null,
+    string? OriginType = null,
+    string? OriginNotes = null,
+    bool BirthDateEstimated = false,
+    string? Notes = null,
+    Guid? PaddockId = null,
+    Guid? FacilityId = null,
+    string? InternalIdentifier = null);
 
 public sealed record AnimalDto(
     Guid Id,
@@ -27,7 +35,16 @@ public sealed record AnimalDto(
     decimal? CurrentWeightKg,
     DateOnly? LastWeightDate,
     DateOnly? WithdrawalUntil,
-    long Version);
+    long Version,
+    Guid? HerdId = null,
+    string? Category = null,
+    Guid? PaddockId = null,
+    Guid? FacilityId = null,
+    string? OriginType = null,
+    bool BirthDateEstimated = false,
+    string? Notes = null,
+    long? InternalCode = null,
+    Guid? HandlingLotId = null);
 
 public sealed record WeighAnimalCommand(Guid AnimalId, decimal WeightKg, DateOnly MeasuredOn, string? Notes, string? IdempotencyKey);
 

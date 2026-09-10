@@ -8,7 +8,8 @@ public enum AnimalStatus
     Quarantine = 2,
     Sold = 3,
     Dead = 4,
-    Slaughtered = 5
+    Slaughtered = 5,
+    Reserved = 6
 }
 
 public sealed record AnimalRegistered(Guid AnimalId, string Tag) : DomainEvent;

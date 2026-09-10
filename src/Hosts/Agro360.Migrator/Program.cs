@@ -115,7 +115,7 @@ static async Task ProvisionHomologationAsync(NpgsqlConnection connection, IConfi
         throw new InvalidOperationException("Os tenants canônicos de homologação não existem ou sua identidade diverge; execute a instalação/seed apropriada em uma base de homologação.");
     var identities = (await connection.QueryAsync<ProvisionedIdentity>(
         "select id,tenant_id as TenantId,email from agro360.identity_users where lower(email)=any(@Emails) for update;",
-        new { Emails = new[] { "superadmin@mnsoft.com.br", "admin@santaclara.agro360.local" } }, transaction)).ToArray();
+        new { Emails = HomologationFixtures.Emails }, transaction)).ToArray();
     foreach (var identity in identities)
     {
         var expectedTenant = identity.Email.Equals("superadmin@mnsoft.com.br", StringComparison.OrdinalIgnoreCase)
@@ -128,7 +128,7 @@ static async Task ProvisionHomologationAsync(NpgsqlConnection connection, IConfi
 
     var occupiedFixtureIds = await connection.QueryAsync<ProvisionedIdentity>(
         "select id,tenant_id as TenantId,email from agro360.identity_users where id=any(@Ids) for update;",
-        new { Ids = new[] { Guid.Parse("00000000-0000-0000-0000-000000000002"), Guid.Parse("30000000-0000-0000-0000-000000000002") } }, transaction);
+        new { Ids = HomologationFixtures.UserIds }, transaction);
     if (occupiedFixtureIds.Any(identity =>
             (identity.Id == Guid.Parse("00000000-0000-0000-0000-000000000002") &&
              (!identity.Email.Equals("superadmin@mnsoft.com.br", StringComparison.OrdinalIgnoreCase) || identity.TenantId != Guid.Parse("00000000-0000-0000-0000-000000000001"))) ||
@@ -265,4 +265,19 @@ internal sealed class AppliedMigration
     public string Version { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public string Checksum { get; init; } = string.Empty;
+}
+
+internal static class HomologationFixtures
+{
+    internal static readonly string[] Emails =
+    [
+        "superadmin@mnsoft.com.br",
+        "admin@santaclara.agro360.local"
+    ];
+
+    internal static readonly Guid[] UserIds =
+    [
+        Guid.Parse("00000000-0000-0000-0000-000000000002"),
+        Guid.Parse("30000000-0000-0000-0000-000000000002")
+    ];
 }

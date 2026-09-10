@@ -128,6 +128,43 @@ public sealed class AuthenticationAndLivestockRegressionTests
     }
 
     [Fact]
+    public void LivestockHerdOperationsKeepDistinctEntitiesAndPartialHandling()
+    {
+        var rules = Read("src/Modules/Agro360.Domain/Livestock/LivestockRules.cs");
+        var service = Read("src/Modules/Agro360.Infrastructure/Services/LivestockHerdService.cs");
+        var controller = Read("src/Hosts/Agro360.Api/Controllers/Livestock360Controller.cs");
+        var page = Read("src/Hosts/Agro360.Web/Pages/Livestock/Index.cshtml");
+        var migration = Read("database/migrations/068_livestock_herd_operations.sql");
+
+        Assert.Contains("INDIVIDUAL", rules, StringComparison.Ordinal);
+        Assert.Contains("QUANTITY", rules, StringComparison.Ordinal);
+        Assert.Contains("PreventDoubleCount", rules, StringComparison.Ordinal);
+        Assert.Contains("EnsureHandlingTransition", rules, StringComparison.Ordinal);
+        Assert.Contains("livestock_handling_orders", migration, StringComparison.Ordinal);
+        Assert.Contains("livestock_weighings", migration, StringComparison.Ordinal);
+        Assert.Contains("livestock_sale_reservations", migration, StringComparison.Ordinal);
+        Assert.Contains("control_mode", migration, StringComparison.Ordinal);
+        Assert.Contains("Não é protocolo veterinário", migration, StringComparison.Ordinal);
+        Assert.Contains("CancellationToken ct", service, StringComparison.Ordinal);
+        Assert.DoesNotContain("CancellationToken.None", service, StringComparison.Ordinal);
+        Assert.Contains("Permissions.LivestockSell", controller, StringComparison.Ordinal);
+        Assert.Contains("api/livestock/commercial/reservations", controller, StringComparison.Ordinal);
+        Assert.Contains("/livestock", page, StringComparison.Ordinal);
+        Assert.Contains("Como corrigir", page, StringComparison.Ordinal);
+        Assert.Contains("EnsureCsvSafe", rules, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LivestockLookupsNoLongerDependOnDroppedHerdActiveColumn()
+    {
+        var lookups = Read("src/Modules/Agro360.Infrastructure/Services/Agriculture360Service.cs");
+        var mobile = Read("src/Modules/Agro360.Infrastructure/Services/MobileService.cs");
+        Assert.DoesNotContain("livestock_herds where tenant_id=@TenantId and active", mobile, StringComparison.Ordinal);
+        Assert.Contains("control_mode", lookups, StringComparison.Ordinal);
+        Assert.DoesNotContain("case when active then 'ACTIVE' else 'INACTIVE' end status,jsonb_build_object('headCount',head_count) metadata from agro360.livestock_herds", lookups, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DatabaseFailuresLogStructuredPostgresMetadataWithoutSqlParameters()
     {
         var executor = Read("src/Modules/Agro360.Infrastructure/Persistence/DatabaseExecutor.cs");

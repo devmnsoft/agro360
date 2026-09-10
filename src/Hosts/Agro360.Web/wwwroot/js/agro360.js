@@ -472,7 +472,7 @@
         if (feature === "context") route = "/Saas";
         else if (finance.has(feature)) route = "/Intelligence";
         else if (storage.has(feature)) route = "/#storage";
-        else if (livestock.has(feature)) route = "/#livestock";
+        else if (livestock.has(feature)) route = feature === "weighing" ? "/livestock?tab=weighings" : "/livestock";
         else if (traceability.has(feature)) route = feature === "processing-compliance" ? "/Compliance" : "/Maps";
         window.location.assign(route);
     }

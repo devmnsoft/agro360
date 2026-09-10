@@ -12,25 +12,260 @@ public sealed class FleetService(DatabaseExecutor db, ITenantContext tenant) : I
 select count(*) filter(where status='AVAILABLE') availableassets,count(*) filter(where status='OPERATING') operatingassets,count(*) filter(where status='MAINTENANCE') maintenanceassets,count(*) filter(where status='UNAVAILABLE') unavailableassets,
 (select count(*) from agro360.fleet_maintenance_plans where tenant_id=@TenantId and status='ACTIVE' and next_execution_at<now()) overduemaintenances,
 (select count(*) from agro360.fleet_maintenance_plans where tenant_id=@TenantId and status='ACTIVE' and next_execution_at between now() and now()+interval '30 days') upcomingmaintenances,
-(select count(*) from agro360.fleet_work_orders where tenant_id=@TenantId and status not in('COMPLETED','CANCELLED')) openworkorders,
-(select count(*) from agro360.fleet_work_orders where tenant_id=@TenantId and priority='CRITICAL' and status not in('COMPLETED','CANCELLED')) criticalworkorders,
-(select count(*) from agro360.fleet_work_orders where tenant_id=@TenantId and due_at<now() and status not in('COMPLETED','CANCELLED')) overdueworkorders,
+(select count(*) from agro360.fleet_work_orders where tenant_id=@TenantId and deleted_at is null and status not in('COMPLETED','CANCELLED')) openworkorders,
+(select count(*) from agro360.fleet_work_orders where tenant_id=@TenantId and deleted_at is null and priority='CRITICAL' and status not in('COMPLETED','CANCELLED')) criticalworkorders,
+(select count(*) from agro360.fleet_work_orders where tenant_id=@TenantId and deleted_at is null and due_at<now() and status not in('COMPLETED','CANCELLED')) overdueworkorders,
 coalesce((select sum(quantity) from agro360.fleet_refuelings where tenant_id=@TenantId and status='ACTIVE' and occurred_at>=date_trunc('month',now())),0) monthfuelquantity,
 coalesce((select sum(total_value) from agro360.fleet_refuelings where tenant_id=@TenantId and status='ACTIVE' and occurred_at>=date_trunc('month',now())),0) monthfuelcost,
 (select count(*) from agro360.fleet_downtime_events where tenant_id=@TenantId and status='OPEN') opendowntimes,
 coalesce((select sum(extract(epoch from(coalesce(ended_at,now())-started_at))/3600) from agro360.fleet_downtime_events where tenant_id=@TenantId and started_at>=date_trunc('month',now())),0) downtimehours,
 coalesce((select avg(availability_percent) from agro360.fleet_availability_snapshots where tenant_id=@TenantId and snapshot_date=current_date),100) availabilitypercent,
-coalesce((select sum(value) from agro360.fleet_operational_costs where tenant_id=@TenantId and status='ACTIVE' and occurred_on>=date_trunc('month',now())::date),0) totalcost
+coalesce((select sum(value) from agro360.fleet_operational_costs where tenant_id=@TenantId and status='ACTIVE' and occurred_on>=date_trunc('month',now())::date),0) totalcost,
+(select count(*) from agro360.fleet_work_orders where tenant_id=@TenantId and deleted_at is null and status='WAITING_PART') waitingparts,
+(select count(*) from agro360.fleet_operational_blocks where tenant_id=@TenantId and status='ACTIVE') activeblocks,
+(select count(*) from agro360.fleet_asset_reservations where tenant_id=@TenantId and status='ACTIVE') activereservations
 from agro360.fleet_assets where tenant_id=@TenantId and deleted_at is null
 """, new { tenant.TenantId }, t), ct);
-    public Task<IReadOnlyList<FleetLookup>> LookupsAsync(string kind, string? search, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { var (source, active) = kind switch { "assets" => ("agro360.fleet_assets", "deleted_at is null"), "operators" => ("agro360.fleet_operators", "deleted_at is null and status='ACTIVE'"), "asset-types" => ("agro360.fleet_asset_types", "deleted_at is null and status='ACTIVE'"), "fuel-types" => ("agro360.fleet_fuel_types", "deleted_at is null and status='ACTIVE'"), "properties" => ("agro360.geo_farms", "deleted_at is null"), "cost-centers" => ("agro360.finance_cost_centers", "active"), _ => throw new ArgumentException("Lookup inválido.") }; return (IReadOnlyList<FleetLookup>)(await c.QueryAsync<FleetLookup>($"select id,name from {source} where tenant_id=@TenantId and {active} and (@Search is null or name ilike '%'||@Search||'%') order by name limit 50", new { tenant.TenantId, Search = search }, t)).ToArray(); }, ct);
+    public Task<IReadOnlyList<FleetLookup>> LookupsAsync(string kind, string? search, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        if (string.Equals(kind, "warehouses", StringComparison.OrdinalIgnoreCase))
+            return (IReadOnlyList<FleetLookup>)(await c.QueryAsync<FleetLookup>("select id, name from agro360.inventory_warehouses where tenant_id=@TenantId and deleted_at is null and (@Search is null or name ilike '%'||@Search||'%') order by name limit 50", new { tenant.TenantId, Search = search }, t)).ToArray();
+        if (string.Equals(kind, "products", StringComparison.OrdinalIgnoreCase))
+            return (IReadOnlyList<FleetLookup>)(await c.QueryAsync<FleetLookup>("select id, name from agro360.inventory_products where tenant_id=@TenantId and deleted_at is null and (@Search is null or name ilike '%'||@Search||'%') order by name limit 50", new { tenant.TenantId, Search = search }, t)).ToArray();
+        var (source, active) = kind switch
+        {
+            "assets" => ("agro360.fleet_assets", "deleted_at is null"),
+            "operators" => ("agro360.fleet_operators", "deleted_at is null and status='ACTIVE'"),
+            "asset-types" => ("agro360.fleet_asset_types", "deleted_at is null and status='ACTIVE'"),
+            "fuel-types" => ("agro360.fleet_fuel_types", "deleted_at is null and status='ACTIVE'"),
+            "properties" => ("agro360.geo_farms", "deleted_at is null"),
+            "cost-centers" => ("agro360.finance_cost_centers", "active"),
+            _ => throw new ArgumentException("Lookup inválido.")
+        };
+        return (IReadOnlyList<FleetLookup>)(await c.QueryAsync<FleetLookup>($"select id,name from {source} where tenant_id=@TenantId and {active} and (@Search is null or name ilike '%'||@Search||'%') order by name limit 50", new { tenant.TenantId, Search = search }, t)).ToArray();
+    }, ct);
     public Task<IReadOnlyList<FleetAsset>> AssetsAsync(string? search, string? status, int page, int pageSize, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => (IReadOnlyList<FleetAsset>)(await c.QueryAsync<FleetAsset>("select a.id,a.internal_code internalcode,a.name,t.name type,a.status,a.brand,a.model,a.plate,a.odometer,a.hour_meter hourmeter,p.name propertyname,cc.name costcentername from agro360.fleet_assets a join agro360.fleet_asset_types t on t.tenant_id=a.tenant_id and t.id=a.asset_type_id left join agro360.geo_farms p on p.tenant_id=a.tenant_id and p.id=a.property_id left join agro360.finance_cost_centers cc on cc.tenant_id=a.tenant_id and cc.id=a.cost_center_id where a.tenant_id=@TenantId and a.deleted_at is null and (@Search is null or a.name ilike '%'||@Search||'%' or a.internal_code ilike '%'||@Search||'%' or a.plate ilike '%'||@Search||'%') and (@Status is null or a.status=@Status) order by a.name limit @Take offset @Skip", Page(search, status, page, pageSize), t)).ToArray(), ct);
-    public Task<Guid> SaveAssetAsync(Guid? id, FleetAssetCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { FleetRules.ValidateAsset(command.InternalCode, command.Status, command.Odometer, command.HourMeter); await Ensure(c, t, "agro360.fleet_asset_types", command.AssetTypeId); var duplicate = await c.ExecuteScalarAsync<bool>("select exists(select 1 from agro360.fleet_assets where tenant_id=@TenantId and deleted_at is null and id<>@Id and (upper(internal_code)=upper(@InternalCode) or (@Plate is not null and upper(plate)=upper(@Plate))))", new { tenant.TenantId, Id = id ?? Guid.Empty, command.InternalCode, command.Plate }, t); if (duplicate) throw new InvalidOperationException("Código interno ou placa já cadastrado neste tenant."); var assetId = id ?? Guid.NewGuid(); if (id is not null) { var old = await c.QuerySingleOrDefaultAsync<(decimal Odometer, decimal HourMeter)>("select odometer,hour_meter hourmeter from agro360.fleet_assets where tenant_id=@TenantId and id=@Id and deleted_at is null", new { tenant.TenantId, Id = id }, t); FleetRules.ValidateMeterChange(old.Odometer, command.Odometer, command.MeterJustification, false); FleetRules.ValidateMeterChange(old.HourMeter, command.HourMeter, command.MeterJustification, false); } await c.ExecuteAsync("""insert into agro360.fleet_assets(id,tenant_id,internal_code,name,asset_type_id,status,brand,model,year,plate,serial_number,property_id,cost_center_id,odometer,hour_meter,fuel_capacity,main_operator_id,acquired_on,acquisition_value,notes,created_by,updated_by) values(@Id,@TenantId,@InternalCode,@Name,@AssetTypeId,@Status,@Brand,@Model,@Year,@Plate,@SerialNumber,@PropertyId,@CostCenterId,@Odometer,@HourMeter,@FuelCapacity,@MainOperatorId,@AcquiredOn,@AcquisitionValue,@Notes,@UserId,@UserId) on conflict(id) do update set internal_code=excluded.internal_code,name=excluded.name,asset_type_id=excluded.asset_type_id,status=excluded.status,brand=excluded.brand,model=excluded.model,year=excluded.year,plate=excluded.plate,serial_number=excluded.serial_number,property_id=excluded.property_id,cost_center_id=excluded.cost_center_id,odometer=excluded.odometer,hour_meter=excluded.hour_meter,fuel_capacity=excluded.fuel_capacity,main_operator_id=excluded.main_operator_id,acquired_on=excluded.acquired_on,acquisition_value=excluded.acquisition_value,notes=excluded.notes,updated_at=now(),updated_by=@UserId;insert into agro360.fleet_asset_events(id,tenant_id,asset_id,event_type,description,created_by,updated_by) values(gen_random_uuid(),@TenantId,@Id,@EventType,'Alteração auditada',@UserId,@UserId)""", new { Id = assetId, tenant.TenantId, tenant.UserId, command.InternalCode, command.Name, command.AssetTypeId, command.Status, command.Brand, command.Model, command.Year, command.Plate, command.SerialNumber, command.PropertyId, command.CostCenterId, command.Odometer, command.HourMeter, command.FuelCapacity, command.MainOperatorId, command.AcquiredOn, command.AcquisitionValue, command.Notes, EventType = id is null ? "CREATED" : "UPDATED" }, t); return assetId; }, ct);
+    public Task<Guid> SaveAssetAsync(Guid? id, FleetAssetCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        FleetRules.ValidateAsset(command.InternalCode, command.Status, command.Odometer, command.HourMeter);
+        var cadastral = string.IsNullOrWhiteSpace(command.CadastralStatus) ? "ACTIVE" : command.CadastralStatus.Trim().ToUpperInvariant();
+        var ownership = string.IsNullOrWhiteSpace(command.Ownership) ? "OWNED" : command.Ownership.Trim().ToUpperInvariant();
+        if (!FleetRules.CadastralStatuses.Contains(cadastral, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Situação cadastral inválida.");
+        if (ownership is not ("OWNED" or "LEASED" or "RENTED" or "THIRD_PARTY"))
+            throw new InvalidOperationException("Condição de propriedade/locação inválida.");
+        await Ensure(c, t, "agro360.fleet_asset_types", command.AssetTypeId);
+        var duplicate = await c.ExecuteScalarAsync<bool>(
+            "select exists(select 1 from agro360.fleet_assets where tenant_id=@TenantId and deleted_at is null and id<>@Id and (upper(internal_code)=upper(@InternalCode) or (@Plate is not null and upper(plate)=upper(@Plate))))",
+            new { tenant.TenantId, Id = id ?? Guid.Empty, command.InternalCode, command.Plate }, t);
+        if (duplicate) throw new InvalidOperationException("Código interno ou placa já cadastrado neste tenant.");
+        var assetId = id ?? Guid.NewGuid();
+        if (id is not null)
+        {
+            var old = await c.QuerySingleOrDefaultAsync<(decimal Odometer, decimal HourMeter)>(
+                "select odometer,hour_meter hourmeter from agro360.fleet_assets where tenant_id=@TenantId and id=@Id and deleted_at is null",
+                new { tenant.TenantId, Id = id }, t);
+            FleetRules.ValidateMeterChange(old.Odometer, command.Odometer, command.MeterJustification, false);
+            FleetRules.ValidateMeterChange(old.HourMeter, command.HourMeter, command.MeterJustification, false);
+        }
+        await c.ExecuteAsync(
+            """
+            insert into agro360.fleet_assets(
+                id,tenant_id,internal_code,code,name,asset_type_id,status,cadastral_status,ownership,brand,model,year,plate,serial_number,
+                property_id,farm_id,cost_center_id,odometer,hour_meter,fuel_capacity,energy_source,main_operator_id,acquired_on,commissioned_on,
+                acquisition_value,notes,created_by,updated_by)
+            values (
+                @Id,@TenantId,@InternalCode,@InternalCode,@Name,@AssetTypeId,@Status,@Cadastral,@Ownership,@Brand,@Model,@Year,@Plate,@SerialNumber,
+                @PropertyId,@PropertyId,@CostCenterId,@Odometer,@HourMeter,@FuelCapacity,@EnergySource,@MainOperatorId,@AcquiredOn,@CommissionedOn,
+                @AcquisitionValue,@Notes,@UserId,@UserId)
+            on conflict(id) do update set
+                internal_code=excluded.internal_code, code=excluded.code, name=excluded.name, asset_type_id=excluded.asset_type_id,
+                status=excluded.status, cadastral_status=excluded.cadastral_status, ownership=excluded.ownership,
+                brand=excluded.brand, model=excluded.model, year=excluded.year, plate=excluded.plate, serial_number=excluded.serial_number,
+                property_id=excluded.property_id, farm_id=excluded.farm_id, cost_center_id=excluded.cost_center_id,
+                odometer=excluded.odometer, hour_meter=excluded.hour_meter, fuel_capacity=excluded.fuel_capacity,
+                energy_source=excluded.energy_source, main_operator_id=excluded.main_operator_id, acquired_on=excluded.acquired_on,
+                commissioned_on=excluded.commissioned_on, acquisition_value=excluded.acquisition_value, notes=excluded.notes,
+                updated_at=now(), updated_by=@UserId;
+            insert into agro360.fleet_asset_events(id,tenant_id,asset_id,event_type,description,created_by,updated_by)
+            values(gen_random_uuid(),@TenantId,@Id,@EventType,'Alteração auditada',@UserId,@UserId);
+            insert into agro360.fleet_asset_meters(id,tenant_id,asset_id,meter_kind,unit,enabled,created_by)
+            select gen_random_uuid(),@TenantId,@Id,'ODOMETER','km',true,@UserId
+            where @Odometer > 0
+              and not exists(select 1 from agro360.fleet_asset_meters m where m.tenant_id=@TenantId and m.asset_id=@Id and m.meter_kind='ODOMETER');
+            insert into agro360.fleet_asset_meters(id,tenant_id,asset_id,meter_kind,unit,enabled,created_by)
+            select gen_random_uuid(),@TenantId,@Id,'HOUR_METER','h',true,@UserId
+            where @HourMeter > 0
+              and not exists(select 1 from agro360.fleet_asset_meters m where m.tenant_id=@TenantId and m.asset_id=@Id and m.meter_kind='HOUR_METER');
+            """,
+            new
+            {
+                Id = assetId,
+                tenant.TenantId,
+                tenant.UserId,
+                command.InternalCode,
+                command.Name,
+                command.AssetTypeId,
+                command.Status,
+                Cadastral = cadastral,
+                Ownership = ownership,
+                command.Brand,
+                command.Model,
+                command.Year,
+                command.Plate,
+                command.SerialNumber,
+                command.PropertyId,
+                command.CostCenterId,
+                command.Odometer,
+                command.HourMeter,
+                command.FuelCapacity,
+                command.EnergySource,
+                command.MainOperatorId,
+                command.AcquiredOn,
+                command.CommissionedOn,
+                command.AcquisitionValue,
+                command.Notes,
+                EventType = id is null ? "CREATED" : "UPDATED"
+            }, t);
+        return assetId;
+    }, ct);
     public Task<Guid> CreateOperatorAsync(FleetOperatorCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { var id = Guid.NewGuid(); await c.ExecuteAsync("insert into agro360.fleet_operators(id,tenant_id,name,document,employment_type,role,status,property_id,license_categories,license_expires_on,notes,created_by,updated_by) values(@Id,@TenantId,@Name,@Document,@EmploymentType,@Role,@Status,@PropertyId,@LicenseCategories,@LicenseExpiresOn,@Notes,@UserId,@UserId)", new { id, tenant.TenantId, tenant.UserId, command.Name, command.Document, command.EmploymentType, command.Role, command.Status, command.PropertyId, command.LicenseCategories, command.LicenseExpiresOn, command.Notes }, t); return id; }, ct);
-    public Task<Guid> CreateMaintenancePlanAsync(MaintenancePlanCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { await Ensure(c, t, "agro360.fleet_assets", command.AssetId); if (command.Periodicity <= 0) throw new ArgumentException("Periodicidade deve ser positiva."); var id = Guid.NewGuid(); await c.ExecuteAsync("insert into agro360.fleet_maintenance_plans(id,tenant_id,asset_id,maintenance_type,description,periodicity,control_unit,next_execution_at,next_meter,status,responsible_id,estimated_cost,created_by,updated_by) values(@Id,@TenantId,@AssetId,@MaintenanceType,@Description,@Periodicity,@ControlUnit,@NextExecutionAt,@NextMeter,@Status,@ResponsibleId,@EstimatedCost,@UserId,@UserId)", new { id, tenant.TenantId, tenant.UserId, command.AssetId, command.MaintenanceType, command.Description, command.Periodicity, command.ControlUnit, command.NextExecutionAt, command.NextMeter, command.Status, command.ResponsibleId, command.EstimatedCost }, t); for (var i = 0; i < command.Checklist.Count; i++) await c.ExecuteAsync("insert into agro360.fleet_maintenance_plan_items(id,tenant_id,plan_id,sequence,description,created_by,updated_by) values(gen_random_uuid(),@TenantId,@Id,@Sequence,@Description,@UserId,@UserId)", new { tenant.TenantId, tenant.UserId, id, Sequence = i + 1, Description = command.Checklist[i] }, t); return id; }, ct);
+    public Task<Guid> CreateMaintenancePlanAsync(MaintenancePlanCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        await Ensure(c, t, "agro360.fleet_assets", command.AssetId);
+        if (command.Periodicity <= 0) throw new ArgumentException("Periodicidade deve ser positiva.");
+        var duePolicy = string.IsNullOrWhiteSpace(command.DuePolicy) ? "FIRST_CRITERION" : command.DuePolicy.Trim().ToUpperInvariant();
+        if (!FleetRules.DuePolicies.Contains(duePolicy, StringComparer.OrdinalIgnoreCase))
+            throw new ArgumentException("Política de vencimento inválida.");
+        var id = Guid.NewGuid();
+        var hourInterval = command.HourInterval ?? (command.ControlUnit is "HOUR_METER" or "ENGINE_HOURS" ? command.Periodicity : null);
+        var kmInterval = command.KmInterval ?? (command.ControlUnit == "ODOMETER" ? command.Periodicity : null);
+        var dateInterval = command.DateIntervalDays ?? (command.ControlUnit == "DATE" ? (int)command.Periodicity : null);
+        await c.ExecuteAsync(
+            """
+            insert into agro360.fleet_maintenance_plans(
+                id,tenant_id,asset_id,maintenance_type,description,periodicity,control_unit,next_execution_at,next_meter,
+                status,responsible_id,estimated_cost,due_policy,date_interval_days,hour_interval,km_interval,version_no,created_by,updated_by)
+            values (
+                @Id,@TenantId,@AssetId,@MaintenanceType,@Description,@Periodicity,@ControlUnit,@NextExecutionAt,@NextMeter,
+                @Status,@ResponsibleId,@EstimatedCost,@DuePolicy,@DateInterval,@HourInterval,@KmInterval,1,@UserId,@UserId)
+            """,
+            new
+            {
+                id,
+                tenant.TenantId,
+                tenant.UserId,
+                command.AssetId,
+                command.MaintenanceType,
+                command.Description,
+                command.Periodicity,
+                command.ControlUnit,
+                command.NextExecutionAt,
+                command.NextMeter,
+                command.Status,
+                command.ResponsibleId,
+                command.EstimatedCost,
+                DuePolicy = duePolicy,
+                DateInterval = dateInterval,
+                HourInterval = hourInterval,
+                KmInterval = kmInterval
+            }, t);
+        for (var i = 0; i < command.Checklist.Count; i++)
+            await c.ExecuteAsync(
+                "insert into agro360.fleet_maintenance_plan_items(id,tenant_id,plan_id,sequence,description,created_by,updated_by) values(gen_random_uuid(),@TenantId,@Id,@Sequence,@Description,@UserId,@UserId)",
+                new { tenant.TenantId, tenant.UserId, id, Sequence = i + 1, Description = command.Checklist[i] }, t);
+        return id;
+    }, ct);
     public Task<IReadOnlyList<WorkOrder>> WorkOrdersAsync(string? search, string? status, int page, int pageSize, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => (IReadOnlyList<WorkOrder>)(await c.QueryAsync<WorkOrder>("select w.id,w.code,a.name assetname,w.type,w.priority,w.status,w.opened_at openedat,w.due_at dueat,w.description,coalesce(sum(c.value),0) cost from agro360.fleet_work_orders w join agro360.fleet_assets a on a.tenant_id=w.tenant_id and a.id=w.asset_id left join agro360.fleet_work_order_costs c on c.tenant_id=w.tenant_id and c.work_order_id=w.id where w.tenant_id=@TenantId and w.deleted_at is null and (@Search is null or w.code ilike '%'||@Search||'%' or a.name ilike '%'||@Search||'%') and (@Status is null or w.status=@Status) group by w.id,a.name order by w.opened_at desc limit @Take offset @Skip", Page(search, status, page, pageSize), t)).ToArray(), ct);
-    public Task<Guid> OpenWorkOrderAsync(WorkOrderCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { var status = await c.QuerySingleOrDefaultAsync<string>("select status from agro360.fleet_assets where tenant_id=@TenantId and id=@AssetId and deleted_at is null", new { tenant.TenantId, command.AssetId }, t); if (status is null) throw new KeyNotFoundException("Ativo não encontrado."); if (status is "INACTIVE" or "WRITTEN_OFF" or "SOLD") throw new InvalidOperationException("Ativo não pode receber ordem operacional."); var id = Guid.NewGuid(); await c.ExecuteAsync("insert into agro360.fleet_work_orders(id,tenant_id,asset_id,type,priority,responsible_id,due_at,description,status,opened_at,created_by,updated_by) values(@Id,@TenantId,@AssetId,@Type,@Priority,@ResponsibleId,@DueAt,@Description,'OPEN',now(),@UserId,@UserId);insert into agro360.fleet_asset_events(id,tenant_id,asset_id,event_type,description,reference_id,created_by,updated_by) values(gen_random_uuid(),@TenantId,@AssetId,'WORK_ORDER_OPENED',@Description,@Id,@UserId,@UserId)", new { id, tenant.TenantId, tenant.UserId, command.AssetId, command.Type, command.Priority, command.ResponsibleId, command.DueAt, command.Description }, t); if (command.BlockAsset || command.Priority == "CRITICAL") await c.ExecuteAsync("update agro360.fleet_assets set status='MAINTENANCE',updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@AssetId", new { tenant.TenantId, tenant.UserId, command.AssetId }, t); return id; }, ct);
-    public Task TransitionWorkOrderAsync(Guid id, WorkOrderTransitionCommand command, bool meterOverride, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { FleetRules.ValidateWorkOrderTransition(command.Status, command.ServicesPerformed, command.Reason); var a = await c.QuerySingleOrDefaultAsync<(Guid Id, decimal Odometer, decimal HourMeter)>("select a.id,a.odometer,a.hour_meter hourmeter from agro360.fleet_work_orders w join agro360.fleet_assets a on a.tenant_id=w.tenant_id and a.id=w.asset_id where w.tenant_id=@TenantId and w.id=@Id", new { tenant.TenantId, id }, t); if (a.Id == Guid.Empty) throw new KeyNotFoundException("OS não encontrada."); if (command.Odometer is not null) FleetRules.ValidateMeterChange(a.Odometer, command.Odometer.Value, command.MeterJustification, meterOverride); if (command.HourMeter is not null) FleetRules.ValidateMeterChange(a.HourMeter, command.HourMeter.Value, command.MeterJustification, meterOverride); await c.ExecuteAsync("update agro360.fleet_work_orders set status=@Status,diagnosis=@Diagnosis,services_performed=@ServicesPerformed,cancellation_reason=@Reason,completed_at=case when @Status='COMPLETED' then now() else completed_at end,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id;update agro360.fleet_assets set odometer=coalesce(@Odometer,odometer),hour_meter=coalesce(@HourMeter,hour_meter),status=case when @Status='COMPLETED' then 'AVAILABLE' else status end,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@AssetId;insert into agro360.fleet_asset_events(id,tenant_id,asset_id,event_type,description,reference_id,created_by,updated_by) values(gen_random_uuid(),@TenantId,@AssetId,'WORK_ORDER_'||@Status,coalesce(@ServicesPerformed,@Reason,@Status),@Id,@UserId,@UserId)", new { tenant.TenantId, tenant.UserId, id, command.Status, command.Diagnosis, command.ServicesPerformed, command.Reason, command.Odometer, command.HourMeter, AssetId = a.Id }, t); }, ct);
+    public Task<Guid> OpenWorkOrderAsync(WorkOrderCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        var status = await c.QuerySingleOrDefaultAsync<string>(
+            "select status from agro360.fleet_assets where tenant_id=@TenantId and id=@AssetId and deleted_at is null",
+            new { tenant.TenantId, command.AssetId }, t);
+        if (status is null) throw new KeyNotFoundException("Ativo não encontrado.");
+        if (status is "INACTIVE" or "WRITTEN_OFF" or "SOLD")
+            throw new InvalidOperationException("Ativo não pode receber ordem operacional.");
+        var id = Guid.NewGuid();
+        var blocks = command.BlockAsset || string.Equals(command.Priority, "CRITICAL", StringComparison.OrdinalIgnoreCase);
+        await c.ExecuteAsync(
+            """
+            insert into agro360.fleet_work_orders
+                (id,tenant_id,asset_id,type,priority,responsible_id,due_at,description,status,blocks_asset,opened_at,created_by,updated_by)
+            values (@Id,@TenantId,@AssetId,@Type,@Priority,@ResponsibleId,@DueAt,@Description,'OPEN',@Blocks,now(),@UserId,@UserId);
+            insert into agro360.fleet_asset_events
+                (id,tenant_id,asset_id,event_type,description,reference_id,created_by,updated_by)
+            values (gen_random_uuid(),@TenantId,@AssetId,'WORK_ORDER_OPENED',@Description,@Id,@UserId,@UserId);
+            insert into agro360.fleet_operational_blocks
+                (id,tenant_id,asset_id,kind,reason,dispensable,work_order_id,status,created_by)
+            select gen_random_uuid(),@TenantId,@AssetId,'MAINTENANCE',@Description,false,@Id,'ACTIVE',@UserId
+            where @Blocks;
+            update agro360.fleet_assets
+            set status=case when @Blocks then 'MAINTENANCE' else status end, updated_at=now(), updated_by=@UserId
+            where tenant_id=@TenantId and id=@AssetId and @Blocks
+            """,
+            new
+            {
+                id,
+                tenant.TenantId,
+                tenant.UserId,
+                command.AssetId,
+                command.Type,
+                command.Priority,
+                command.ResponsibleId,
+                command.DueAt,
+                command.Description,
+                Blocks = blocks
+            }, t);
+        return id;
+    }, ct);
+    public Task TransitionWorkOrderAsync(Guid id, WorkOrderTransitionCommand command, bool meterOverride, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        FleetRules.ValidateWorkOrderTransition(command.Status, command.ServicesPerformed, command.Reason);
+        var row = await c.QuerySingleOrDefaultAsync<(Guid Id, Guid AssetId, string Status, decimal Odometer, decimal HourMeter, bool BlocksAsset)>(
+            """
+            select a.id, w.asset_id assetid, w.status, a.odometer, a.hour_meter hourmeter, coalesce(w.blocks_asset,false) blocksasset
+            from agro360.fleet_work_orders w
+            join agro360.fleet_assets a on a.tenant_id=w.tenant_id and a.id=w.asset_id
+            where w.tenant_id=@TenantId and w.id=@Id and w.deleted_at is null
+            for update of w,a
+            """, new { tenant.TenantId, id }, t);
+        if (row.Id == Guid.Empty) throw new KeyNotFoundException("OS não encontrada.");
+        FleetRules.EnsureWorkOrderTransition(row.Status, command.Status);
+        if (command.Odometer is not null) FleetRules.ValidateMeterChange(row.Odometer, command.Odometer.Value, command.MeterJustification, meterOverride);
+        if (command.HourMeter is not null) FleetRules.ValidateMeterChange(row.HourMeter, command.HourMeter.Value, command.MeterJustification, meterOverride);
+        if (string.Equals(command.Status, "COMPLETED", StringComparison.OrdinalIgnoreCase))
+        {
+            var pendingInspection = await c.ExecuteScalarAsync<bool>(
+                "select exists(select 1 from agro360.fleet_work_order_inspections where tenant_id=@TenantId and work_order_id=@Id and result in ('PENDING','REJECTED'))",
+                new { tenant.TenantId, id }, t);
+            if (pendingInspection)
+                throw new InvalidOperationException("Conclusão exige inspeção aprovada. Serviço executado não libera o equipamento automaticamente.");
+        }
+        await c.ExecuteAsync(
+            """
+            update agro360.fleet_work_orders
+            set status=@Status, diagnosis=@Diagnosis, services_performed=@ServicesPerformed, cancellation_reason=@Reason,
+                completed_at=case when @Status='COMPLETED' then now() else completed_at end, updated_at=now(), updated_by=@UserId
+            where tenant_id=@TenantId and id=@Id;
+            update agro360.fleet_operational_blocks
+            set status='RELEASED', ended_at=now()
+            where tenant_id=@TenantId and work_order_id=@Id and status='ACTIVE' and @Status in ('COMPLETED','CANCELLED');
+            update agro360.fleet_assets
+            set odometer=coalesce(@Odometer,odometer), hour_meter=coalesce(@HourMeter,hour_meter),
+                status=case
+                    when @Status in ('COMPLETED','CANCELLED')
+                         and not exists(select 1 from agro360.fleet_operational_blocks b where b.tenant_id=@TenantId and b.asset_id=@AssetId and b.status='ACTIVE')
+                         and not exists(select 1 from agro360.fleet_work_orders o where o.tenant_id=@TenantId and o.asset_id=@AssetId and o.deleted_at is null and o.id<>@Id and o.blocks_asset and o.status not in ('COMPLETED','CANCELLED'))
+                    then 'AVAILABLE'
+                    when @Status in ('IN_PROGRESS','WAITING_PART','WAITING_VENDOR','INSPECTION','PAUSED') and @Blocks then 'MAINTENANCE'
+                    else status end,
+                updated_at=now(), updated_by=@UserId
+            where tenant_id=@TenantId and id=@AssetId;
+            insert into agro360.fleet_asset_events(id,tenant_id,asset_id,event_type,description,reference_id,created_by,updated_by)
+            values(gen_random_uuid(),@TenantId,@AssetId,'WORK_ORDER_'||@Status,coalesce(@ServicesPerformed,@Reason,@Status),@Id,@UserId,@UserId);
+            """,
+            new { tenant.TenantId, tenant.UserId, id, command.Status, command.Diagnosis, command.ServicesPerformed, command.Reason, command.Odometer, command.HourMeter, AssetId = row.AssetId, Blocks = row.BlocksAsset }, t);
+    }, ct);
     public Task<Guid> RefuelAsync(RefuelingCommand command, bool meterOverride, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { var a = await c.QuerySingleOrDefaultAsync<(decimal Odometer, decimal HourMeter)>("select odometer,hour_meter hourmeter from agro360.fleet_assets where tenant_id=@TenantId and id=@AssetId and deleted_at is null", new { tenant.TenantId, command.AssetId }, t); if (command.Odometer is not null) FleetRules.ValidateMeterChange(a.Odometer, command.Odometer.Value, command.MeterJustification, meterOverride); if (command.HourMeter is not null) FleetRules.ValidateMeterChange(a.HourMeter, command.HourMeter.Value, command.MeterJustification, meterOverride); var total = FleetRules.RefuelingTotal(command.Quantity, command.UnitPrice); var id = Guid.NewGuid(); await c.ExecuteAsync("insert into agro360.fleet_refuelings(id,tenant_id,asset_id,operator_id,fuel_type_id,quantity,unit_price,total_value,occurred_at,odometer,hour_meter,location,property_id,cost_center_id,evidence_document_id,notes,status,created_by,updated_by) values(@Id,@TenantId,@AssetId,@OperatorId,@FuelTypeId,@Quantity,@UnitPrice,@Total,@OccurredAt,@Odometer,@HourMeter,@Location,@PropertyId,@CostCenterId,@EvidenceDocumentId,@Notes,'ACTIVE',@UserId,@UserId);insert into agro360.fleet_operational_costs(id,tenant_id,asset_id,cost_type,value,occurred_on,property_id,cost_center_id,origin_type,origin_id,status,created_by,updated_by) values(gen_random_uuid(),@TenantId,@AssetId,'FUEL',@Total,@OccurredAt::date,@PropertyId,@CostCenterId,'REFUELING',@Id,'ACTIVE',@UserId,@UserId) on conflict(tenant_id,origin_type,origin_id) do nothing;update agro360.fleet_assets set odometer=greatest(odometer,coalesce(@Odometer,odometer)),hour_meter=greatest(hour_meter,coalesce(@HourMeter,hour_meter)),updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@AssetId", new { id, tenant.TenantId, tenant.UserId, command.AssetId, command.OperatorId, command.FuelTypeId, command.Quantity, command.UnitPrice, Total = total, command.OccurredAt, command.Odometer, command.HourMeter, command.Location, command.PropertyId, command.CostCenterId, command.EvidenceDocumentId, command.Notes }, t); return id; }, ct);
     public Task<Guid> OpenDowntimeAsync(DowntimeCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { if (string.IsNullOrWhiteSpace(command.Reason)) throw new ArgumentException("Motivo é obrigatório."); if (command.EndedAt < command.StartedAt) throw new ArgumentException("Fim deve ser posterior ao início."); await Ensure(c, t, "agro360.fleet_assets", command.AssetId); var id = Guid.NewGuid(); await c.ExecuteAsync("insert into agro360.fleet_downtime_events(id,tenant_id,asset_id,type,started_at,ended_at,reason,responsible_id,operational_impact,season_id,field_id,route_id,status,created_by,updated_by) values(@Id,@TenantId,@AssetId,@Type,@StartedAt,@EndedAt,@Reason,@ResponsibleId,@OperationalImpact,@SeasonId,@FieldId,@RouteId,case when @EndedAt is null then 'OPEN' else 'CLOSED' end,@UserId,@UserId);update agro360.fleet_assets set status=case when @MakesUnavailable and @EndedAt is null then 'UNAVAILABLE' else status end,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@AssetId", new { id, tenant.TenantId, tenant.UserId, command.AssetId, command.Type, command.StartedAt, command.EndedAt, command.Reason, command.ResponsibleId, command.OperationalImpact, command.SeasonId, command.FieldId, command.RouteId, command.MakesUnavailable }, t); return id; }, ct);
     private object Page(string? s, string? status, int page, int size) => new { tenant.TenantId, Search = s, Status = status, Take = Math.Clamp(size, 1, 100), Skip = (Math.Max(page, 1) - 1) * Math.Clamp(size, 1, 100) };

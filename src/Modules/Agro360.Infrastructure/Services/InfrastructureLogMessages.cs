@@ -68,4 +68,6 @@ internal static partial class InfrastructureLogMessages
     internal static partial void LoginSucceeded(ILogger logger, Guid tenantId, Guid userId, string traceId);
     [LoggerMessage(1032, LogLevel.Information, "Logout concluído. TenantId: {TenantId}; TokenRevogado: {Revoked}; TraceId: {TraceId}")]
     internal static partial void LogoutCompleted(ILogger logger, Guid tenantId, bool revoked, string traceId);
+    [LoggerMessage(1033, LogLevel.Information, "Operação pecuária {Operation}. TenantId: {TenantId}; Actor: {UserId}; TraceId: {TraceId}")]
+    internal static partial void LivestockOperation(ILogger logger, string operation, Guid tenantId, Guid userId, string traceId);
 }
