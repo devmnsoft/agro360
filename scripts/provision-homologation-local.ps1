@@ -1,6 +1,7 @@
 param(
     [ValidateSet('Development', 'Homologation')]
-    [string]$Environment = $(if ($env:ASPNETCORE_ENVIRONMENT) { $env:ASPNETCORE_ENVIRONMENT } else { 'Homologation' })
+    [string]$Environment = $(if ($env:ASPNETCORE_ENVIRONMENT) { $env:ASPNETCORE_ENVIRONMENT } else { 'Homologation' }),
+    [switch]$DiagnosticOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,6 +15,12 @@ if (-not $env:AGRO360_DATA_PROTECTION_KEYS_PATH) {
 }
 
 New-Item -ItemType Directory -Force -Path $env:AGRO360_DATA_PROTECTION_KEYS_PATH | Out-Null
+
+if ($DiagnosticOnly) {
+    dotnet run --project src/Hosts/Agro360.Migrator -- diagnose-homologation --environment $Environment
+    if ($LASTEXITCODE) { throw "Diagnóstico falhou com código $LASTEXITCODE." }
+    return
+}
 
 function Read-PlainSecret([string]$Prompt) {
     $secret = Read-Host -Prompt $Prompt -AsSecureString

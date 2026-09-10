@@ -143,7 +143,7 @@ public sealed class IdentityService(
         if (tenant is null)
         {
             InfrastructureLogMessages.LoginRejected(logger, "tenant_invalid", null, identifierType, traceId);
-            throw new AuthenticationException("Cliente/organização inválido.", "tenant_invalid");
+            throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
         }
 
         if (tenant.Status is 3 or 4 or 5)
@@ -161,7 +161,7 @@ public sealed class IdentityService(
                        mfa_enabled as MfaEnabled, mfa_secret_encrypted as MfaSecretEncrypted
                 from agro360.identity_users u
                 where u.tenant_id = @TenantId
-                  and ((not @IsDocument and u.email = lower(@Identifier))
+                  and ((not @IsDocument and lower(u.email) = @Identifier)
                     or (@IsDocument and u.normalized_document = @Identifier));
                 """,
                 new { TenantId = tenant.Id, Identifier = identifier, IsDocument = isDocument },
