@@ -12,6 +12,8 @@ hasher real e MFA/Data Protection persistente, revoga sessões e audita sem
 segredos. O ambiente atual não possui .NET/PostgreSQL; portanto nenhum login foi
 declarado ativo e os gates de banco/navegador permanecem obrigatórios.
 
+**Atualização pós-PR #97 (2026-09-10):** AG-E1-004 permanece **implementado não validado**, agora com contrato explícito de Data Protection, validação de identidade/tenant/ID e provisionador PowerShell. AG-E5-001 permanece **parcial / implementado não validado**: fingerprint de idempotência, bloqueio de unidade incompatível, parcelas positivas e autorização específica de excesso estão na migration 067 e no serviço/controller. Quarentena, liberação única, estado agregado completo, reversão e homologação PostgreSQL continuam pendentes.
+
 ### Fatia verificada e lacunas prioritárias
 
 | ID | Jornada / atores | Cadeia e efeitos | Estado e evidência |

@@ -18,7 +18,7 @@ var migrationDirectory = GetOption(args, "--migrations")
 var configuration = new ConfigurationBuilder()
     .SetBasePath(AppContext.BaseDirectory)
     .AddJsonFile("appsettings.json", optional: true)
-    .AddJsonFile("appsettings.Development.json", optional: true)
+    .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true)
     .AddEnvironmentVariables()
     .Build();
 
@@ -99,7 +99,10 @@ static async Task ProvisionHomologationAsync(NpgsqlConnection connection, IConfi
     if (string.IsNullOrWhiteSpace(dataProtectionPath))
         throw new InvalidOperationException("Defina AGRO360_DATA_PROTECTION_KEYS_PATH para um diretório local persistente e não versionado.");
     Directory.CreateDirectory(dataProtectionPath);
-    var protector = DataProtectionProvider.Create(new DirectoryInfo(dataProtectionPath)).CreateProtector("Agro360.Identity.Mfa.v1");
+    var protector = DataProtectionProvider.Create(
+        new DirectoryInfo(dataProtectionPath),
+        builder => builder.SetApplicationName(DataProtectionSettings.ApplicationName))
+        .CreateProtector(DataProtectionSettings.MfaPurpose);
     var hasher = new PasswordHasher();
     var builder = new NpgsqlConnectionStringBuilder(connection.ConnectionString);
     Log.Information("Provisionamento {Environment} no PostgreSQL {Host}:{Port}/{Database} como {Username}. Senhas, hashes, tokens e segredo MFA não serão registrados.",
@@ -117,9 +120,21 @@ static async Task ProvisionHomologationAsync(NpgsqlConnection connection, IConfi
     {
         var expectedTenant = identity.Email.Equals("superadmin@mnsoft.com.br", StringComparison.OrdinalIgnoreCase)
             ? Guid.Parse("00000000-0000-0000-0000-000000000001") : Guid.Parse("30000000-0000-0000-0000-000000000001");
-        if (identity.TenantId != expectedTenant)
+        var expectedId = identity.Email.Equals("superadmin@mnsoft.com.br", StringComparison.OrdinalIgnoreCase)
+            ? Guid.Parse("00000000-0000-0000-0000-000000000002") : Guid.Parse("30000000-0000-0000-0000-000000000002");
+        if (identity.TenantId != expectedTenant || identity.Id != expectedId)
             throw new InvalidOperationException($"Identidade {identity.Email} não corresponde à fixture de homologação; nenhuma alteração foi aplicada.");
     }
+
+    var occupiedFixtureIds = await connection.QueryAsync<ProvisionedIdentity>(
+        "select id,tenant_id as TenantId,email from agro360.identity_users where id=any(@Ids) for update;",
+        new { Ids = new[] { Guid.Parse("00000000-0000-0000-0000-000000000002"), Guid.Parse("30000000-0000-0000-0000-000000000002") } }, transaction);
+    if (occupiedFixtureIds.Any(identity =>
+            (identity.Id == Guid.Parse("00000000-0000-0000-0000-000000000002") &&
+             (!identity.Email.Equals("superadmin@mnsoft.com.br", StringComparison.OrdinalIgnoreCase) || identity.TenantId != Guid.Parse("00000000-0000-0000-0000-000000000001"))) ||
+            (identity.Id == Guid.Parse("30000000-0000-0000-0000-000000000002") &&
+             (!identity.Email.Equals("admin@santaclara.agro360.local", StringComparison.OrdinalIgnoreCase) || identity.TenantId != Guid.Parse("30000000-0000-0000-0000-000000000001")))))
+        throw new InvalidOperationException("Um ID reservado de homologação pertence a outra identidade; nenhuma alteração foi aplicada.");
 
     await connection.ExecuteAsync(
         """

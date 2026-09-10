@@ -1,5 +1,7 @@
 # Plano de execução
 
+> Índice legado preservado. O plano canônico é [execucao/EXECUTION-PLAN.md](execucao/EXECUTION-PLAN.md), as evidências ficam em [EXECUTION-CHECKPOINT.md](EXECUTION-CHECKPOINT.md) e os estados em [TRACEABILITY-MATRIX-v0.2.0.md](TRACEABILITY-MATRIX-v0.2.0.md). Não atualize este arquivo como fonte concorrente.
+
 ## Concluído neste checkpoint
 
 1. Estabilizar configuração PostgreSQL, tratamento de conexão e respostas 503.

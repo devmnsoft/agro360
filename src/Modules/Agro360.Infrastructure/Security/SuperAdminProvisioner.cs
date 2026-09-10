@@ -37,7 +37,7 @@ public sealed partial class SuperAdminProvisioner(
         if (!TotpVerifier.IsValidSecret(totpSecret))
             throw new InvalidOperationException("SuperAdmin:TotpSecret deve ser um segredo Base32 com pelo menos 160 bits.");
         var passwordHash = passwordHasher.Hash(password);
-        var protectedTotpSecret = dataProtectionProvider.CreateProtector("Agro360.Identity.Mfa.v1").Protect(totpSecret);
+        var protectedTotpSecret = dataProtectionProvider.CreateProtector(DataProtectionSettings.MfaPurpose).Protect(totpSecret);
 
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);

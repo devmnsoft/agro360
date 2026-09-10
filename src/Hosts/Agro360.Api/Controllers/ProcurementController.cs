@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Agro360.Api.Controllers;
 
 [ApiController, Route("api/procurement"), Authorize]
-public sealed class ProcurementController(IProcurementService service) : ControllerBase
+public sealed class ProcurementController(IProcurementService service, IAuthorizationService authorization) : ControllerBase
 {
     [HttpGet("dashboard"), Authorize(Policy = Permissions.PurchasingRead)] public async Task<IActionResult> Dashboard(CancellationToken ct) => Ok(await service.DashboardAsync(ct));
     [HttpGet("suppliers"), Authorize(Policy = Permissions.PurchasingRead)] public Task<IReadOnlyList<dynamic>> Suppliers([FromQuery] ProcurementQuery q, CancellationToken ct) => service.SuppliersAsync(q, ct);
@@ -19,7 +19,11 @@ public sealed class ProcurementController(IProcurementService service) : Control
     [HttpGet("orders"), Authorize(Policy = Permissions.PurchasingRead)] public Task<IReadOnlyList<dynamic>> Orders([FromQuery] ProcurementQuery q, CancellationToken ct) => service.OrdersAsync(q, ct);
     [HttpPost("orders"), Authorize(Policy = Permissions.PurchasingWrite)] public async Task<IActionResult> Order(PurchaseOrderCommand x, CancellationToken ct) => Created("api/procurement/orders", new { id = await service.CreateOrderAsync(x, ct) });
     [HttpPost("orders/{id:guid}/approve"), Authorize(Policy = Permissions.PurchasingApprove)] public async Task<IActionResult> Approve(Guid id, [FromBody] string? comment, CancellationToken ct) { await service.ApproveOrderAsync(id, comment, ct); return NoContent(); }
-    [HttpPost("receipts"), Authorize(Policy = Permissions.PurchasingReceive)] public async Task<IActionResult> Receive(ProcurementReceiptCommand x, CancellationToken ct) => Created("api/procurement/receipts", new { id = await service.ReceiveAsync(x, ct) });
+    [HttpPost("receipts"), Authorize(Policy = Permissions.PurchasingReceive)] public async Task<IActionResult> Receive(ProcurementReceiptCommand x, CancellationToken ct)
+    {
+        if (x.OverrideExcess && !(await authorization.AuthorizeAsync(User, Permissions.PurchasingOverrideExcess)).Succeeded) return Forbid();
+        return Created("api/procurement/receipts", new { id = await service.ReceiveAsync(x, ct) });
+    }
     [HttpGet("receipts"), Authorize(Policy = Permissions.PurchasingRead)] public Task<IReadOnlyList<dynamic>> Receipts([FromQuery] ProcurementQuery q, CancellationToken ct) => service.ReceiptsAsync(q, ct);
     [HttpGet("orders/{id:guid}/pending-items"), Authorize(Policy = Permissions.PurchasingRead)] public Task<IReadOnlyList<dynamic>> PendingItems(Guid id, CancellationToken ct) => service.PendingOrderItemsAsync(id, ct);
     [HttpGet("receipt-options"), Authorize(Policy = Permissions.PurchasingRead)] public Task<dynamic> ReceiptOptions(CancellationToken ct) => service.ReceiptOptionsAsync(ct);
