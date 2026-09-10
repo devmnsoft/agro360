@@ -154,3 +154,16 @@ O build `Debug` posterior encontrou a API do usuário já ativa no PID 17912 e n
 - O Migrator recusa Production, identifica host/porta/base/usuário sem revelar a connection string, valida os IDs/slugs das fixtures, usa o `PasswordHasher` real e Data Protection persistente, corrige os vínculos, revoga sessões e registra auditoria sem material secreto.
 - O SQL consolidado permanece sem credencial conhecida e a documentação contraditória foi removida. Reexecução ocorre somente por comando operacional explícito; nunca no startup/seed.
 - **Contas ainda não provisionadas neste ambiente:** não há SDK .NET nem cliente/servidor PostgreSQL instalados no contêiner. Retomada: `ConnectionStrings__Agro360='<segredo local>' ASPNETCORE_ENVIRONMENT=Homologation ./scripts/provision-homologation.sh`; depois iniciar API/Web e concluir login, troca, refresh e logout pelo navegador.
+
+## Incremento E6 — fundação de Pecuária Integrada — 2026-09-10
+
+Baseline: branch `work`, HEAD `770e1f9`, árvore inicialmente limpa. Não foram encontrados `AGENTS.md`. O ambiente desta execução não dispõe de `dotnet` nem `psql`, portanto código e banco permanecem **implementados sem homologação**.
+
+- **Utilizável após migration 068:** cadastro individual preserva categoria, indicação de nascimento estimado, origem e observações; valida referências do tenant e impede evento anterior ao nascimento. `GET /api/v1/livestock/animals/{id}` retorna o cadastro e timeline ordenada pela data operacional, combinando eventos, transferências, manejos e sanidade.
+- **Modelo criado:** localizações próprias; modo explícito de controle coletivo/individual; movimentos quantitativos auditáveis; histórico de identificadores; conciliação obrigatória antes da individualização. Lotes de estoque continuam independentes.
+- **Integrações preservadas:** tratamento existente segue consumindo estoque e apropriando custo na mesma transação; rastreabilidade existente liga produto, aplicação e animal. Não foi criado financeiro paralelo.
+- **Parciais:** cadastro/histórico, pesagem individual, tratamento/estoque/custo, propriedades/pastos e dashboard.
+- **Não iniciadas neste recorte:** ordem de manejo completa, pesagem coletiva, alimentação com devolução/perda, reservas pecuárias, saída comercial integrada, rateios e exports CSV.
+- **Sem homologação:** migration limpa/incremental, API/Web, Swagger, login/MFA, isolamento com role não proprietária, concorrência e navegador/mobile. Retomada: executar restore/build/test, `scripts/validate-full-sql.sh` e migration 068 em PostgreSQL descartável antes de ampliar os fluxos.
+
+Continuidade ordenada: homologar 068; implementar movimentação individual/coletiva com estorno; depois ordens de manejo e pesagens; só então alimentação/estoque, comercial/financeiro e custos. Manutenção de equipamentos, logística e sincronização móvel permanecem posteriores a essas dependências.

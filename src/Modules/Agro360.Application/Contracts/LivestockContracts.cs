@@ -12,7 +12,11 @@ public sealed record RegisterAnimalCommand(
     DateOnly BirthDate,
     Guid? HerdId,
     Guid? MotherId,
-    Guid? FatherId);
+    Guid? FatherId,
+    string? Category = null,
+    bool BirthDateEstimated = false,
+    string? Origin = null,
+    string? Notes = null);
 
 public sealed record AnimalDto(
     Guid Id,
@@ -46,6 +50,22 @@ public sealed record TreatAnimalCommand(
 
 public sealed record AnimalEventResult(Guid EventId, Guid AnimalId, string EventType, decimal? DailyGainKg, decimal CostAmount);
 
+public sealed record AnimalTimelineItemDto(
+    Guid Id,
+    string Type,
+    DateOnly OccurredOn,
+    string Source,
+    string Description,
+    decimal? Amount);
+
+public sealed record AnimalDetailDto(
+    AnimalDto Animal,
+    string? Category,
+    bool BirthDateEstimated,
+    string? Origin,
+    string? Notes,
+    IReadOnlyList<AnimalTimelineItemDto> Timeline);
+
 public interface ILivestockService
 {
     Task<AnimalDto> RegisterAnimalAsync(RegisterAnimalCommand command, CancellationToken cancellationToken);
@@ -55,4 +75,6 @@ public interface ILivestockService
     Task<AnimalEventResult> TreatAsync(TreatAnimalCommand command, CancellationToken cancellationToken);
 
     Task<PagedResult<AnimalDto>> ListAnimalsAsync(Guid? farmId, int page, int pageSize, string? search, CancellationToken cancellationToken);
+
+    Task<AnimalDetailDto?> GetAnimalDetailAsync(Guid animalId, CancellationToken cancellationToken);
 }

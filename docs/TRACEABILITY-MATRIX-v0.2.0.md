@@ -112,3 +112,14 @@ Esta seção registra maturidade observada em execução e prevalece sobre decla
 | Isolamento e seed | RLS, Dapper tenant-safe e testes PostgreSQL | 4 testes de integração ignorados | NÃO HOMOLOGADO |
 | Fluxos verticais | camadas declaradas nas linhas anteriores | sem E2E autenticado neste checkpoint | FOUNDATION |
 | Próxima entrega do plano mestre | não aplicável | anexo ausente na sessão/repositório | BLOQUEADO |
+
+## Atualização Pecuária Integrada — 2026-09-10
+
+| Jornada pecuária | Estado | Evidência presente | Gate pendente |
+|---|---|---|---|
+| Modelo animal/grupo/localização/insumo | **implementado sem homologação** | migration 068 separa entidades, modo de controle e conciliação | PostgreSQL limpo e incremental, concorrência |
+| Cadastro e histórico individual | **implementado sem homologação** | contrato enriquecido, validação tenant/filiação e detalhe com timeline | API/Swagger/navegador e troca auditada de identificador |
+| Pesagem individual e sanidade | **parcial** | idempotência, data de nascimento, estoque/custo/transação | correção auditada, limites configuráveis e restrições por finalidade |
+| Movimentações | **parcial** | transferência individual anterior e ledger coletivo na migration | serviços de grupo, retroatividade, ajuste/estorno E2E |
+| Manejos, alimentação, comercial e custos | **parcial** | eventos simples e integrações anteriores | ordens completas, devoluções/perdas, reserva/expedição e rateio |
+| Dashboard, relatórios e UX | **parcial** | dashboard consolidado anterior | data de referência histórica, drill-down completo, CSV e telas operacionais |

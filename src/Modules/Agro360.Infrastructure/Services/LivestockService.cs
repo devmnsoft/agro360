@@ -22,14 +22,17 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
 
         return database.InTenantTransactionAsync(async (connection, transaction) =>
         {
+            await ValidateRegistrationReferencesAsync(connection, transaction, command, cancellationToken).ConfigureAwait(false);
             await connection.ExecuteAsync(new CommandDefinition(
                 """
                 insert into agro360.livestock_animals
                     (id, tenant_id, farm_id, herd_id, tag, rfid, species, breed, sex,
-                     birth_date, mother_id, father_id, status, created_at, created_by, version)
+                     birth_date, mother_id, father_id, category, birth_date_estimated, origin, notes,
+                     status, created_at, created_by, version)
                 values
                     (@Id, @TenantId, @FarmId, @HerdId, @Tag, @Rfid, @Species, @Breed, @Sex,
-                     @BirthDate, @MotherId, @FatherId, 1, now(), @CreatedBy, 1);
+                     @BirthDate, @MotherId, @FatherId, @Category, @BirthDateEstimated, @Origin, @Notes,
+                     1, now(), @CreatedBy, 1);
 
                 insert into agro360.livestock_animal_events
                     (id, tenant_id, animal_id, event_type, occurred_on, data, created_at, created_by)
@@ -51,6 +54,10 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
                     animal.BirthDate,
                     command.MotherId,
                     command.FatherId,
+                    Category = string.IsNullOrWhiteSpace(command.Category) ? null : command.Category.Trim(),
+                    command.BirthDateEstimated,
+                    Origin = string.IsNullOrWhiteSpace(command.Origin) ? null : command.Origin.Trim(),
+                    Notes = string.IsNullOrWhiteSpace(command.Notes) ? null : command.Notes.Trim(),
                     CreatedBy = tenantContext.UserId,
                     EventId = Guid.CreateVersion7()
                 },
@@ -98,6 +105,7 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
             var existing = await FindEventAsync(
                 connection,
                 transaction,
+                command.AnimalId,
                 command.IdempotencyKey,
                 cancellationToken).ConfigureAwait(false);
             if (existing is not null)
@@ -111,6 +119,7 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
                 command.AnimalId,
                 cancellationToken).ConfigureAwait(false);
             EnsureActive(animal);
+            EnsureNotBeforeBirth(animal, command.MeasuredOn);
             var weight = Guard.Positive(command.WeightKg, nameof(command.WeightKg));
             decimal? dailyGain = null;
             if (animal.CurrentWeightKg.HasValue && animal.LastWeightDate.HasValue)
@@ -186,6 +195,7 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
             var existing = await FindEventAsync(
                 connection,
                 transaction,
+                command.AnimalId,
                 command.IdempotencyKey,
                 cancellationToken).ConfigureAwait(false);
             if (existing is not null)
@@ -202,6 +212,7 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
             var unit = Guard.Required(command.Unit, nameof(command.Unit), 16).ToLowerInvariant();
             var animal = await LockAnimalAsync(connection, transaction, command.AnimalId, cancellationToken).ConfigureAwait(false);
             EnsureActive(animal);
+            EnsureNotBeforeBirth(animal, command.AppliedOn);
             var balance = await connection.QuerySingleOrDefaultAsync<BalanceRow>(new CommandDefinition(
                 """
                 select b.id, b.unit, b.available, b.reserved, b.average_cost as AverageCost, b.version,
@@ -390,6 +401,75 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
         }, cancellationToken);
     }
 
+    public Task<AnimalDetailDto?> GetAnimalDetailAsync(Guid animalId, CancellationToken cancellationToken) =>
+        database.InTenantTransactionAsync(async (connection, transaction) =>
+        {
+            var row = await connection.QuerySingleOrDefaultAsync<AnimalDetailRow>(new CommandDefinition(
+                """
+                select id, farm_id as FarmId, tag, rfid, species, breed, sex, birth_date as BirthDate,
+                       case status when 1 then 'ACTIVE' when 2 then 'QUARANTINE' when 3 then 'SOLD'
+                           when 4 then 'DEAD' when 5 then 'SLAUGHTERED' else 'OBSERVATION' end as Status,
+                       current_weight_kg as CurrentWeightKg, last_weight_date as LastWeightDate,
+                       withdrawal_until as WithdrawalUntil, version, category,
+                       birth_date_estimated as BirthDateEstimated, origin, notes
+                from agro360.livestock_animals
+                where tenant_id=@TenantId and id=@AnimalId and deleted_at is null;
+                """,
+                new { tenantContext.TenantId, AnimalId = animalId }, transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+            if (row is null) return null;
+
+            var timeline = (await connection.QueryAsync<AnimalTimelineItemDto>(new CommandDefinition(
+                """
+                select id, event_type as Type, occurred_on as OccurredOn, 'ANIMAL_EVENT' as Source,
+                       coalesce(data->>'notes', event_type) as Description,
+                       nullif(cost_amount, 0) as Amount
+                from agro360.livestock_animal_events
+                where tenant_id=@TenantId and animal_id=@AnimalId
+                union all
+                select id, 'TRANSFER' as Type, moved_on as OccurredOn, 'MOVEMENT' as Source,
+                       coalesce(notes, 'Transferência interna') as Description, null::numeric as Amount
+                from agro360.livestock_animal_movements
+                where tenant_id=@TenantId and animal_id=@AnimalId
+                union all
+                select id, event_type as Type, occurred_on as OccurredOn, 'HANDLING' as Source,
+                       coalesce(notes, event_type) as Description, nullif(estimated_cost, 0) as Amount
+                from agro360.livestock_handling_events
+                where tenant_id=@TenantId and animal_id=@AnimalId
+                union all
+                select id, event_type as Type, occurred_on as OccurredOn, 'HEALTH' as Source,
+                       coalesce(notes, diagnosis, event_type) as Description, nullif(cost_amount, 0) as Amount
+                from agro360.livestock_health_events
+                where tenant_id=@TenantId and animal_id=@AnimalId
+                order by OccurredOn desc, Id desc;
+                """,
+                new { tenantContext.TenantId, AnimalId = animalId }, transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false)).ToArray();
+            return new AnimalDetailDto(row.ToDto(), row.Category, row.BirthDateEstimated, row.Origin, row.Notes, timeline);
+        }, cancellationToken);
+
+    private async Task ValidateRegistrationReferencesAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        RegisterAnimalCommand command,
+        CancellationToken cancellationToken)
+    {
+        if (command.MotherId == command.FatherId && command.MotherId.HasValue)
+            throw new DomainException("Mãe e pai devem ser animais distintos.", "agro360.livestock_parent_duplicate");
+
+        var valid = await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
+            """
+            select exists(select 1 from agro360.geo_farms where tenant_id=@TenantId and id=@FarmId and deleted_at is null)
+              and (@HerdId is null or exists(select 1 from agro360.livestock_herds where tenant_id=@TenantId and id=@HerdId and farm_id=@FarmId and deleted_at is null))
+              and (@MotherId is null or exists(select 1 from agro360.livestock_animals where tenant_id=@TenantId and id=@MotherId and deleted_at is null and birth_date<=@BirthDate))
+              and (@FatherId is null or exists(select 1 from agro360.livestock_animals where tenant_id=@TenantId and id=@FatherId and deleted_at is null and birth_date<=@BirthDate));
+            """,
+            new { tenantContext.TenantId, command.FarmId, command.HerdId, command.MotherId, command.FatherId, command.BirthDate },
+            transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        if (!valid)
+            throw new DomainException("Propriedade, lote ou filiação não pertence ao contexto informado.", "agro360.livestock_reference_invalid");
+    }
+
     private async Task<AnimalRow> LockAnimalAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -398,7 +478,7 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
     {
         var animal = await connection.QuerySingleOrDefaultAsync<AnimalRow>(new CommandDefinition(
             """
-            select id, farm_id as FarmId, status, current_weight_kg as CurrentWeightKg,
+            select id, farm_id as FarmId, status, birth_date as BirthDate, current_weight_kg as CurrentWeightKg,
                    last_weight_date as LastWeightDate, withdrawal_until as WithdrawalUntil, version
             from agro360.livestock_animals
             where id = @AnimalId and tenant_id = @TenantId and deleted_at is null
@@ -413,6 +493,7 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
     private Task<AnimalEventResult?> FindEventAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
+        Guid animalId,
         string? idempotencyKey,
         CancellationToken cancellationToken)
     {
@@ -426,9 +507,9 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
             select id as EventId, animal_id as AnimalId, event_type as EventType,
                    cast(data->>'dailyGainKg' as numeric) as DailyGainKg, cost_amount as CostAmount
             from agro360.livestock_animal_events
-            where tenant_id = @TenantId and idempotency_key = @IdempotencyKey;
+            where tenant_id = @TenantId and animal_id = @AnimalId and idempotency_key = @IdempotencyKey;
             """,
-            new { tenantContext.TenantId, IdempotencyKey = idempotencyKey },
+            new { tenantContext.TenantId, AnimalId = animalId, IdempotencyKey = idempotencyKey },
             transaction,
             cancellationToken: cancellationToken));
     }
@@ -439,6 +520,12 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
         {
             throw new ConflictException("O animal não está ativo para esta operação.", "agro360.livestock_animal_not_active");
         }
+    }
+
+    private static void EnsureNotBeforeBirth(AnimalRow animal, DateOnly occurredOn)
+    {
+        if (occurredOn < animal.BirthDate)
+            throw new DomainException("O evento não pode ser anterior ao nascimento do animal.", "agro360.livestock_event_before_birth");
     }
 
     private Task<Guid> UpsertNodeAsync(
@@ -518,6 +605,8 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
 
         public short Status { get; init; }
 
+        public DateOnly BirthDate { get; init; }
+
         public decimal? CurrentWeightKg { get; init; }
 
         public DateOnly? LastWeightDate { get; init; }
@@ -525,6 +614,28 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
         public DateOnly? WithdrawalUntil { get; init; }
 
         public long Version { get; init; }
+    }
+
+    private sealed class AnimalDetailRow
+    {
+        public Guid Id { get; init; }
+        public Guid FarmId { get; init; }
+        public string Tag { get; init; } = string.Empty;
+        public string? Rfid { get; init; }
+        public string Species { get; init; } = string.Empty;
+        public string Breed { get; init; } = string.Empty;
+        public string Sex { get; init; } = string.Empty;
+        public DateOnly BirthDate { get; init; }
+        public string Status { get; init; } = string.Empty;
+        public decimal? CurrentWeightKg { get; init; }
+        public DateOnly? LastWeightDate { get; init; }
+        public DateOnly? WithdrawalUntil { get; init; }
+        public long Version { get; init; }
+        public string? Category { get; init; }
+        public bool BirthDateEstimated { get; init; }
+        public string? Origin { get; init; }
+        public string? Notes { get; init; }
+        public AnimalDto ToDto() => new(Id, FarmId, Tag, Rfid, Species, Breed, Sex, BirthDate, Status, CurrentWeightKg, LastWeightDate, WithdrawalUntil, Version);
     }
 
     private sealed class BalanceRow
