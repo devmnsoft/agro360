@@ -68,21 +68,71 @@ try
         case "provision-homologation":
             await ProvisionHomologationAsync(connection, configuration, args).ConfigureAwait(false);
             break;
+        case "provision-santa-clara":
+            await ProvisionSantaClaraAsync(connection, configuration, args).ConfigureAwait(false);
+            break;
         case "diagnose-homologation":
             await DiagnoseHomologationAsync(connection, configuration, args).ConfigureAwait(false);
             break;
         default:
-            throw new ArgumentException("Comando inválido. Use status, validate, migrate, seed minimal, seed demo ou provision-homologation.");
+            throw new ArgumentException("Comando inválido. Use status, validate, migrate, seed minimal, seed demo, provision-santa-clara ou provision-homologation.");
     }
 
     return 0;
 }
+
 catch (Exception exception)
 {
     Log.Fatal(exception, "Operação {Command} falhou; nenhuma migration com falha foi registrada.", command);
     return 1;
 }
 finally { await Log.CloseAndFlushAsync().ConfigureAwait(false); }
+
+
+static async Task ProvisionSantaClaraAsync(NpgsqlConnection connection, IConfiguration configuration, string[] args)
+{
+    var environment = (GetOption(args, "--environment") ?? configuration["DOTNET_ENVIRONMENT"] ?? configuration["ASPNETCORE_ENVIRONMENT"] ?? "").Trim();
+    if (environment is not ("Development" or "Homologation"))
+        throw new InvalidOperationException("O provisionamento da Santa Clara é permitido somente em Development ou Homologation.");
+
+    var password = RequireSecret("AGRO360_PROVISION_SANTA_CLARA_PASSWORD");
+    var hasher = new PasswordHasher();
+    var tenantId = Guid.Parse("30000000-0000-0000-0000-000000000001");
+    var userId = Guid.Parse("30000000-0000-0000-0000-000000000003");
+    var email = "admin@santaclara.agro360.local";
+    await using var transaction = await connection.BeginTransactionAsync().ConfigureAwait(false);
+
+    var tenant = await connection.QuerySingleOrDefaultAsync<ProvisioningTenant>(
+        "select id,slug from agro360.tenancy_tenants where id=@Id or slug='santa-clara' for update", new { Id = tenantId }, transaction);
+    if (tenant == default)
+        throw new InvalidOperationException("O tenant Santa Clara não está instalado; execute as migrations e o seed de homologação antes do provisionamento.");
+    if (tenant.Id != tenantId || tenant.Slug != "santa-clara")
+        throw new InvalidOperationException("Há colisão entre o ID e o slug reservados da Santa Clara; nenhuma alteração foi aplicada.");
+
+    var conflicts = (await connection.QueryAsync<ProvisionedIdentity>(
+        "select id,tenant_id as TenantId,email,status,deleted_at as DeletedAt from agro360.identity_users where id=@Id or lower(email)=@Email for update",
+        new { Id = userId, Email = email }, transaction)).ToArray();
+    if (conflicts.Length > 1 || conflicts.Any(x => x.Id != userId || x.TenantId != tenantId || !x.Email.Equals(email, StringComparison.OrdinalIgnoreCase)))
+        throw new InvalidOperationException("A identidade Santa Clara possui registros conflitantes por ID, e-mail ou tenant; nenhuma alteração foi aplicada.");
+    var current = conflicts.SingleOrDefault();
+    if (current is not null && (current.DeletedAt is not null || !string.Equals(current.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase) && !string.Equals(current.Status, "INVITED", StringComparison.OrdinalIgnoreCase)))
+        throw new InvalidOperationException($"A identidade Santa Clara está excluída ou com status administrativo {current.Status}; restauração explícita é necessária.");
+
+    await connection.ExecuteAsync(
+        """
+        select set_config('app.tenant_id',@Tenant,true);
+        insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,normalized_document,document_type,must_change_password)
+        values (@UserId,@TenantId,'Administrador Santa Clara',@Email,@Hash,'ACTIVE','52998224725','CPF',true)
+        on conflict(id) do update set password_hash=excluded.password_hash,must_change_password=true,updated_at=now(),version=agro360.identity_users.version+1;
+        insert into agro360.identity_user_roles(tenant_id,user_id,role_id) values (@TenantId,@UserId,'30000000-0000-0000-0000-000000000004') on conflict do nothing;
+        update agro360.identity_refresh_tokens set revoked_at=coalesce(revoked_at,now()) where tenant_id=@TenantId and user_id=@UserId;
+        insert into agro360.audit_logs(id,tenant_id,user_id,action,entity_type,entity_id,after_data,occurred_at)
+        values (gen_random_uuid(),@TenantId,@UserId,'homologation_access_provisioned','IdentityUser',@UserId,jsonb_build_object('environment',@Environment,'operator',current_user,'sessionsRevoked',true,'mustChangePassword',true),now());
+        """, new { Tenant = tenantId.ToString(), TenantId = tenantId, UserId = userId, Email = email, Hash = hasher.Hash(password), Environment = environment }, transaction);
+    await transaction.CommitAsync().ConfigureAwait(false);
+    await VerifyProvisionedIdentityAsync(connection.ConnectionString, hasher, new(userId, tenantId, email, password)).ConfigureAwait(false);
+    Log.Information("Santa Clara provisionada e verificada após commit; MFA do SuperAdmin não foi consultado.");
+}
 
 static async Task DiagnoseHomologationAsync(NpgsqlConnection connection, IConfiguration configuration, string[] args)
 {
@@ -246,13 +296,20 @@ static async Task VerifyProvisionedIdentitiesAsync(
             tenantPassword)
     };
 
+    foreach (var item in expected)
+        await VerifyProvisionedIdentityAsync(connectionString, hasher, item).ConfigureAwait(false);
+}
+
+static async Task VerifyProvisionedIdentityAsync(
+    string connectionString,
+    PasswordHasher hasher,
+    ProvisioningVerification item)
+{
     // A nova conexão é intencional: comprova o valor efetivamente persistido e
     // reproduz o contexto transacional usado pela API, inclusive sob RLS/pooling.
     await using var verificationConnection = new NpgsqlConnection(connectionString);
     await verificationConnection.OpenAsync().ConfigureAwait(false);
-    foreach (var item in expected)
-    {
-        await using var verificationTransaction = await verificationConnection.BeginTransactionAsync().ConfigureAwait(false);
+    await using var verificationTransaction = await verificationConnection.BeginTransactionAsync().ConfigureAwait(false);
         await verificationConnection.ExecuteAsync(
             "select set_config('app.tenant_id',@TenantId,true);",
             new { TenantId = item.TenantId.ToString() }, verificationTransaction).ConfigureAwait(false);
@@ -276,10 +333,9 @@ static async Task VerifyProvisionedIdentitiesAsync(
             || !hasher.Verify(item.Password, row.PasswordHash))
             throw new InvalidOperationException($"A credencial persistida para {item.Email} falhou na verificação pós-commit; nenhuma credencial foi exibida.");
 
-        await verificationTransaction.CommitAsync().ConfigureAwait(false);
-        Log.Information("Credencial de {Email} verificada após o commit em nova conexão, sob o tenant {TenantId}; registro único, formato válido e troca inicial exigida.",
-            item.Email, item.TenantId);
-    }
+    await verificationTransaction.CommitAsync().ConfigureAwait(false);
+    Log.Information("Credencial de {Email} verificada após o commit em nova conexão, sob o tenant {TenantId}; registro único, formato válido e troca inicial exigida.",
+        item.Email, item.TenantId);
 }
 
 static bool IsSupportedPasswordHash(string encodedHash)
@@ -385,6 +441,8 @@ internal sealed record ProvisionedIdentity(Guid Id, Guid TenantId, string Email)
 internal sealed record SuperAdminAuthority(bool Active, DateTimeOffset? DeletedAt);
 
 internal sealed record ProvisioningVerification(Guid UserId, Guid TenantId, string Email, string Password);
+
+internal sealed record ProvisioningTenant(Guid Id, string Slug);
 
 internal sealed record PersistedCredential(
     Guid Id,

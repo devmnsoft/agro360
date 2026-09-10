@@ -88,6 +88,9 @@ public sealed class LoginExperienceTests
         Assert.Contains("hasher.Verify(item.Password, row.PasswordHash)", migrator, StringComparison.Ordinal);
         Assert.Contains("IsSupportedPasswordHash(row.PasswordHash)", migrator, StringComparison.Ordinal);
         Assert.Contains("[switch]$DiagnosticOnly", Read("scripts/provision-homologation-local.ps1"), StringComparison.Ordinal);
+        Assert.Contains("provision-santa-clara", Read("scripts/provision-homologation-local.ps1"), StringComparison.Ordinal);
+        Assert.Contains("user_not_found", Read("src/Modules/Agro360.Infrastructure/Services/IdentityService.cs"), StringComparison.Ordinal);
+        Assert.Contains("password_verification_failed", Read("src/Modules/Agro360.Infrastructure/Services/IdentityService.cs"), StringComparison.Ordinal);
     }
 
     [Fact]
