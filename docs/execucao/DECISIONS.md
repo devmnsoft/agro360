@@ -58,3 +58,9 @@ SuperAdmin e Santa Clara é uma operação consciente do Migrator, restrita a
 Development/Homologation, com segredos em variáveis locais e confirmação TOTP
 antes da ativação. A redefinição revoga sessões e exige troca no primeiro
 login; reexecução nunca é efeito colateral de seed ou inicialização.
+
+## ADR-E6-01 — Separação do controle pecuário e detalhe histórico (2026-09-10)
+
+O incremento mantém quatro identidades distintas: animal individual em `livestock_animals`, grupo operacional em `livestock_herds`, localização em `livestock_locations` e lote de insumo no estoque existente. Grupos declaram `COLLECTIVE` ou `INDIVIDUAL`; a passagem para indivíduos exige conciliação confirmada com quantidades iguais, em vez de criar cabeças implicitamente. Movimentos coletivos são eventos imutáveis com motivo, responsável, idempotência e eventual estorno referenciado.
+
+A data de nascimento continua obrigatória no contrato atual, mas pode ser marcada como estimada. Cadastro valida propriedade, grupo e filiação no tenant; pesagem e tratamento anteriores ao nascimento são rejeitados. O detalhe individual agrega fontes históricas sem apagar ou recalcular eventos. Esta fundação não declara implementadas as jornadas de ordens, reserva comercial, alimentação completa ou rateio.
