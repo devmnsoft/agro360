@@ -1,5 +1,16 @@
 # Checkpoint de execução do plano mestre
 
+## Incremento de estabilização pós-PR #97 — 2026-09-10
+
+Estado observado: branch `work`, HEAD inicial `38bf393`. Não havia alterações locais. O ambiente não oferece `dotnet`, `pwsh` nem `psql`; acesso, banco e jornadas permanecem **implementados sem homologação**.
+
+- **Acesso:** API e Migrator compartilham nome da aplicação, propósito MFA e diretório persistente configurável de Data Protection. O Migrator carrega o ambiente selecionado, valida identidade/tenant/ID antes do upsert e há provisionador PowerShell sem Python.
+- **Compras:** repetição compara fingerprint SHA-256 do comando; conteúdo divergente gera conflito. Unidade diferente da unidade-base é bloqueada até conversão explícita. Parcelamento impossível falha antes dos inserts. Excesso exige `purchasing.receipts.override-excess`.
+- **Banco:** migration incremental `067_procurement_receipt_integrity.sql` e instalador consolidado receberam fingerprint, constraint e permissão. Instalação limpa e atualização anterior continuam pendentes.
+- **Fora deste incremento:** quarentena/liberação, reversão e jornadas comercial/industrial. Essas lacunas não foram reclassificadas.
+
+Passaram: `git diff --check`, `bash -n scripts/provision-homologation.sh`, `node scripts/verify-offline-shell.mjs` e `bash scripts/validate-full-sql.sh`. Restore/build/testes, parser PowerShell, PostgreSQL, MFA entre processos e navegador não foram executados pela ausência dos runtimes.
+
 Atualizado em 2026-09-08. Este documento registra somente evidências reproduzíveis; presença de arquivo, rota ou tela não equivale a fluxo homologado.
 
 ## Fonte e regra de avanço

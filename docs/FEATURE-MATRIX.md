@@ -1,5 +1,7 @@
 # Matriz de funcionalidades
 
+> Resumo histórico preservado. A classificação canônica, incluindo a distinção entre implementação e homologação, está em [TRACEABILITY-MATRIX-v0.2.0.md](TRACEABILITY-MATRIX-v0.2.0.md).
+
 | Área | Estado | Evidência principal | Limitação conhecida |
 |---|---|---|---|
 | Configuração PostgreSQL | Entregue | Chave canônica, conflito legado detectado, senha/passfile e diagnóstico sem segredo | A senha real é externa ao repositório |

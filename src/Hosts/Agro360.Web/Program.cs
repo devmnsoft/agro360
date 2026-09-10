@@ -10,7 +10,8 @@ builder.Host.UseSerilog((context, configuration) => configuration
     .Enrich.WithProperty("Application", "Agro360.Web")
     .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture));
 
-var dataProtection = builder.Services.AddDataProtection();
+var dataProtection = builder.Services.AddDataProtection()
+    .SetApplicationName("MNSOFT.Agro360");
 var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"];
 if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
 {

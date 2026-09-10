@@ -1,5 +1,7 @@
 # Plano de execução Agro360
 
+> Atualização de 2026-09-10: o próximo gate é identidade/SaaS em PostgreSQL real (migration 067, provisionamento PowerShell/Bash, MFA após reinício, login/refresh e isolamento). Depois vêm quarentena/liberação/reversão de compras; somente então comercial e produção. Estados e bloqueios ficam nos documentos canônicos `../EXECUTION-CHECKPOINT.md` e `../TRACEABILITY-MATRIX-v0.2.0.md`.
+
 Fonte aprovada: [plano mestre integral](AGRO360-MASTER-PLAN.md), incorporado em 2026-09-08. Requisitos não são evidências de implementação. Não reutilizar regras, namespaces ou diagnósticos do SIGOV-PLUS.
 
 ## Controles canônicos (sem duplicação)

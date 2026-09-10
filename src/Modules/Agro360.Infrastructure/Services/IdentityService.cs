@@ -21,7 +21,7 @@ public sealed class IdentityService(
     IDataProtectionProvider dataProtectionProvider,
     ILogger<IdentityService> logger) : IIdentityService
 {
-    private readonly IDataProtector _mfaProtector = dataProtectionProvider.CreateProtector("Agro360.Identity.Mfa.v1");
+    private readonly IDataProtector _mfaProtector = dataProtectionProvider.CreateProtector(DataProtectionSettings.MfaPurpose);
     public Task<BootstrapResult> BootstrapAsync(BootstrapCommand command, CancellationToken cancellationToken)
     {
         ValidateEmail(command.Email);

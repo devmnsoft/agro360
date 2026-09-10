@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using Agro360.Application.Contracts;
 using Agro360.Domain.Procurement;
@@ -59,16 +60,22 @@ public sealed class ProcurementService(DatabaseExecutor db, ITenantContext tenan
         if (x.Installments is < 1 or > 60 || x.FinanceAccountId is null || x.FirstDueOn is null || x.FirstDueOn < DateOnly.FromDateTime(x.ReceivedAt.UtcDateTime)) throw new DomainException("Conta financeira, primeiro vencimento e parcelas válidas são obrigatórios.", "agro360.procurement_financial_forecast_invalid");
 
         var idempotencyKey = x.IdempotencyKey.Trim();
+        var requestFingerprint = ReceiptFingerprint(x);
         await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"{tenant.TenantId:N}:{idempotencyKey}" }, t, cancellationToken: ct));
-        var existing = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition("select id from agro360.procurement_receipts where tenant_id=@TenantId and idempotency_key=@IdempotencyKey", new { tenant.TenantId, IdempotencyKey = idempotencyKey }, t, cancellationToken: ct));
-        if (existing is not null) return existing.Value;
+        var existing = await c.QuerySingleOrDefaultAsync<ExistingReceipt>(new CommandDefinition("select id,request_fingerprint RequestFingerprint from agro360.procurement_receipts where tenant_id=@TenantId and idempotency_key=@IdempotencyKey", new { tenant.TenantId, IdempotencyKey = idempotencyKey }, t, cancellationToken: ct));
+        if (existing is not null)
+        {
+            if (!string.Equals(existing.RequestFingerprint, requestFingerprint, StringComparison.Ordinal))
+                throw new ConflictException("A chave de idempotência já foi utilizada com outro conteúdo.");
+            return existing.Id;
+        }
 
         var order = await c.QuerySingleOrDefaultAsync<ReceiptOrderRow>(new CommandDefinition("select o.id,o.total,o.cost_center_id CostCenterId,s.legal_name SupplierName from agro360.procurement_purchase_orders o join agro360.procurement_suppliers s on s.tenant_id=o.tenant_id and s.id=o.supplier_id where o.tenant_id=@TenantId and o.id=@OrderId and o.status in('APPROVED','SENT','PARTIALLY_RECEIVED') and o.deleted_at is null for update of o", new { tenant.TenantId, OrderId = x.PurchaseOrderId }, t, cancellationToken: ct)) ?? throw new DomainException("Pedido não está apto ao recebimento.", "agro360.procurement_order_not_receivable");
         var financeAccountValid = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.finance_chart_of_accounts where tenant_id=@TenantId and id=@AccountId and active and type in('EXPENSE','COST','LIABILITY'))", new { tenant.TenantId, AccountId = x.FinanceAccountId }, t, cancellationToken: ct));
         if (!financeAccountValid) throw new DomainException("Conta financeira inexistente ou incompatível.", "agro360.procurement_finance_account_invalid");
 
         var itemIds = x.Items.Select(item => item.PurchaseOrderItemId).Distinct().ToArray();
-        var rows = (await c.QueryAsync<ReceiptItemRow>(new CommandDefinition("select oi.id,oi.quantity,oi.received_quantity ReceivedQuantity,oi.unit_price UnitPrice,c.name,c.requires_lot RequiresLot,c.requires_expiry RequiresExpiry,c.requires_inspection RequiresInspection,c.item_type ItemType,c.related_product_id RelatedProductId from agro360.procurement_purchase_order_items oi join agro360.procurement_item_catalog c on c.tenant_id=oi.tenant_id and c.id=oi.catalog_item_id where oi.tenant_id=@TenantId and oi.purchase_order_id=@OrderId and oi.id=any(@ItemIds) order by oi.id for update of oi", new { tenant.TenantId, OrderId = x.PurchaseOrderId, ItemIds = itemIds }, t, cancellationToken: ct))).ToDictionary(item => item.Id);
+        var rows = (await c.QueryAsync<ReceiptItemRow>(new CommandDefinition("select oi.id,oi.quantity,oi.received_quantity ReceivedQuantity,oi.unit_price UnitPrice,oi.unit,c.name,c.requires_lot RequiresLot,c.requires_expiry RequiresExpiry,c.requires_inspection RequiresInspection,c.item_type ItemType,c.related_product_id RelatedProductId,p.base_unit ProductBaseUnit from agro360.procurement_purchase_order_items oi join agro360.procurement_item_catalog c on c.tenant_id=oi.tenant_id and c.id=oi.catalog_item_id left join agro360.inventory_products p on p.tenant_id=c.tenant_id and p.id=c.related_product_id and p.deleted_at is null where oi.tenant_id=@TenantId and oi.purchase_order_id=@OrderId and oi.id=any(@ItemIds) order by oi.id for update of oi", new { tenant.TenantId, OrderId = x.PurchaseOrderId, ItemIds = itemIds }, t, cancellationToken: ct))).ToDictionary(item => item.Id);
         if (rows.Count != itemIds.Length) throw new DomainException("Um ou mais itens não pertencem ao pedido.", "agro360.procurement_receipt_item_invalid");
 
         var runningQuantity = rows.ToDictionary(pair => pair.Key, pair => pair.Value.ReceivedQuantity);
@@ -82,6 +89,7 @@ public sealed class ProcurementService(DatabaseExecutor db, ITenantContext tenan
             {
                 requiresStock = true;
                 if (row.RelatedProductId is null) throw new DomainException($"O item '{row.Name}' não está vinculado a produto de estoque.", "agro360.procurement_stock_product_required");
+                if (!string.Equals(row.Unit, row.ProductBaseUnit, StringComparison.OrdinalIgnoreCase)) throw new DomainException($"A unidade de compra de '{row.Name}' ({row.Unit}) difere da unidade-base ({row.ProductBaseUnit}); cadastre uma conversão explícita antes de receber.", "agro360.procurement_unit_conversion_required");
             }
         }
 
@@ -94,7 +102,7 @@ public sealed class ProcurementService(DatabaseExecutor db, ITenantContext tenan
 
         var id = Guid.CreateVersion7();
         var number = await Number(c, t, "RCV", ct);
-        await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_receipts(id,tenant_id,number,purchase_order_id,received_at,responsible_id,invoice_document,status,excess_justification,stock_integration_status,finance_integration_status,idempotency_key,warehouse_id,created_by,updated_by) values(@Id,@TenantId,@Number,@OrderId,@ReceivedAt,@UserId,@Invoice,'PENDING',@Reason,'PENDING','PENDING',@IdempotencyKey,@WarehouseId,@UserId,@UserId)", new { Id = id, tenant.TenantId, Number = number, OrderId = x.PurchaseOrderId, x.ReceivedAt, tenant.UserId, Invoice = x.InvoiceDocument, Reason = x.ExcessJustification, IdempotencyKey = idempotencyKey, x.WarehouseId }, t, cancellationToken: ct));
+        await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_receipts(id,tenant_id,number,purchase_order_id,received_at,responsible_id,invoice_document,status,excess_justification,stock_integration_status,finance_integration_status,idempotency_key,request_fingerprint,warehouse_id,created_by,updated_by) values(@Id,@TenantId,@Number,@OrderId,@ReceivedAt,@UserId,@Invoice,'PENDING',@Reason,'PENDING','PENDING',@IdempotencyKey,@RequestFingerprint,@WarehouseId,@UserId,@UserId)", new { Id = id, tenant.TenantId, Number = number, OrderId = x.PurchaseOrderId, x.ReceivedAt, tenant.UserId, Invoice = x.InvoiceDocument, Reason = x.ExcessJustification, IdempotencyKey = idempotencyKey, RequestFingerprint = requestFingerprint, x.WarehouseId }, t, cancellationToken: ct));
 
         foreach (var item in x.Items)
         {
@@ -113,6 +121,7 @@ public sealed class ProcurementService(DatabaseExecutor db, ITenantContext tenan
         if (!forecastExists)
         {
             var remaining = decimal.Round(order.Total, 2, MidpointRounding.AwayFromZero);
+            if (remaining <= 0 || remaining * 100 < x.Installments) throw new DomainException("O total do pedido não permite gerar parcelas positivas na quantidade informada.", "agro360.procurement_installments_amount_invalid");
             var regularAmount = decimal.Floor(remaining * 100 / x.Installments) / 100;
             for (var installment = 1; installment <= x.Installments; installment++)
             {
@@ -150,6 +159,13 @@ public sealed class ProcurementService(DatabaseExecutor db, ITenantContext tenan
     private static async Task<string> Number(Npgsql.NpgsqlConnection c, Npgsql.NpgsqlTransaction t, string prefix, CancellationToken ct) { var n = await c.ExecuteScalarAsync<long>(new CommandDefinition("select nextval('agro360.procurement_document_number_seq')", transaction: t, cancellationToken: ct)); return $"{prefix}-{DateTime.UtcNow:yyyy}-{n:000000}"; }
     private async Task Audit(Npgsql.NpgsqlConnection c, Npgsql.NpgsqlTransaction t, string entity, Guid id, string action, object data, CancellationToken ct) => await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_audit_events(id,tenant_id,entity_type,entity_id,action,changed_fields,created_by,updated_by) values(gen_random_uuid(),@TenantId,@Entity,@Id,@Action,@Data::jsonb,@UserId,@UserId)", new { tenant.TenantId, tenant.UserId, Entity = entity, Id = id, Action = action, Data = System.Text.Json.JsonSerializer.Serialize(data) }, t, cancellationToken: ct));
     private static string Csv(object? value) => $"\"{value?.ToString()?.Replace("\"", "\"\"")}\"";
+    private static string ReceiptFingerprint(ProcurementReceiptCommand command)
+    {
+        var canonical = string.Join("|", command.PurchaseOrderId.ToString("N"), command.ReceivedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture), command.InvoiceDocument?.Trim() ?? "", command.OverrideExcess, command.ExcessJustification?.Trim() ?? "", command.WarehouseId, command.FinanceAccountId, command.FirstDueOn, command.Installments,
+            string.Join(";", command.Items.OrderBy(item => item.PurchaseOrderItemId).Select(item => string.Join(",", item.PurchaseOrderItemId.ToString("N"), item.Quantity.ToString(CultureInfo.InvariantCulture), item.SupplierLot?.Trim() ?? "", item.ExpiresOn, item.Notes?.Trim() ?? ""))));
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+    private sealed class ExistingReceipt { public Guid Id { get; init; } public string? RequestFingerprint { get; init; } }
     private sealed class ReceiptOrderRow { public decimal Total { get; init; } public Guid? CostCenterId { get; init; } public string SupplierName { get; init; } = string.Empty; }
-    private sealed class ReceiptItemRow { public Guid Id { get; init; } public decimal Quantity { get; init; } public decimal ReceivedQuantity { get; init; } public decimal UnitPrice { get; init; } public string Name { get; init; } = string.Empty; public bool RequiresLot { get; init; } public bool RequiresExpiry { get; init; } public bool RequiresInspection { get; init; } public string ItemType { get; init; } = string.Empty; public Guid? RelatedProductId { get; init; } }
+    private sealed class ReceiptItemRow { public Guid Id { get; init; } public decimal Quantity { get; init; } public decimal ReceivedQuantity { get; init; } public decimal UnitPrice { get; init; } public string Unit { get; init; } = string.Empty; public string? ProductBaseUnit { get; init; } public string Name { get; init; } = string.Empty; public bool RequiresLot { get; init; } public bool RequiresExpiry { get; init; } public bool RequiresInspection { get; init; } public string ItemType { get; init; } = string.Empty; public Guid? RelatedProductId { get; init; } }
 }
