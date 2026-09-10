@@ -222,7 +222,78 @@ static async Task ProvisionHomologationAsync(NpgsqlConnection connection, IConfi
         insert into agro360.audit_logs(id,tenant_id,user_id,action,entity_type,entity_id,after_data) values (gen_random_uuid(),'30000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000003','homologation_access_provisioned','IdentityUser','30000000-0000-0000-0000-000000000003',jsonb_build_object('environment',@Environment,'sessionsRevoked',true,'mustChangePassword',true));
         """, new { SuperHash = hasher.Hash(superPassword), TenantHash = hasher.Hash(tenantPassword), MfaSecret = protectedMfaSecret, Environment = environment }, transaction).ConfigureAwait(false);
     await transaction.CommitAsync().ConfigureAwait(false);
+    await VerifyProvisionedIdentitiesAsync(connection.ConnectionString, hasher, superPassword, tenantPassword).ConfigureAwait(false);
     Log.Information("Duas identidades de homologação foram provisionadas; sessões anteriores revogadas, troca de senha exigida e MFA existente preservado: {MfaPreserved}.", preservedMfa);
+}
+
+static async Task VerifyProvisionedIdentitiesAsync(
+    string connectionString,
+    PasswordHasher hasher,
+    string superPassword,
+    string tenantPassword)
+{
+    var expected = new[]
+    {
+        new ProvisioningVerification(
+            HomologationFixtures.UserIds[0],
+            Guid.Parse("00000000-0000-0000-0000-000000000001"),
+            HomologationFixtures.Emails[0],
+            superPassword),
+        new ProvisioningVerification(
+            HomologationFixtures.UserIds[1],
+            Guid.Parse("30000000-0000-0000-0000-000000000001"),
+            HomologationFixtures.Emails[1],
+            tenantPassword)
+    };
+
+    // A nova conexão é intencional: comprova o valor efetivamente persistido e
+    // reproduz o contexto transacional usado pela API, inclusive sob RLS/pooling.
+    await using var verificationConnection = new NpgsqlConnection(connectionString);
+    await verificationConnection.OpenAsync().ConfigureAwait(false);
+    foreach (var item in expected)
+    {
+        await using var verificationTransaction = await verificationConnection.BeginTransactionAsync().ConfigureAwait(false);
+        await verificationConnection.ExecuteAsync(
+            "select set_config('app.tenant_id',@TenantId,true);",
+            new { TenantId = item.TenantId.ToString() }, verificationTransaction).ConfigureAwait(false);
+        var rows = (await verificationConnection.QueryAsync<PersistedCredential>(
+            """
+            select id,tenant_id as TenantId,email,password_hash as PasswordHash,
+                   status,deleted_at as DeletedAt,must_change_password as MustChangePassword
+            from agro360.identity_users
+            where tenant_id=@TenantId and lower(email)=@Email;
+            """,
+            new { item.TenantId, item.Email }, verificationTransaction).ConfigureAwait(false)).ToArray();
+
+        if (rows.Length != 1 || rows[0].Id != item.UserId || rows[0].TenantId != item.TenantId)
+            throw new InvalidOperationException($"A identidade {item.Email} não foi lida de forma unívoca no contexto de tenant da API após o commit.");
+        var row = rows[0];
+        if (!string.Equals(row.Email, item.Email, StringComparison.OrdinalIgnoreCase)
+            || row.DeletedAt is not null
+            || !string.Equals(row.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase)
+            || !row.MustChangePassword
+            || !IsSupportedPasswordHash(row.PasswordHash)
+            || !hasher.Verify(item.Password, row.PasswordHash))
+            throw new InvalidOperationException($"A credencial persistida para {item.Email} falhou na verificação pós-commit; nenhuma credencial foi exibida.");
+
+        await verificationTransaction.CommitAsync().ConfigureAwait(false);
+        Log.Information("Credencial de {Email} verificada após o commit em nova conexão, sob o tenant {TenantId}; registro único, formato válido e troca inicial exigida.",
+            item.Email, item.TenantId);
+    }
+}
+
+static bool IsSupportedPasswordHash(string encodedHash)
+{
+    var parts = encodedHash.Split('$');
+    return parts is ["pbkdf2-sha512", "210000", _, _]
+        && TryBase64Length(parts[2], 16)
+        && TryBase64Length(parts[3], 32);
+}
+
+static bool TryBase64Length(string value, int expectedLength)
+{
+    try { return Convert.FromBase64String(value).Length == expectedLength; }
+    catch (FormatException) { return false; }
 }
 
 static string RequireSecret(string name) => Environment.GetEnvironmentVariable(name) is { Length: > 0 } value
@@ -312,6 +383,17 @@ internal sealed record ProvisionedIdentity(Guid Id, Guid TenantId, string Email)
 }
 
 internal sealed record SuperAdminAuthority(bool Active, DateTimeOffset? DeletedAt);
+
+internal sealed record ProvisioningVerification(Guid UserId, Guid TenantId, string Email, string Password);
+
+internal sealed record PersistedCredential(
+    Guid Id,
+    Guid TenantId,
+    string Email,
+    string PasswordHash,
+    string Status,
+    DateTimeOffset? DeletedAt,
+    bool MustChangePassword);
 
 internal sealed record HomologationDiagnostic(string TenantSlug, string TenantStatus, bool UserExists, string UserStatus, bool Deleted, long RoleCount, bool GlobalAuthority, bool MfaConfigured);
 

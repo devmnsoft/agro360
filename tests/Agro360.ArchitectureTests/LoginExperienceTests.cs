@@ -83,6 +83,19 @@ public sealed class LoginExperienceTests
         Assert.Contains("identity_refresh_tokens set revoked_at", migrator, StringComparison.Ordinal);
         Assert.Contains("must_change_password=true", migrator, StringComparison.Ordinal);
         Assert.Contains("diagnose-homologation", migrator, StringComparison.Ordinal);
+        Assert.Contains("VerifyProvisionedIdentitiesAsync", migrator, StringComparison.Ordinal);
+        Assert.Contains("select set_config('app.tenant_id',@TenantId,true)", migrator, StringComparison.Ordinal);
+        Assert.Contains("hasher.Verify(item.Password, row.PasswordHash)", migrator, StringComparison.Ordinal);
+        Assert.Contains("IsSupportedPasswordHash(row.PasswordHash)", migrator, StringComparison.Ordinal);
         Assert.Contains("[switch]$DiagnosticOnly", Read("scripts/provision-homologation-local.ps1"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ApiDoesNotCarryACompetingDatabaseOrVersionedPassword()
+    {
+        var settings = Read("src/Hosts/Agro360.Api/appsettings.json");
+
+        Assert.DoesNotContain("DefaultConnection", settings, StringComparison.Ordinal);
+        Assert.DoesNotContain("Password=", settings, StringComparison.OrdinalIgnoreCase);
     }
 }
