@@ -2,7 +2,17 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Agro360.Application.Contracts;
 
-public sealed record OfflineCommand(string IdempotencyKey, string TemporaryId, string Type, string Payload, DateTimeOffset CreatedAt);
+public sealed record OfflineCommand(
+    string IdempotencyKey,
+    string TemporaryId,
+    string Type,
+    string Payload,
+    DateTimeOffset CreatedAt,
+    int ContractVersion = 1,
+    string? OriginEntityType = null,
+    Guid? OriginEntityId = null,
+    long? KnownEntityVersion = null,
+    IReadOnlyList<string>? Dependencies = null);
 public sealed record SyncCommand(Guid DeviceId, Guid SessionId, IReadOnlyList<OfflineCommand> Commands);
 public sealed record QuickRecordCommand(string Kind, Guid EntityId, string EntityType, decimal? Quantity, DateTimeOffset OccurredAt, string? Notes, decimal? Latitude, decimal? Longitude);
 public sealed record MobileEvidenceCommand(string Type, string EntityType, Guid EntityId, string FileName, string ContentType, string ContentBase64, string? Notes, decimal? Latitude, decimal? Longitude, DateTimeOffset CapturedAt);

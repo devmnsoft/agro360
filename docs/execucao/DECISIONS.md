@@ -1,5 +1,10 @@
 # Decisões de execução
 
+## ADR-E9-01 — Fila local não é conclusão e replay é idempotente (2026-09-11)
+
+A operação móvel grava primeiro em armazenamento local particionado pelo contexto autenticado. `PENDING`/“salvo neste dispositivo” não significa aplicado. Sincronização exige sessão online vigente, dispositivo ativo, ator e tenant do servidor, catálogo de comandos v1 e lote limitado. Chave igual com hash igual recupera o resultado; hash diferente gera conflito, sem “última escrita vence”. Trava consultiva serializa concorrentes e efeito interno + recibo persistido compartilham transação. O produto promete efeitos idempotentes diante de repetição, não entrega “exatamente uma vez”. Acesso local vence em 12 horas; revogação só pode ser conhecida quando o dispositivo volta a comunicar.
+
+
 ## ADR-E8-03 — Saída física não é entrega aceita (2026-09-10)
 
 A reserva não altera saldo físico. A confirmação de expedição, dentro da mesma transação que consome a reserva, reduz o lote e grava exatamente um movimento referenciado; entrega não repete essa baixa. Aceites são eventos por tentativa e atualizam somente o saldo conciliado. Recusa permanece em trânsito/retorno pendente e nunca reentra automaticamente. Retorno exige recebimento e qualidade antes de disponibilidade. Idempotência compara hash do comando e controle de versão rejeita despacho baseado em leitura antiga. Fiscal, recebível e pagamento continuam integrações distintas e não são inferidos de mudança de status.

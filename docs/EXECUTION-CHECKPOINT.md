@@ -1,5 +1,16 @@
 # Checkpoint de execução do plano mestre
 
+## Central de trabalho móvel e sincronização controlada — 2026-09-11
+
+Estado real: branch `work`, HEAD inicial `6f7d8eb`, árvore limpa e sem conflitos. O recorte reutiliza `/Work`, `/field`, `MobileService`, IndexedDB, service worker e tabelas `mobile_*`; não cria centrais ou filas paralelas. O ambiente atual não oferece `dotnet` nem `psql`, portanto build/testes .NET, PostgreSQL descartável, API/Web, autenticação/MFA e navegador real não foram homologados.
+
+Implementado: contrato v1 explícito com origem/versão/dependências; catálogo fechado e lote máximo de 50; sessão móvel online de 12 horas vinculada a usuário, tenant e dispositivo; revalidação de dispositivo revogado; hash persistente e trava transacional por chave; replay de mesmo conteúdo recupera o resultado e conteúdo divergente vira conflito. A aplicação do efeito e o resultado ficam na mesma transação. O cliente agora sempre grava primeiro na fila local, distingue pendente/enviando/rejeitado, mantém motivo, usa a sessão emitida pelo bootstrap e separa IndexedDB/rascunhos por contexto autenticado. O shell v45 continua sem cache de API/autenticação; atualização não remove IndexedDB.
+
+Limites honestos: são sincronizáveis apenas registros rápidos já suportados, ocorrência, check-in e evidência; baixa de estoque, aprovação, qualidade, financeiro e confirmação definitiva de entrega continuam exclusivamente no servidor. A central online existente permanece a fonte das tarefas de domínio. Administração visual completa de dispositivos, conflito comparativo, leitura de medidor/pesagem especializada e tentativa de entrega ainda são o próximo recorte. Revogação só é percebida offline na comunicação seguinte.
+
+Evidências locais: `node --check src/Hosts/Agro360.Web/wwwroot/js/field.js`, `node scripts/verify-offline-shell.mjs`, `bash scripts/validate-full-sql.sh` e `git diff --check` aprovados. Não há alegação de sincronização homologada sem API/PostgreSQL.
+
+
 ## Estabilização de acesso + jornada de expedição/entrega — 2026-09-10
 
 Estado real: branch `work`, HEAD inicial `a15b9fd`, árvore inicialmente limpa, sem índice de conflito e sem marcadores de merge. O container não possui `dotnet`, `psql` ou `pwsh`; portanto restore/build/testes .NET, instalação PostgreSQL, API/Web autenticadas, login, MFA, refresh e navegador **não foram executados** e permanecem pendentes. Não há connection string de homologação neste ambiente. O provisionamento seguro existente continua sendo `scripts/provision-homologation.sh`/Migrator; nenhuma senha, conta ou MFA foi redefinido.

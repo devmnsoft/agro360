@@ -1,5 +1,11 @@
 # Matriz de rastreabilidade v0.2.0
 
+## Incremento E9 móvel controlado — evidência de 2026-09-11
+
+- **Implementado, não homologado em runtime:** sessão curta e dispositivo revalidado; catálogo/lote/contrato explícitos; hash, replay e conflito por conteúdo; fila e rascunhos locais separados por contexto; estados locais sem falso “concluído”; cache v45 limitado ao shell.
+- **Executado:** validação JS, regressão do service worker, validador do SQL consolidado e whitespace.
+- **Pendente:** PostgreSQL/API/navegador autenticado, administração visual, comparação assistida de conflitos e operações especializadas de medidor, pesagem e tentativa de entrega.
+
 ## Incremento 7.1 — expedição e entrega (2026-09-10)
 
 | Requisito | Evidência implementada | Estado |

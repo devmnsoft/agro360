@@ -55,5 +55,5 @@ assert.equal(cachedPaths.includes("/field"), false);
 let activation;
 handlers.get("activate")({ waitUntil(promise) { activation = promise; } });
 await activation;
-assert.deepEqual(deleted.sort(), ["agro360-lookups-v43", "agro360-shell-v43"]);
+assert.deepEqual(deleted.sort(), ["agro360-lookups-v43", "agro360-shell-v43", "agro360-shell-v44"]);
 console.log("PASS offline shell: diagnostics/API/auth/cross-origin bypass; public shell fallback; scoped cache invalidation.");
