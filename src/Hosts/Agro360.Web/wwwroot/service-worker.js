@@ -1,4 +1,4 @@
-const SHELL_CACHE = "agro360-shell-v44";
+const SHELL_CACHE = "agro360-shell-v45";
 const SHELL = ["/", "/field", "/css/agro360.css", "/css/field.css", "/js/agro360.js", "/js/field.js", "/icons/agro360.svg", "/manifest.webmanifest"];
 
 self.addEventListener("install", event => {
