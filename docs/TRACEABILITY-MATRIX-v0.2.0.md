@@ -148,3 +148,12 @@ Esta seção registra maturidade observada em execução e prevalece sobre decla
 | Movimentações | **parcial** | transferência individual anterior e ledger coletivo na migration | serviços de grupo, retroatividade, ajuste/estorno E2E |
 | Manejos, alimentação, comercial e custos | **parcial** | eventos simples e integrações anteriores | ordens completas, devoluções/perdas, reserva/expedição e rateio |
 | Dashboard, relatórios e UX | **parcial** | dashboard consolidado anterior | data de referência histórica, drill-down completo, CSV e telas operacionais |
+
+## Evidência incremental — configuração guiada (2026-09-11)
+
+| Requisito | Estado | Evidência / limite |
+|---|---|---|
+| Configuração retomável por cliente | Implementado sem homologação | `DeploymentService.ImplementationCenterAsync` deriva etapas de dados persistidos por tenant; `/Deployment` explica finalidade, impacto e impedimento. PostgreSQL/API autenticada não disponíveis neste ambiente. |
+| Etapas conforme contratação | Implementado sem homologação | Depósitos, centros de custo e catálogos só são obrigatórios quando os módulos contratados os exigem. |
+| Navegação contextual | Parcial | A aba canônica de `/Saas?view=` é preservada e a organização informada no login permanece no shell após refresh. Favoritos e histórico persistidos no servidor continuam pendentes. |
+| Jornadas A e B | Implementadas sem homologação nesta rodada | Serviços transacionais de compras/recebimento e expedição/entrega foram preservados; retorno físico e E2E autenticado seguem pendentes. |

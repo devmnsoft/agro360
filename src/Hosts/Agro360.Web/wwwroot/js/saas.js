@@ -10,7 +10,10 @@
     const permissions = new Set((session?.permissions ?? []).map(normalizePermission));
     const isSuperAdministrator = (session?.roles ?? []).includes("SUPER_ADMIN");
     const tenantViews = new Set(["onboarding", "users", "roles", "invitations", "security", "notifications", "settings", "account"]);
-    let view = isSuperAdministrator ? "dashboard" : permissions.has("account.users.read") ? "users" : "account";
+    const requestedView = new URLSearchParams(location.search).get("view");
+    let view = requestedView && (isSuperAdministrator || tenantViews.has(requestedView))
+        ? requestedView
+        : isSuperAdministrator ? "dashboard" : permissions.has("account.users.read") ? "users" : "account";
 
     const helps = {
         dashboard: "Consulte indicadores globais e alertas. O acesso de suporte e toda ação administrativa são auditados.",
@@ -319,6 +322,7 @@
             document.querySelector(".saas-tabs .active")?.classList.remove("active");
             button.classList.add("active");
             view = button.dataset.view;
+            history.replaceState(null, "", `${location.pathname}?view=${encodeURIComponent(view)}`);
             load();
         });
     });

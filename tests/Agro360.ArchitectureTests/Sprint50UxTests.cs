@@ -48,4 +48,15 @@ public sealed class Sprint50UxTests
         Assert.Contains("deletion_reason", migration070, StringComparison.Ordinal);
         Assert.Contains("7.0.0", migration070, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void GuidedSetupDerivesProgressAndExplainsBlockingDependencies()
+    {
+        var service = Read("src/Modules/Agro360.Infrastructure/Services/DeploymentService.cs");
+        var client = Read("src/Hosts/Agro360.Web/wwwroot/js/deployment.js");
+        Assert.Contains("platform_tenant_module_entitlements", service);
+        Assert.Contains("requiredSteps.Count", service);
+        Assert.Contains("Finalidade:", client);
+        Assert.Contains("Impedimento:", client);
+    }
 }

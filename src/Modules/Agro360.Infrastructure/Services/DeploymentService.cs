@@ -61,9 +61,16 @@ public sealed class DeploymentService(DatabaseExecutor db, ITenantContext tenant
    select count(*)::int from agro360.geo_farms where tenant_id=@TenantId and deleted_at is null;
    select count(*)::int from agro360.deployment_checklist where tenant_id=@TenantId and required;
    select count(*)::int from agro360.deployment_checklist where tenant_id=@TenantId and required and completed;
+   select count(*)::int from agro360.saas_organization_settings where tenant_id=@TenantId;
+   select count(*)::int from agro360.inventory_warehouses where tenant_id=@TenantId and deleted_at is null;
+   select count(*)::int from agro360.finance_cost_centers where tenant_id=@TenantId and active;
+   select count(*)::int from agro360.inventory_products where tenant_id=@TenantId and deleted_at is null;
+   select coalesce(array_agg(module_code order by module_code),array[]::varchar[]) from agro360.platform_tenant_module_entitlements where tenant_id=@TenantId and status in ('CONTRACTED','ACTIVE','TRIAL');
    """, p, t, cancellationToken: ct));
         var users = await grid.ReadSingleAsync<int>(); var profiles = await grid.ReadSingleAsync<int>(); var modules = await grid.ReadSingleAsync<int>();
         var farms = await grid.ReadSingleAsync<int>(); var required = await grid.ReadSingleAsync<int>(); var completed = await grid.ReadSingleAsync<int>();
+        var settings = await grid.ReadSingleAsync<int>(); var warehouses = await grid.ReadSingleAsync<int>(); var costCenters = await grid.ReadSingleAsync<int>();
+        var products = await grid.ReadSingleAsync<int>(); var moduleCodes = (await grid.ReadSingleAsync<string[]>()).Select(x => x.ToLowerInvariant()).ToHashSet();
         var pending = new List<string>(); var alerts = new List<string>(); var actions = new List<ImplementationAction>();
         if (users < 2) { pending.Add("Convide ao menos um segundo usuário para evitar dependência de uma única conta."); actions.Add(new("Cadastrar usuários", "Defina responsáveis e mantenha acessos individuais.", "/Saas?view=users", "HIGH")); }
         if (profiles == 0) { pending.Add("Configure perfis e permissões por função."); actions.Add(new("Configurar perfis", "Aplique o menor privilégio para cada função.", "/Saas?view=roles", "HIGH")); }
@@ -71,10 +78,30 @@ public sealed class DeploymentService(DatabaseExecutor db, ITenantContext tenant
         if (farms == 0) { pending.Add("Cadastre a primeira fazenda ou unidade operacional."); actions.Add(new("Cadastrar fazenda", "Informe dados cadastrais e área da unidade.", "/Agriculture", "HIGH")); }
         if (required > completed) { alerts.Add($"{required - completed} etapa(s) obrigatória(s) do checklist ainda estão pendentes."); actions.Add(new("Concluir checklist", "Revise as etapas obrigatórias de implantação.", "/Deployment?panel=checklist", "MEDIUM")); }
         if (actions.Count == 0) actions.Add(new("Iniciar operação", "A implantação essencial está concluída; registre as primeiras operações.", "/", "LOW"));
-        var baseProgress = required == 0 ? 0 : (int)Math.Round(completed * 100m / required);
-        var readiness = (users > 0 ? 20 : 0) + (profiles > 0 ? 20 : 0) + (modules > 0 ? 20 : 0) + (farms > 0 ? 20 : 0) + (required == 0 ? 0 : baseProgress / 5);
-        return new ImplementationCenter(tenantRow.TenantName, tenantRow.PlanName, Math.Clamp(readiness, 0, 100), users, profiles, modules, farms, pending, alerts, actions);
+        var needsInventory = moduleCodes.Overlaps(["inventory", "storage", "procurement", "purchasing", "fleet", "livestock"]);
+        var needsFinance = moduleCodes.Overlaps(["finance", "procurement", "purchasing", "commercial"]);
+        var needsCatalog = moduleCodes.Overlaps(["inventory", "storage", "procurement", "purchasing", "agriculture", "livestock", "production"]);
+        var steps = new[]
+        {
+            Step("ORGANIZATION", "Dados da organização", "Identificar corretamente o cliente e seu responsável.", "Esses dados aparecem no contexto operacional e nos registros administrativos.", true, !string.IsNullOrWhiteSpace(tenantRow.TenantName), null, "Revisar organização", "/Saas?view=account"),
+            Step("PREFERENCES", "Idioma, fuso e preferências", "Definir como datas, moeda e unidades são apresentadas.", "O idioma não altera valores ou unidades já persistidos.", true, settings > 0, "Defina cultura, fuso, moeda e sistema de unidades.", "Configurar preferências", "/Saas?view=settings"),
+            Step("PROPERTIES", "Propriedades e unidades", "Delimitar onde a operação acontece.", "Compras, estoque e atividades podem exigir uma unidade autorizada.", true, farms > 0, "Cadastre pelo menos uma propriedade ativa.", "Cadastrar propriedade", "/Properties"),
+            Step("WAREHOUSES", "Depósitos", "Definir locais físicos de guarda e movimentação.", "Sem depósito não é possível receber ou reservar itens controlados.", needsInventory, !needsInventory || warehouses > 0, "Há módulo com estoque contratado, mas nenhum depósito ativo.", "Configurar depósitos", "/#storage"),
+            Step("COST_CENTERS", "Centros de custo", "Organizar a apropriação gerencial dos gastos.", "Compras e lançamentos financeiros podem exigir classificação.", needsFinance, !needsFinance || costCenters > 0, "Há módulo financeiro/compras contratado, mas nenhum centro de custo ativo.", "Configurar centros de custo", "/Finance"),
+            Step("USERS_ROLES", "Usuários e perfis", "Manter identidades individuais e menor privilégio.", "A operação só deve começar com responsável e perfil autorizados.", true, users > 1 && profiles > 0, "Convide um segundo usuário e associe perfis válidos.", "Administrar acessos", "/Saas?view=users"),
+            Step("CATALOGS", "Catálogos indispensáveis", "Preparar produtos e insumos usados nas jornadas.", "Documentos operacionais referenciam cadastros ativos, não IDs informados manualmente.", needsCatalog, !needsCatalog || products > 0, "Há módulo operacional contratado, mas nenhum produto ativo.", "Configurar catálogos", "/#storage"),
+            Step("REVIEW", "Revisão final", "Confirmar que dependências obrigatórias possuem dados válidos.", "A conclusão libera próximas ações sem expor módulos não contratados.", true, false, null, "Revisar pendências", "/Deployment")
+        };
+        var requiredSteps = steps.Where(x => x.Required && x.Code != "REVIEW").ToArray();
+        var ready = requiredSteps.Count(x => x.Status == "COMPLETED");
+        var allReady = requiredSteps.Length > 0 && ready == requiredSteps.Length;
+        steps[^1] = steps[^1] with { Status = allReady ? "COMPLETED" : "BLOCKED", BlockingReason = allReady ? null : "Conclua as dependências obrigatórias indicadas antes de iniciar a operação." };
+        var readiness = requiredSteps.Length == 0 ? 0 : (int)Math.Round(ready * 100m / requiredSteps.Length);
+        return new ImplementationCenter(tenantRow.TenantName, tenantRow.PlanName, readiness, users, profiles, modules, farms, pending, alerts, actions, steps);
     }, ct);
+
+    private static ImplementationStep Step(string code, string title, string purpose, string impact, bool required, bool completed, string? reason, string action, string url) =>
+        new(code, title, purpose, impact, completed ? "COMPLETED" : required ? "BLOCKED" : "OPTIONAL", required, completed ? null : reason, action, url);
 
     private sealed class ImplementationTenantRow { public string TenantName { get; init; } = string.Empty; public string PlanName { get; init; } = string.Empty; }
 }
