@@ -17,6 +17,8 @@ public sealed record NotificationRow(Guid Id, string Type, string Module, string
 public sealed record CalendarRow(Guid Id, string Type, string Title, DateTimeOffset StartsAt, DateTimeOffset? EndsAt, string Module, string? Priority, string? SafeLink);
 public sealed record WorkDashboard(long OpenTasks, long OverdueTasks, long CriticalTasks, long CriticalAlerts, long PendingApprovals, long UnreadNotifications, long CriticalStocks, int HealthScore);
 public sealed record OutboxRow(Guid Id, string Channel, string Status, int Attempts, string? LastError, DateTimeOffset CreatedAt, DateTimeOffset? ProcessedAt);
+public sealed record OperationOccurrenceRow(string Key, Guid OriginId, string OriginType, string Title, string Module, string OrganizationName, string? UnitName, string? ResponsibleName, DateTimeOffset? DueAt, string Priority, string Reason, string ActionLabel, string SafeLink, string InteractionStatus, DateTimeOffset UpdatedAt);
+public sealed record OperationOccurrenceQuery(string? Search, string? Module, string? Priority, string? InteractionStatus, int Page = 1, int PageSize = 25);
 
 public interface IWorkManagementService
 {
@@ -29,4 +31,7 @@ public interface IWorkManagementService
     Task<IReadOnlyList<NotificationRow>> NotificationsAsync(string? type, string? moduleCode, string? severity, DateTimeOffset? startDate, DateTimeOffset? endDate, CancellationToken ct); Task ReadNotificationAsync(Guid? id, CancellationToken ct);
     Task<IReadOnlyList<CalendarRow>> CalendarAsync(DateTimeOffset startDate, DateTimeOffset endDate, string? moduleCode, Guid? responsibleId, string? priority, CancellationToken ct);
     Task<IReadOnlyList<OutboxRow>> OutboxAsync(string? status, string? channel, CancellationToken ct); Task<WorkDashboard> DashboardAsync(CancellationToken ct);
+    Task<PagedResult<OperationOccurrenceRow>> OperationCenterAsync(OperationOccurrenceQuery query, CancellationToken ct);
+    Task MarkOccurrenceViewedAsync(string key, CancellationToken ct);
+    Task AssignOccurrenceAsync(string key, Guid responsibleId, CancellationToken ct);
 }

@@ -104,3 +104,16 @@ A data de nascimento continua obrigatória no contrato atual, mas pode ser marca
 ## ADR-E1-07 — Configuração concluída decorre de dados válidos (2026-09-11)
 
 A Central de Implantação é a implementação canônica da configuração guiada do cliente. O checklist manual legado permanece para compatibilidade e observações, mas não é evidência de prontidão. O progresso operacional é calculado no servidor a partir de cadastros ativos e das dependências dos módulos efetivamente contratados. Etapas não pertinentes são opcionais; a revisão final só conclui quando todas as dependências obrigatórias estão satisfeitas. Assim, clicar em avançar não libera operação, e contratar um módulo não expõe automaticamente suas telas ou permissões.
+
+## ADR-E10-01 — Pendência operacional é uma projeção, não um checklist paralelo (2026-09-11)
+
+A Central de Operações deriva ocorrências das operações de origem e persiste separadamente apenas visualização e atribuição. Não existe transição manual para resolvido. A chave estável `TIPO:id` evita duplicação; quando o pré-requisito é atendido no módulo responsável, a projeção deixa de retorná-la. A consulta aplica tenant e permissões antes da paginação.
+
+| Estado atual | Ação | Pré-requisitos | Permissão | Próximo estado | Efeito em outros módulos | Reversão |
+|---|---|---|---|---|---|---|
+| NEW | visualizar | ocorrência ainda derivável | `work.read` + leitura da origem | VIEWED | nenhum | não necessária; evento é histórico |
+| NEW/VIEWED | atribuir | usuário ativo no mesmo tenant | `work.write` + leitura da origem | ASSIGNED | nenhum efeito na operação original | nova atribuição auditada |
+| NEW/VIEWED/ASSIGNED | abrir origem | link interno conhecido | leitura da origem | inalterado | usuário executa a transição no serviço dono | conforme matriz do módulo |
+| qualquer interação | resolver causa | pré-requisitos da operação original | permissão específica da ação | item deixa a projeção | somente o serviço dono grava efeitos | conforme eventos/ajustes do módulo |
+
+A Central nunca aprova, recebe, inspeciona, expede, entrega ou baixa título por inferência. Essas transições continuam centralizadas nos respectivos serviços transacionais.

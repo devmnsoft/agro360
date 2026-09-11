@@ -157,3 +157,17 @@ Esta seção registra maturidade observada em execução e prevalece sobre decla
 | Etapas conforme contratação | Implementado sem homologação | Depósitos, centros de custo e catálogos só são obrigatórios quando os módulos contratados os exigem. |
 | Navegação contextual | Parcial | A aba canônica de `/Saas?view=` é preservada e a organização informada no login permanece no shell após refresh. Favoritos e histórico persistidos no servidor continuam pendentes. |
 | Jornadas A e B | Implementadas sem homologação nesta rodada | Serviços transacionais de compras/recebimento e expedição/entrega foram preservados; retorno físico e E2E autenticado seguem pendentes. |
+
+## Evidência incremental — Central de Operações (2026-09-11)
+
+| Capacidade | Estado | Evidência, impacto e critério restante |
+|---|---|---|
+| Login/contexto/contratação | Implementada sem verificação nesta rodada | Central usa tenant/ator do servidor e permissões persistidas; login E2E e invalidação após troca de contrato exigem API/PostgreSQL. |
+| Aprovações, compras, divergências, qualidade, logística, manutenção e contas | Implementada sem verificação de execução | Consulta agregada/paginada em `WorkManagementService`; concluir exige migration 073, plano de execução e cenários positivos/negativos por origem. |
+| Visualizado e atribuído | Implementada sem verificação de execução | Estado e eventos em `agro360.operation_occurrence_*`; concluir exige concorrência e RLS com dois tenants. |
+| Resolvido | Implementada por derivação, sem homologação | Não há botão de resolução; item cessa quando a operação original deixa de estar pendente. Validar cada transição de origem. |
+| Atividades agrícolas, documentos e produção industrial | Parcial/ausente na central | Modelos existem, mas falta consolidar regra canônica de prazo/bloqueio. Impacto: central ainda não cobre todas as famílias solicitadas; depende da estabilização dos fluxos E6/E7/conformidade. |
+| UX, ajuda, filtros e responsividade | Implementada sem navegador | `/Work`, `work.js` e CSS dedicado; concluir exige teclado, leitor de tela, viewport móvel e console sem erros. |
+| Jornadas compras/qualidade e comercial/entrega | Parcial | Central navega para os fluxos já implementados; recebimento de retorno, conciliação financeira e E2E transacional permanecem critérios de conclusão. |
+
+Próxima etapa: estabilizar esta fatia em banco descartável e navegador; depois incluir produção/campo/documentos apenas a partir de regras de domínio persistidas, antes de custos/conciliação, relatórios e mobilidade ampliada.
