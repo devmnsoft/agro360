@@ -1,5 +1,13 @@
 # Plano de execução Agro360
 
+## Recorte ativo — estabilização logística 7.1
+
+1. **Concluído no código:** schema aditivo, reservas concorrentes, conferência, saída física idempotente, tentativas parciais, recusa, registro inicial de retorno, consulta e indicadores.
+2. **Gate bloqueado pelo ambiente:** provisionamento/login/MFA/refresh e instalação limpa/upgrade PostgreSQL (runtimes e connection string ausentes).
+3. **Próxima implementação:** recebimento e decisão de qualidade do retorno, perdas com custo, disponibilidade/capacidade de viagem, documentos e rateio de frete.
+4. **Somente depois:** cenário Santa Clara via operações de domínio e sincronização móvel com replay validado pelo servidor.
+
+
 > Atualização de 2026-09-10 (merge + soft-delete): reconciliados contratos/serviços de pecuária e frota com marcadores commitados; instalador SQL limpo PASS com versões 6.8.0/6.9.0/7.0.0; exclusão lógica e autoria aplicadas às telas de pecuária/frota. AG-E8-003 e AG-E6-002 seguem **implementados não validados em E2E autenticado**. AG-E0-003 permanece com gate incremental obrigatório (`due_on` / `006z`/`007z` quando aplicável). Próximo recorte: logística confiável e, depois, MFA/assistência (AG-E1-002) / sync móvel (AG-E9). Estados em `../EXECUTION-CHECKPOINT.md` e `../TRACEABILITY-MATRIX-v0.2.0.md`.
 
 Fonte aprovada: [plano mestre integral](AGRO360-MASTER-PLAN.md), incorporado em 2026-09-08. Requisitos não são evidências de implementação. Não reutilizar regras, namespaces ou diagnósticos do SIGOV-PLUS.

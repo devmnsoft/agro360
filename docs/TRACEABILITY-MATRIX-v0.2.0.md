@@ -1,5 +1,18 @@
 # Matriz de rastreabilidade v0.2.0
 
+## Incremento 7.1 — expedição e entrega (2026-09-10)
+
+| Requisito | Evidência implementada | Estado |
+|---|---|---|
+| Pedido apto → reserva → separação/conferência | `071_fulfillment_delivery_journey.sql`; `CreateFulfillmentAsync`; fila filtrável `/Logistics` | Implementado, não homologado em PostgreSQL |
+| Saída física única e concorrente | trava advisory por tenant/lote, transação, movimento `FULFILLMENT_SHIPMENT`, versão e idempotência | Implementado, E2E pendente |
+| Parcial/recusa/nova tentativa | tentativas e itens imutáveis; limite pelo saldo conferido ainda não reconciliado | Implementado, E2E pendente |
+| Retorno indisponível até recebimento/qualidade | retorno inicial `AWAITING_RECEIPT`, estados separados até `RELEASED` | Modelo implementado; endpoints de recebimento/qualidade pendentes |
+| Rastreabilidade/indicadores | detalhe agregado e oito indicadores; tela clara e responsiva | Implementado, navegador pendente |
+| Acesso Santa Clara/SuperAdmin | mecanismo existente preservado, sem credenciais em seed | Pendente: ambiente sem banco/.NET |
+| Financeiro/fiscal/frete/viagem | conceitos preservados sem duplicar recebível nem simular autorização | Parcial/pendente |
+
+
 ## Atualização pós-PR #98 — 2026-09-10
 
 | Jornada | Estado | Camadas presentes | Lacunas para avanço |

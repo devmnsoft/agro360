@@ -2,6 +2,19 @@ namespace Agro360.ArchitectureTests;
 
 public sealed class AuthenticationAndLivestockRegressionTests
 {
+    [Fact]
+    public void FulfillmentJourneyKeepsPhysicalDispatchSeparateFromDeliveryAcceptance()
+    {
+        var migration = Read("database/migrations/071_fulfillment_delivery_journey.sql");
+        var service = Read("src/Modules/Agro360.Infrastructure/Services/LogisticsService.cs");
+        Assert.Contains("fulfillment_reservations", migration);
+        Assert.Contains("fulfillment_delivery_attempts", migration);
+        Assert.Contains("AWAITING_QUALITY", migration);
+        Assert.Contains("inventory_stock_movements", service);
+        Assert.Contains("accepted_quantity", service);
+        Assert.Contains("request_hash", service);
+        Assert.DoesNotContain("delete from agro360.fulfillment", service, StringComparison.OrdinalIgnoreCase);
+    }
     private static readonly string Root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
     private static string Read(string path) => File.ReadAllText(Path.Combine(Root, path));
 

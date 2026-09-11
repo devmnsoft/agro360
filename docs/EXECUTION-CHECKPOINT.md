@@ -1,5 +1,16 @@
 # Checkpoint de execução do plano mestre
 
+## Estabilização de acesso + jornada de expedição/entrega — 2026-09-10
+
+Estado real: branch `work`, HEAD inicial `a15b9fd`, árvore inicialmente limpa, sem índice de conflito e sem marcadores de merge. O container não possui `dotnet`, `psql` ou `pwsh`; portanto restore/build/testes .NET, instalação PostgreSQL, API/Web autenticadas, login, MFA, refresh e navegador **não foram executados** e permanecem pendentes. Não há connection string de homologação neste ambiente. O provisionamento seguro existente continua sendo `scripts/provision-homologation.sh`/Migrator; nenhuma senha, conta ou MFA foi redefinido.
+
+Implementado como avanço independente: migration incremental `071_fulfillment_delivery_journey.sql`, consolidado SQL, contratos/serviço/endpoints e tela `/Logistics`. Reserva usa trava transacional por tenant+lote; expedição efetiva a saída uma vez; tentativa acumula somente saldo ainda em trânsito; recusa cria pendência e retorno nasce indisponível (`AWAITING_RECEIPT`, depois qualidade). Chaves idempotentes guardam hash e versões impedem despacho de edição antiga.
+
+Evidências executadas: `node --check` do cliente logístico, `bash -n scripts/provision-homologation.sh`, `bash scripts/validate-full-sql.sh` e `git diff --check`, todos aprovados. Limites: vínculo de viagem/documentos/frete e recebimento/liberação física do retorno estão modelados, mas ainda não possuem toda a operação HTTP; integração fiscal segue pendente e nenhuma obrigação financeira nova é criada. O cenário Santa Clara não foi gravado sem PostgreSQL; não se declarou homologação local.
+
+Próxima ação: executar o provisionador no mesmo `ConnectionStrings__Agro360` da API, confirmar MFA/troca inicial/login/refresh/rota protegida e aplicar 071 em base descartável limpa e em cópia de upgrade. Em seguida exercitar concorrência/idempotência e completar recebimento de retorno, perda, viagem/capacidade e conciliação financeira antes de sincronização móvel.
+
+
 ## Correção de merge + exclusão lógica (pecuária/frota) — 2026-09-10
 
 Estado observado: branch `main`, HEAD `bf13d55` alinhado a `origin/main`. **Não havia merge/rebase Git ativo** (`git ls-files -u` vazio), porém marcadores `<<<<<<<`/`=======`/`>>>>>>>` estavam **commitados** em contratos/serviços pecuários, Migrator e no instalador SQL/documentação. Working tree reconciliada sem `git reset --hard` e **sem commit** (autorização explícita).
