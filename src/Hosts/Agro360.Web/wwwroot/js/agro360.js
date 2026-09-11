@@ -82,6 +82,7 @@
         element("user-initials").textContent = user?.name
             ? user.name.split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()
             : "A3";
+        element("active-farm").textContent = user?.activeOrganization ?? "Organização não selecionada";
     }
 
     async function api(path, options = {}, retry = true) {
@@ -141,7 +142,9 @@
                 error.status = response.status;
                 throw error;
             }
-            persistSession(await response.json());
+            const refreshed = await response.json();
+            refreshed.activeOrganization = state.session?.activeOrganization;
+            persistSession(refreshed);
             return true;
         } catch (error) {
             state.refreshStopped = true;
@@ -224,6 +227,7 @@
                     : "Ocorreu uma falha interna. Tente novamente ou informe o código de atendimento ao suporte.";
                 throw new Error(message + supportCode);
             }
+            result.activeOrganization = data.tenantSlug;
             persistSession(result);
             hideLogin();
             toastSuccess("Acesso confirmado", "Bem-vindo. Os dados respeitam sua organização e suas permissões.");

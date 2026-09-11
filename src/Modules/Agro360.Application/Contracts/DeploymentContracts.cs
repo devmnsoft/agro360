@@ -11,10 +11,11 @@ public sealed record ImportPreview(Guid Token, string Type, string FileName, int
 public sealed record ImportHistory(Guid Id, string Type, string FileName, string Status, int TotalRows, int ValidRows, int InvalidRows, DateTimeOffset CreatedAt);
 public sealed record DeploymentDashboard(int ImplementedOrganizations, int PendingOrganizations, decimal AverageProgress, IReadOnlyList<string> MostUsedModules, IReadOnlyList<string> Segments, int ImportErrors, IReadOnlyList<ImportHistory> LatestImports);
 public sealed record ImplementationAction(string Title, string Description, string Url, string Severity);
+public sealed record ImplementationStep(string Code, string Title, string Purpose, string Impact, string Status, bool Required, string? BlockingReason, string ActionLabel, string ActionUrl);
 public sealed record ImplementationCenter(
  string TenantName, string PlanName, int Progress, int Users, int Profiles, int ContractedModules, int Farms,
  IReadOnlyList<string> PendingRegistration, IReadOnlyList<string> ConfigurationAlerts,
- IReadOnlyList<ImplementationAction> NextActions);
+ IReadOnlyList<ImplementationAction> NextActions, IReadOnlyList<ImplementationStep> Steps);
 
 public interface IDeploymentService
 {

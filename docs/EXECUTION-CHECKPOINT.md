@@ -278,3 +278,13 @@ Baseline: branch `work`, HEAD `770e1f9`, árvore inicialmente limpa. Não foram 
 - **Sem homologação:** migration limpa/incremental, API/Web, Swagger, login/MFA, isolamento com role não proprietária, concorrência e navegador/mobile. Retomada: executar restore/build/test, `scripts/validate-full-sql.sh` e migration 068 em PostgreSQL descartável antes de ampliar os fluxos.
 
 Continuidade ordenada: homologar 068; implementar movimentação individual/coletiva com estorno; depois ordens de manejo e pesagens; só então alimentação/estoque, comercial/financeiro e custos. Manutenção de equipamentos, logística e sincronização móvel permanecem posteriores a essas dependências.
+
+## Configuração guiada derivada e navegação contextual — 2026-09-11
+
+Estado observado: branch `work`, HEAD inicial `c17d6f3`, árvore limpa, sem conflitos e sem migrations pendentes no índice. O ambiente continua sem `dotnet` e `psql`; por isso restore/build/testes .NET, PostgreSQL descartável, API/Web autenticadas, MFA e navegador real não foram homologados nesta rodada.
+
+Diagnóstico atual das jornadas, sem promover presença de código a homologação: login/primeiro acesso, cadastro do cliente, contratação modular, configuração da organização, usuários/perfis, compras/recebimentos, estoque/qualidade, agricultura/pecuária, frota/manutenção, expedição/entregas e móvel estão **implementados sem homologação neste ambiente**. Permanecem parciais: validação real de contato no cadastro (integração de comunicação), alteração/suspensão/cancelamento comercial completos, configuração de depósitos/centros de custo dentro do assistente, recebimento físico do retorno logístico e operações críticas offline. As jornadas A e B possuem serviços transacionais já documentados, mas seguem sem E2E autenticado/PostgreSQL neste container.
+
+Entrega deste recorte: `/Deployment` agora apresenta assistente retomável derivado dos dados persistidos (organização, preferências, propriedades, depósitos, centros de custo, usuários/perfis e catálogos) e somente exige dependências pertinentes aos módulos contratados. Clique não conclui etapa e a revisão final só conclui quando as dependências obrigatórias estiverem válidas. Os links da administração SaaS preservam a aba solicitada por query string e o shell mantém visível o identificador da organização autenticada inclusive após refresh do token.
+
+Próxima etapa baseada nas lacunas: homologar o assistente com dois tenants e completar, sem novo cadastro paralelo, a edição persistida de preferências e os seletores paginados de depósito/centro de custo; depois exercitar retornos logísticos e falhas de integração das jornadas A/B.
