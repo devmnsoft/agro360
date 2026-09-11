@@ -1,0 +1,14 @@
+@page "/logistics"
+@model Agro360.Web.Pages.Logistics.IndexModel
+@{ ViewData["Title"] = "Expedição e Entrega"; }
+@section Styles { <link rel="stylesheet" href="~/css/logistics.css" asp-append-version="true" /> }
+<section class="page-content logistics-page" id="logistics-app">
+ <header class="page-heading"><div><span class="eyebrow">Jornada ponta a ponta</span><h1>Expedição e <span>entrega</span></h1><p>Do pedido aprovado à reconciliação da entrega, sem confundir reserva, saída física, aceite, faturamento e pagamento.</p></div><button class="secondary-button" id="refresh-logistics" type="button">Atualizar</button></header>
+ <details class="screen-help contextual-help" open><summary>Como usar esta tela</summary><div><p><strong>Finalidade:</strong> priorizar pedidos, acompanhar separação, viagens, tentativas e retornos.</p><p><strong>Pré-requisitos:</strong> pedido aprovado, saldo e lote liberado, unidade compatível e permissão logística.</p><p><strong>Sequência:</strong> filtre a fila → reserve e confira → confirme a saída → vincule a viagem → registre cada tentativa → receba e avalie retornos.</p><p><strong>Resultado:</strong> encerre somente quando toda quantidade estiver entregue, retornada, perdida com justificativa ou reconciliada de forma autorizada.</p></div></details>
+ <nav class="journey-nav" aria-label="Etapas da expedição"><button data-view="overview" class="active">Visão geral</button><button data-view="queue">Pedidos a expedir</button><button data-view="picking">Separação</button><button data-view="shipments">Expedições</button><button data-view="trips">Viagens</button><button data-view="deliveries">Entregas</button><button data-view="returns">Retornos</button><button data-view="costs">Custos</button><button data-view="reports">Relatórios</button></nav>
+ <div class="logistics-indicators" id="logistics-indicators" aria-live="polite"><p>Carregando indicadores…</p></div>
+ <form class="toolbar" id="queue-filters"><label>Cliente<input name="customer" type="search" maxlength="160" /></label><label>Prazo até<input name="dueUntil" type="date" /></label><label>Situação<select name="status"><option value="">Todas aptas</option><option>APPROVED</option><option>FULFILLMENT</option></select></label><button class="primary-button" type="submit">Aplicar filtros</button></form>
+ <section class="panel" id="logistics-content" aria-live="polite"><p class="empty-state">Carregando fila operacional…</p></section>
+ <dialog id="trace-dialog" aria-labelledby="trace-title"><header><h2 id="trace-title">Rastreabilidade operacional</h2><button type="button" data-close aria-label="Fechar">×</button></header><div id="trace-content"></div><button class="secondary-button" type="button" data-close>Fechar</button></dialog>
+</section>
+@section Scripts { <script src="~/js/logistics.js" asp-append-version="true"></script> }

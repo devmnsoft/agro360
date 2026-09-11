@@ -1,5 +1,10 @@
 # Decisões de execução
 
+## ADR-E8-03 — Saída física não é entrega aceita (2026-09-10)
+
+A reserva não altera saldo físico. A confirmação de expedição, dentro da mesma transação que consome a reserva, reduz o lote e grava exatamente um movimento referenciado; entrega não repete essa baixa. Aceites são eventos por tentativa e atualizam somente o saldo conciliado. Recusa permanece em trânsito/retorno pendente e nunca reentra automaticamente. Retorno exige recebimento e qualidade antes de disponibilidade. Idempotência compara hash do comando e controle de versão rejeita despacho baseado em leitura antiga. Fiscal, recebível e pagamento continuam integrações distintas e não são inferidos de mudança de status.
+
+
 ## ADR-E0-07 — Ponte aditiva para formato financeiro publicado (2026-09-10)
 
 As migrations 001 e 007 permanecem imutáveis para preservar checksums. Uma migration ordenada antes da 007 renomeia somente a tabela `finance.receivables` com a assinatura legada; outra, imediatamente posterior, cria uma conta técnica por tenant e copia títulos positivos de forma idempotente para o formato Sprint 8. Registros antigos de valor zero ficam preservados na tabela legada, pois convertê-los criaria títulos inválidos. A ponte não declara upgrade homologado sem execução PostgreSQL descartável.

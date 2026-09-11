@@ -13,6 +13,13 @@ public sealed record ShipmentCommand(string Number, Guid? ContractId, string Cus
 public sealed record LoadShipmentCommand(decimal LoadedQuantity, decimal GrossWeight, decimal Tare);
 public sealed record TripCommand(string Number, Guid? ShipmentId, string Origin, string Destination, decimal EstimatedDistance, string? Carrier, string? Driver, string? Vehicle, string FreightType, decimal FreightValue, decimal Tonnes, string Status);
 public sealed record TripOccurrenceCommand(string Description);
+public sealed record FulfillmentItemCommand(Guid OrderItemId, Guid StockLotId, decimal Quantity, decimal PickedQuantity, decimal CheckedQuantity, string Unit, string? DivergenceReason);
+public sealed record CreateFulfillmentCommand(string Number, Guid OriginWarehouseId, Guid CustomerId, string Destination, string IdempotencyKey, IReadOnlyList<FulfillmentItemCommand> Items);
+public sealed record DispatchFulfillmentCommand(long Version, string IdempotencyKey);
+public sealed record DeliveryAttemptItemCommand(Guid ShipmentItemId, decimal AcceptedQuantity, decimal RefusedQuantity, string? Reason);
+public sealed record DeliveryAttemptCommand(DateTimeOffset OccurredAt, string Destination, Guid ResponsibleId, string Status, string? Reason, Guid? EvidenceDocumentId, bool EvidencePending, string? PendingNotes, string IdempotencyKey, IReadOnlyList<DeliveryAttemptItemCommand> Items);
+public sealed record ReturnCommand(Guid ShipmentItemId, decimal Quantity, string Reason, string IdempotencyKey);
+public sealed record FulfillmentIndicators(long AwaitingPicking, long Ready, long TripsInProgress, long Late, long Partial, long Refusals, long ReturnsAwaitingQuality, long UntreatedDivergences);
 public sealed record DeliveryContractCommand(string Number, string Customer, Guid ProductId, decimal ContractedQuantity, decimal ContractedPrice, string Unit, DateOnly DeliveryDeadline, string PaymentTerms, string Status, string? CancellationReason, bool AllowOverdelivery = false);
 public sealed record StorageDashboard(
     decimal TotalCapacity,
@@ -40,5 +47,15 @@ public interface IStorageService
     Task<Guid> CreateShipmentAsync(ShipmentCommand command, CancellationToken ct); Task LoadShipmentAsync(Guid id, LoadShipmentCommand command, CancellationToken ct); Task ShipmentStatusAsync(Guid id, string status, string? reason, CancellationToken ct);
     Task<StorageDashboard> DashboardAsync(CancellationToken ct);
 }
-public interface ILogisticsService { Task<IReadOnlyList<dynamic>> ListAsync(CancellationToken ct); Task<Guid> SaveAsync(Guid? id, TripCommand command, CancellationToken ct); Task AddOccurrenceAsync(Guid id, TripOccurrenceCommand command, CancellationToken ct); Task CompleteAsync(Guid id, CancellationToken ct); }
+public interface ILogisticsService
+{
+    Task<IReadOnlyList<dynamic>> ListAsync(CancellationToken ct); Task<Guid> SaveAsync(Guid? id, TripCommand command, CancellationToken ct); Task AddOccurrenceAsync(Guid id, TripOccurrenceCommand command, CancellationToken ct); Task CompleteAsync(Guid id, CancellationToken ct);
+    Task<IReadOnlyList<dynamic>> FulfillmentQueueAsync(string? customer, Guid? unitId, DateOnly? dueUntil, string? status, CancellationToken ct);
+    Task<FulfillmentIndicators> FulfillmentIndicatorsAsync(CancellationToken ct);
+    Task<dynamic?> FulfillmentDetailAsync(Guid id, CancellationToken ct);
+    Task<Guid> CreateFulfillmentAsync(CreateFulfillmentCommand command, CancellationToken ct);
+    Task DispatchFulfillmentAsync(Guid id, DispatchFulfillmentCommand command, CancellationToken ct);
+    Task<Guid> RecordDeliveryAttemptAsync(Guid id, DeliveryAttemptCommand command, CancellationToken ct);
+    Task<Guid> RegisterReturnAsync(ReturnCommand command, CancellationToken ct);
+}
 public interface IDeliveryContractService { Task<IReadOnlyList<dynamic>> ListAsync(CancellationToken ct); Task<Guid> SaveAsync(Guid? id, DeliveryContractCommand command, CancellationToken ct); }
