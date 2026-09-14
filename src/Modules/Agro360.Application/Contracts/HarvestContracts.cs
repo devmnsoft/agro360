@@ -56,6 +56,7 @@ public sealed record RunSeasonClosingCommand(Guid SeasonId, DateOnly CutoffDate,
 public sealed record CreateSeasonClosingCommand(Guid SeasonId, DateOnly CutoffDate, string? Notes,
     string? RevisionReason, string IdempotencyKey);
 public sealed record ChangeSeasonClosingStateCommand(long Version, string? Notes);
+public sealed record ReopenSeasonClosingCommand(long Version, string Reason, string IdempotencyKey);
 
 public interface IHarvestService
 {
@@ -71,4 +72,5 @@ public interface IHarvestService
     Task<SeasonClosingRunDto> RunClosingChecksAsync(RunSeasonClosingCommand command, CancellationToken cancellationToken);
     Task<SeasonClosingVersionDto> CreateClosingAsync(CreateSeasonClosingCommand command, CancellationToken cancellationToken);
     Task<SeasonClosingVersionDto> CloseAsync(Guid closingId, ChangeSeasonClosingStateCommand command, CancellationToken cancellationToken);
+    Task<SeasonClosingVersionDto> ReopenAsync(Guid closingId, ReopenSeasonClosingCommand command, CancellationToken cancellationToken);
 }

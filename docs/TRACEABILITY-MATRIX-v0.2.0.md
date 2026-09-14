@@ -224,3 +224,13 @@ Próxima etapa: estabilizar esta fatia em banco descartável e navegador; depois
 | Detalhe e transições da ordem | Implementado, não homologado | saldos distintos, histórico, próxima ação e endpoints explícitos com revalidação | E2E por perfil e responsividade |
 | Reenvio de reserva/consumo/resultado | Implementado, não homologado | chave preservada após falha e trocada somente quando conteúdo muda ou servidor confirma | perda de resposta e concorrência real |
 | Retificações e Central específica | Ausente | não houve atalho por status, exclusão ou prazo fictício | modelar fatos compensatórios e projeções canônicas |
+
+
+## Incremento 2026-09-14 — reabertura do fechamento
+
+| Capacidade | Estado | Evidência | Limite comprovado |
+|---|---|---|---|
+| Conferir e versionar fechamento operacional | Implementada, não verificada em runtime | `HarvestService`, `HarvestController`, `/Harvest`, migration 077 | SDK e PostgreSQL ausentes no container |
+| Reabrir fechamento com histórico | Implementada, não verificada em runtime | `ReopenAsync` cria sucessora, exige motivo/versão, trava safra, audita e preserva a fechada | E2E autenticado pendente |
+| Custos reconciliados por safra | Parcial | indicador usa somente `cost_entries.season_id` | integrações sem vínculo inequívoco não são somadas |
+| Receita/estoque atual atribuídos à safra | Bloqueada por genealogia | indicadores explicitamente indisponíveis | completar vínculos produção–expedição–financeiro |

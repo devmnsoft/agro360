@@ -51,6 +51,9 @@ public sealed class CanonicalSchemaTests
         Assert.Contains("DeserializeIndicators", service);
         Assert.Contains("DeserializeSnapshot<SeasonClosingIssueDto>", service);
         Assert.Contains("closing.invalid_snapshot", service);
+        Assert.Contains("ReopenAsync", service);
+        Assert.Contains("transition\":\"reopen", service);
+        Assert.Contains("data-reopen", client);
         Assert.Contains("conteúdo persistido foi omitido do log", service);
         Assert.Contains("private static List<SeasonClosingIssueDto> BuildIssues", service);
         Assert.DoesNotContain("new JsonSerializerOptions{PropertyNameCaseInsensitive=true}", service);

@@ -1,5 +1,15 @@
 # Checkpoint de execução do plano mestre
 
+## Reabertura auditável e idempotência concorrente do fechamento — 2026-09-14
+
+Diagnóstico deste checkout: repositório Agro360, solução `MNSOFT.Agro360.sln`, branch `work`, base `f71d6fe`; os cinco documentos canônicos solicitados existem. O fechamento 077, serviços, API e tela já estavam presentes. A compilação não pôde ser repetida porque o container atual não possui `dotnet`; a validação disponível ficou limitada aos gates estáticos descritos abaixo.
+
+Entregue neste incremento: reabertura autorizada por `agriculture.write`, com justificativa obrigatória, trava por safra, conferência da versão vigente e chave idempotente. A versão fechada permanece imutável; a reabertura cria uma nova versão ligada por `supersedes_id`, recalcula indicadores e pendências e registra o ator real em auditoria. Conferência, geração e reabertura agora repetem a leitura da chave após a trava, evitando duplicidade em requisições concorrentes. A situação exibida passa a vir da versão mais recente, e a interface oferece a reabertura somente para o fechamento vigente.
+
+Classificação verificada por inspeção e gates estáticos: fechamento/conferência **implementados, ainda não verificados em runtime**; colheita, recebimento, inspeção, destinação, estoque e produção vinculada **implementados, ainda não verificados em runtime**; custos por safra **parciais**; genealogia comercial/financeira completa e documentos configuráveis **ausentes/bloqueados pelos vínculos de origem ainda não modelados**. Não houve alteração de banco: a estrutura versionada 077 já preserva histórico, autoria, idempotência e encadeamento.
+
+Continuidade: (1) homologar o fechamento operacional com .NET/PostgreSQL e navegador; (2) completar apropriação e reconciliação de custos; (3) completar rastreabilidade entre safra, produção e expedição; (4) evoluir comparações entre safras somente após reconciliar indicadores.
+
 ## Fechamento gerencial da safra — 2026-09-14
 
 Estado encontrado: branch `work`, HEAD inicial `4fb47d7`, árvore limpa; SDK `dotnet` e PostgreSQL ausentes. Colheita/recebimento/qualidade/destinação (075), beneficiamento (076), estoque/reservas e Central (073/074) estão implementados sem verificação de execução nesta máquina. Pedidos, expedições/entregas/devoluções, custos e recebíveis existem, mas o vínculo completo à safra é **parcial**; por isso receita reconhecida e estoque atual por safra são explicitamente “Não disponível”, sem atribuição inventada.
