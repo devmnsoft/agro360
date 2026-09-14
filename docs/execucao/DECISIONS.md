@@ -133,3 +133,7 @@ Estimativa, colheita apontada, quantidade fisicamente recebida, quantidade aceit
 ## ADR-E7-03 — Recebimento reservado não é nova entrada (2026-09-14)
 
 O beneficiamento reutiliza a ordem industrial existente. Um recebimento aprovado é origem direta de uma reserva versionada por conteúdo; reservar não cria movimento nem lote e consumir não repete a entrada agrícola. Locks de ordem e recebimento, sempre nessa ordem, revalidam qualidade, receita, produto, unidade e saldo considerando concorrentes. Conversão implícita é recusada. Resultados físicos nascem pendentes e somente a aprovação final materializa uma entrada disponível vinculada ao lote industrial. Produto principal, coproduto, perda e refugo têm tipos separados. Cancelamento libera saldo reservado ainda não consumido, sem apagar consumo ou genealogia.
+
+## ADR-E6-03 — Fechamento gerencial é snapshot, não mutação operacional (2026-09-14)
+
+O fechamento usa data operacional para o corte e instante de criação para conhecimento/auditoria. Cada versão congela indicadores, pendências e critérios em JSON, referencia a versão substituída e nunca encerra pedido, ordem, título ou estoque. Geração é serializada por tenant+safra e idempotente. Movimento retroativo criado depois de versão fechada gera sinal de revisão, sem reescrever o snapshot. Bloqueio exige correção no serviço de origem; justificativa não resolve causa física. Unidades incompatíveis, base zero, genealogia incompleta e política de receita ausente produzem indicador indisponível/provisório em vez de valor inventado.

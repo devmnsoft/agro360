@@ -1,5 +1,14 @@
 # Checkpoint de execução do plano mestre
 
+## Fechamento gerencial da safra — 2026-09-14
+
+Estado encontrado: branch `work`, HEAD inicial `4fb47d7`, árvore limpa; SDK `dotnet` e PostgreSQL ausentes. Colheita/recebimento/qualidade/destinação (075), beneficiamento (076), estoque/reservas e Central (073/074) estão implementados sem verificação de execução nesta máquina. Pedidos, expedições/entregas/devoluções, custos e recebíveis existem, mas o vínculo completo à safra é **parcial**; por isso receita reconhecida e estoque atual por safra são explicitamente “Não disponível”, sem atribuição inventada.
+
+Entregue: migration incremental 077 e consolidado; execução de conferência idempotente; fórmulas por data operacional e unidade; bloqueio para recebido/destinado em excesso; pendências operacionais separadas; snapshot versionado, revisão ligada à anterior, trava concorrente, fechamento imutável e sinal de lançamento retroativo. `/Harvest` ganhou escopo pesquisável, indicadores com definição/origem, ações, histórico/comparação com base zero protegida e CSV com mitigação de fórmula. O fechamento não encerra operações fiscais/contábeis.
+
+Evidências: `node --check .../harvest.js`, `bash scripts/validate-full-sql.sh` e `git diff --check` aprovados. `dotnet restore/build/test`, PostgreSQL limpo/incremental, autenticação e navegador desktop/celular não foram executados por ausência do runtime/servidor; executar esses gates antes de homologar. Próxima etapa: completar genealogia comercial/logística/custos até a safra e integrar as cinco projeções à Central, sem duplicar seus mecanismos.
+
+
 ## Central de trabalho móvel e sincronização controlada — 2026-09-11
 
 Estado real: branch `work`, HEAD inicial `6f7d8eb`, árvore limpa e sem conflitos. O recorte reutiliza `/Work`, `/field`, `MobileService`, IndexedDB, service worker e tabelas `mobile_*`; não cria centrais ou filas paralelas. O ambiente atual não oferece `dotnet` nem `psql`, portanto build/testes .NET, PostgreSQL descartável, API/Web, autenticação/MFA e navegador real não foram homologados.
