@@ -123,6 +123,7 @@ public sealed class IdentityService(
     public async Task<AuthenticationResult> LoginAsync(LoginCommand command, CancellationToken cancellationToken)
     {
         var traceId = Activity.Current?.TraceId.ToString() ?? "unavailable";
+        var lookupStopwatch = Stopwatch.StartNew();
         var identifierType = IdentifierType(command.Email);
         InfrastructureLogMessages.LoginStarted(logger, command.TenantSlug, identifierType, traceId);
         var identifier = NormalizeLoginIdentifier(command.Email);
@@ -149,7 +150,7 @@ public sealed class IdentityService(
         if (tenant.Status is 3 or 4 or 5)
         {
             InfrastructureLogMessages.LoginRejected(logger, "tenant_blocked", tenant.Id, identifierType, traceId);
-            throw new ForbiddenException("Cliente/organização inativo ou bloqueado. Contate o suporte.");
+            throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
         }
 
         var result = await database.InTenantTransactionAsync(tenant.Id, async (connection, transaction) =>
@@ -176,19 +177,22 @@ public sealed class IdentityService(
                 throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
             }
 
+            lookupStopwatch.Stop();
+
             if (user.DeletedAt is not null || !string.Equals(user.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
             {
                 InfrastructureLogMessages.LoginRejected(logger, "user_inactive_or_blocked", tenant.Id, identifierType, traceId);
-                throw new ForbiddenException(user.Status is "BLOCKED" or "LOCKED"
-                    ? "Usuário bloqueado. Contate o suporte."
-                    : "Usuário inativo. Contate o suporte.");
+                throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
             }
 
+            var passwordStopwatch = Stopwatch.StartNew();
             if (!passwordHasher.Verify(command.Password, user.PasswordHash))
             {
+                passwordStopwatch.Stop();
                 InfrastructureLogMessages.LoginRejected(logger, "password_verification_failed", tenant.Id, identifierType, traceId);
                 throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
             }
+            passwordStopwatch.Stop();
 
             var isGlobalAdministrator = await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
                 "select exists(select 1 from agro360.platform_super_admins where user_id=@UserId and active and deleted_at is null)",
@@ -200,8 +204,14 @@ public sealed class IdentityService(
                 string secret;
                 try { secret = _mfaProtector.Unprotect(user.MfaSecretEncrypted); }
                 catch (System.Security.Cryptography.CryptographicException) { throw new ForbiddenException("A configuração MFA global não pode ser validada neste host."); }
+                if (string.IsNullOrWhiteSpace(command.MfaCode))
+                {
+                    InfrastructureLogMessages.MfaRequested(logger, tenant.Id, user.Id, traceId);
+                    throw new AuthenticationException("Informe o código do aplicativo autenticador.", "mfa_required");
+                }
                 if (!TotpVerifier.Verify(secret, command.MfaCode, clock.UtcNow))
                     throw new AuthenticationException("Código MFA inválido.", "mfa_invalid");
+                InfrastructureLogMessages.MfaCompleted(logger, tenant.Id, user.Id, traceId);
             }
 
             if (user.MustChangePassword)
@@ -217,7 +227,12 @@ public sealed class IdentityService(
                 if (changed != 1) throw new ConflictException("O primeiro acesso foi alterado concorrentemente. Tente novamente.", "first_access_concurrent_change");
             }
 
-            return await IssueTokensAsync(connection, transaction, user, cancellationToken).ConfigureAwait(false);
+            var sessionStopwatch = Stopwatch.StartNew();
+            var authentication = await IssueTokensAsync(connection, transaction, user, cancellationToken).ConfigureAwait(false);
+            sessionStopwatch.Stop();
+            InfrastructureLogMessages.LoginTimings(logger, tenant.Id, lookupStopwatch.ElapsedMilliseconds,
+                passwordStopwatch.ElapsedMilliseconds, sessionStopwatch.ElapsedMilliseconds, traceId);
+            return authentication;
         }, cancellationToken).ConfigureAwait(false);
         InfrastructureLogMessages.LoginSucceeded(logger, result.TenantId, result.UserId, traceId);
         return result;

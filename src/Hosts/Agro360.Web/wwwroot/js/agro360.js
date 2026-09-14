@@ -210,6 +210,14 @@
             const result = await response.json().catch(() => ({}));
             if (response.status === 401) {
                 const code = result.code || "";
+                if (code === "mfa_required") {
+                    const additionalStep = element("login-additional-step");
+                    additionalStep.open = true;
+                    const mfaInput = form.elements.mfaCode;
+                    mfaInput.required = true;
+                    mfaInput.focus();
+                    throw new Error("Informe o código do aplicativo autenticador para concluir o acesso.");
+                }
                 throw new Error(code === "mfa_invalid" ? "Código MFA inválido ou expirado." : "Credenciais inválidas.");
             }
             if (response.status === 403) {
@@ -246,6 +254,16 @@
             button.querySelector("span").textContent = "Entrar no Agro360";
         }
     }
+
+    document.querySelector(".password-toggle")?.addEventListener("click", event => {
+        const button = event.currentTarget;
+        const input = element(button.getAttribute("aria-controls"));
+        const show = input.type === "password";
+        input.type = show ? "text" : "password";
+        button.setAttribute("aria-pressed", String(show));
+        button.textContent = show ? "Ocultar" : "Mostrar";
+        input.focus();
+    });
 
     async function testApiConnection() {
         const button = element("test-api-connection");

@@ -6,7 +6,7 @@ Plano aprovado incorporado integralmente em [docs/execucao/AGRO360-MASTER-PLAN.m
 
 Gate E0 sem Docker: `pwsh -File scripts/verify-e0.ps1 -PostgresBin 'C:\Program Files\PostgreSQL\18\bin'`; cria banco descartável, instala/reexecuta SQL, inicia API/Web, valida login/dashboard/refresh/logout e executa os testes. Não usa nem modifica o banco configurado da aplicação. `node scripts/verify-offline-shell.mjs` verifica o cache público. Readiness `/health` exige schema mínimo; `/health/live` verifica somente o processo.
 
-As credenciais fixas descritas nas seções históricas abaixo não atendem ao plano mestre e não devem ser usadas em produção. A migração para demo opt-in e provisionamento seguro é pendência AG-E1-004; o gate usa credenciais aleatórias, não as publica e não redefine contas reais.
+As credenciais fixas descritas nas seções históricas abaixo não atendem ao plano mestre e não devem ser usadas em produção. Os hashes universais históricos são invalidados pela migration `064_e1_user_access_control.sql`; por isso registros ainda não provisionados rejeitam corretamente o login com `password_verification_failed`. O provisionamento opt-in usa senhas recebidas somente pelo ambiente/entrada protegida, o `PasswordHasher` oficial e não publica credenciais.
 
 > **Sprint 31:** **Inteligência Agro360** entrega recomendações rastreáveis, scores, anomalias, Prioridades do Dia e assistente interno sem exigir IA externa. Veja [a documentação operacional](docs/INTELIGENCIA-AGRO360.md).
 
@@ -118,6 +118,16 @@ Os valores são apenas exemplos locais. Em pgAdmin/DBeaver, abra e execute o mes
 ### Homologação guiada local
 
 O instalador completo é idempotente e inclui o cliente interno **Fazenda Santa Clara** no plano Profissional, sem senha conhecida. Para validar autenticação real, use o provisionamento opt-in descrito em `database/README.md`; senhas são entradas protegidas locais e nunca fazem parte do SQL ou da documentação versionada.
+
+Antes de alterar qualquer conta, inspecione o banco efetivamente configurado sem expor a conexão:
+
+```bash
+ASPNETCORE_ENVIRONMENT=Homologation dotnet run --project src/Hosts/Agro360.Migrator -- diagnose-homologation --environment Homologation
+```
+
+Para criar/redefinir deliberadamente os acessos de homologação, execute `./scripts/provision-homologation.sh`. O comando é proibido em Production, valida tenant, identidade, perfil e autoridade global, persiste tudo em transação, revoga sessões anteriores e verifica os hashes depois do commit. Ele provisiona `agro360-platform` / `superadmin@mnsoft.com.br` e `santa-clara` / `admin@santaclara.agro360.local`; as senhas temporárias são solicitadas sem eco ou fornecidas pelas variáveis `AGRO360_PROVISION_SUPERADMIN_PASSWORD` e `AGRO360_PROVISION_SANTA_CLARA_PASSWORD`. Não existe senha padrão recuperável.
+
+O SuperAdmin exige ainda `AGRO360_DATA_PROTECTION_KEYS_PATH`, um segredo Base32 em `AGRO360_PROVISION_SUPERADMIN_TOTP_SECRET` e a confirmação de um código atual em `AGRO360_PROVISION_SUPERADMIN_TOTP_CODE`. API e Migrator devem compartilhar o mesmo diretório persistente de chaves (`DataProtection__KeysPath` na API) para que o segredo protegido seja legível. No bootstrap opcional executado pela API, os equivalentes hierárquicos são `SuperAdmin:Email`, `SuperAdmin:Password` e `SuperAdmin:TotpSecret`; em variáveis de ambiente, use `SuperAdmin__Email`, `SuperAdmin__Password` e `SuperAdmin__TotpSecret`. A ausência dessas três chaves apenas ignora esse bootstrap: não prova que a conta inexiste no PostgreSQL.
 
 Depois de aplicar o SQL, inicie API e Web, abra `/swagger` somente em Development e execute o login. A navegação é derivada das permissões devolvidas pela API; ocultar um item no cliente não substitui a autorização do endpoint.
 
