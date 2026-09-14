@@ -49,6 +49,10 @@ public sealed class CanonicalSchemaTests
         Assert.Contains("InTenantTransactionAsync<SeasonClosingRunDto>", service);
         Assert.Contains("closing.stale_snapshot", service);
         Assert.Contains("DeserializeIndicators", service);
+        Assert.Contains("DeserializeSnapshot<SeasonClosingIssueDto>", service);
+        Assert.Contains("closing.invalid_snapshot", service);
+        Assert.Contains("conteúdo persistido foi omitido do log", service);
+        Assert.Contains("private static List<SeasonClosingIssueDto> BuildIssues", service);
         Assert.DoesNotContain("new JsonSerializerOptions{PropertyNameCaseInsensitive=true}", service);
         Assert.Contains("percentual não calculável com base zero", client);
         Assert.Contains("Consultar dados", File.ReadAllText(Path.Combine(Root(), "src/Hosts/Agro360.Web/Pages/Harvest/Index.cshtml")));

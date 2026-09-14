@@ -373,3 +373,11 @@ A tela foi organizada em Escopo, Resumo, Indicadores, Pendências e Histórico. 
 - `git diff --check`: aprovado.
 - `dotnet restore MNSOFT.Agro360.sln`: não executado porque o SDK `dotnet` não está instalado no ambiente (`dotnet: command not found`). Pelo mesmo motivo, build e testes .NET permanecem pendentes e devem ser executados com `dotnet restore MNSOFT.Agro360.sln && dotnet build MNSOFT.Agro360.sln --no-restore && dotnet test MNSOFT.Agro360.sln --no-build`.
 - PostgreSQL e navegador não foram iniciados, pois API/Web não podem ser compilados sem o SDK. Permanecem pendentes os cenários integrados de banco (tenant cruzado, permissão, safra vazia, bloqueio, revisão/idempotência), login/Swagger/layout e a inspeção visual em navegador.
+
+### Revalidação definitiva dos snapshots (2026-09-14)
+
+O checkout foi reavaliado na branch `work`, a partir do commit `67f4bc657eabd0bc2625b161f8ecbff0b2e51655`, sem alterações locais. Há uma única implementação de cada serviço principal e o SDK exigido permanece .NET `10.0.100`. As correções de sobrecarga genérica, argumentos completos dos indicadores, retornos concretos, opções JSON compartilhadas e posição final dos tokens já estavam presentes neste checkout e foram preservadas.
+
+A leitura dos snapshots foi endurecida: ausência histórica (`null`, texto nulo ou em branco) continua sendo tratada como coleção ausente e `[]` continua sendo uma coleção vazia válida. JSON malformado, raiz incompatível ou coleção estruturalmente inválida agora gera `closing.invalid_snapshot`, registra apenas o tipo do snapshot (nunca o conteúdo persistido) e impede que corrupção seja interpretada como conferência sem bloqueios. Definições ausentes em indicadores legados continuam identificadas como limitação histórica, sem recalcular ou alterar versões fechadas.
+
+O restore e o build de diagnóstico foram tentados antes da edição, mas não iniciaram porque o executável `dotnet` não está instalado. Assim, restore/build/testes, banco, dois tenants, autorização, idempotência concorrente, login/Swagger e navegador real continuam pendentes de validação em ambiente com o SDK e PostgreSQL. As verificações estáticas executáveis desta rodada estão registradas no commit correspondente; não houve alteração estrutural de banco nem nova migration.

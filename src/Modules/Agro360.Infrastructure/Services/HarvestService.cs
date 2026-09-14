@@ -6,10 +6,11 @@ using Agro360.Infrastructure.Persistence;
 using Agro360.Multitenancy;
 using Agro360.SharedKernel;
 using Dapper;
+using Microsoft.Extensions.Logging;
 
 namespace Agro360.Infrastructure.Services;
 
-public sealed class HarvestService(DatabaseExecutor database, ITenantContext tenant) : IHarvestService
+public sealed class HarvestService(DatabaseExecutor database, ITenantContext tenant, ILogger<HarvestService> logger) : IHarvestService
 {
     private static readonly JsonSerializerOptions SnapshotJsonOptions = new()
     {
@@ -18,6 +19,9 @@ public sealed class HarvestService(DatabaseExecutor database, ITenantContext ten
     private static readonly string[] AllowedAllocationDestinations =
         ["AVAILABLE", "QUARANTINE", "RECLASSIFICATION", "REPROCESSING", "RETURN_TO_ORIGIN", "LOSS", "DISPOSAL"];
     private static readonly string[] AllowedOperationKinds = ["PLAN", "HARVEST", "RECEIPT"];
+    private static readonly Action<ILogger, string, Exception?> LogInvalidClosingSnapshot =
+        LoggerMessage.Define<string>(LogLevel.Error, new EventId(36021, "InvalidHarvestClosingSnapshot"),
+            "Não foi possível ler a coleção {SnapshotKind} do fechamento da safra; o conteúdo persistido foi omitido do log.");
 
     private static string Hash<T>(T command) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(command)))).ToLowerInvariant();
     private static string Required(string value, string name, int max = 160) => Guard.Required(value, name, max);
@@ -249,10 +253,45 @@ public sealed class HarvestService(DatabaseExecutor database, ITenantContext ten
         if(V("awaiting-quality")>0)Add("AWAITING_QUALITY","OPERATIONAL","WARNING","Recebimentos aguardam qualidade",0,V("awaiting-quality"),"recebido sem decisão = pendência operacional","Quantidade aprovada é provisória","Concluir inspeção","/Harvest?kind=RECEIPT");if(V("allocated")>V("approved"))Add("ALLOCATION_EXCEEDS_APPROVED","QUANTITY","BLOCKER","Destinações excedem material aprovado",V("approved"),V("allocated"),"destinado ≤ aprovado; processamento legítimo é exibido separadamente","Compromete estoque e resultado","Revisar destinações","/Harvest?kind=RECEIPT");
         return list;
     }
-    private static SeasonClosingIssueDto[] DeserializeIssues(string json)=>JsonSerializer.Deserialize<SeasonClosingIssueDto[]>(json,SnapshotJsonOptions)??[];
-    private static SeasonClosingIndicatorDto[] DeserializeIndicators(string json)=>(JsonSerializer.Deserialize<SeasonClosingIndicatorDto[]>(json,SnapshotJsonOptions)??[]).Select(x=>string.IsNullOrWhiteSpace(x.Definition)?x with{Definition="Definição não registrada no snapshot legado; consulte os critérios da versão que o gerou.",Explanation="Snapshot histórico anterior à inclusão da definição; seus valores não foram recalculados."}:x).ToArray();
+    private SeasonClosingIssueDto[] DeserializeIssues(string? json) =>
+        DeserializeSnapshot<SeasonClosingIssueDto>(json, "pendências");
+
+    private SeasonClosingIndicatorDto[] DeserializeIndicators(string? json) =>
+        DeserializeSnapshot<SeasonClosingIndicatorDto>(json, "indicadores")
+            .Select(x => string.IsNullOrWhiteSpace(x.Definition)
+                ? x with
+                {
+                    Definition = "Definição não registrada no snapshot legado; consulte os critérios da versão que o gerou.",
+                    Explanation = "Snapshot histórico anterior à inclusão da definição; seus valores não foram recalculados."
+                }
+                : x)
+            .ToArray();
+
+    private T[] DeserializeSnapshot<T>(string? json, string snapshotKind) where T : class
+    {
+        // Runs and versions created before snapshots were introduced may not have a value.
+        // A malformed or structurally incompatible value must never look like a successful empty check.
+        if (string.IsNullOrWhiteSpace(json) || string.Equals(json.Trim(), "null", StringComparison.OrdinalIgnoreCase))
+            return [];
+
+        try
+        {
+            var snapshot = JsonSerializer.Deserialize<T[]>(json, SnapshotJsonOptions)
+                ?? throw new JsonException("O snapshot não contém uma coleção JSON.");
+            if (snapshot.Any(item => item is null))
+                throw new JsonException("O snapshot contém um item incompatível.");
+            return snapshot;
+        }
+        catch (JsonException exception)
+        {
+            LogInvalidClosingSnapshot(logger, snapshotKind, exception);
+            throw new DomainException(
+                "O histórico do fechamento está incompatível ou corrompido. Não é seguro continuar até restaurar o snapshot.",
+                "closing.invalid_snapshot");
+        }
+    }
     private static bool SnapshotMatches(IEnumerable<SeasonClosingIndicatorDto> snapshot,IEnumerable<SeasonClosingIndicatorDto> current)=>snapshot.OrderBy(x=>x.Code).Select(x=>(x.Code,x.Value,x.Unit,x.Availability)).SequenceEqual(current.OrderBy(x=>x.Code).Select(x=>(x.Code,x.Value,x.Unit,x.Availability)));
-    private static SeasonClosingVersionDto MapVersion(ClosingVersionRow x)=>new(x.Id,x.Version,x.State,x.CutoffDate,x.GeneratedAt,x.ResponsibleId,x.SupersedesId,x.Reason,x.Notes,DeserializeIndicators(x.Indicators),DeserializeIssues(x.Issues));
+    private SeasonClosingVersionDto MapVersion(ClosingVersionRow x)=>new(x.Id,x.Version,x.State,x.CutoffDate,x.GeneratedAt,x.ResponsibleId,x.SupersedesId,x.Reason,x.Notes,DeserializeIndicators(x.Indicators),DeserializeIssues(x.Issues));
     private async Task<HarvestOperationDto?> Replay(System.Data.IDbConnection db,System.Data.IDbTransaction tx,string table,string key,string hash,string kind,CancellationToken ct){var row=await db.QuerySingleOrDefaultAsync<ReplayRow>(new CommandDefinition($"select id,request_hash Hash,created_at At from agro360.{table} where tenant_id=@TenantId and idempotency_key=@Key",new{tenant.TenantId,Key=key},tx,cancellationToken:ct));if(row is null)return null;if(row.Hash!=hash)throw new ConflictException("A chave idempotente já foi usada com outro conteúdo.","harvest.idempotency_conflict");return new HarvestOperationDto(row.Id,kind,"REPLAYED",0,"-",0,row.At,key,1);}
     private Task<int> Audit(System.Data.IDbConnection db,System.Data.IDbTransaction tx,string action,string entity,Guid id,CancellationToken ct)=>db.ExecuteAsync(new CommandDefinition("insert into agro360.audit_logs(id,tenant_id,user_id,action,entity_type,entity_id,occurred_at) values(@AuditId,@TenantId,@UserId,@Action,@Entity,@Id,now())",new{AuditId=Guid.CreateVersion7(),tenant.TenantId,UserId=tenant.UserId,Action=action,Entity=entity,Id=id},tx,cancellationToken:ct));
     private sealed record ClosingScopeRow(Guid SeasonId,Guid FarmId,string Season,string Farm,string Crop,DateOnly StartsOn,DateOnly EndsOn,string Unit);
