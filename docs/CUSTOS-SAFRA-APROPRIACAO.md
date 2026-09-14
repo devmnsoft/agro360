@@ -46,3 +46,13 @@ A conferência informa apropriado até o corte, pendências, apropriações e es
 2. Exercitar em desktop/mobile apropriação, arredondamento, base zero, saldo insuficiente, repetição, concorrência, estorno e isolamento entre tenants.
 3. Reconciliar custos de produção e consumo por chaves de eventos parciais, aceitando quando totais não duplicarem entrada/consumo.
 4. Completar lote → venda → expedição; evoluir margem somente quando custo e receita atribuíveis reconciliarem com as origens.
+
+## Correção de contratos e evolução da jornada (2026-09-14)
+
+A revisão partiu da branch `work`, commit `268bb321ff8309d5b10729db5213297fc1c22a10`, com árvore limpa. As oito implementações de `ISeasonCostService` agora usam os mesmos nomes de parâmetro dos contratos (`query`, `command` e `cutoffDate`, preservando `ct`), sem alterar placeholders Dapper, nomes JSON ou HTTP. A validação de moeda mantém `Trim()` e a obrigatoriedade já aplicada pelo contrato, mas compara o código técnico BRL com `StringComparison.OrdinalIgnoreCase`, eliminando a alocação da normalização usada somente na igualdade.
+
+O cadastro manual passou a expor descrição, categoria, competência, valor/moeda, propriedade selecionada por nome, documento de origem e justificativa auditável. O backend persiste documento e justificativa em seus papéis corretos, rejeita documento já reconhecido por integração na mesma propriedade e continua sem criar pagamento. A tela antecipa o efeito do registro, preserva erros junto ao formulário e confirma apenas a ação crítica.
+
+A exportação CSV agora percorre todas as páginas filtradas, em ordenação estável, em vez de truncar silenciosamente em 200 itens. O arquivo UTF-8 usa `;`, CRLF, datas/decimais invariantes, escape de aspas, separadores e quebras, e neutraliza texto iniciado por caracteres de fórmula. Não houve mudança estrutural de banco nem nova migration: `source_document` e auditoria já existiam.
+
+Verificações estáticas: `node --check`, `git diff --check` e inspeção das oito assinaturas. Restore/build/testes continuam bloqueados pela ausência do executável `dotnet`; API, PostgreSQL e navegador não puderam ser iniciados, portanto concorrência, dois tenants, corte, estorno e renderização responsiva permanecem pendentes de homologação runtime em ambiente com .NET SDK 10.0.100.

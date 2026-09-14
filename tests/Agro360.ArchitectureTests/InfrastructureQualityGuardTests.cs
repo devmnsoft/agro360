@@ -29,6 +29,22 @@ public sealed class InfrastructureQualityGuardTests
         foreach (var file in Directory.EnumerateFiles(ServicesRoot, "*.cs")) Assert.DoesNotMatch(pattern, File.ReadAllText(file));
     }
 
+    [Fact]
+    public void SeasonCostImplementationMustPreserveItsInterfaceParameterContracts()
+    {
+        var source = File.ReadAllText(Path.Combine(ServicesRoot, "SeasonCostService.cs"));
+        Assert.Contains("OverviewAsync(SeasonCostQuery query,", source, StringComparison.Ordinal);
+        Assert.Contains("ListAsync(SeasonCostQuery query,", source, StringComparison.Ordinal);
+        Assert.Contains("AddManualAsync(ManualSeasonCostCommand command,", source, StringComparison.Ordinal);
+        Assert.Contains("PreviewAsync(CostAllocationPreviewCommand command,", source, StringComparison.Ordinal);
+        Assert.Contains("ConfirmAsync(ConfirmCostAllocationCommand command,", source, StringComparison.Ordinal);
+        Assert.Contains("ReverseAsync(Guid batchId, ReverseCostAllocationCommand command,", source, StringComparison.Ordinal);
+        Assert.Contains("ClosingReviewAsync(Guid seasonId, DateOnly cutoffDate,", source, StringComparison.Ordinal);
+        Assert.Contains("ExportCsvAsync(SeasonCostQuery query,", source, StringComparison.Ordinal);
+        Assert.Contains("StringComparison.OrdinalIgnoreCase", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Currency.Trim().ToUpperInvariant()", source, StringComparison.Ordinal);
+    }
+
 
 
 
