@@ -34,141 +34,73 @@ public sealed class WorkManagementService(DatabaseExecutor database, ITenantCont
     {
         var page = Math.Max(1, query.Page);
         var pageSize = Math.Clamp(query.PageSize, 1, 100);
-        var parameters = new
-        {
-            tenant.TenantId,
-            tenant.UserId,
-            Search = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search.Trim(),
-            Module = string.IsNullOrWhiteSpace(query.Module) ? null : query.Module.Trim().ToUpperInvariant(),
-            Priority = string.IsNullOrWhiteSpace(query.Priority) ? null : query.Priority.Trim().ToUpperInvariant(),
-            InteractionStatus = string.IsNullOrWhiteSpace(query.InteractionStatus) ? null : query.InteractionStatus.Trim().ToUpperInvariant(),
-            Limit = pageSize,
-            Offset = (page - 1) * pageSize
-        };
-        const string sql = """
+        var offset = checked((long)(page - 1) * pageSize);
+        var p = new { tenant.TenantId, tenant.UserId, Search = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search.Trim(), Module = query.Module?.Trim().ToUpperInvariant(), Priority = query.Priority?.Trim().ToUpperInvariant(), InteractionStatus = query.InteractionStatus?.Trim().ToUpperInvariant(), Scope = query.Scope?.Trim().ToUpperInvariant(), query.ResponsibleId, Limit = pageSize, Offset = offset };
+        const string common = """
         with user_permissions as (
-          select distinct p.code from agro360.identity_user_roles ur
-          join agro360.identity_role_permissions rp on rp.tenant_id=ur.tenant_id and rp.role_id=ur.role_id
-          join agro360.identity_permissions p on p.id=rp.permission_id
-          where ur.tenant_id=@TenantId and ur.user_id=@UserId
+          select distinct p.code from agro360.identity_users u join agro360.identity_user_roles ur on ur.tenant_id=u.tenant_id and ur.user_id=u.id join agro360.identity_role_permissions rp on rp.tenant_id=ur.tenant_id and rp.role_id=ur.role_id join agro360.identity_permissions p on p.id=rp.permission_id
+          where u.tenant_id=@TenantId and u.id=@UserId and u.status='ACTIVE' and u.deleted_at is null
         ), occurrences as (
-          select 'APPROVAL:'||w.id key,w.id origin_id,'APPROVAL' origin_type,
-            'Aprovação de '||lower(w.entity_type) title,d.module,t.name organization_name,null::text unit_name,
-            a.name responsible_name,w.opened_at + interval '2 days' due_at,'HIGH' priority,
-            'Decisão pendente do aprovador designado.' reason,'Analisar aprovação' action_label,
-            '/Work?tab=workflows&id='||w.id safe_link,w.updated_at
-          from agro360.operations_workflow_instances w
-          join agro360.operations_workflow_definitions d on d.tenant_id=w.tenant_id and d.id=w.definition_id
-          join agro360.identity_users a on a.tenant_id=w.tenant_id and a.id=w.current_approver_id
-          join agro360.tenancy_tenants t on t.id=w.tenant_id
-          where w.tenant_id=@TenantId and w.current_approver_id=@UserId and w.status in('OPEN','IN_REVIEW')
-            and exists(select 1 from user_permissions where code='work.approve')
+          select 'APPROVAL:'||w.id key,w.id origin_id,'APPROVAL' origin_type,'Aprovação de '||lower(w.entity_type) title,d.module,t.name organization_name,null::text unit_name,a.name source_responsible_name,null::timestamptz due_at,'NONE' due_kind,null::text due_source,'HIGH' priority,'Decisão pendente do aprovador designado.' reason,'Analisar aprovação' action_label,'/Work?tab=workflows&id='||w.id safe_link,w.updated_at
+          from agro360.operations_workflow_instances w join agro360.operations_workflow_definitions d on d.tenant_id=w.tenant_id and d.id=w.definition_id join agro360.identity_users a on a.tenant_id=w.tenant_id and a.id=w.current_approver_id join agro360.tenancy_tenants t on t.id=w.tenant_id
+          where w.tenant_id=@TenantId and w.status in('OPEN','IN_REVIEW') and exists(select 1 from user_permissions where code='work.approve')
           union all
-          select 'PURCHASE:'||p.id,p.id,'PURCHASE','Compra aguardando entrega', 'PURCHASING',t.name,null,s.name,
-            p.created_at + interval '7 days',case when p.created_at<now()-interval '7 days' then 'HIGH' else 'MEDIUM' end,
-            'Há saldo de itens aprovado ainda não recebido.','Abrir compra','/Procurement?purchaseId='||p.id,coalesce(p.updated_at,p.created_at)
-          from agro360.purchasing_purchase_orders p join agro360.purchasing_suppliers s on s.tenant_id=p.tenant_id and s.id=p.supplier_id
-          join agro360.tenancy_tenants t on t.id=p.tenant_id
-          where p.tenant_id=@TenantId and p.status in('APPROVED','PARTIALLY_RECEIVED')
-            and exists(select 1 from user_permissions where code='purchasing.read')
-            and exists(select 1 from agro360.purchasing_purchase_items i where i.tenant_id=p.tenant_id and i.purchase_id=p.id and i.received_quantity<i.quantity)
+          select 'PURCHASE:'||o.id,o.id,'PURCHASE','Compra aguardando entrega','PURCHASING',t.name,null,null,null,'NONE',null,'MEDIUM','Há saldo aprovado ainda não recebido.','Acompanhar entrega','/Procurement?purchaseId='||o.id,coalesce(o.updated_at,o.created_at)
+          from agro360.purchasing_purchase_orders o join agro360.tenancy_tenants t on t.id=o.tenant_id where o.tenant_id=@TenantId and o.status in('APPROVED','PARTIALLY_RECEIVED') and exists(select 1 from user_permissions where code='purchasing.read') and exists(select 1 from agro360.purchasing_purchase_items i where i.tenant_id=o.tenant_id and i.purchase_id=o.id and i.received_quantity<i.quantity)
           union all
-          select 'RECEIPT_DIVERGENCE:'||r.id,r.id,'RECEIPT','Recebimento '||r.number||' com divergência','PURCHASING',t.name,null,u.name,
-            r.received_at + interval '1 day','HIGH','Existe divergência aberta; inspeção de qualidade é tratada separadamente.',
-            'Revisar divergência','/Procurement?receiptId='||r.id,r.updated_at
-          from agro360.procurement_receipts r join agro360.identity_users u on u.tenant_id=r.tenant_id and u.id=r.responsible_id
-          join agro360.tenancy_tenants t on t.id=r.tenant_id
-          where r.tenant_id=@TenantId and r.deleted_at is null
-            and exists(select 1 from user_permissions where code='purchasing.read')
-            and exists(select 1 from agro360.procurement_receipt_divergences d where d.tenant_id=r.tenant_id and d.receipt_id=r.id and d.deleted_at is null and d.status='OPEN')
+          select 'RECEIPT_DIVERGENCE:'||r.id,r.id,'RECEIPT','Recebimento '||r.number||' com divergência','PURCHASING',t.name,null,u.name,null,'NONE',null,'HIGH','Existe divergência aberta; qualidade é tratada separadamente.','Conferir divergência','/Procurement?receiptId='||r.id,r.updated_at
+          from agro360.procurement_receipts r join agro360.identity_users u on u.tenant_id=r.tenant_id and u.id=r.responsible_id join agro360.tenancy_tenants t on t.id=r.tenant_id where r.tenant_id=@TenantId and r.deleted_at is null and exists(select 1 from user_permissions where code='purchasing.read') and exists(select 1 from agro360.procurement_receipt_divergences d where d.tenant_id=r.tenant_id and d.receipt_id=r.id and d.deleted_at is null and d.status='OPEN')
           union all
-          select 'QUALITY:'||r.id,r.id,'QUALITY','Material de '||r.number||' aguardando inspeção','INVENTORY',t.name,null,u.name,
-            r.received_at + interval '1 day','HIGH','Recebido fisicamente, mas bloqueado até decisão de qualidade.',
-            'Inspecionar material','/Procurement?receiptId='||r.id,r.updated_at
-          from agro360.procurement_receipts r join agro360.identity_users u on u.tenant_id=r.tenant_id and u.id=r.responsible_id
-          join agro360.tenancy_tenants t on t.id=r.tenant_id
-          where r.tenant_id=@TenantId and r.deleted_at is null
-            and exists(select 1 from user_permissions where code in('inventory.read','production.quality'))
-            and exists(select 1 from agro360.procurement_receipt_items i where i.tenant_id=r.tenant_id and i.receipt_id=r.id and i.deleted_at is null and i.quality_status='PENDING')
+          select 'QUALITY:'||r.id,r.id,'QUALITY','Material de '||r.number||' aguardando inspeção','INVENTORY',t.name,null,u.name,null,'NONE',null,'HIGH','Material bloqueado até decisão de qualidade.','Registrar decisão de qualidade','/Procurement?receiptId='||r.id,r.updated_at
+          from agro360.procurement_receipts r join agro360.identity_users u on u.tenant_id=r.tenant_id and u.id=r.responsible_id join agro360.tenancy_tenants t on t.id=r.tenant_id where r.tenant_id=@TenantId and r.deleted_at is null and exists(select 1 from user_permissions where code in('inventory.read','production.quality')) and exists(select 1 from agro360.procurement_receipt_items i where i.tenant_id=r.tenant_id and i.receipt_id=r.id and i.deleted_at is null and i.quality_status='PENDING')
           union all
-          select 'SHIPMENT:'||s.id,s.id,'SHIPMENT','Expedição '||s.number||' pendente','LOGISTICS',t.name,null,null,
-            s.created_at + interval '2 days',case when s.status='RETURN_PENDING' then 'HIGH' else 'MEDIUM' end,
-            case when s.status='RETURN_PENDING' then 'Há retorno que ainda não foi conciliado.' else 'A separação, expedição ou entrega ainda possui saldo.' end,
-            'Abrir expedição','/Logistics?shipmentId='||s.id,s.updated_at
-          from agro360.fulfillment_shipments s join agro360.tenancy_tenants t on t.id=s.tenant_id
-          where s.tenant_id=@TenantId and s.deleted_at is null and s.status not in('RECONCILED','CANCELLED')
-            and exists(select 1 from user_permissions where code in('logistics.read','logistics.fulfillment.read'))
+          select 'SHIPMENT:'||s.id,s.id,'SHIPMENT','Expedição '||s.number||' pendente','LOGISTICS',t.name,null,null,min(o.expected_delivery)::timestamptz,case when min(o.expected_delivery) is null then 'NONE' else 'OPERATIONAL' end,case when min(o.expected_delivery) is null then null else 'Previsão de entrega do pedido' end,case when s.status='RETURN_PENDING' then 'HIGH' else 'MEDIUM' end,case when s.status='RETURN_PENDING' then 'Há retorno físico pendente de recebimento ou destinação.' else 'A expedição ou entrega ainda possui saldo.' end,case when s.status='RETURN_PENDING' then 'Receber retorno' else 'Abrir expedição' end,'/Logistics?shipmentId='||s.id,s.updated_at
+          from agro360.fulfillment_shipments s join agro360.tenancy_tenants t on t.id=s.tenant_id left join agro360.fulfillment_shipment_items si on si.tenant_id=s.tenant_id and si.shipment_id=s.id left join agro360.sales_order_items oi on oi.tenant_id=si.tenant_id and oi.id=si.order_item_id left join agro360.sales_orders o on o.tenant_id=oi.tenant_id and o.id=oi.order_id where s.tenant_id=@TenantId and s.deleted_at is null and s.status not in('RECONCILED','CANCELLED') and exists(select 1 from user_permissions where code in('logistics.read','logistics.fulfillment.read')) group by s.id,t.name
           union all
-          select 'MAINTENANCE:'||m.id,m.id,'MAINTENANCE','Manutenção prevista: '||a.identification,'MAINTENANCE',t.name,null,u.name,
-            m.scheduled_for::timestamptz,case when m.scheduled_for<current_date then 'HIGH' else 'MEDIUM' end,
-            case when m.scheduled_for<current_date then 'Ordem de manutenção vencida.' else 'Ordem de manutenção prevista e ainda aberta.' end,
-            'Abrir manutenção','/Fleet?maintenanceId='||m.id,coalesce(m.updated_at,m.created_at)
-          from agro360.fleet_maintenance_orders m join agro360.fleet_assets a on a.tenant_id=m.tenant_id and a.id=m.asset_id
-          join agro360.tenancy_tenants t on t.id=m.tenant_id left join agro360.identity_users u on u.tenant_id=m.tenant_id and u.id=m.responsible_id
-          where m.tenant_id=@TenantId and m.status not in('COMPLETED','CANCELLED') and m.scheduled_for<=current_date+7
-            and exists(select 1 from user_permissions where code in('maintenance.read','fleet.read'))
+          select 'MAINTENANCE:'||m.id,m.id,'MAINTENANCE','Manutenção prevista: '||a.identification,'MAINTENANCE',t.name,null,u.name,m.scheduled_for::timestamptz,'OPERATIONAL','Data programada da ordem',case when m.scheduled_for<current_date then 'HIGH' else 'MEDIUM' end,case when m.scheduled_for<current_date then 'Ordem de manutenção vencida.' else 'Ordem programada ainda aberta.' end,'Abrir manutenção','/Fleet?maintenanceId='||m.id,coalesce(m.updated_at,m.created_at)
+          from agro360.fleet_maintenance_orders m join agro360.fleet_assets a on a.tenant_id=m.tenant_id and a.id=m.asset_id join agro360.tenancy_tenants t on t.id=m.tenant_id left join agro360.identity_users u on u.tenant_id=m.tenant_id and u.id=m.responsible_id where m.tenant_id=@TenantId and m.status not in('COMPLETED','CANCELLED') and m.scheduled_for<=current_date+7 and exists(select 1 from user_permissions where code in('maintenance.read','fleet.read'))
           union all
-          select 'PAYABLE:'||p.id,p.id,'PAYABLE','Obrigação financeira: '||p.supplier_name,'FINANCE',t.name,null,null,
-            p.due_on::timestamptz,case when p.due_on<current_date then 'CRITICAL' else 'HIGH' end,
-            case when p.due_on<current_date then 'Título vencido com saldo em aberto.' else 'Título próximo do vencimento com saldo em aberto.' end,
-            'Abrir financeiro','/Finance?payableId='||p.id,coalesce(p.updated_at,p.created_at)
-          from agro360.finance_payables p join agro360.tenancy_tenants t on t.id=p.tenant_id
-          where p.tenant_id=@TenantId and p.status in('OPEN','PARTIAL') and p.balance>0 and p.due_on<=current_date+7
-            and exists(select 1 from user_permissions where code='finance.read')
+          select 'PAYABLE:'||f.id,f.id,'PAYABLE','Obrigação financeira: '||f.supplier_name,'FINANCE',t.name,null,null,f.due_on::timestamptz,'CONTRACTUAL','Vencimento do título',case when f.due_on<current_date then 'CRITICAL' else 'HIGH' end,case when f.due_on<current_date then 'Título vencido com saldo em aberto.' else 'Título próximo do vencimento.' end,'Abrir financeiro','/Finance?payableId='||f.id,coalesce(f.updated_at,f.created_at)
+          from agro360.finance_payables f join agro360.tenancy_tenants t on t.id=f.tenant_id where f.tenant_id=@TenantId and f.status in('OPEN','PARTIAL') and f.balance>0 and f.due_on<=current_date+7 and exists(select 1 from user_permissions where code='finance.read')
         ), visible as (
-          select o.*,coalesce(assigned.name,o.responsible_name) effective_responsible_name,
-            case when s.assigned_to is not null then 'ASSIGNED' when s.viewed_at is not null then 'VIEWED' else 'NEW' end interaction_status
-          from occurrences o left join agro360.operation_occurrence_states s on s.tenant_id=@TenantId and s.occurrence_key=o.key
-          left join agro360.identity_users assigned on assigned.tenant_id=@TenantId and assigned.id=s.assigned_to
-          where (@Search is null or o.title ilike '%'||@Search||'%' or o.reason ilike '%'||@Search||'%')
-            and (@Module is null or o.module=@Module) and (@Priority is null or o.priority=@Priority)
-        ), filtered as (select * from visible where @InteractionStatus is null or interaction_status=@InteractionStatus)
-        select key,origin_id OriginId,origin_type OriginType,title,module,organization_name OrganizationName,unit_name UnitName,
-          effective_responsible_name ResponsibleName,due_at DueAt,priority,reason,action_label ActionLabel,safe_link SafeLink,
-          interaction_status InteractionStatus,updated_at UpdatedAt,count(*) over() FullCount
-        from filtered order by case priority when 'CRITICAL' then 1 when 'HIGH' then 2 when 'MEDIUM' then 3 else 4 end,due_at nulls last,updated_at desc
-        limit @Limit offset @Offset;
+          select o.*,s.assigned_to responsible_id,coalesce(assigned.name,o.source_responsible_name) responsible_name,coalesce(s.assignment_version,0) assignment_version,(r.user_id is not null) viewed_by_me,case when s.assigned_to is not null then 'ASSIGNED' when r.user_id is not null then 'VIEWED' else 'NEW' end interaction_status
+          from occurrences o left join agro360.operation_occurrence_states s on s.tenant_id=@TenantId and s.occurrence_key=o.key left join agro360.operation_occurrence_reads r on r.tenant_id=@TenantId and r.occurrence_key=o.key and r.user_id=@UserId left join agro360.identity_users assigned on assigned.tenant_id=@TenantId and assigned.id=s.assigned_to
+        ), filtered as (select * from visible where (@Search is null or title ilike '%'||@Search||'%' or reason ilike '%'||@Search||'%') and (@Module is null or module=@Module) and (@Priority is null or priority=@Priority) and (@InteractionStatus is null or interaction_status=@InteractionStatus) and (@ResponsibleId is null or responsible_id=@ResponsibleId) and (@Scope is null or @Scope='ALL' or (@Scope='MINE' and responsible_id=@UserId) or (@Scope='TEAM' and responsible_id is not null)) )
         """;
-        var rows = (await c.QueryAsync<OperationOccurrenceReadRow>(new CommandDefinition(sql, parameters, t, cancellationToken: ct))).ToArray();
-        var items = rows.Select(x => new OperationOccurrenceRow(x.Key, x.OriginId, x.OriginType, x.Title, x.Module, x.OrganizationName, x.UnitName, x.ResponsibleName, x.DueAt, x.Priority, x.Reason, x.ActionLabel, x.SafeLink, x.InteractionStatus, x.UpdatedAt)).ToArray();
-        return new PagedResult<OperationOccurrenceRow>(items, page, pageSize, rows.FirstOrDefault()?.FullCount ?? 0);
+        using var grid = await c.QueryMultipleAsync(new CommandDefinition(common + "select count(*) from filtered;" + common + "select key,origin_id OriginId,origin_type OriginType,title,module,organization_name OrganizationName,unit_name UnitName,responsible_id ResponsibleId,responsible_name ResponsibleName,due_at DueAt,due_kind DueKind,due_source DueSource,priority,reason,action_label ActionLabel,safe_link SafeLink,interaction_status InteractionStatus,viewed_by_me ViewedByMe,assignment_version AssignmentVersion,updated_at UpdatedAt from filtered order by case priority when 'CRITICAL' then 1 when 'HIGH' then 2 when 'MEDIUM' then 3 else 4 end,due_at nulls last,updated_at desc,key limit @Limit offset @Offset", p, t, cancellationToken: ct));
+        var total = await grid.ReadSingleAsync<long>();
+        var rows = (await grid.ReadAsync<OperationOccurrenceRow>()).ToArray();
+        return new PagedResult<OperationOccurrenceRow>(rows, page, pageSize, total);
     }, ct);
 
-    public Task MarkOccurrenceViewedAsync(string key, CancellationToken ct) => ChangeOccurrenceStateAsync(key, null, ct);
-
-    public Task AssignOccurrenceAsync(string key, Guid responsibleId, CancellationToken ct) => ChangeOccurrenceStateAsync(key, responsibleId, ct);
-
-    private Task ChangeOccurrenceStateAsync(string key, Guid? responsibleId, CancellationToken ct)
+    public Task<PagedResult<EligibleOccurrenceUser>> EligibleOccurrenceUsersAsync(string key, string? search, int page, int pageSize, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(key) || key.Length > 180 || !System.Text.RegularExpressions.Regex.IsMatch(key, "^(APPROVAL|PURCHASE|RECEIPT_DIVERGENCE|QUALITY|SHIPMENT|MAINTENANCE|PAYABLE):[0-9a-fA-F-]{36}$")) throw new DomainException("Identificador da pendência inválido.", "operation.occurrence_key_invalid");
-        var parts = key.Split(':', 2);
-        var originId = Guid.Parse(parts[1]);
-        var requiredPermissions = parts[0] switch
-        {
-            "APPROVAL" => new[] { "work.approve" }, "PURCHASE" or "RECEIPT_DIVERGENCE" => new[] { "purchasing.read" },
-            "QUALITY" => new[] { "inventory.read", "production.quality" }, "SHIPMENT" => new[] { "logistics.read", "logistics.fulfillment.read" },
-            "MAINTENANCE" => new[] { "maintenance.read", "fleet.read" }, "PAYABLE" => new[] { "finance.read" }, _ => []
-        };
-        var activeSql = parts[0] switch
-        {
-            "APPROVAL" => "select exists(select 1 from agro360.operations_workflow_instances where tenant_id=@TenantId and id=@OriginId and current_approver_id=@UserId and status in('OPEN','IN_REVIEW'))",
-            "PURCHASE" => "select exists(select 1 from agro360.purchasing_purchase_orders p where p.tenant_id=@TenantId and p.id=@OriginId and p.status in('APPROVED','PARTIALLY_RECEIVED') and exists(select 1 from agro360.purchasing_purchase_items i where i.tenant_id=p.tenant_id and i.purchase_id=p.id and i.received_quantity<i.quantity))",
-            "RECEIPT_DIVERGENCE" => "select exists(select 1 from agro360.procurement_receipts r where r.tenant_id=@TenantId and r.id=@OriginId and r.deleted_at is null and exists(select 1 from agro360.procurement_receipt_divergences d where d.tenant_id=r.tenant_id and d.receipt_id=r.id and d.deleted_at is null and d.status='OPEN'))",
-            "QUALITY" => "select exists(select 1 from agro360.procurement_receipts r where r.tenant_id=@TenantId and r.id=@OriginId and r.deleted_at is null and exists(select 1 from agro360.procurement_receipt_items i where i.tenant_id=r.tenant_id and i.receipt_id=r.id and i.deleted_at is null and i.quality_status='PENDING'))",
-            "SHIPMENT" => "select exists(select 1 from agro360.fulfillment_shipments where tenant_id=@TenantId and id=@OriginId and deleted_at is null and status not in('RECONCILED','CANCELLED'))",
-            "MAINTENANCE" => "select exists(select 1 from agro360.fleet_maintenance_orders where tenant_id=@TenantId and id=@OriginId and status not in('COMPLETED','CANCELLED') and scheduled_for<=current_date+7)",
-            "PAYABLE" => "select exists(select 1 from agro360.finance_payables where tenant_id=@TenantId and id=@OriginId and status in('OPEN','PARTIAL') and balance>0 and due_on<=current_date+7)",
-            _ => throw new DomainException("Tipo de pendência inválido.", "operation.occurrence_type_invalid")
-        };
-        return database.InTenantTransactionAsync(async (c, t) =>
-        {
-            if (!await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.identity_user_roles ur join agro360.identity_role_permissions rp on rp.tenant_id=ur.tenant_id and rp.role_id=ur.role_id join agro360.identity_permissions p on p.id=rp.permission_id where ur.tenant_id=@TenantId and ur.user_id=@UserId and p.code=any(@RequiredPermissions))", new { tenant.TenantId, tenant.UserId, RequiredPermissions = requiredPermissions }, t, cancellationToken: ct)))
-                throw new DomainException("Você não possui acesso ao módulo de origem.", "operation.origin_permission_denied");
-            if (!await c.ExecuteScalarAsync<bool>(new CommandDefinition(activeSql, new { tenant.TenantId, tenant.UserId, OriginId = originId }, t, cancellationToken: ct)))
-                throw new ConflictException("A pendência já foi resolvida ou alterada por outro usuário. Atualize a central.", "operation.occurrence_stale");
-            if (responsibleId is not null && !await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.identity_users where tenant_id=@TenantId and id=@ResponsibleId and status='ACTIVE' and deleted_at is null)", new { tenant.TenantId, ResponsibleId = responsibleId }, t, cancellationToken: ct)))
-                throw new DomainException("Responsável inativo ou fora da organização.", "operation.responsible_invalid");
-            await c.ExecuteAsync(new CommandDefinition("insert into agro360.operation_occurrence_states(tenant_id,occurrence_key,viewed_at,viewed_by,assigned_to,assigned_at,created_by,updated_by) values(@TenantId,@Key,now(),@UserId,@ResponsibleId,case when @ResponsibleId is null then null else now() end,@UserId,@UserId) on conflict(tenant_id,occurrence_key) do update set viewed_at=coalesce(agro360.operation_occurrence_states.viewed_at,now()),viewed_by=coalesce(agro360.operation_occurrence_states.viewed_by,@UserId),assigned_to=coalesce(@ResponsibleId,agro360.operation_occurrence_states.assigned_to),assigned_at=case when @ResponsibleId is null then agro360.operation_occurrence_states.assigned_at else now() end,updated_at=now(),updated_by=@UserId; insert into agro360.operation_occurrence_events(tenant_id,occurrence_key,event_type,actor_id,responsible_id) values(@TenantId,@Key,case when @ResponsibleId is null then 'VIEWED' else 'ASSIGNED' end,@UserId,@ResponsibleId)", new { tenant.TenantId, Key = key.Trim(), tenant.UserId, ResponsibleId = responsibleId }, t, cancellationToken: ct));
-        }, ct);
+        var (type, _) = ParseOccurrenceKey(key); page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 50); var permission = PermissionsFor(type);
+        return Tx(async (c,t) => { var p = new { tenant.TenantId, Search=string.IsNullOrWhiteSpace(search)?null:search.Trim(), Permissions=permission, Limit=pageSize, Offset=checked((long)(page-1)*pageSize) }; const string where=" where u.tenant_id=@TenantId and u.status='ACTIVE' and u.deleted_at is null and (@Search is null or u.name ilike '%'||@Search||'%' or u.email ilike '%'||@Search||'%') and exists(select 1 from agro360.identity_user_roles ur join agro360.identity_role_permissions rp on rp.tenant_id=ur.tenant_id and rp.role_id=ur.role_id join agro360.identity_permissions p on p.id=rp.permission_id where ur.tenant_id=u.tenant_id and ur.user_id=u.id and p.code=any(@Permissions))"; using var g=await c.QueryMultipleAsync(new CommandDefinition("select count(*) from agro360.identity_users u"+where+"; select u.id,u.name,u.email FunctionalIdentification from agro360.identity_users u"+where+" order by u.name,u.id limit @Limit offset @Offset",p,t,cancellationToken:ct)); var total=await g.ReadSingleAsync<long>(); return new PagedResult<EligibleOccurrenceUser>((await g.ReadAsync<EligibleOccurrenceUser>()).ToArray(),page,pageSize,total); },ct);
     }
+
+    public Task MarkOccurrenceViewedAsync(string key, CancellationToken ct)
+    {
+        var (type, originId)=ParseOccurrenceKey(key); return ChangeOccurrenceStateAsync(key,type,originId,null,ct);
+    }
+    public Task AssignOccurrenceAsync(string key, OccurrenceAssignmentCommand command, CancellationToken ct)
+    {
+        var (type, originId)=ParseOccurrenceKey(key); if (command.ResponsibleId is null && string.IsNullOrWhiteSpace(command.Reason)) throw new DomainException("Informe o motivo da retirada.","operation.assignment_reason_required"); return ChangeOccurrenceStateAsync(key,type,originId,command,ct);
+    }
+    private Task ChangeOccurrenceStateAsync(string key,string type,Guid originId,OccurrenceAssignmentCommand? command,CancellationToken ct) => database.InTenantTransactionAsync(async(c,t) =>
+    {
+        var permissions=PermissionsFor(type);
+        if(!await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.identity_users u join agro360.identity_user_roles ur on ur.tenant_id=u.tenant_id and ur.user_id=u.id join agro360.identity_role_permissions rp on rp.tenant_id=ur.tenant_id and rp.role_id=ur.role_id join agro360.identity_permissions p on p.id=rp.permission_id where u.tenant_id=@TenantId and u.id=@UserId and u.status='ACTIVE' and u.deleted_at is null and p.code=any(@Permissions))",new{tenant.TenantId,tenant.UserId,Permissions=permissions},t,cancellationToken:ct))) throw new DomainException("Você não possui acesso à origem.","operation.origin_permission_denied");
+        await c.ExecuteAsync(new CommandDefinition("insert into agro360.operation_occurrence_states(tenant_id,occurrence_key,created_by,updated_by) values(@TenantId,@Key,@UserId,@UserId) on conflict do nothing",new{tenant.TenantId,Key=key,tenant.UserId},t,cancellationToken:ct));
+        if(command is null) { var changed=await c.ExecuteAsync(new CommandDefinition("insert into agro360.operation_occurrence_reads(tenant_id,occurrence_key,user_id) values(@TenantId,@Key,@UserId) on conflict(tenant_id,occurrence_key,user_id) do update set last_viewed_at=now(),view_count=agro360.operation_occurrence_reads.view_count+1",new{tenant.TenantId,Key=key,tenant.UserId},t,cancellationToken:ct)); if(changed>0) await c.ExecuteAsync(new CommandDefinition("insert into agro360.operation_occurrence_events(tenant_id,occurrence_key,event_type,actor_id) select @TenantId,@Key,'VIEWED',@UserId where not exists(select 1 from agro360.operation_occurrence_events where tenant_id=@TenantId and occurrence_key=@Key and event_type='VIEWED' and actor_id=@UserId)",new{tenant.TenantId,Key=key,tenant.UserId},t,cancellationToken:ct)); return; }
+        if(command.ResponsibleId is not null && !await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.identity_users u where u.tenant_id=@TenantId and u.id=@ResponsibleId and u.status='ACTIVE' and u.deleted_at is null and exists(select 1 from agro360.identity_user_roles ur join agro360.identity_role_permissions rp on rp.tenant_id=ur.tenant_id and rp.role_id=ur.role_id join agro360.identity_permissions p on p.id=rp.permission_id where ur.tenant_id=u.tenant_id and ur.user_id=u.id and p.code=any(@Permissions)))",new{tenant.TenantId,command.ResponsibleId,Permissions=permissions},t,cancellationToken:ct))) throw new DomainException("Pessoa inelegível para acompanhar esta origem.","operation.responsible_invalid");
+        var previous=await c.QuerySingleAsync<Guid?>(new CommandDefinition("select assigned_to from agro360.operation_occurrence_states where tenant_id=@TenantId and occurrence_key=@Key for update",new{tenant.TenantId,Key=key},t,cancellationToken:ct));
+        if(previous==command.ResponsibleId) return;
+        var n=await c.ExecuteAsync(new CommandDefinition("update agro360.operation_occurrence_states set assigned_to=@ResponsibleId,assigned_at=case when @ResponsibleId is null then null else now() end,assignment_reason=@Reason,assignment_version=assignment_version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and occurrence_key=@Key and assignment_version=@ExpectedVersion",new{tenant.TenantId,Key=key,command.ResponsibleId,Reason=command.Reason?.Trim(),command.ExpectedVersion,tenant.UserId},t,cancellationToken:ct));
+        if(n==0) throw new ConflictException("A atribuição foi alterada por outra pessoa. Recarregue e confirme novamente.","operation.assignment_stale");
+        var eventType=command.ResponsibleId is null?"UNASSIGNED":previous is null?"ASSIGNED":"TRANSFERRED"; await c.ExecuteAsync(new CommandDefinition("insert into agro360.operation_occurrence_events(tenant_id,occurrence_key,event_type,actor_id,responsible_id,reason) values(@TenantId,@Key,@EventType,@UserId,@ResponsibleId,@Reason)",new{tenant.TenantId,Key=key,EventType=eventType,tenant.UserId,command.ResponsibleId,Reason=command.Reason?.Trim()},t,cancellationToken:ct));
+    },ct);
+    private static (string Type,Guid Id) ParseOccurrenceKey(string key) { if(string.IsNullOrWhiteSpace(key)||key.Length>180){throw new DomainException("Identificador da pendência inválido.","operation.occurrence_key_invalid");} var parts=key.Split(':',2); if(parts.Length!=2||!Guid.TryParseExact(parts[1],"D",out var id)||PermissionsFor(parts[0]).Length==0) throw new DomainException("Identificador da pendência inválido.","operation.occurrence_key_invalid"); return(parts[0],id); }
+    private static string[] PermissionsFor(string type)=>type switch { "APPROVAL"=>["work.approve"], "PURCHASE" or "RECEIPT_DIVERGENCE"=>["purchasing.read"], "QUALITY"=>["inventory.read","production.quality"], "SHIPMENT"=>["logistics.read","logistics.fulfillment.read"], "MAINTENANCE"=>["maintenance.read","fleet.read"], "PAYABLE"=>["finance.read"], _=>[] };
+
 }

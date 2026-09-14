@@ -17,12 +17,15 @@ public sealed record NotificationRow(Guid Id, string Type, string Module, string
 public sealed record CalendarRow(Guid Id, string Type, string Title, DateTimeOffset StartsAt, DateTimeOffset? EndsAt, string Module, string? Priority, string? SafeLink);
 public sealed record WorkDashboard(long OpenTasks, long OverdueTasks, long CriticalTasks, long CriticalAlerts, long PendingApprovals, long UnreadNotifications, long CriticalStocks, int HealthScore);
 public sealed record OutboxRow(Guid Id, string Channel, string Status, int Attempts, string? LastError, DateTimeOffset CreatedAt, DateTimeOffset? ProcessedAt);
-public sealed record OperationOccurrenceRow(string Key, Guid OriginId, string OriginType, string Title, string Module, string OrganizationName, string? UnitName, string? ResponsibleName, DateTimeOffset? DueAt, string Priority, string Reason, string ActionLabel, string SafeLink, string InteractionStatus, DateTimeOffset UpdatedAt);
-public sealed record OperationOccurrenceQuery(string? Search, string? Module, string? Priority, string? InteractionStatus, int Page = 1, int PageSize = 25);
+public sealed record OperationOccurrenceRow(string Key, Guid OriginId, string OriginType, string Title, string Module, string OrganizationName, string? UnitName, Guid? ResponsibleId, string? ResponsibleName, DateTimeOffset? DueAt, string DueKind, string? DueSource, string Priority, string Reason, string ActionLabel, string SafeLink, string InteractionStatus, bool ViewedByMe, long AssignmentVersion, DateTimeOffset UpdatedAt);
+public sealed record OperationOccurrenceQuery(string? Search, string? Module, string? Priority, string? InteractionStatus, string? Scope, Guid? ResponsibleId, int Page = 1, int PageSize = 25);
+public sealed record EligibleOccurrenceUser(Guid Id, string Name, string FunctionalIdentification);
+public sealed record OccurrenceAssignmentCommand(Guid? ResponsibleId, string? Reason, long ExpectedVersion);
 
 public interface IWorkManagementService
 {
     Task<IReadOnlyList<WorkLookup>> ActiveUsersAsync(string? search, CancellationToken ct);
+    Task<PagedResult<EligibleOccurrenceUser>> EligibleOccurrenceUsersAsync(string key, string? search, int page, int pageSize, CancellationToken ct);
     Task<PagedResult<OperationalTaskRow>> TasksAsync(string? search, string? status, string? priority, string? moduleCode, Guid? responsibleId, DateTimeOffset? startDate, DateTimeOffset? endDate, int page, int pageSize, CancellationToken ct);
     Task<Guid> CreateTaskAsync(TaskCommand command, CancellationToken ct); Task ChangeTaskAsync(Guid id, TaskTransition command, CancellationToken ct); Task<IReadOnlyList<TaskEventRow>> TaskHistoryAsync(Guid id, CancellationToken ct);
     Task<IReadOnlyList<AlertRow>> AlertsAsync(string? severity, string? status, string? moduleCode, CancellationToken ct); Task ChangeAlertAsync(Guid id, string action, CancellationToken ct); Task<int> EvaluateRulesAsync(CancellationToken ct);
@@ -33,5 +36,5 @@ public interface IWorkManagementService
     Task<IReadOnlyList<OutboxRow>> OutboxAsync(string? status, string? channel, CancellationToken ct); Task<WorkDashboard> DashboardAsync(CancellationToken ct);
     Task<PagedResult<OperationOccurrenceRow>> OperationCenterAsync(OperationOccurrenceQuery query, CancellationToken ct);
     Task MarkOccurrenceViewedAsync(string key, CancellationToken ct);
-    Task AssignOccurrenceAsync(string key, Guid responsibleId, CancellationToken ct);
+    Task AssignOccurrenceAsync(string key, OccurrenceAssignmentCommand command, CancellationToken ct);
 }
