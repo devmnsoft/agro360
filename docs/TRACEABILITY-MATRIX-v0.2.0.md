@@ -193,3 +193,12 @@ Próxima etapa: estabilizar esta fatia em banco descartável e navegador; depois
 | Custos da safra e indicadores | Parcial | Apropriado real e denominadores seguros; planejado/rateio/moedas/fechamento ainda não concluídos |
 | Central de Operações | Ausente para os cinco novos tipos | Não foi criado checklist ou prazo fictício; projeção será adicionada no serviço canônico |
 | Relatórios/CSV | Ausente neste recorte | Dashboard filtrável implementado; exportação segura permanece pendente |
+
+### Incremento AG-E7-001 — beneficiamento integrado (2026-09-14)
+
+| Capacidade | Estado | Evidência | Pendência |
+|---|---|---|---|
+| Recebimento aprovado → reserva parcial → consumo | Implementado, não homologado | contratos/serviço industrial; migration 076; locks e idempotência por hash | PostgreSQL concorrente e E2E autenticado |
+| Resultado principal/coproduto/perda → qualidade → estoque | Implementado, não homologado | `production_output_requests`, lote PENDING, liberação com movimento `PRODUCTION_BATCH` | validar instalação limpa/upgrade e aprovação concorrente |
+| Custos e rastreabilidade | Parcial | consulta de custos preserva pendência; genealogia industrial existente | rateio configurável, retificação e navegação agrícola expandida |
+| UX operacional | Parcial | formulários com seletores, ajuda, bloqueio de duplo envio e foco de erro | detalhes expansíveis, confirmações completas e screenshot/navegador real |
