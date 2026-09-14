@@ -72,4 +72,10 @@ internal static partial class InfrastructureLogMessages
     internal static partial void LivestockOperation(ILogger logger, string operation, Guid tenantId, Guid userId, string traceId);
     [LoggerMessage(1034, LogLevel.Information, "Apropriação de custo {Operation}. TenantId: {TenantId}; Lote: {BatchId}; Ator: {UserId}")]
     internal static partial void CostAllocationChanged(ILogger logger, string operation, Guid tenantId, Guid batchId, Guid userId);
+    [LoggerMessage(1035, LogLevel.Information, "Etapas do login concluídas. TenantId: {TenantId}; ConsultaMs: {LookupMilliseconds}; VerificacaoSenhaMs: {PasswordMilliseconds}; SessaoMs: {SessionMilliseconds}; TraceId: {TraceId}")]
+    internal static partial void LoginTimings(ILogger logger, Guid tenantId, long lookupMilliseconds, long passwordMilliseconds, long sessionMilliseconds, string traceId);
+    [LoggerMessage(1036, LogLevel.Information, "MFA solicitado. TenantId: {TenantId}; UserId: {UserId}; TraceId: {TraceId}")]
+    internal static partial void MfaRequested(ILogger logger, Guid tenantId, Guid userId, string traceId);
+    [LoggerMessage(1037, LogLevel.Information, "MFA concluído. TenantId: {TenantId}; UserId: {UserId}; TraceId: {TraceId}")]
+    internal static partial void MfaCompleted(ILogger logger, Guid tenantId, Guid userId, string traceId);
 }

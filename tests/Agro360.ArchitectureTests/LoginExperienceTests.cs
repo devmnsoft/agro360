@@ -101,4 +101,23 @@ public sealed class LoginExperienceTests
         Assert.DoesNotContain("DefaultConnection", settings, StringComparison.Ordinal);
         Assert.DoesNotContain("Password=", settings, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void LoginSeparatesMfaChallengeProtectsHashWorkAndRestoresInteractiveControls()
+    {
+        var identity = Read("src/Modules/Agro360.Infrastructure/Services/IdentityService.cs");
+        var security = Read("src/Modules/Agro360.Infrastructure/Security/SecurityServices.cs");
+        var layout = Read("src/Hosts/Agro360.Web/Pages/Shared/_Layout.cshtml");
+        var client = Read("src/Hosts/Agro360.Web/wwwroot/js/agro360.js");
+
+        Assert.Contains("mfa_required", identity, StringComparison.Ordinal);
+        Assert.Contains("MfaRequested", identity, StringComparison.Ordinal);
+        Assert.Contains("LoginTimings", identity, StringComparison.Ordinal);
+        Assert.Contains("MaximumSupportedIterations", security, StringComparison.Ordinal);
+        Assert.Contains("salt.Length != SaltSize", security, StringComparison.Ordinal);
+        Assert.Contains("class=\"password-toggle\"", layout, StringComparison.Ordinal);
+        Assert.Contains("additionalStep.open = true", client, StringComparison.Ordinal);
+        Assert.Contains("button.disabled = false", client, StringComparison.Ordinal);
+        Assert.Contains("aria-pressed", client, StringComparison.Ordinal);
+    }
 }
