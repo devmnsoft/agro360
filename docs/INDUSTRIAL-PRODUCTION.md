@@ -27,3 +27,8 @@ Os contratos `IProductionStockGateway`, `IProductionAlertGateway`, `IProductionF
 
 ## Homologação
 Validar tenant A/B, permissões por ação, formulação/versão, reserva, apontamento crítico, saldo/validade/bloqueio, perda, parada, qualidade, genealogia, custo, dashboard vazio e CSV. Confirmar que telas usam seletores e que API retorna Problem Details nos erros de domínio.
+
+## Conferência operacional (2026-09-14)
+Na tela de ordens, selecione o número comercial para abrir o resumo que distingue previsto, reservado, consumido, produzido, aguardando qualidade, disponível e perda física. Esses valores têm origens persistidas distintas e falha de consulta é exibida como erro, não como zero. A próxima transição é apresentada conforme o estado, mas a autorização e os pré-requisitos são sempre revalidados pela API.
+
+A decisão de qualidade final exige selecionar um lote pendente. Aprovação requer referência do laudo e da evidência e cria a disponibilidade somente após confirmação do servidor. Bloqueio ou reprovação exige motivo e não materializa estoque. Em perda de resposta, não altere o formulário: a mesma chave idempotente é reutilizada para recuperar o efeito anterior sem duplicação.
