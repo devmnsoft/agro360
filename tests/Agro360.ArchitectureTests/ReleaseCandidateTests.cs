@@ -37,6 +37,10 @@ public sealed class ReleaseCandidateTests
         Assert.Contains("for update", service, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("harvest.quality_blocks_stock", service, StringComparison.Ordinal);
         Assert.Contains("harvest.idempotency_conflict", service, StringComparison.Ordinal);
+        Assert.Contains("CreatePlanAsync(CreateHarvestPlanCommand command, CancellationToken cancellationToken)", service, StringComparison.Ordinal);
+        Assert.Contains("private static readonly string[] AllowedAllocationDestinations", service, StringComparison.Ordinal);
+        Assert.Contains("harvest.invalid_operation_kind", service, StringComparison.Ordinal);
+        Assert.Contains("harvest.incompatible_dashboard_units", service, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()
