@@ -43,6 +43,7 @@ public static class DependencyInjection
         services.AddScoped<ICrmSaasService, CrmSaasService>();
         services.AddScoped<IDataGovernanceService, DataGovernanceService>();
         services.AddScoped<IFinanceService, FinanceService>();
+        services.AddScoped<ISeasonCostService, SeasonCostService>();
         services.AddScoped<ISalesService, SalesService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IOperationsService, OperationsService>();
