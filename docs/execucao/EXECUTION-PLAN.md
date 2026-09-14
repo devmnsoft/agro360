@@ -58,3 +58,7 @@ Não houve autorização de push nesta rodada. A inclusão literal do mestre nã
 - AG-E5-001/AG-E5-002: homologar em PostgreSQL descartável o recebimento integrado preservado do commit local e o pedido comercial com preço-base, desconto efetivo, snapshot e arredondamento por linha. Em seguida concluir reserva → entrega → recebível sem mudança fictícia de status.
 - AG-E7-001: modelar o snapshot versionado do roteiro receita → etapas esperadas → ordem, gerar lote acabado operacional e validar consumo/reserva/qualidade com bloqueios efetivos.
 - UI: completar jornada comercial de tabela de preços → cliente → pedido → análise/aprovação e exercitar a interação no navegador.
+
+### Incremento AG-E6-002 — colheita e recebimento (2026-09-14)
+
+Implementação vertical disponível na migration 075, API `/api/v1/harvest` e página `/Harvest`. Verificação estática concluída; build, banco descartável e E2E seguem como gates obrigatórios. Pendências ordenadas: (1) coleta dinâmica dos critérios e evidências na UI de Qualidade; (2) projeções canônicas na Central de Operações; (3) CSV autorizado com os mesmos filtros; (4) rateio/fechamento versionado; (5) homologação concorrente e móvel. Não iniciar beneficiamento/comercialização agrícola antes desses gates.

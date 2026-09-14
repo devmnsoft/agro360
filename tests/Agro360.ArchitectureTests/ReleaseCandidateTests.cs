@@ -23,6 +23,20 @@ public sealed class ReleaseCandidateTests
         Assert.DoesNotContain("data-feature=\"finance\"", layout, StringComparison.Ordinal);
         Assert.Contains("href=\"/Agriculture\"", layout, StringComparison.Ordinal);
         Assert.Contains("href=\"/Compliance\"", layout, StringComparison.Ordinal);
+        Assert.Contains("href=\"/Harvest\"", layout, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void HarvestJourneyMustKeepQualityAndStockTransitionsExplicit()
+    {
+        var migration = File.ReadAllText(Path.Combine(Root, "database", "migrations", "075_harvest_receipt_quality_costs.sql"));
+        var service = File.ReadAllText(Path.Combine(Root, "src", "Modules", "Agro360.Infrastructure", "Services", "HarvestService.cs"));
+        Assert.Contains("harvest_plans", migration, StringComparison.Ordinal);
+        Assert.Contains("production_receipts", migration, StringComparison.Ordinal);
+        Assert.Contains("harvest_material_allocations", migration, StringComparison.Ordinal);
+        Assert.Contains("for update", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("harvest.quality_blocks_stock", service, StringComparison.Ordinal);
+        Assert.Contains("harvest.idempotency_conflict", service, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()
