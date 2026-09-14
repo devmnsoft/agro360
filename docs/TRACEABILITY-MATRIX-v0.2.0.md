@@ -171,3 +171,10 @@ Esta seção registra maturidade observada em execução e prevalece sobre decla
 | Jornadas compras/qualidade e comercial/entrega | Parcial | Central navega para os fluxos já implementados; recebimento de retorno, conciliação financeira e E2E transacional permanecem critérios de conclusão. |
 
 Próxima etapa: estabilizar esta fatia em banco descartável e navegador; depois incluir produção/campo/documentos apenas a partir de regras de domínio persistidas, antes de custos/conciliação, relatórios e mobilidade ampliada.
+
+### Evidência incremental — 2026-09-14
+
+| Item | Estado real | Evidência / limite |
+|---|---|---|
+| Central: leitura, atribuição e paginação | Implementado, não homologado em runtime | Migration 074, serviço/API e modal Web; SQL/JS estáticos aprovados; .NET e PostgreSQL indisponíveis |
+| Logística: recebimento/destinação de retorno | Implementado parcialmente, não homologado | Recebimento parcial/idempotente e decisão auditada; liberação de saldo disponível e conciliação financeira ainda não declaradas |

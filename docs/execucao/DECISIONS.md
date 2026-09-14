@@ -117,3 +117,11 @@ A Central de Operações deriva ocorrências das operações de origem e persist
 | qualquer interação | resolver causa | pré-requisitos da operação original | permissão específica da ação | item deixa a projeção | somente o serviço dono grava efeitos | conforme eventos/ajustes do módulo |
 
 A Central nunca aprova, recebe, inspeciona, expede, entrega ou baixa título por inferência. Essas transições continuam centralizadas nos respectivos serviços transacionais.
+
+## ADR-E10-02 — Leitura individual e atribuição compartilhada (2026-09-14)
+
+A leitura de uma ocorrência é identificada por tenant, episódio e usuário; uma leitura conhecida da 073 é migrada apenas quando `viewed_by` identifica seu autor. A atribuição continua compartilhada, não substitui aprovador nem concede permissão, e usa versão otimista com motivo em transferência/retirada. A elegibilidade é reconsultada no servidor no tenant corrente. Resolução continua exclusivamente derivada da origem. Prazos inexistentes permanecem nulos e não geram atraso; datas de pedido/título/manutenção são identificadas pela natureza operacional ou contratual.
+
+## ADR-E8-04 — Retorno recebido permanece indisponível (2026-09-14)
+
+Registro de retorno autoriza um saldo; recebimentos físicos podem ser parciais e são idempotentes, mas sempre seguem para qualidade. Condição, unidade, depósito, lote e evidência são fatos históricos. Uma destinação exige versão, quantidade ainda não decidida, motivo e autoria do servidor. Recebimento físico não equivale a conciliação financeira.
