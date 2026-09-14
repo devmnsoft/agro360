@@ -33,6 +33,23 @@ public sealed class CanonicalSchemaTests
         Assert.Contains("on conflict (id) do nothing", afterSprint8, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void HarvestClosingIsImmutableTenantScopedAndActionable()
+    {
+        var migration = File.ReadAllText(Path.Combine(Root(), "database/migrations/077_harvest_management_closing.sql"));
+        var service = File.ReadAllText(Path.Combine(Root(), "src/Modules/Agro360.Infrastructure/Services/HarvestService.cs"));
+        var client = File.ReadAllText(Path.Combine(Root(), "src/Hosts/Agro360.Web/wwwroot/js/harvest.js"));
+
+        Assert.Contains("unique(tenant_id,season_id,version)", migration);
+        Assert.Contains("supersedes_id", migration);
+        Assert.Contains("pg_advisory_xact_lock", service);
+        Assert.Contains("operational_at::date<=@Cutoff", service);
+        Assert.Contains("created_at>@GeneratedAt", service);
+        Assert.Contains("closing.blocked", service);
+        Assert.Contains("percentual não calculável com base zero", client);
+        Assert.Contains("if(/^[=+\\-@]/.test(x))", client);
+    }
+
     private static string Root()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

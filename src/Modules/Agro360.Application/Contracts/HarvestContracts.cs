@@ -37,6 +37,26 @@ public sealed record HarvestTraceDto(Guid ReceiptId, string LotNumber, string Qu
     Guid FarmId, Guid SeasonId, Guid FieldId, Guid HarvestRecordId, decimal ReceivedQuantity,
     decimal AllocatedQuantity, string Unit, IReadOnlyCollection<HarvestOperationDto> Timeline);
 
+public sealed record SeasonClosingScopeDto(Guid SeasonId, Guid FarmId, string Season, string Farm,
+    string Crop, DateOnly StartsOn, DateOnly EndsOn, DateOnly CutoffDate, string Unit);
+public sealed record SeasonClosingIndicatorDto(string Code, string Label, decimal? Value, string Unit,
+    string Availability, string Definition, string SourceUrl, string? Explanation);
+public sealed record SeasonClosingIssueDto(Guid Id, string Code, string Category, string Severity,
+    string Title, decimal? Expected, decimal? Found, string Unit, string Rule, string Impact,
+    string? Responsible, string ActionLabel, string SourceUrl, string Status);
+public sealed record SeasonClosingRunDto(Guid Id, DateTimeOffset GeneratedAt, string CriteriaVersion,
+    IReadOnlyCollection<SeasonClosingIssueDto> Issues);
+public sealed record SeasonClosingVersionDto(Guid Id, int Version, string State, DateOnly CutoffDate,
+    DateTimeOffset GeneratedAt, Guid ResponsibleId, Guid? SupersedesId, string? Reason, string? Notes,
+    IReadOnlyCollection<SeasonClosingIndicatorDto> Indicators, IReadOnlyCollection<SeasonClosingIssueDto> Issues);
+public sealed record SeasonClosingDto(SeasonClosingScopeDto Scope, string State,
+    IReadOnlyCollection<SeasonClosingIndicatorDto> Indicators, SeasonClosingRunDto? LastRun,
+    IReadOnlyCollection<SeasonClosingVersionDto> Versions, bool HasRetroactiveMovement);
+public sealed record RunSeasonClosingCommand(Guid SeasonId, DateOnly CutoffDate, string IdempotencyKey);
+public sealed record CreateSeasonClosingCommand(Guid SeasonId, DateOnly CutoffDate, string? Notes,
+    string? RevisionReason, string IdempotencyKey);
+public sealed record ChangeSeasonClosingStateCommand(long Version, string? Notes);
+
 public interface IHarvestService
 {
     Task<HarvestOperationDto> CreatePlanAsync(CreateHarvestPlanCommand command, CancellationToken cancellationToken);
@@ -47,4 +67,8 @@ public interface IHarvestService
     Task<HarvestDashboardDto> DashboardAsync(Guid? seasonId, Guid? fieldId, CancellationToken cancellationToken);
     Task<HarvestTraceDto> TraceAsync(Guid receiptId, CancellationToken cancellationToken);
     Task<IReadOnlyCollection<HarvestOperationDto>> ListAsync(string? kind, Guid? seasonId, CancellationToken cancellationToken);
+    Task<SeasonClosingDto> GetClosingAsync(Guid seasonId, DateOnly cutoffDate, CancellationToken cancellationToken);
+    Task<SeasonClosingRunDto> RunClosingChecksAsync(RunSeasonClosingCommand command, CancellationToken cancellationToken);
+    Task<SeasonClosingVersionDto> CreateClosingAsync(CreateSeasonClosingCommand command, CancellationToken cancellationToken);
+    Task<SeasonClosingVersionDto> CloseAsync(Guid closingId, ChangeSeasonClosingStateCommand command, CancellationToken cancellationToken);
 }

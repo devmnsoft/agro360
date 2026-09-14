@@ -1,5 +1,13 @@
 # Plano de execução Agro360
 
+## Recorte ativo — fechamento gerencial 7.7
+
+1. **Concluído no código:** consolidação segura da safra, conferências quantitativas, custos vinculados, pendências acionáveis, execução idempotente, versões/snapshots e revisão retroativa.
+2. **Decisão de integridade:** saldo atual e receita reconhecida ficam indisponíveis quando não há genealogia/política inequívoca; não há soma entre unidades nem edição de saldo.
+3. **Gate pendente:** restore/build/test, PostgreSQL limpo e incremental, API autenticada, isolamento/autorização e navegador responsivo, pois este container não contém `dotnet`/`psql`.
+4. **Próxima implementação:** vínculos confiáveis comercial/logística/custos e projeções do fechamento na Central; depois validar concorrência e dois tenants no banco descartável.
+
+
 ## Recorte ativo — estabilização logística 7.1
 
 1. **Concluído no código:** schema aditivo, reservas concorrentes, conferência, saída física idempotente, tentativas parciais, recusa, registro inicial de retorno, consulta e indicadores.

@@ -1,5 +1,18 @@
 # Matriz de rastreabilidade v0.2.0
 
+## Incremento 7.7 — fechamento gerencial da safra (2026-09-14)
+
+| Dependência/capacidade | Estado real | Evidência/limite |
+|---|---|---|
+| Colheita, recebimento, qualidade e destinação | Implementado sem verificação de execução | migrations 075/076 e `HarvestService`; runtime indisponível |
+| Beneficiamento | Implementado sem verificação de execução | reserva/consumo/resultados 076; E2E pendente |
+| Estoque e reservas | Parcial | movimentos reais reutilizados; genealogia de saldo atual por safra incompleta |
+| Pedidos, expedições, entregas e devoluções | Parcial | módulos existentes preservados; atribuição exata à safra não presumida |
+| Custos e recebíveis | Parcial | custo diretamente apropriado consolidado; receita sem política/vínculo fica indisponível |
+| Central de Operações | Concluída e verificada estaticamente no recorte anterior | projeção 073/074 preservada; cinco novos tipos do fechamento ainda pendentes |
+| Conferência e fechamento 7.7 | Implementado sem verificação de execução | migration 077, API e `/Harvest`; JS/SQL estáticos aprovados, .NET/PostgreSQL/E2E pendentes |
+
+
 ## Incremento E9 móvel controlado — evidência de 2026-09-11
 
 - **Implementado, não homologado em runtime:** sessão curta e dispositivo revalidado; catálogo/lote/contrato explícitos; hash, replay e conflito por conteúdo; fila e rascunhos locais separados por contexto; estados locais sem falso “concluído”; cache v45 limitado ao shell.
