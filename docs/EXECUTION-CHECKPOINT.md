@@ -1,5 +1,9 @@
 # Checkpoint de execução do plano mestre
 
+## Custos por safra e apropriação gerencial — 2026-09-14
+
+Implementada a jornada `/Costs` e `/api/finance/season-costs`: painel semântico, origens, pendências, apropriação direta, rateios reproduzíveis, prévia, confirmação concorrente/idempotente, histórico, estorno, conferência por corte e CSV filtrado. A migration 078 preserva `cost_entries`, cria projeção gerencial e apropriações auditáveis no schema `agro360`, incluindo vínculos legados. Fórmulas, diagnóstico, limitações e aceite estão em `docs/CUSTOS-SAFRA-APROPRIACAO.md`. JavaScript, SQL consolidado e whitespace passaram nos gates estáticos; runtime .NET/PostgreSQL/navegador segue pendente porque as ferramentas não existem no ambiente.
+
 ## Reabertura auditável e idempotência concorrente do fechamento — 2026-09-14
 
 Diagnóstico deste checkout: repositório Agro360, solução `MNSOFT.Agro360.sln`, branch `work`, base `f71d6fe`; os cinco documentos canônicos solicitados existem. O fechamento 077, serviços, API e tela já estavam presentes. A compilação não pôde ser repetida porque o container atual não possui `dotnet`; a validação disponível ficou limitada aos gates estáticos descritos abaixo.

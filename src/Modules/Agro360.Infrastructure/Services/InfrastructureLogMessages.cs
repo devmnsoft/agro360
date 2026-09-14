@@ -70,4 +70,6 @@ internal static partial class InfrastructureLogMessages
     internal static partial void LogoutCompleted(ILogger logger, Guid tenantId, bool revoked, string traceId);
     [LoggerMessage(1033, LogLevel.Information, "Operação pecuária {Operation}. TenantId: {TenantId}; Actor: {UserId}; TraceId: {TraceId}")]
     internal static partial void LivestockOperation(ILogger logger, string operation, Guid tenantId, Guid userId, string traceId);
+    [LoggerMessage(1034, LogLevel.Information, "Apropriação de custo {Operation}. TenantId: {TenantId}; Lote: {BatchId}; Ator: {UserId}")]
+    internal static partial void CostAllocationChanged(ILogger logger, string operation, Guid tenantId, Guid batchId, Guid userId);
 }
