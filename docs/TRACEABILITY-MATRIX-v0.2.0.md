@@ -202,3 +202,12 @@ Próxima etapa: estabilizar esta fatia em banco descartável e navegador; depois
 | Resultado principal/coproduto/perda → qualidade → estoque | Implementado, não homologado | `production_output_requests`, lote PENDING, liberação com movimento `PRODUCTION_BATCH` | validar instalação limpa/upgrade e aprovação concorrente |
 | Custos e rastreabilidade | Parcial | consulta de custos preserva pendência; genealogia industrial existente | rateio configurável, retificação e navegação agrícola expandida |
 | UX operacional | Parcial | formulários com seletores, ajuda, bloqueio de duplo envio e foco de erro | detalhes expansíveis, confirmações completas e screenshot/navegador real |
+
+### Consolidação operacional AG-E7-001 — 2026-09-14
+
+| Capacidade | Estado | Evidência | Gate pendente |
+|---|---|---|---|
+| Qualidade final → lote disponível | Implementado, não homologado | diálogo real, seletor tenant-scoped, laudo/evidência obrigatórios no domínio e movimento transacional existente | API/PostgreSQL/navegador |
+| Detalhe e transições da ordem | Implementado, não homologado | saldos distintos, histórico, próxima ação e endpoints explícitos com revalidação | E2E por perfil e responsividade |
+| Reenvio de reserva/consumo/resultado | Implementado, não homologado | chave preservada após falha e trocada somente quando conteúdo muda ou servidor confirma | perda de resposta e concorrência real |
+| Retificações e Central específica | Ausente | não houve atalho por status, exclusão ou prazo fictício | modelar fatos compensatórios e projeções canônicas |
