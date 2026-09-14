@@ -5,7 +5,8 @@ public sealed record SeasonCostQuery(Guid? SeasonId = null, Guid? FarmId = null,
     DateOnly? To = null, int Page = 1, int PageSize = 25);
 public sealed record ManualSeasonCostCommand(Guid FarmId, string Category, DateOnly CompetenceDate,
     decimal RecognizedAmount, string Currency, string Description, string Justification, string IdempotencyKey,
-    decimal PlannedAmount = 0, decimal CommittedAmount = 0, decimal PaidAmount = 0);
+    decimal PlannedAmount = 0, decimal CommittedAmount = 0, decimal PaidAmount = 0,
+    string? SourceDocument = null);
 public sealed record CostDestinationCommand(Guid SeasonId, Guid FarmId, Guid? FieldId, Guid? CostCenterId,
     decimal BaseValue, string? Unit = null, decimal? Percentage = null);
 public sealed record CostAllocationPreviewCommand(Guid EntryId, decimal Amount, string Method,
