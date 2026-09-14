@@ -46,7 +46,12 @@ public sealed class CanonicalSchemaTests
         Assert.Contains("operational_at::date<=@Cutoff", service);
         Assert.Contains("created_at>@GeneratedAt", service);
         Assert.Contains("closing.blocked", service);
+        Assert.Contains("InTenantTransactionAsync<SeasonClosingRunDto>", service);
+        Assert.Contains("closing.stale_snapshot", service);
+        Assert.Contains("DeserializeIndicators", service);
+        Assert.DoesNotContain("new JsonSerializerOptions{PropertyNameCaseInsensitive=true}", service);
         Assert.Contains("percentual não calculável com base zero", client);
+        Assert.Contains("Consultar dados", File.ReadAllText(Path.Combine(Root(), "src/Hosts/Agro360.Web/Pages/Harvest/Index.cshtml")));
         Assert.Contains("if(/^[=+\\-@]/.test(x))", client);
     }
 

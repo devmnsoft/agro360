@@ -351,3 +351,25 @@ Correções preventivas: `IndustrialProductionService` passou a propagar o `Canc
 **Estado real reavaliado.** Correções estáticas do `HarvestService`, planejamento/apontamento, recebimento parcial, inspeção/destinação, reserva/consumo, produtos resultantes e rastreabilidade estão **implementados sem validação de execução .NET/PostgreSQL**. Qualidade agrícola continua **parcial** pela coleta dinâmica de parâmetros; qualidade final industrial agora possui formulário mínimo real e regra backend, também sem E2E. Custos permanecem **parciais** (consulta real, sem rateio/retificação completa). Central de Operações permanece **ausente para as ocorrências específicas da colheita/beneficiamento**; nenhuma pendência ou prazo fictício foi criado. Retificações transacionais de recebimento, consumo, produção, perda, coproduto e destinação continuam **ausentes** e não foram simuladas por exclusão ou troca genérica de status.
 
 **Evidências e limites.** `node --check src/Hosts/Agro360.Web/wwwroot/js/production.js`, `bash scripts/validate-full-sql.sh` e `git diff --check` foram aprovados. `dotnet restore`, `dotnet build` e `dotnet test` não puderam executar porque `dotnet` não está instalado; PostgreSQL, `psql` e navegador também não estão disponíveis. Assim, concorrência real, instalação limpa/incremental, isolamento A/B, autorização HTTP, login/Swagger, estoque/custos e responsividade visual ainda exigem o procedimento nativo descrito no README. A próxima fatia segura é implementar retificação como fatos compensatórios com dependências posteriores e, depois, projetar somente pendências canônicas na Central.
+
+## Correção de compilação e consolidação do fechamento da safra (2026-09-14)
+
+### Diagnóstico e correções
+
+- **CS8031 (`HarvestService`)**: a inferência de sobrecarga escolhia o executor `Task` para lambdas com `return`, agravada por construções target-typed. As operações de conferência, geração e conclusão agora selecionam explicitamente `InTenantTransactionAsync<T>` e constroem os DTOs concretos; transação, rollback, exceções e `CancellationToken` permanecem no `DatabaseExecutor`.
+- **CS7036 (`SeasonClosingIndicatorDto`)**: os indicadores de área usavam a assinatura antiga, sem `Unit`, `Availability`, `Definition`, origem e explicação. As construções agora usam argumentos nomeados, unidade `ha` e definições aderentes às consultas e exclusões. Snapshots legados sem definição recebem apenas uma explicação de compatibilidade na leitura, sem recalcular nem regravar seus valores.
+- **CA1859/CA1869**: os helpers privados retornam os tipos concretos `List<SeasonClosingIssueDto>` e `SeasonClosingIssueDto[]`; uma configuração JSON estática, pronta antes do uso, é compartilhada. JSON vazio válido continua vazio, enquanto JSON inválido/incompatível propaga erro e não é transformado em aprovação. Indicadores históricos são desserializados separadamente.
+- **CA1068 (`IndustrialProductionService`)**: as duas sobrecargas privadas `Tx` agora recebem o token por último; todas as chamadas foram atualizadas, mantendo separadas as operações `Task` e `Task<T>` e propagando o token à transação e aos comandos.
+
+### Fechamento e experiência de conferência
+
+A conclusão reconsulta o mesmo escopo e corte sob a transação, reavalia bloqueios e compara os valores, unidades e estados atuais com o snapshot. Mudança relevante gera `closing.stale_snapshot`; bloqueio novo gera `closing.blocked`. A versão anterior e sua relação `supersedes_id` continuam imutáveis, e o fechamento gerencial não altera pedidos, estoque, ordens ou títulos.
+
+A tela foi organizada em Escopo, Resumo, Indicadores, Pendências e Histórico. Inclui consulta explícita antes da conferência, propriedade/unidade derivadas da safra autorizada, período de referência, estados consolidado/provisório/indisponível, detalhes expansíveis de fórmula, origem acionável, regra/impacto/responsável da pendência, proteção contra envio duplicado, mensagens de carregamento/falha e comportamento responsivo. Confirmações continuam específicas e sucesso só aparece após resposta do servidor.
+
+### Verificações e limitações
+
+- `node --check src/Hosts/Agro360.Web/wwwroot/js/harvest.js`: aprovado.
+- `git diff --check`: aprovado.
+- `dotnet restore MNSOFT.Agro360.sln`: não executado porque o SDK `dotnet` não está instalado no ambiente (`dotnet: command not found`). Pelo mesmo motivo, build e testes .NET permanecem pendentes e devem ser executados com `dotnet restore MNSOFT.Agro360.sln && dotnet build MNSOFT.Agro360.sln --no-restore && dotnet test MNSOFT.Agro360.sln --no-build`.
+- PostgreSQL e navegador não foram iniciados, pois API/Web não podem ser compilados sem o SDK. Permanecem pendentes os cenários integrados de banco (tenant cruzado, permissão, safra vazia, bloqueio, revisão/idempotência), login/Swagger/layout e a inspeção visual em navegador.
