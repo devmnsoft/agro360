@@ -125,3 +125,7 @@ A leitura de uma ocorrência é identificada por tenant, episódio e usuário; u
 ## ADR-E8-04 — Retorno recebido permanece indisponível (2026-09-14)
 
 Registro de retorno autoriza um saldo; recebimentos físicos podem ser parciais e são idempotentes, mas sempre seguem para qualidade. Condição, unidade, depósito, lote e evidência são fatos históricos. Uma destinação exige versão, quantidade ainda não decidida, motivo e autoria do servidor. Recebimento físico não equivale a conciliação financeira.
+
+## ADR-E6-02 — Recebimento não é aprovação nem disponibilidade (2026-09-14)
+
+Estimativa, colheita apontada, quantidade fisicamente recebida, quantidade aceita e quantidade comercial são fatos distintos. O recebimento trava o apontamento e consome somente seu saldo; peso líquido é derivado no servidor e tara só se aplica à dimensão massa. A inspeção referencia a versão ativa da especificação e ausência de resultado obrigatório nunca aprova. Destinações podem ser parciais e preservam o recebimento; somente `AVAILABLE`, limitado ao saldo aceito, cria movimento `PRODUCTION` no estoque existente. Quarentena, reclassificação, reprocessamento, devolução, perda e descarte não são exclusão nem disponibilidade. Repetição idêntica recupera a operação e chave reutilizada com conteúdo diferente é conflito.

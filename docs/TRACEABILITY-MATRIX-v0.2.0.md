@@ -178,3 +178,18 @@ Próxima etapa: estabilizar esta fatia em banco descartável e navegador; depois
 |---|---|---|
 | Central: leitura, atribuição e paginação | Implementado, não homologado em runtime | Migration 074, serviço/API e modal Web; SQL/JS estáticos aprovados; .NET e PostgreSQL indisponíveis |
 | Logística: recebimento/destinação de retorno | Implementado parcialmente, não homologado | Recebimento parcial/idempotente e decisão auditada; liberação de saldo disponível e conciliação financeira ainda não declaradas |
+
+## Atualização 2026-09-14 — colheita e produção agrícola
+
+| Capacidade | Estado | Evidência / limite |
+|---|---|---|
+| Organização, autenticação/MFA, permissões e escopo | Implementada sem verificação nesta execução | Reutilizada sem alterar credenciais; SDK/API/navegador indisponíveis |
+| Propriedades, talhões, safras e unidades | Parcial | Referências tenant/compatibilidade validadas na 075/`HarvestService`; cadastro anterior não re-homologado |
+| Planejamento e apontamento de colheita | Implementado, não homologado | Plano ≠ realizado; área ≠ quantidade; idempotência e safra aberta |
+| Recebimento parcial e conferência | Implementado, não homologado | Trava da origem, saldo, tara/massa, líquido backend e lote |
+| Qualidade/classificação | Parcial | Reusa especificação/versão e resultados obrigatórios; coleta dinâmica completa na UI pendente |
+| Destinação e estoque | Implementado, não homologado | Parcela aprovada entra no saldo/movimento existente; demais estados preservam genealogia |
+| Rastreabilidade | Parcial | Consulta agrícola → apontamento → recebimento → destinação; documentos/operações posteriores ainda dependem dos módulos de origem |
+| Custos da safra e indicadores | Parcial | Apropriado real e denominadores seguros; planejado/rateio/moedas/fechamento ainda não concluídos |
+| Central de Operações | Ausente para os cinco novos tipos | Não foi criado checklist ou prazo fictício; projeção será adicionada no serviço canônico |
+| Relatórios/CSV | Ausente neste recorte | Dashboard filtrável implementado; exportação segura permanece pendente |

@@ -229,3 +229,5 @@ Checkpoint deve permitir retomar com pouco contexto: objetivo atual, IDs pendent
 ## 10. Ordem de inicio desta execucao
 
 Comece agora: confirme checkout e estado Git; leia instrucoes; estabeleca baseline; construa o inventario inicial; selecione E0 ou a primeira entrega incompleta desbloqueada; implemente-a de ponta a ponta; execute verificacoes; atualize matriz e checkpoint. Se ainda houver condicoes de continuar com seguranca, avance para a proxima entrega do mesmo fluxo. Nao finalize apenas com uma lista de intencoes e nao declare que todo o sistema foi revisado se parte dele nao foi examinada.
+
+> **Checkpoint executivo 2026-09-14:** o incremento AG-E6-002 implementa a fundação transacional da jornada colheita → recebimento → qualidade → destinação/estoque na migration 075 e `/Harvest`. O estado verificável, limites e gates permanecem exclusivamente no checkpoint, matriz e plano de execução canônicos; esta nota não declara homologação nem altera a ordem do plano mestre.
