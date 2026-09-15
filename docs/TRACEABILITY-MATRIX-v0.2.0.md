@@ -234,3 +234,5 @@ Próxima etapa: estabilizar esta fatia em banco descartável e navegador; depois
 | Reabrir fechamento com histórico | Implementada, não verificada em runtime | `ReopenAsync` cria sucessora, exige motivo/versão, trava safra, audita e preserva a fechada | E2E autenticado pendente |
 | Custos reconciliados por safra | Parcial | indicador usa somente `cost_entries.season_id` | integrações sem vínculo inequívoco não são somadas |
 | Receita/estoque atual atribuídos à safra | Bloqueada por genealogia | indicadores explicitamente indisponíveis | completar vínculos produção–expedição–financeiro |
+
+**Atualização requisições internas (2026-09-15):** jornada `/Inventory` e migration 081 implementadas sem homologação runtime. Solicitação, aprovação configurável, reserva concorrente, entrega parcial, apropriação de consumo e devolução condicionada são fatos persistidos separados; o saldo/movimento canônico é reutilizado. Restore/build/testes e PostgreSQL/E2E permanecem pendentes por ausência do SDK/banco neste contêiner. Evidências e limitações em `REQUISICOES-INTERNAS-MATERIAIS.md`.
