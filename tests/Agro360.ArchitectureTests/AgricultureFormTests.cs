@@ -36,13 +36,18 @@ public sealed class AgricultureFormTests
         Assert.Contains("@page \"/properties\"", page);
         Assert.Contains("Como usar esta tela", page);
         Assert.Contains("<select name=\"organizationId\"", page);
+        Assert.Contains("farm-pagination", page);
         Assert.DoesNotContain("type=\"text\" name=\"organizationId\"", page, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("type=\"text\" name=\"farmId\"", page, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Authorize(Policy = Permissions.PropertiesWrite)", controller);
         Assert.Contains("HttpPut(\"properties/{id:guid}\")", controller);
+        Assert.Contains("GetFarmAsync", controller);
+        Assert.Contains("GetFieldAsync", controller);
         Assert.Contains("HttpDelete(\"fields/{id:guid}\")", controller);
         Assert.Contains("tenant_id=@TenantId", service, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("version=@Version", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("where id=@Id and tenant_id=@TenantId and deleted_at is null", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("order by name, id", service, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("select *", service, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("ck_geo_farms_state_format", sql);
         Assert.Contains("ck_geo_fields_boundary_type", sql);

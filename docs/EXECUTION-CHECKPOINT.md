@@ -1,5 +1,12 @@
 # Checkpoint de execução do plano mestre
 
+## Auditoria funcional de formulários e persistência territorial — 2026-09-15
+
+Baseline `work`/`b1ce454`, solução `MNSOFT.Agro360.sln`, SDK exigido 10.0.100 e árvore inicial limpa. O inventário registrou 44 Razor Pages, 36 páginas operacionais com 80 formulários e os encadeamentos por módulo em `docs/execucao/FORM-AUDIT.md`. As páginas não exercitadas estão explicitamente classificadas como não executadas; existência de botão, endpoint ou SQL não foi tratada como aprovação.
+
+No fluxo prioritário `/properties`, foram adicionadas consultas tenant-scoped por ID para releitura posterior a POST/PUT, paginação real no servidor e confirmação visual somente depois da nova consulta. A exclusão lógica já transacional/auditável agora também recarrega a lista antes do sucesso. Ordenação ganhou desempate estável e os testes arquiteturais existentes foram ampliados. Sem mudança de schema. Gates estáticos de JavaScript, shell e whitespace passaram. Restore/build/test/API/Web/PostgreSQL continuam não executados porque o contêiner não possui .NET/PostgreSQL; tentativa de obter o SDK foi bloqueada com HTTP 403.
+
+
 ## Custos por safra e apropriação gerencial — 2026-09-14
 
 Implementada a jornada `/Costs` e `/api/finance/season-costs`: painel semântico, origens, pendências, apropriação direta, rateios reproduzíveis, prévia, confirmação concorrente/idempotente, histórico, estorno, conferência por corte e CSV filtrado. A migration 078 preserva `cost_entries`, cria projeção gerencial e apropriações auditáveis no schema `agro360`, incluindo vínculos legados. Fórmulas, diagnóstico, limitações e aceite estão em `docs/CUSTOS-SAFRA-APROPRIACAO.md`. JavaScript, SQL consolidado e whitespace passaram nos gates estáticos; runtime .NET/PostgreSQL/navegador segue pendente porque as ferramentas não existem no ambiente.

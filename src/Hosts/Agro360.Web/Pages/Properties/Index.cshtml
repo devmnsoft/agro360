@@ -45,6 +45,11 @@
                 <tbody id="farm-list"><tr><td colspan="5" class="empty-state">Carregando fazendas…</td></tr></tbody>
             </table>
         </div>
+        <nav class="properties-pagination" id="farm-pagination" aria-label="Paginação de fazendas">
+            <button class="secondary-button" type="button" data-page="previous">Anterior</button>
+            <span id="farm-page-status" aria-live="polite">Página 1</span>
+            <button class="secondary-button" type="button" data-page="next">Próxima</button>
+        </nav>
     </section>
 
     <section class="panel properties-panel fields-panel">
@@ -58,6 +63,11 @@
                 <tbody id="field-list"><tr><td colspan="4" class="empty-state">Selecione uma fazenda para consultar seus talhões.</td></tr></tbody>
             </table>
         </div>
+        <nav class="properties-pagination" id="field-pagination" aria-label="Paginação de talhões">
+            <button class="secondary-button" type="button" data-page="previous">Anterior</button>
+            <span id="field-page-status" aria-live="polite">Página 1</span>
+            <button class="secondary-button" type="button" data-page="next">Próxima</button>
+        </nav>
     </section>
 
     <dialog id="farm-dialog" class="properties-dialog" aria-labelledby="farm-dialog-title">

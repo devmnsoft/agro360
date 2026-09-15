@@ -56,6 +56,10 @@ public interface IPropertyService
 
     Task<FieldDto> CreateFieldAsync(CreateFieldCommand command, CancellationToken cancellationToken);
 
+    Task<FarmDto> GetFarmAsync(Guid id, CancellationToken cancellationToken);
+
+    Task<FieldDto> GetFieldAsync(Guid id, CancellationToken cancellationToken);
+
     Task<FarmDto> UpdateFarmAsync(Guid id, UpdateFarmCommand command, CancellationToken cancellationToken);
 
     Task<FieldDto> UpdateFieldAsync(Guid id, UpdateFieldCommand command, CancellationToken cancellationToken);

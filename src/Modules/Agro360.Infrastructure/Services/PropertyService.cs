@@ -9,6 +9,38 @@ namespace Agro360.Infrastructure.Services;
 
 public sealed class PropertyService(DatabaseExecutor database, ITenantContext tenantContext) : IPropertyService
 {
+    public Task<FarmDto> GetFarmAsync(Guid id, CancellationToken cancellationToken) =>
+        database.InTenantTransactionAsync(async (connection, transaction) =>
+        {
+            var farm = await connection.QuerySingleOrDefaultAsync<FarmDto>(new CommandDefinition(
+                """
+                select id, organization_id as OrganizationId, name, state,
+                       total_area_ha as TotalAreaHa, registration_number as RegistrationNumber,
+                       car_number as CarNumber, version
+                from agro360.geo_farms
+                where id=@Id and tenant_id=@TenantId and deleted_at is null;
+                """,
+                new { Id = id, tenantContext.TenantId }, transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return farm ?? throw new NotFoundException("Fazenda", id);
+        }, cancellationToken);
+
+    public Task<FieldDto> GetFieldAsync(Guid id, CancellationToken cancellationToken) =>
+        database.InTenantTransactionAsync(async (connection, transaction) =>
+        {
+            var field = await connection.QuerySingleOrDefaultAsync<FieldDto>(new CommandDefinition(
+                """
+                select id, farm_id as FarmId, name, area_ha as AreaHa,
+                       case when boundary is null then null else boundary::text end as BoundaryGeoJson,
+                       version
+                from agro360.geo_fields
+                where id=@Id and tenant_id=@TenantId and deleted_at is null;
+                """,
+                new { Id = id, tenantContext.TenantId }, transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return field ?? throw new NotFoundException("Talhão", id);
+        }, cancellationToken);
+
     public Task<FarmDto> CreateFarmAsync(CreateFarmCommand command, CancellationToken cancellationToken)
     {
         var farm = Farm.Create(
@@ -346,7 +378,7 @@ public sealed class PropertyService(DatabaseExecutor database, ITenantContext te
                 where tenant_id = @TenantId
                   and deleted_at is null
                   and (@Search is null or name ilike '%' || @Search || '%')
-                order by name
+                order by name, id
                 limit @PageSize offset @Offset;
                 """,
                 new
@@ -383,7 +415,7 @@ public sealed class PropertyService(DatabaseExecutor database, ITenantContext te
                        version
                 from agro360.geo_fields
                 where tenant_id = @TenantId and farm_id = @FarmId and deleted_at is null
-                order by name
+                order by name, id
                 limit @PageSize offset @Offset;
                 """,
                 new

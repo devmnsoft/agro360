@@ -18,6 +18,12 @@
     let editingFarm = null;
     let editingField = null;
     let toastTimer = 0;
+    const pageSize = 25;
+    let farmPage = 1;
+    let farmTotal = 0;
+    let fieldPage = 1;
+    let fieldTotal = 0;
+    let currentSearch = "";
 
     function session() {
         try { return JSON.parse(localStorage.getItem("agro360.session")); }
@@ -118,11 +124,23 @@
         renderMetrics();
     }
 
-    async function loadFarms(search = "") {
+    function updatePagination(kind, page, total) {
+        const pages = Math.max(1, Math.ceil(total / pageSize));
+        const pagination = document.getElementById(`${kind}-pagination`);
+        pagination.querySelector('[data-page="previous"]').disabled = page <= 1;
+        pagination.querySelector('[data-page="next"]').disabled = page >= pages;
+        document.getElementById(`${kind}-page-status`).textContent = `Página ${page} de ${pages} · ${total} registro${total === 1 ? "" : "s"}`;
+    }
+
+    async function loadFarms(search = currentSearch, page = farmPage) {
+        currentSearch = search;
+        farmPage = Math.max(1, page);
         farmList.innerHTML = '<tr><td colspan="5" class="empty-state">Carregando fazendas…</td></tr>';
         try {
-            const result = await request(`/api/v1/properties?page=1&pageSize=100&search=${encodeURIComponent(search)}`);
+            const result = await request(`/api/v1/properties?page=${farmPage}&pageSize=${pageSize}&search=${encodeURIComponent(search)}`);
             farms = result.items ?? [];
+            farmTotal = Number(result.total ?? 0);
+            updatePagination("farm", farmPage, farmTotal);
             if (selectedFarm) selectedFarm = farms.find(item => item.id === selectedFarm.id) ?? null;
             renderFarms();
             if (!selectedFarm) {
@@ -135,15 +153,18 @@
         }
     }
 
-    async function selectFarm(id) {
+    async function selectFarm(id, page = 1) {
         selectedFarm = farms.find(farm => farm.id === id) ?? null;
         renderFarms();
         renderFields();
         if (!selectedFarm) return;
+        fieldPage = Math.max(1, page);
         fieldList.innerHTML = '<tr><td colspan="4" class="empty-state">Carregando talhões…</td></tr>';
         try {
-            const result = await request(`/api/v1/properties/${selectedFarm.id}/fields?page=1&pageSize=100`);
+            const result = await request(`/api/v1/properties/${selectedFarm.id}/fields?page=${fieldPage}&pageSize=${pageSize}`);
             fields = result.items ?? [];
+            fieldTotal = Number(result.total ?? 0);
+            updatePagination("field", fieldPage, fieldTotal);
             renderFields();
         } catch (error) {
             fieldList.innerHTML = `<tr><td colspan="4" class="empty-state">${escapeHtml(error.message)}</td></tr>`;
@@ -209,14 +230,13 @@
                 registrationNumber: values.registrationNumber.trim() || null,
                 carNumber: values.carNumber.trim() || null
             };
-            if (editingFarm) {
-                await request(`/api/v1/properties/${editingFarm.id}`, { method: "PUT", body: JSON.stringify({ ...body, version: editingFarm.version }) });
-            } else {
-                await request("/api/v1/properties", { method: "POST", body: JSON.stringify({ ...body, organizationId: values.organizationId }) });
-            }
+            const saved = editingFarm
+                ? await request(`/api/v1/properties/${editingFarm.id}`, { method: "PUT", body: JSON.stringify({ ...body, version: editingFarm.version }) })
+                : await request("/api/v1/properties", { method: "POST", body: JSON.stringify({ ...body, organizationId: values.organizationId }) });
+            await request(`/api/v1/properties/${saved.id}`);
+            await loadFarms(document.getElementById("farm-search-text").value, farmPage);
             farmDialog.close();
-            notify(editingFarm ? "Fazenda atualizada com sucesso." : "Fazenda cadastrada com sucesso.");
-            await loadFarms(document.getElementById("farm-search-text").value);
+            notify(editingFarm ? "Fazenda atualizada e confirmada na base." : "Fazenda cadastrada e confirmada na base.");
         } catch (error) {
             message.textContent = error.message;
         } finally {
@@ -232,14 +252,13 @@
         try {
             const values = Object.fromEntries(new FormData(fieldForm));
             const body = { name: values.name.trim(), areaHa: Number(values.areaHa), boundaryGeoJson: values.boundaryGeoJson.trim() || null };
-            if (editingField) {
-                await request(`/api/v1/fields/${editingField.id}`, { method: "PUT", body: JSON.stringify({ ...body, version: editingField.version }) });
-            } else {
-                await request("/api/v1/fields", { method: "POST", body: JSON.stringify({ ...body, farmId: selectedFarm.id }) });
-            }
+            const saved = editingField
+                ? await request(`/api/v1/fields/${editingField.id}`, { method: "PUT", body: JSON.stringify({ ...body, version: editingField.version }) })
+                : await request("/api/v1/fields", { method: "POST", body: JSON.stringify({ ...body, farmId: selectedFarm.id }) });
+            await request(`/api/v1/fields/${saved.id}`);
+            await selectFarm(selectedFarm.id, fieldPage);
             fieldDialog.close();
-            notify(editingField ? "Talhão atualizado com sucesso." : "Talhão cadastrado com sucesso.");
-            await selectFarm(selectedFarm.id);
+            notify(editingField ? "Talhão atualizado e confirmado na base." : "Talhão cadastrado e confirmado na base.");
         } catch (error) {
             message.textContent = error.message;
         } finally {
@@ -249,7 +268,15 @@
 
     document.getElementById("farm-search").addEventListener("submit", event => {
         event.preventDefault();
-        loadFarms(event.currentTarget.elements.search.value.trim());
+        loadFarms(event.currentTarget.elements.search.value.trim(), 1);
+    });
+    document.getElementById("farm-pagination").addEventListener("click", event => {
+        const direction = event.target.closest("[data-page]")?.dataset.page;
+        if (direction) loadFarms(currentSearch, farmPage + (direction === "next" ? 1 : -1));
+    });
+    document.getElementById("field-pagination").addEventListener("click", event => {
+        const direction = event.target.closest("[data-page]")?.dataset.page;
+        if (direction && selectedFarm) selectFarm(selectedFarm.id, fieldPage + (direction === "next" ? 1 : -1));
     });
     document.getElementById("new-farm").addEventListener("click", () => openFarm());
     document.getElementById("new-field").addEventListener("click", () => openField());
@@ -271,8 +298,8 @@
                 await request(`/api/v1/properties/${farm.id}?version=${farm.version}`, { method: "DELETE" });
                 selectedFarm = null;
                 fields = [];
-                notify("Fazenda arquivada com sucesso.");
-                await loadFarms(document.getElementById("farm-search-text").value);
+                await loadFarms(document.getElementById("farm-search-text").value, farmPage);
+                notify("Fazenda arquivada e ausência confirmada na consulta ativa.");
             } catch (error) { notify(error.message, true); }
         }
     });
@@ -287,8 +314,8 @@
             if (!window.confirm(`Arquivar o talhão “${field.name}”? O histórico continuará preservado.`)) return;
             try {
                 await request(`/api/v1/fields/${field.id}?version=${field.version}`, { method: "DELETE" });
-                notify("Talhão arquivado com sucesso.");
-                await selectFarm(selectedFarm.id);
+                await selectFarm(selectedFarm.id, fieldPage);
+                notify("Talhão arquivado e ausência confirmada na consulta ativa.");
             } catch (error) { notify(error.message, true); }
         }
     });
