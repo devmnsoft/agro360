@@ -441,3 +441,7 @@ Verificações locais concluídas: sintaxe dos JavaScripts alterados, validador 
 ## 2026-09-15 — Requisições internas e consumo rastreável
 
 Implementada a migration incremental 081 e a tela `/Inventory`, reutilizando saldos/movimentos/lotes canônicos. O backend separa aprovação, reserva, entrega, consumo e devolução, com tenant, permissões, locks, versão e idempotência. Critérios e matriz de formulários: [REQUISICOES-INTERNAS-MATERIAIS.md](REQUISICOES-INTERNAS-MATERIAIS.md). Validação runtime permanece pendente porque a imagem não contém o SDK .NET/PostgreSQL.
+
+## 2026-09-15 — Transferências e inventário físico
+
+Baseline: branch `work`, commit inicial `191906c18c8bd1df73c09e44ad59c130e679759b`, solução `MNSOFT.Agro360.sln` e SDK requerido 10.0.100. A migration 082, serviço transacional e telas de Estoque implementam expedição/trânsito/recebimento parcial e inventário com bloqueio, recontagem, reconciliação e ajuste idempotente sobre movimentos canônicos. Fórmulas, diagnóstico, critérios e matriz estão em [TRANSFERENCIAS-INVENTARIO-FISICO.md](TRANSFERENCIAS-INVENTARIO-FISICO.md). O contêiner não possui `dotnet` ou PostgreSQL; runtime, banco e navegador seguem pendentes.

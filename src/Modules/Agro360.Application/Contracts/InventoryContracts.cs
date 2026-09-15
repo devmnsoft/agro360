@@ -105,3 +105,49 @@ public interface IMaterialRequestService
     Task CancelAsync(Guid id, MaterialRequestActionCommand command, CancellationToken ct);
     Task<IReadOnlyCollection<InventoryLookupDto>> LookupsAsync(string type, CancellationToken ct);
 }
+
+public sealed record TransferItemCommand(Guid ProductId, string? LotNumber, decimal Quantity, string Unit, bool AllowBlocked);
+public sealed record CreateStockTransferCommand(Guid FarmId, Guid SourceWarehouseId, Guid DestinationWarehouseId,
+    Guid ResponsibleId, DateOnly ExpectedOn, string Justification, IReadOnlyCollection<TransferItemCommand> Items);
+public sealed record TransferActionCommand(string Reason, long Version, string IdempotencyKey);
+public sealed record TransferReceiptCommand(Guid ItemId, decimal Quantity, string Condition, string? Occurrence,
+    long Version, string IdempotencyKey);
+public sealed record StockTransferListDto(Guid Id, long Number, string Source, string Destination, DateOnly ExpectedOn,
+    string Status, int Items, long Version);
+public sealed record StockTransferItemDto(Guid Id, Guid ProductId, string Product, string? LotNumber, decimal Shipped,
+    decimal Received, decimal InTransit, string Unit, bool Blocked);
+public sealed record StockTransferDetailDto(Guid Id, long Number, Guid SourceWarehouseId, string Source,
+    Guid DestinationWarehouseId, string Destination, DateOnly ExpectedOn, string Justification, string Status,
+    DateTimeOffset? ShippedAt, long Version, IReadOnlyCollection<StockTransferItemDto> Items,
+    IReadOnlyCollection<MaterialRequestEventDto> History);
+
+public sealed record CreatePhysicalCountCommand(Guid WarehouseId, string? Category, Guid? ProductId, string? LotNumber,
+    string? MaterialStatus, Guid ResponsibleId, bool Blind);
+public sealed record CountActionCommand(string Reason, long Version);
+public sealed record RecordCountCommand(Guid ItemId, decimal? Quantity, string Unit, string? Note, string? EvidenceUrl, long Version);
+public sealed record ReconcileCountCommand(Guid ItemId, Guid EntryId, string Decision, string Justification, long Version);
+public sealed record PhysicalCountListDto(Guid Id, long Number, string Warehouse, string Status, bool Blind,
+    int TotalItems, int CountedItems, long Version);
+public sealed record CountEntryDto(Guid Id, int Round, decimal Quantity, string Unit, string Counter, DateTimeOffset CountedAt, string? Note);
+public sealed record PhysicalCountItemDto(Guid Id, Guid ProductId, string Product, string? LotNumber, string Unit,
+    decimal? ReferenceQuantity, decimal Reserved, decimal? AcceptedQuantity, decimal? Difference, string? Decision,
+    bool ValuationPending, IReadOnlyCollection<CountEntryDto> Entries);
+public sealed record PhysicalCountDetailDto(Guid Id, long Number, Guid WarehouseId, string Warehouse, string Status,
+    bool Blind, string MovementPolicy, DateTimeOffset? ReferenceAt, long Version, IReadOnlyCollection<PhysicalCountItemDto> Items);
+
+public interface IStockControlService
+{
+    Task<Guid> CreateTransferAsync(CreateStockTransferCommand command, CancellationToken ct);
+    Task<PagedResult<StockTransferListDto>> ListTransfersAsync(int page, int pageSize, string? status, CancellationToken ct);
+    Task<StockTransferDetailDto> GetTransferAsync(Guid id, CancellationToken ct);
+    Task ShipAsync(Guid id, TransferActionCommand command, CancellationToken ct);
+    Task ReceiveAsync(Guid id, TransferReceiptCommand command, CancellationToken ct);
+    Task CancelTransferAsync(Guid id, TransferActionCommand command, CancellationToken ct);
+    Task<Guid> CreateCountAsync(CreatePhysicalCountCommand command, CancellationToken ct);
+    Task<PagedResult<PhysicalCountListDto>> ListCountsAsync(int page, int pageSize, string? status, CancellationToken ct);
+    Task<PhysicalCountDetailDto> GetCountAsync(Guid id, CancellationToken ct);
+    Task OpenCountAsync(Guid id, CountActionCommand command, CancellationToken ct);
+    Task RecordCountAsync(Guid id, RecordCountCommand command, CancellationToken ct);
+    Task ReconcileAsync(Guid id, ReconcileCountCommand command, CancellationToken ct);
+    Task ApproveAdjustmentsAsync(Guid id, CountActionCommand command, CancellationToken ct);
+}

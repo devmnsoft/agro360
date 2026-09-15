@@ -166,6 +166,19 @@ public sealed class InventoryService(DatabaseExecutor database, ITenantContext t
         var unit = Guard.Required(command.Unit, nameof(command.Unit), 16).ToLowerInvariant();
         var movementType = isReceipt ? "RECEIPT" : "CONSUMPTION";
 
+        var countBlocksMovement = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            select count(*) from agro360.inventory_counts
+            where tenant_id=@TenantId and warehouse_id=@WarehouseId
+              and status in ('COUNTING','RECONCILING','AWAITING_APPROVAL')
+              and (product_id is null or product_id=@ProductId);
+            """, new { tenantContext.TenantId, command.WarehouseId, command.ProductId }, transaction,
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+        if (countBlocksMovement > 0)
+        {
+            throw new ConflictException("Há inventário aberto com bloqueio de movimentação neste escopo.", "count.movement_blocked");
+        }
+
         if (!string.IsNullOrWhiteSpace(command.IdempotencyKey))
         {
             var existing = await connection.QuerySingleOrDefaultAsync<StockMovementResult>(new CommandDefinition(
