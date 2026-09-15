@@ -22,3 +22,15 @@ Mensagens são sucesso, erro, atenção, informação, confirmação, bloqueio, 
 4. Consequência real no diálogo para ação sensível; motivo quando exigido.
 5. Feedback específico conforme status HTTP e foco no primeiro erro.
 6. Teste em pt-BR, en-US e es-ES; teclado, mobile e reduced motion.
+
+## Matriz — reposição (2026-09-15)
+
+| Tela/operação | Incluir | Consultar | Editar/cancelar | Backend | Persistência runtime |
+|---|---:|---:|---:|---:|---:|
+| Política produto-depósito | Sim | Sim | API com versão / inativação lógica | Validado | Pendente de PostgreSQL |
+| Análise de necessidade | Sim | Sim, memória | Nova análise preserva snapshot | Calculado no servidor | Pendente de PostgreSQL |
+| Encaminhar para compra | Sim, idempotente | Via necessidade e Compras | Workflow/cancelamento de Compras | Trava + versão | Pendente de PostgreSQL |
+| Dispensar necessidade | API | Sim | Motivo obrigatório, sem apagar demanda | Validado | Pendente de PostgreSQL |
+| Transferência alternativa | Não neste recorte | Entradas em andamento no cálculo | Fluxo existente | Tenant no backend | Pendente |
+
+Cobertura não deve ser interpretada como auditoria global dos formulários. Permanecem pendentes a ação visual de edição/inativação, dispensa, seleção em lote e criação contextual de transferência.
