@@ -395,3 +395,28 @@ O checkout foi reavaliado na branch `work`, a partir do commit `67f4bc657eabd0bc
 A leitura dos snapshots foi endurecida: ausência histórica (`null`, texto nulo ou em branco) continua sendo tratada como coleção ausente e `[]` continua sendo uma coleção vazia válida. JSON malformado, raiz incompatível ou coleção estruturalmente inválida agora gera `closing.invalid_snapshot`, registra apenas o tipo do snapshot (nunca o conteúdo persistido) e impede que corrupção seja interpretada como conferência sem bloqueios. Definições ausentes em indicadores legados continuam identificadas como limitação histórica, sem recalcular ou alterar versões fechadas.
 
 O restore e o build de diagnóstico foram tentados antes da edição, mas não iniciaram porque o executável `dotnet` não está instalado. Assim, restore/build/testes, banco, dois tenants, autorização, idempotência concorrente, login/Swagger e navegador real continuam pendentes de validação em ambiente com o SDK e PostgreSQL. As verificações estáticas executáveis desta rodada estão registradas no commit correspondente; não houve alteração estrutural de banco nem nova migration.
+
+## Etapa E1 — jornada inicial, acessos e catálogo (15/09/2026)
+
+Diagnóstico no início desta execução: repositório `/workspace/agro360`, solução `MNSOFT.Agro360.sln`, branch `work`, HEAD `aaa8fff` e SDK exigido `10.0.100` (`global.json`). A árvore estava limpa. O contêiner não oferece `dotnet`, `psql`, `docker` ou navegador, portanto não foi possível afirmar login real, renderização ou aplicação da migration; o PostgreSQL efetivamente usado pelo usuário também não está acessível neste ambiente.
+
+Classificação baseada em código e fluxo:
+
+- **Implementado e verificado estaticamente:** autenticação pesquisa tenant fora de RLS, normaliza e pesquisa e-mail/CPF dentro da transação do tenant, valida estado/exclusão/hash, mantém MFA do SuperAdmin e só então emite sessão (`IdentityService`); o provisionador Santa Clara é explícito e não redefine credencial existente. O catálogo agora evita pedido pendente duplicado no banco e na transação, persiste snapshot imutável da oferta, não ativa nem cria cobrança ao solicitar e audita solicitação/decisão.
+- **Implementado sem verificação integrada neste contêiner:** bootstrap/convite, usuários/perfis, revogação de sessões, proteção do último administrador, propriedades existentes, preferências, módulos, decisão SuperAdmin, dashboards e custos por safra. Exigem SDK/PostgreSQL/API/navegador para comprovação ponta a ponta.
+- **Parcial:** onboarding apresenta conclusão calculada dos registros atuais, mas edição passo a passo retomável ainda precisa ser consolidada; usuários ainda não exibem escopo por unidade nem histórico individual; catálogo não possui preço por módulo (por isso mostra “Consultar contratação”); console global ainda não oferece paginação em todas as listas; idioma da tela é preferência local e não a preferência persistida do usuário.
+- **Ausente:** provedor de e-mail (o estado permanece corretamente `PENDING_PROVIDER`), cobrança recorrente/liquidação automática e telemetria de uso funcional por módulo. Nenhum desses estados é simulado como concluído.
+
+Alterações desta rodada reutilizam `platform_marketplace_modules`, `platform_tenant_modules`, `platform_marketplace_requests` e a auditoria de integrações. A migration incremental `079_customer_module_requests.sql` adiciona `offer_snapshot` e unicidade parcial para pedido pendente; o mesmo conteúdo foi incorporado ao instalador canônico. “Meus módulos” passou a exibir catálogo/estado/dependências, confirmação explícita, acompanhamento de solicitações e aviso de que pedido não ativa nem cobra. O menu ganhou o agrupamento “Conta e módulos”.
+
+Para provisionar localmente sem alterar uma senha já existente:
+
+```bash
+read -r -s AGRO360_PROVISION_SANTA_CLARA_PASSWORD; export AGRO360_PROVISION_SANTA_CLARA_PASSWORD
+ConnectionStrings__Agro360='<connection-string-do-mesmo-banco-da-api>' dotnet run --project src/Hosts/Agro360.Migrator -- provision-santa-clara --environment Development
+unset AGRO360_PROVISION_SANTA_CLARA_PASSWORD
+```
+
+Em conta já provisionada, o comando preserva a credencial e não requer a variável. Redefinição deliberada usa exclusivamente `reset-santa-clara-password`. Depois, iniciar API/Web com a mesma `ConnectionStrings__Agro360` e validar login, rota protegida, logout, nova entrada, bloqueio, troca de tenant, onboarding, escopo e custos por safra.
+
+Próxima etapa concreta: concluir onboarding editável e escopo por unidade; depois consolidar cobrança recorrente e eventos de uso funcional, sem inferir uso por login ou abertura de tela.

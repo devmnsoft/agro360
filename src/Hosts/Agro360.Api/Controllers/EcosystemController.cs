@@ -12,6 +12,7 @@ public sealed class EcosystemController(IEcosystemService s) : EcosystemControll
 {
     [HttpGet("dashboard"), Authorize(Policy = Permissions.IntegrationsRead)] public Task<EcosystemDashboard> Dashboard(CancellationToken ct) => Service.DashboardAsync(ct);
     [HttpGet("marketplace/modules"), Authorize(Policy = Permissions.MarketplaceRead)] public Task<IReadOnlyList<MarketplaceModule>> Modules(CancellationToken ct) => Service.ModulesAsync(ct);
+    [HttpGet("marketplace/requests"), Authorize(Policy = Permissions.MarketplaceRead)] public Task<IReadOnlyList<ModuleRequestSummary>> Requests(CancellationToken ct) => Service.ModuleRequestsAsync(User.IsInRole("SUPER_ADMIN"), ct);
     [HttpPost("marketplace/modules"), Authorize(Roles = "SUPER_ADMIN")] public async Task<IActionResult> CreateModule(MarketplaceModuleCommand x, CancellationToken ct) { var id = await Service.CreateModuleAsync(x, Actor(), ct); return Created($"/api/ecosystem/marketplace/modules/{id}", new { id }); }
     [HttpPost("marketplace/requests"), Authorize(Policy = Permissions.MarketplaceRead)] public async Task<IActionResult> RequestModuleActivation(ModuleActivationCommand x, CancellationToken ct) { var id = await Service.RequestModuleAsync(x, Actor(), ct); return Created($"/api/ecosystem/marketplace/requests/{id}", new { id }); }
     [HttpPost("marketplace/requests/{id:guid}/approve"), Authorize(Roles = "SUPER_ADMIN")] public Task Decide(Guid id, ReasonCommand x, CancellationToken ct) => Service.DecideModuleAsync(id, true, x.Reason, Actor(), ct);
