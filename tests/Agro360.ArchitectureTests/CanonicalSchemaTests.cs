@@ -4,6 +4,18 @@ namespace Agro360.ArchitectureTests;
 
 public sealed class CanonicalSchemaTests
 {
+    [Fact]
+    public void InternalMaterialJourneyUsesCanonicalStockAndIdempotentFacts()
+    {
+        var root = Root();
+        var migration = File.ReadAllText(Path.Combine(root, "database", "migrations", "081_internal_material_requests.sql"));
+        var service = File.ReadAllText(Path.Combine(root, "src", "Modules", "Agro360.Infrastructure", "Services", "MaterialRequestService.cs"));
+        Assert.Contains("inventory_stock_balances", service);
+        Assert.Contains("for update", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("unique(tenant_id,idempotency_key)", migration);
+        Assert.Contains("AWAITING_INSPECTION", migration);
+        Assert.DoesNotContain("material_stock_balances", migration);
+    }
     private static string Sql => File.ReadAllText(Path.Combine(Root(), "database", "agro360-postgres-full.sql"));
 
     [Fact]
