@@ -9,6 +9,21 @@ public sealed class Sprint37ProcurementTests
     [Fact] public void QualityReleaseIsTenantScopedIdempotentAndSeparatedFromPhysicalReceipt() { var service = File.ReadAllText(Path.Combine(Root, "src/Modules/Agro360.Infrastructure/Services/ProcurementService.cs")); var migration = File.ReadAllText(Path.Combine(Root, "database/migrations/080_assisted_procurement_receipt.sql")); Assert.Contains("procurement_receipt_quarantine", service); Assert.Contains("for update", service, StringComparison.OrdinalIgnoreCase); Assert.Contains("idempotency_key", migration); Assert.Contains("released_quantity+rejected_quantity<=quantity", migration); Assert.Contains("Permissions.ComplianceApprove", File.ReadAllText(Path.Combine(Root, "src/Hosts/Agro360.Api/Controllers/ProcurementController.cs"))); }
 
     [Fact]
+    public void InvoiceMatchingIsTenantScopedIdempotentAndDoesNotClaimPayment()
+    {
+        var service = File.ReadAllText(Path.Combine(Root, "src", "Modules", "Agro360.Infrastructure", "Services", "ProcurementService.cs"));
+        var migration = File.ReadAllText(Path.Combine(Root, "database", "migrations", "084_procurement_invoice_matching.sql"));
+        var view = File.ReadAllText(Path.Combine(Root, "src", "Hosts", "Agro360.Web", "Pages", "Procurement", "Index.cshtml"));
+        Assert.Contains("procurement_invoice_matches", migration);
+        Assert.Contains("unique(tenant_id,idempotency_key)", migration, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("for update", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("accepted_balance_exceeded", service);
+        Assert.Contains("separation_of_duties", migration);
+        Assert.Contains("não significa pagamento", view, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("conta a pagar gerada", view, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ReplenishmentPlanningIsExplainableAndIdempotent()
     {
         var service = File.ReadAllText(Path.Combine(Root, "src", "Modules", "Agro360.Infrastructure", "Services", "ReplenishmentService.cs"));

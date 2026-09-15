@@ -1,3 +1,7 @@
+## Conferência de compras e divergências — 2026-09-15
+
+A migration incremental 084 e o instalador consolidado agora persistem documento de cobrança, vínculo explícito com item/recebimento aceito, snapshot de tolerâncias, conferência idempotente e divergências auditáveis. A API aplica tenant, saldo aceito, moeda, unidade, total recalculado e segregação; a nova aba de Compras deixa explícito que conferência não é validação fiscal nem pagamento. Diagnóstico, mapa do ciclo, regras, endpoints e pendências estão em `docs/CONFERENCIA-COMPRAS-E-DIVERGENCIAS.md`. O JavaScript passou no parser; runtime .NET/PostgreSQL/browser permanece pendente porque essas ferramentas/serviços não estão disponíveis neste ambiente.
+
 # Checkpoint de execução do plano mestre
 
 ## Auditoria funcional de formulários e persistência territorial — 2026-09-15
