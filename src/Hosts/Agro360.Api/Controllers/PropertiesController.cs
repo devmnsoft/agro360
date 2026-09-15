@@ -32,6 +32,11 @@ public sealed class PropertiesController(IPropertyService properties) : Controll
         CancellationToken cancellationToken = default) =>
         properties.ListFarmsAsync(page, pageSize, search, cancellationToken);
 
+    [HttpGet("properties/{id:guid}")]
+    [Authorize(Policy = Permissions.PropertiesRead)]
+    public Task<FarmDto> GetFarm(Guid id, CancellationToken cancellationToken) =>
+        properties.GetFarmAsync(id, cancellationToken);
+
     [HttpPut("properties/{id:guid}")]
     [Authorize(Policy = Permissions.PropertiesWrite)]
     public Task<FarmDto> UpdateFarm(Guid id, UpdateFarmCommand command, CancellationToken cancellationToken) =>
@@ -61,6 +66,11 @@ public sealed class PropertiesController(IPropertyService properties) : Controll
         [FromQuery] int pageSize = 50,
         CancellationToken cancellationToken = default) =>
         properties.ListFieldsAsync(farmId, page, pageSize, cancellationToken);
+
+    [HttpGet("fields/{id:guid}")]
+    [Authorize(Policy = Permissions.PropertiesRead)]
+    public Task<FieldDto> GetField(Guid id, CancellationToken cancellationToken) =>
+        properties.GetFieldAsync(id, cancellationToken);
 
     [HttpPut("fields/{id:guid}")]
     [Authorize(Policy = Permissions.PropertiesWrite)]
