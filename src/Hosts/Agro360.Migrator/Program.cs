@@ -69,13 +69,16 @@ try
             await ProvisionHomologationAsync(connection, configuration, args).ConfigureAwait(false);
             break;
         case "provision-santa-clara":
-            await ProvisionSantaClaraAsync(connection, configuration, args).ConfigureAwait(false);
+            await ProvisionSantaClaraAsync(connection, configuration, args, resetPassword: false).ConfigureAwait(false);
+            break;
+        case "reset-santa-clara-password":
+            await ProvisionSantaClaraAsync(connection, configuration, args, resetPassword: true).ConfigureAwait(false);
             break;
         case "diagnose-homologation":
             await DiagnoseHomologationAsync(connection, configuration, args).ConfigureAwait(false);
             break;
         default:
-            throw new ArgumentException("Comando inválido. Use status, validate, migrate, seed minimal, seed demo, provision-santa-clara ou provision-homologation.");
+            throw new ArgumentException("Comando inválido. Use status, validate, migrate, seed minimal, seed demo, provision-santa-clara, reset-santa-clara-password ou provision-homologation.");
     }
 
     return 0;
@@ -89,17 +92,16 @@ catch (Exception exception)
 finally { await Log.CloseAndFlushAsync().ConfigureAwait(false); }
 
 
-static async Task ProvisionSantaClaraAsync(NpgsqlConnection connection, IConfiguration configuration, string[] args)
+static async Task ProvisionSantaClaraAsync(NpgsqlConnection connection, IConfiguration configuration, string[] args, bool resetPassword)
 {
     var environment = (GetOption(args, "--environment") ?? configuration["DOTNET_ENVIRONMENT"] ?? configuration["ASPNETCORE_ENVIRONMENT"] ?? "").Trim();
     if (environment is not ("Development" or "Homologation"))
         throw new InvalidOperationException("O provisionamento da Santa Clara é permitido somente em Development ou Homologation.");
 
-    var password = RequireSecret("AGRO360_PROVISION_SANTA_CLARA_PASSWORD");
     var hasher = new PasswordHasher();
     var tenantId = Guid.Parse("30000000-0000-0000-0000-000000000001");
     var userId = Guid.Parse("30000000-0000-0000-0000-000000000003");
-    var email = "admin@santaclara.agro360.local";
+    const string email = "admin@santaclara.agro360.local";
     await using var transaction = await connection.BeginTransactionAsync().ConfigureAwait(false);
 
     var tenant = await connection.QuerySingleOrDefaultAsync<ProvisioningTenant>(
@@ -118,20 +120,38 @@ static async Task ProvisionSantaClaraAsync(NpgsqlConnection connection, IConfigu
     if (current is not null && (current.DeletedAt is not null || !string.Equals(current.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase) && !string.Equals(current.Status, "INVITED", StringComparison.OrdinalIgnoreCase)))
         throw new InvalidOperationException($"A identidade Santa Clara está excluída ou com status administrativo {current.Status}; restauração explícita é necessária.");
 
+    // Provision is deliberately idempotent: an existing credential is never changed.
+    // Password reset is a separate, explicit command so a restart/re-run cannot lock users out.
+    var changesCredential = current is null || resetPassword;
+    var password = changesCredential ? RequireSecret("AGRO360_PROVISION_SANTA_CLARA_PASSWORD") : null;
+    var passwordHash = password is null ? null : hasher.Hash(password);
+
+    await connection.ExecuteAsync(
+        "select set_config('app.tenant_id',@Tenant,true);", new { Tenant = tenantId.ToString() }, transaction);
+    if (current is null)
+        await connection.ExecuteAsync(
+            "insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,normalized_document,document_type,must_change_password) values (@UserId,@TenantId,'Administrador Santa Clara',@Email,@Hash,'ACTIVE','52998224725','CPF',true)",
+            new { UserId = userId, TenantId = tenantId, Email = email, Hash = passwordHash }, transaction);
+    else if (resetPassword)
+        await connection.ExecuteAsync(
+            "update agro360.identity_users set password_hash=@Hash,must_change_password=true,updated_at=now(),version=version+1 where tenant_id=@TenantId and id=@UserId",
+            new { Hash = passwordHash, TenantId = tenantId, UserId = userId }, transaction);
+
     await connection.ExecuteAsync(
         """
-        select set_config('app.tenant_id',@Tenant,true);
-        insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,normalized_document,document_type,must_change_password)
-        values (@UserId,@TenantId,'Administrador Santa Clara',@Email,@Hash,'ACTIVE','52998224725','CPF',true)
-        on conflict(id) do update set password_hash=excluded.password_hash,must_change_password=true,updated_at=now(),version=agro360.identity_users.version+1;
         insert into agro360.identity_user_roles(tenant_id,user_id,role_id) values (@TenantId,@UserId,'30000000-0000-0000-0000-000000000004') on conflict do nothing;
-        update agro360.identity_refresh_tokens set revoked_at=coalesce(revoked_at,now()) where tenant_id=@TenantId and user_id=@UserId;
+        update agro360.identity_refresh_tokens set revoked_at=coalesce(revoked_at,now()) where @ChangesCredential and tenant_id=@TenantId and user_id=@UserId;
         insert into agro360.audit_logs(id,tenant_id,user_id,action,entity_type,entity_id,after_data,occurred_at)
-        values (gen_random_uuid(),@TenantId,@UserId,'homologation_access_provisioned','IdentityUser',@UserId,jsonb_build_object('environment',@Environment,'operator',current_user,'sessionsRevoked',true,'mustChangePassword',true),now());
-        """, new { Tenant = tenantId.ToString(), TenantId = tenantId, UserId = userId, Email = email, Hash = hasher.Hash(password), Environment = environment }, transaction);
+        values (gen_random_uuid(),@TenantId,@UserId,@Action,'IdentityUser',@UserId,jsonb_build_object('environment',@Environment,'operator',current_user,'sessionsRevoked',@ChangesCredential,'mustChangePassword',@ChangesCredential),now());
+        """, new { TenantId = tenantId, UserId = userId, Environment = environment, ChangesCredential = changesCredential,
+            Action = resetPassword ? "homologation_password_reset" : current is null ? "homologation_access_provisioned" : "homologation_access_confirmed" }, transaction);
     await transaction.CommitAsync().ConfigureAwait(false);
-    await VerifyProvisionedIdentityAsync(connection.ConnectionString, hasher, new(userId, tenantId, email, password)).ConfigureAwait(false);
-    Log.Information("Santa Clara provisionada e verificada após commit; MFA do SuperAdmin não foi consultado.");
+
+    if (password is not null)
+        await VerifyProvisionedIdentityAsync(connection.ConnectionString, hasher, new(userId, tenantId, email, password)).ConfigureAwait(false);
+    Log.Information(current is null ? "Santa Clara criada e verificada após commit." : resetPassword
+        ? "Senha da Santa Clara redefinida explicitamente e verificada após commit; sessões anteriores foram revogadas."
+        : "Santa Clara já existia; vínculo confirmado sem alterar senha ou sessões.");
 }
 
 static async Task DiagnoseHomologationAsync(NpgsqlConnection connection, IConfiguration configuration, string[] args)

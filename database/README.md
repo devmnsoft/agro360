@@ -92,7 +92,7 @@ Antes de publicar, execute também `./scripts/validate-full-sql.sh`, `dotnet res
 O instalador completo inclui de forma idempotente a fixture **Fazenda Santa
 Clara**, tenant `santa-clara`, e o login
 `admin@santaclara.agro360.local` (perfil **Administrador do Cliente**), mas não
-uma senha conhecida. Ative a credencial exclusivamente com o provisionador.
+uma senha conhecida. Crie a credencial exclusivamente com `provision-santa-clara`; reexecuções preservam a senha existente. Para uma redefinição deliberada, use o comando separado `reset-santa-clara-password`, que revoga as sessões da conta.
 
 ## Seed operacional opcional de desenvolvimento
 
