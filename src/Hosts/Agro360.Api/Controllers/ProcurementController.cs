@@ -25,6 +25,8 @@ public sealed class ProcurementController(IProcurementService service, IAuthoriz
         return Created("api/procurement/receipts", new { id = await service.ReceiveAsync(x, ct) });
     }
     [HttpGet("receipts"), Authorize(Policy = Permissions.PurchasingRead)] public Task<IReadOnlyList<dynamic>> Receipts([FromQuery] ProcurementQuery q, CancellationToken ct) => service.ReceiptsAsync(q, ct);
+    [HttpGet("receipts/{id:guid}"), Authorize(Policy = Permissions.PurchasingRead)] public Task<dynamic> Receipt(Guid id, CancellationToken ct) => service.ReceiptAsync(id, ct);
+    [HttpPost("receipt-items/{id:guid}/quality-decisions"), Authorize(Policy = Permissions.ComplianceApprove)] public async Task<IActionResult> DecideQuality(Guid id, ReceiptQualityDecisionCommand x, CancellationToken ct) => Created($"api/procurement/receipt-items/{id}/quality-decisions", new { id = await service.DecideQualityAsync(id, x, ct) });
     [HttpGet("orders/{id:guid}/pending-items"), Authorize(Policy = Permissions.PurchasingRead)] public Task<IReadOnlyList<dynamic>> PendingItems(Guid id, CancellationToken ct) => service.PendingOrderItemsAsync(id, ct);
     [HttpGet("receipt-options"), Authorize(Policy = Permissions.PurchasingRead)] public Task<dynamic> ReceiptOptions(CancellationToken ct) => service.ReceiptOptionsAsync(ct);
     [HttpGet("reports/{report}.csv"), Authorize(Policy = Permissions.PurchasingExport)] public async Task<IActionResult> Export(string report, [FromQuery] ProcurementQuery q, CancellationToken ct) => File(await service.ExportAsync(report, q, ct), "text/csv; charset=utf-8", $"compras-{report}-{DateTime.UtcNow:yyyyMMdd}.csv");
