@@ -20,6 +20,28 @@ public sealed class AgricultureFormTests
         var sql = File.ReadAllText(Path.Combine(root, "database/agro360-postgres-full.sql"));
         Assert.DoesNotContain("\\i ", sql);
         Assert.Contains("Sprint 11 - Agricultura 360", sql);
+        Assert.Contains("field_work_order_resources", sql);
+        Assert.Contains("field_work_order_reviews", sql);
+    }
+
+    [Fact]
+    public void FieldOrdersKeepReservationsExecutionMaterialsAndReviewDistinct()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var migration = File.ReadAllText(Path.Combine(root, "database/migrations/085_field_service_orders.sql"));
+        var service = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Services/FieldOperationsService.cs"));
+        var controller = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Api/Controllers/Agriculture360Controller.cs"));
+        var page = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/Pages/Agriculture/Index.cshtml"));
+
+        Assert.Contains("starts_at<@EndsAt and ends_at>@StartsAt", service);
+        Assert.Contains("unique(tenant_id,idempotency_key)", migration);
+        Assert.Contains("consumed_quantity+returned_quantity+lost_quantity<=delivered_quantity", migration);
+        Assert.Contains("inventory_apply_stock_movement", service);
+        Assert.Contains("version=@Version and status='AWAITING_REVIEW'", service);
+        Assert.Contains("HttpPost(\"work-orders/{id:guid}/review\")", controller);
+        Assert.Contains("Como usar", page);
+        Assert.Contains("data-lookup=\"machines\"", page);
+        Assert.DoesNotContain("type=\"text\" name=\"responsibleId\"", page, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

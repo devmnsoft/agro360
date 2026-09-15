@@ -6,8 +6,25 @@ using Microsoft.AspNetCore.Mvc;
 namespace Agro360.Api.Controllers;
 
 [ApiController, Route("api/agriculture"), Authorize]
-public sealed class Agriculture360Controller(IAgriculture360Service agriculture) : ControllerBase
+public sealed class Agriculture360Controller(IAgriculture360Service agriculture, IFieldOperationsService fieldOperations) : ControllerBase
 {
+    [HttpGet("work-orders/{id:guid}"), Authorize(Policy = Permissions.AgricultureRead)]
+    public Task<FieldOrderDetail> WorkOrder(Guid id, CancellationToken cancellationToken) => fieldOperations.DetailAsync(id, cancellationToken);
+
+    [HttpPost("work-orders/{id:guid}/resources"), Authorize(Policy = Permissions.AgricultureWrite)]
+    public async Task<IActionResult> Resource(Guid id, FieldResourceCommand command, CancellationToken cancellationToken) { await fieldOperations.AddResourceAsync(id, command, cancellationToken); return NoContent(); }
+
+    [HttpPost("work-orders/{id:guid}/work-logs"), Authorize(Policy = Permissions.AgricultureWrite)]
+    public async Task<IActionResult> WorkLog(Guid id, FieldWorkLogCommand command, CancellationToken cancellationToken) { await fieldOperations.AddWorkLogAsync(id, command, cancellationToken); return NoContent(); }
+
+    [HttpPost("work-orders/{id:guid}/materials"), Authorize(Policy = Permissions.AgricultureWrite)]
+    public async Task<IActionResult> Material(Guid id, FieldMaterialCommand command, CancellationToken cancellationToken) { await fieldOperations.AddMaterialAsync(id, command, cancellationToken); return NoContent(); }
+
+    [HttpPost("work-orders/{id:guid}/materials/{materialId:guid}/events"), Authorize(Policy = Permissions.AgricultureWrite)]
+    public async Task<IActionResult> MaterialEvent(Guid id, Guid materialId, FieldMaterialEventCommand command, CancellationToken cancellationToken) { await fieldOperations.ApplyMaterialEventAsync(id, materialId, command, cancellationToken); return NoContent(); }
+
+    [HttpPost("work-orders/{id:guid}/review"), Authorize(Policy = Permissions.AgricultureWrite)]
+    public async Task<IActionResult> Review(Guid id, FieldReviewCommand command, CancellationToken cancellationToken) { await fieldOperations.ReviewAsync(id, command, cancellationToken); return NoContent(); }
     [HttpGet("{module}"), Authorize(Policy = Permissions.AgricultureRead)]
     public Task<PagedResult<AgricultureRecord>> List([FromRoute(Name = "module")] string moduleCode, [FromQuery] int page = 1,
         [FromQuery] int pageSize = 25, CancellationToken cancellationToken = default) =>
