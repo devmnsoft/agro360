@@ -2700,9 +2700,8 @@ create table if not exists agro360.platform_super_admins (
 );
 create unique index if not exists ux_platform_single_active_super_admin on agro360.platform_super_admins ((active)) where active and deleted_at is null;
 
--- O usuário Super Administrador não é criado pelo SQL. A API o provisiona somente
--- quando SuperAdmin__Email, SuperAdmin__Password e SuperAdmin__TotpSecret são
--- fornecidos por secret manager local; reexecuções preservam senha e status.
+-- O usuário Super Administrador não é criado pelo SQL nem na inicialização da API.
+-- O provisionamento opt-in é responsabilidade exclusiva do Migrator.
 alter table agro360.identity_users add column if not exists document_type varchar(10);
 alter table agro360.identity_users add column if not exists must_change_password boolean not null default false;
 alter table agro360.identity_users add column if not exists mfa_secret_encrypted text;

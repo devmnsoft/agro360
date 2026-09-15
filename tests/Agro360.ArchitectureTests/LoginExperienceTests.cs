@@ -88,7 +88,7 @@ public sealed class LoginExperienceTests
         Assert.Contains("existing credential is never changed", migrator, StringComparison.Ordinal);
         Assert.Contains("homologation_password_reset", migrator, StringComparison.Ordinal);
         Assert.Contains("select set_config('app.tenant_id',@TenantId,true)", migrator, StringComparison.Ordinal);
-        Assert.Contains("hasher.Verify(item.Password, row.PasswordHash)", migrator, StringComparison.Ordinal);
+        Assert.Contains("hasher.Verify(password, row.PasswordHash)", migrator, StringComparison.Ordinal);
         Assert.Contains("IsSupportedPasswordHash(row.PasswordHash)", migrator, StringComparison.Ordinal);
         Assert.Contains("[switch]$DiagnosticOnly", Read("scripts/provision-homologation-local.ps1"), StringComparison.Ordinal);
         Assert.Contains("provision-santa-clara", Read("scripts/provision-homologation-local.ps1"), StringComparison.Ordinal);
@@ -103,6 +103,8 @@ public sealed class LoginExperienceTests
 
         Assert.DoesNotContain("DefaultConnection", settings, StringComparison.Ordinal);
         Assert.DoesNotContain("Password=", settings, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("SuperAdminProvisioner", Read("src/Hosts/Agro360.Api/Program.cs"), StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(Root, "src/Modules/Agro360.Infrastructure/Security/SuperAdminProvisioner.cs")));
     }
 
     [Fact]

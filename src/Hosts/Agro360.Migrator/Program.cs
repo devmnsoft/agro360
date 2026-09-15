@@ -148,7 +148,7 @@ static async Task ProvisionSantaClaraAsync(NpgsqlConnection connection, IConfigu
     await transaction.CommitAsync().ConfigureAwait(false);
 
     if (password is not null)
-        await VerifyProvisionedIdentityAsync(connection.ConnectionString, hasher, new(userId, tenantId, email, password)).ConfigureAwait(false);
+        await VerifyProvisionedIdentityAsync(connection.ConnectionString, hasher, new(userId, tenantId, email, password), password).ConfigureAwait(false);
     Log.Information(current is null ? "Santa Clara criada e verificada após commit." : resetPassword
         ? "Senha da Santa Clara redefinida explicitamente e verificada após commit; sessões anteriores foram revogadas."
         : "Santa Clara já existia; vínculo confirmado sem alterar senha ou sessões.");
@@ -192,9 +192,6 @@ static async Task ProvisionHomologationAsync(NpgsqlConnection connection, IConfi
         (!string.Equals(environment, "Development", StringComparison.OrdinalIgnoreCase) && !string.Equals(environment, "Homologation", StringComparison.OrdinalIgnoreCase)))
         throw new InvalidOperationException("O provisionamento demonstrativo exige --environment Development ou Homologation e é proibido em Production.");
 
-    var superPassword = RequireSecret("AGRO360_PROVISION_SUPERADMIN_PASSWORD");
-    var tenantPassword = RequireSecret("AGRO360_PROVISION_SANTA_CLARA_PASSWORD");
-
     var dataProtectionPath = configuration["DataProtection:KeysPath"] ?? Environment.GetEnvironmentVariable("AGRO360_DATA_PROTECTION_KEYS_PATH");
     if (string.IsNullOrWhiteSpace(dataProtectionPath))
         throw new InvalidOperationException("Defina AGRO360_DATA_PROTECTION_KEYS_PATH para um diretório local persistente e não versionado.");
@@ -215,7 +212,7 @@ static async Task ProvisionHomologationAsync(NpgsqlConnection connection, IConfi
     if (!fixturesValid)
         throw new InvalidOperationException("Os tenants canônicos de homologação não existem ou sua identidade diverge; execute a instalação/seed apropriada em uma base de homologação.");
     var identities = (await connection.QueryAsync<ProvisionedIdentity>(
-        "select id,tenant_id as TenantId,email,status,deleted_at as DeletedAt,mfa_enabled as MfaEnabled,mfa_secret_encrypted as MfaSecretEncrypted from agro360.identity_users where lower(email)=any(@Emails) for update;",
+        "select id,tenant_id as TenantId,email,password_hash as PasswordHash,status,deleted_at as DeletedAt,mfa_enabled as MfaEnabled,mfa_secret_encrypted as MfaSecretEncrypted from agro360.identity_users where lower(email)=any(@Emails) for update;",
         new { Emails = HomologationFixtures.Emails }, transaction)).ToArray();
     foreach (var identity in identities)
     {
@@ -248,6 +245,11 @@ static async Task ProvisionHomologationAsync(NpgsqlConnection connection, IConfi
         throw new InvalidOperationException("A autoridade global do SuperAdmin foi revogada administrativamente; restaure-a explicitamente antes do provisionamento.");
 
     var existingSuperAdmin = identities.SingleOrDefault(identity => identity.Id == HomologationFixtures.UserIds[0]);
+    var existingSantaClara = identities.SingleOrDefault(identity => identity.Id == HomologationFixtures.UserIds[1]);
+    // Secrets are creation inputs, never runtime configuration. An idempotent rerun
+    // neither requires them nor compares them with an already persisted credential.
+    var superPassword = existingSuperAdmin is null ? RequireSecret("AGRO360_PROVISION_SUPERADMIN_PASSWORD") : null;
+    var tenantPassword = existingSantaClara is null ? RequireSecret("AGRO360_PROVISION_SANTA_CLARA_PASSWORD") : null;
     string protectedMfaSecret;
     var preservedMfa = false;
     if (existingSuperAdmin is { MfaEnabled: true, MfaSecretEncrypted.Length: > 0 })
@@ -266,6 +268,8 @@ static async Task ProvisionHomologationAsync(NpgsqlConnection connection, IConfi
     }
     else
     {
+        if (existingSuperAdmin is not null)
+            throw new InvalidOperationException("O SuperAdmin existente não possui MFA válido; use um procedimento administrativo explícito em vez de alterar a conta durante um provisionamento idempotente.");
         var totpSecret = RequireSecret("AGRO360_PROVISION_SUPERADMIN_TOTP_SECRET");
         var totpCode = RequireSecret("AGRO360_PROVISION_SUPERADMIN_TOTP_CODE");
         if (!TotpVerifier.IsValidSecret(totpSecret) || !TotpVerifier.Verify(totpSecret, totpCode, DateTimeOffset.UtcNow))
@@ -278,29 +282,33 @@ static async Task ProvisionHomologationAsync(NpgsqlConnection connection, IConfi
         select set_config('app.tenant_id','00000000-0000-0000-0000-000000000001',true);
         insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,mfa_enabled,mfa_secret_encrypted,must_change_password)
         values ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','Super Administrador MNSOFT','superadmin@mnsoft.com.br',@SuperHash,'ACTIVE',true,@MfaSecret,true)
-        on conflict(id) do update set name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,mfa_enabled=true,mfa_secret_encrypted=excluded.mfa_secret_encrypted,must_change_password=true,updated_at=now(),version=agro360.identity_users.version+1;
+        on conflict(id) do nothing;
         insert into agro360.identity_user_roles(tenant_id,user_id,role_id) values ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000003') on conflict do nothing;
         insert into agro360.platform_super_admins(id,user_id,active) values ('00000000-0000-0000-0000-000000000004','00000000-0000-0000-0000-000000000002',true) on conflict(user_id) do nothing;
-        update agro360.identity_refresh_tokens set revoked_at=coalesce(revoked_at,now()) where tenant_id='00000000-0000-0000-0000-000000000001' and user_id='00000000-0000-0000-0000-000000000002';
-        insert into agro360.audit_logs(id,tenant_id,user_id,action,entity_type,entity_id,after_data) values (gen_random_uuid(),'00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002','homologation_access_provisioned','IdentityUser','00000000-0000-0000-0000-000000000002',jsonb_build_object('environment',@Environment,'sessionsRevoked',true,'mustChangePassword',true,'mfaConfirmed',true));
+        update agro360.identity_refresh_tokens set revoked_at=coalesce(revoked_at,now()) where @CreateSuper and tenant_id='00000000-0000-0000-0000-000000000001' and user_id='00000000-0000-0000-0000-000000000002';
+        insert into agro360.audit_logs(id,tenant_id,user_id,action,entity_type,entity_id,after_data) values (gen_random_uuid(),'00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002',case when @CreateSuper then 'homologation_access_provisioned' else 'homologation_access_confirmed' end,'IdentityUser','00000000-0000-0000-0000-000000000002',jsonb_build_object('environment',@Environment,'credentialChanged',@CreateSuper,'mfaConfirmed',@CreateSuper));
         select set_config('app.tenant_id','30000000-0000-0000-0000-000000000001',true);
         insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,normalized_document,document_type,must_change_password)
         values ('30000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000001','Administrador Santa Clara','admin@santaclara.agro360.local',@TenantHash,'ACTIVE','52998224725','CPF',true)
-        on conflict(id) do update set name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,must_change_password=true,updated_at=now(),version=agro360.identity_users.version+1;
+        on conflict(id) do nothing;
         insert into agro360.identity_user_roles(tenant_id,user_id,role_id) values ('30000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000004') on conflict do nothing;
-        update agro360.identity_refresh_tokens set revoked_at=coalesce(revoked_at,now()) where tenant_id='30000000-0000-0000-0000-000000000001' and user_id='30000000-0000-0000-0000-000000000003';
-        insert into agro360.audit_logs(id,tenant_id,user_id,action,entity_type,entity_id,after_data) values (gen_random_uuid(),'30000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000003','homologation_access_provisioned','IdentityUser','30000000-0000-0000-0000-000000000003',jsonb_build_object('environment',@Environment,'sessionsRevoked',true,'mustChangePassword',true));
-        """, new { SuperHash = hasher.Hash(superPassword), TenantHash = hasher.Hash(tenantPassword), MfaSecret = protectedMfaSecret, Environment = environment }, transaction).ConfigureAwait(false);
+        update agro360.identity_refresh_tokens set revoked_at=coalesce(revoked_at,now()) where @CreateTenant and tenant_id='30000000-0000-0000-0000-000000000001' and user_id='30000000-0000-0000-0000-000000000003';
+        insert into agro360.audit_logs(id,tenant_id,user_id,action,entity_type,entity_id,after_data) values (gen_random_uuid(),'30000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000003',case when @CreateTenant then 'homologation_access_provisioned' else 'homologation_access_confirmed' end,'IdentityUser','30000000-0000-0000-0000-000000000003',jsonb_build_object('environment',@Environment,'credentialChanged',@CreateTenant));
+        """, new { SuperHash = existingSuperAdmin?.PasswordHash ?? hasher.Hash(superPassword!), TenantHash = existingSantaClara?.PasswordHash ?? hasher.Hash(tenantPassword!), MfaSecret = protectedMfaSecret, Environment = environment,
+            CreateSuper = existingSuperAdmin is null, CreateTenant = existingSantaClara is null }, transaction).ConfigureAwait(false);
     await transaction.CommitAsync().ConfigureAwait(false);
-    await VerifyProvisionedIdentitiesAsync(connection.ConnectionString, hasher, superPassword, tenantPassword).ConfigureAwait(false);
-    Log.Information("Duas identidades de homologação foram provisionadas; sessões anteriores revogadas, troca de senha exigida e MFA existente preservado: {MfaPreserved}.", preservedMfa);
+    await VerifyProvisionedIdentitiesAsync(connection.ConnectionString, hasher,
+        existingSuperAdmin is null ? superPassword : null,
+        existingSantaClara is null ? tenantPassword : null).ConfigureAwait(false);
+    Log.Information("Identidades de homologação confirmadas; credenciais existentes foram preservadas. SuperAdmin criado: {SuperCreated}; Santa Clara criada: {TenantCreated}; MFA existente preservado: {MfaPreserved}.",
+        existingSuperAdmin is null, existingSantaClara is null, preservedMfa);
 }
 
 static async Task VerifyProvisionedIdentitiesAsync(
     string connectionString,
     PasswordHasher hasher,
-    string superPassword,
-    string tenantPassword)
+    string? superPassword,
+    string? tenantPassword)
 {
     var expected = new[]
     {
@@ -317,13 +325,15 @@ static async Task VerifyProvisionedIdentitiesAsync(
     };
 
     foreach (var item in expected)
-        await VerifyProvisionedIdentityAsync(connectionString, hasher, item).ConfigureAwait(false);
+        if (item.Password is { } password)
+            await VerifyProvisionedIdentityAsync(connectionString, hasher, item, password).ConfigureAwait(false);
 }
 
 static async Task VerifyProvisionedIdentityAsync(
     string connectionString,
     PasswordHasher hasher,
-    ProvisioningVerification item)
+    ProvisioningVerification item,
+    string password)
 {
     // A nova conexão é intencional: comprova o valor efetivamente persistido e
     // reproduz o contexto transacional usado pela API, inclusive sob RLS/pooling.
@@ -350,7 +360,7 @@ static async Task VerifyProvisionedIdentityAsync(
             || !string.Equals(row.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase)
             || !row.MustChangePassword
             || !IsSupportedPasswordHash(row.PasswordHash)
-            || !hasher.Verify(item.Password, row.PasswordHash))
+            || !hasher.Verify(password, row.PasswordHash))
             throw new InvalidOperationException($"A credencial persistida para {item.Email} falhou na verificação pós-commit; nenhuma credencial foi exibida.");
 
     await verificationTransaction.CommitAsync().ConfigureAwait(false);
@@ -452,6 +462,7 @@ static string? GetSeedProfile(string[] values)
 
 internal sealed record ProvisionedIdentity(Guid Id, Guid TenantId, string Email)
 {
+    public string? PasswordHash { get; init; }
     public string Status { get; init; } = string.Empty;
     public DateTimeOffset? DeletedAt { get; init; }
     public bool MfaEnabled { get; init; }
@@ -460,7 +471,7 @@ internal sealed record ProvisionedIdentity(Guid Id, Guid TenantId, string Email)
 
 internal sealed record SuperAdminAuthority(bool Active, DateTimeOffset? DeletedAt);
 
-internal sealed record ProvisioningVerification(Guid UserId, Guid TenantId, string Email, string Password);
+internal sealed record ProvisioningVerification(Guid UserId, Guid TenantId, string Email, string? Password);
 
 internal sealed record ProvisioningTenant(Guid Id, string Slug);
 
