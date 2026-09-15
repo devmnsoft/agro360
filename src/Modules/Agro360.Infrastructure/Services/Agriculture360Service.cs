@@ -69,24 +69,58 @@ public sealed class Agriculture360Service(DatabaseExecutor database, ITenantCont
         return database.InTenantTransactionAsync(async (c, t) =>
         {
             await ValidateReferences(c, t, command, cancellationToken);
-            await c.ExecuteAsync(new CommandDefinition("insert into agro360.agriculture_records(id,tenant_id,module,status,data,created_by) values(@Id,@TenantId,@Module,@Status,cast(@Data as jsonb),@UserId)", new { Id = id, tenant.TenantId, Module = moduleCode, Status = status, Data = JsonSerializer.Serialize(command, JsonOptions), tenant.UserId }, t, cancellationToken: cancellationToken));
+            var data = ToData(command);
+            if (moduleCode == "work-orders")
+            {
+                var sequence = await c.ExecuteScalarAsync<long>(new CommandDefinition("select nextval('agro360.field_work_order_number_seq')", transaction: t, cancellationToken: cancellationToken));
+                data["number"] = $"OC-{DateTime.UtcNow:yyyy}-{sequence:000000}";
+            }
+            await c.ExecuteAsync(new CommandDefinition("insert into agro360.agriculture_records(id,tenant_id,module,status,data,created_by) values(@Id,@TenantId,@Module,@Status,cast(@Data as jsonb),@UserId)", new { Id = id, tenant.TenantId, Module = moduleCode, Status = status, Data = JsonSerializer.Serialize(data, JsonOptions), tenant.UserId }, t, cancellationToken: cancellationToken));
             await ApplyEffects(c, t, moduleCode, id, command, status, cancellationToken);
-            return new AgricultureRecord(id, moduleCode, status, DateTimeOffset.UtcNow, ToData(command));
+            return new AgricultureRecord(id, moduleCode, status, DateTimeOffset.UtcNow, data);
         }, cancellationToken);
     }
 
     public Task<AgricultureRecord> UpdateAsync(string moduleCode, Guid id, AgricultureCommand command, CancellationToken cancellationToken)
     {
         EnsureModule(moduleCode); Validate(moduleCode, command); var status = NormalizeStatus(command.Status, moduleCode);
-        return database.InTenantTransactionAsync(async (c, t) => { await ValidateReferences(c, t, command, cancellationToken); var changed = await c.ExecuteAsync(new CommandDefinition("update agro360.agriculture_records set status=@Status,data=cast(@Data as jsonb),updated_at=now(),updated_by=@UserId,version=version+1 where id=@Id and tenant_id=@TenantId and module=@Module and deleted_at is null and status not in ('APPROVED','COMPLETED','CANCELLED')", new { Id = id, tenant.TenantId, Module = moduleCode, Status = status, Data = JsonSerializer.Serialize(command, JsonOptions), tenant.UserId }, t, cancellationToken: cancellationToken)); if (changed == 0) throw new ConflictException("Registro inexistente ou bloqueado pelo estado atual."); return new AgricultureRecord(id, moduleCode, status, DateTimeOffset.UtcNow, ToData(command)); }, cancellationToken);
+        return database.InTenantTransactionAsync(async (c, t) => {
+            await ValidateReferences(c, t, command, cancellationToken);
+            var sql = moduleCode == "work-orders"
+                ? "update agro360.agriculture_records set status=@Status,data=data||cast(@Data as jsonb),updated_at=now(),updated_by=@UserId,version=version+1 where id=@Id and tenant_id=@TenantId and module=@Module and deleted_at is null and status in ('OPEN','PLANNED','AWAITING_RESOURCES') and (@Version is null or version=@Version)"
+                : "update agro360.agriculture_records set status=@Status,data=cast(@Data as jsonb),updated_at=now(),updated_by=@UserId,version=version+1 where id=@Id and tenant_id=@TenantId and module=@Module and deleted_at is null and status not in ('APPROVED','COMPLETED','CANCELLED')";
+            var changed = await c.ExecuteAsync(new CommandDefinition(sql, new { Id = id, tenant.TenantId, Module = moduleCode, Status = status, Data = JsonSerializer.Serialize(command, JsonOptions), tenant.UserId, command.Version }, t, cancellationToken: cancellationToken));
+            if (changed == 0) throw new ConflictException("O registro mudou ou está bloqueado. Recarregue antes de editar.", "agriculture.version_conflict");
+            var saved = await c.QuerySingleAsync<RecordRow>(new CommandDefinition("select id,module,status,created_at CreatedAt,data::text Data from agro360.agriculture_records where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id }, t, cancellationToken: cancellationToken));
+            return Map(saved);
+        }, cancellationToken);
     }
 
     public Task<AgricultureRecord> TransitionAsync(string moduleCode, Guid id, string action, AgricultureCommand? command, CancellationToken cancellationToken)
     {
-        EnsureModule(moduleCode); var next = action.ToLowerInvariant() switch { "approve" => "APPROVED", "revise" => "REVISION", "start" => "IN_PROGRESS", "pause" => "PAUSED", "complete" => "COMPLETED", "cancel" => "CANCELLED", _ => throw new DomainException("Transição inválida.", "agro360.agriculture_transition_invalid") };
+        EnsureModule(moduleCode); var next = action.ToLowerInvariant() switch { "approve" => moduleCode == "work-orders" ? "RELEASED" : "APPROVED", "revise" => moduleCode == "work-orders" ? "PLANNED" : "REVISION", "start" => "IN_PROGRESS", "pause" => "PAUSED", "complete" => moduleCode == "work-orders" ? "AWAITING_REVIEW" : "COMPLETED", "cancel" => "CANCELLED", _ => throw new DomainException("Transição inválida.", "agro360.agriculture_transition_invalid") };
         if (next == "COMPLETED" && moduleCode == "work-orders" && (command?.ResponsibleId is null || command.ChecklistRequired && !command.ChecklistCompleted)) throw new DomainException("Responsável e checklist obrigatório concluído são necessários.", "agro360.agriculture_work_order_incomplete");
         if (next == "CANCELLED" && string.IsNullOrWhiteSpace(command?.CancellationReason)) throw new DomainException("Informe o motivo do cancelamento.", "agro360.agriculture_cancellation_reason_required");
-        return database.InTenantTransactionAsync(async (c, t) => { var row = await c.QuerySingleOrDefaultAsync<RecordRow>(new CommandDefinition("update agro360.agriculture_records set status=@Status,updated_at=now(),updated_by=@UserId,version=version+1 where id=@Id and tenant_id=@TenantId and module=@Module and deleted_at is null returning id,module,status,created_at CreatedAt,data::text Data", new { Status = next, tenant.UserId, Id = id, tenant.TenantId, Module = moduleCode }, t, cancellationToken: cancellationToken)); if (row is null) throw new NotFoundException("Registro agrícola", id); await c.ExecuteAsync(new CommandDefinition("insert into agro360.agriculture_status_history(id,tenant_id,record_id,from_status,to_status,reason,changed_by) select gen_random_uuid(),tenant_id,id,status,@Status,@Reason,@UserId from agro360.agriculture_records where id=@Id and tenant_id=@TenantId", new { Status = next, Reason = command?.CancellationReason, tenant.UserId, Id = id, tenant.TenantId }, t, cancellationToken: cancellationToken)); return Map(row); }, cancellationToken);
+        return database.InTenantTransactionAsync(async (c, t) => {
+            var current = await c.ExecuteScalarAsync<string?>(new CommandDefinition("select status from agro360.agriculture_records where id=@Id and tenant_id=@TenantId and module=@Module and deleted_at is null for update", new { Id = id, tenant.TenantId, Module = moduleCode }, t, cancellationToken: cancellationToken));
+            if (current is null) throw new NotFoundException("Registro agrícola", id);
+            if (moduleCode == "work-orders")
+            {
+                var allowed = (current, next) is ("OPEN", "RELEASED") or ("PLANNED", "RELEASED") or ("AWAITING_RESOURCES", "RELEASED") or ("RELEASED", "IN_PROGRESS") or ("PAUSED", "IN_PROGRESS") or ("IN_PROGRESS", "PAUSED") or ("IN_PROGRESS", "AWAITING_REVIEW") or ("PAUSED", "AWAITING_REVIEW") || next == "CANCELLED" && current is not ("COMPLETED" or "CANCELLED");
+                if (!allowed) throw new ConflictException($"A transição de {current} para {next} não é permitida.", "agriculture.transition_conflict");
+                if (next == "PAUSED" && string.IsNullOrWhiteSpace(command?.PauseReason)) throw new DomainException("Informe o motivo da pausa.", "agriculture.pause_reason_required");
+                if (next == "RELEASED")
+                {
+                    var ready = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select coalesce(nullif(data->>'propertyId',''),'')<>'' and coalesce(nullif(data->>'fieldId',''),'')<>'' and coalesce(nullif(data->>'responsibleId',''),'')<>'' and coalesce((data->>'plannedAt')::timestamptz,now())>=now()-interval '1 day' from agro360.agriculture_records where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id }, t, cancellationToken: cancellationToken));
+                    if (!ready) throw new ConflictException("Complete propriedade, talhão, responsável e programação antes de liberar.", "agriculture.release_prerequisite");
+                }
+            }
+            var reason = next switch { "CANCELLED" => command?.CancellationReason, "PAUSED" => command?.PauseReason, _ => command?.Notes };
+            var row = await c.QuerySingleAsync<RecordRow>(new CommandDefinition("update agro360.agriculture_records set status=@Status,updated_at=now(),updated_by=@UserId,version=version+1 where id=@Id and tenant_id=@TenantId and module=@Module returning id,module,status,created_at CreatedAt,data::text Data", new { Status = next, tenant.UserId, Id = id, tenant.TenantId, Module = moduleCode }, t, cancellationToken: cancellationToken));
+            await c.ExecuteAsync(new CommandDefinition("insert into agro360.agriculture_status_history(id,tenant_id,record_id,from_status,to_status,reason,changed_by) values(gen_random_uuid(),@TenantId,@Id,@FromStatus,@Status,@Reason,@UserId)", new { Status = next, FromStatus = current, Reason = reason, tenant.UserId, Id = id, tenant.TenantId }, t, cancellationToken: cancellationToken));
+            if (next is "CANCELLED" or "COMPLETED") await c.ExecuteAsync(new CommandDefinition("update agro360.field_work_order_resources set status='RELEASED',updated_at=now(),updated_by=@UserId,version=version+1 where tenant_id=@TenantId and work_order_id=@Id and status='RESERVED'", new { tenant.UserId, tenant.TenantId, Id = id }, t, cancellationToken: cancellationToken));
+            return Map(row);
+        }, cancellationToken);
     }
 
     public Task<AgricultureDashboard> DashboardAsync(CancellationToken cancellationToken) => database.InTenantTransactionAsync(async (c, t) => await c.QuerySingleAsync<AgricultureDashboard>(new CommandDefinition("select (select count(*) from agro360.agriculture_seasons where tenant_id=@TenantId and status=2) ActiveSeasons,coalesce((select sum(planned_area_ha) from agro360.agriculture_seasons where tenant_id=@TenantId and status=2),0) PlantedArea,count(*) filter(where module='field-notes' and status='PLANNED') PlannedActivities,count(*) filter(where module='field-notes' and status='PLANNED' and (data->>'plannedAt')::timestamptz<now()) OverdueActivities,count(*) filter(where module='field-notes' and status='COMPLETED' and updated_at>=date_trunc('month',now())) CompletedThisMonth,coalesce(sum((data->>'estimatedCost')::numeric),0) PlannedCost,coalesce(sum(case when status='COMPLETED' then (data->>'estimatedCost')::numeric else 0 end),0) ActualCost,case when coalesce(sum((data->>'area')::numeric),0)>0 then coalesce(sum(case when status='COMPLETED' then (data->>'estimatedCost')::numeric else 0 end),0)/sum((data->>'area')::numeric) else 0 end CostPerHectare,count(*) filter(where module='scouting' and status not in('CLOSED','CANCELLED')) OpenOccurrences,count(*) filter(where module='scouting' and data->>'severity'='CRITICAL') CriticalOccurrences,coalesce(sum(case when module='plans' then (data->>'quantity')::numeric else 0 end),0) PlannedInputs,coalesce(sum(case when module='applications' then (data->>'quantity')::numeric else 0 end),0) ActualInputs,count(*) filter(where module='applications' and status='COMPLETED') Applications,count(*) filter(where module='irrigations' and status='COMPLETED') Irrigations,coalesce((select sum(expected_yield_per_ha) from agro360.agriculture_seasons where tenant_id=@TenantId),0) ExpectedYield,0::numeric ActualYield,array_remove(array[case when count(*) filter(where module='scouting' and data->>'severity'='CRITICAL')>0 then 'Ocorrência fitossanitária crítica' end,case when count(*) filter(where module='field-notes' and status='PLANNED' and (data->>'plannedAt')::timestamptz<now())>0 then 'Atividades agrícolas atrasadas' end],null) Alerts from agro360.agriculture_records where tenant_id=@TenantId and deleted_at is null", new { tenant.TenantId }, t, cancellationToken: cancellationToken)), cancellationToken);
@@ -95,7 +129,7 @@ public sealed class Agriculture360Service(DatabaseExecutor database, ITenantCont
     private static string NormalizeStatus(string? status, string module)
     {
         var value = (status ?? (module == "work-orders" ? "OPEN" : "PLANNED")).Trim().ToUpperInvariant();
-        if (!new[] { "OPEN", "PLANNED", "RELEASED", "IN_PROGRESS", "PAUSED", "COMPLETED", "CANCELLED", "APPROVED", "REVISION", "CLOSED" }.Contains(value)) throw new DomainException("Status inválido.", "agro360.agriculture_status_invalid");
+        if (!new[] { "OPEN", "PLANNED", "AWAITING_RESOURCES", "RELEASED", "IN_PROGRESS", "PAUSED", "AWAITING_REVIEW", "COMPLETED", "CANCELLED", "APPROVED", "REVISION", "CLOSED" }.Contains(value)) throw new DomainException("Status inválido.", "agro360.agriculture_status_invalid");
         return value;
     }
     private static void EnsureModule(string module) { if (!Modules.Contains(module, StringComparer.OrdinalIgnoreCase)) throw new NotFoundException("Módulo agrícola", Guid.Empty); }

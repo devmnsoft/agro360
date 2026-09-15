@@ -461,3 +461,35 @@ A conversão ocorre no backend. Uma necessidade positiva é convertida pelo fato
 Auditoria real de formulários deste recorte: inclusão e consulta de política; análise e releitura de necessidade; confirmação idempotente para compra; filtros e detalhe; preservação de erro no diálogo. Edição de política está disponível na API com concorrência otimista, mas ainda não ganhou acionador visual; dispensa está disponível na API com motivo, mas ainda não ganhou ação visual; seleção em lote e criação direta de transferência permanecem pendentes.
 
 Verificação local: `dotnet restore/build/test` não puderam ser executados porque `dotnet` não está instalado; PostgreSQL e navegador também não estão disponíveis, logo migration, concorrência real, persistência por recarga e renderização desktop/mobile precisam ser homologadas em ambiente com SDK 10.0.100 e PostgreSQL. Foram executados checks estáticos de whitespace, referências e sincronização da migration com o SQL consolidado.
+# Incremento 8.5 — ordens de serviço de campo (2026-09-15)
+
+## Estado encontrado e evidência anterior
+
+- Repositório `/workspace/agro360`, branch `work`, árvore inicialmente limpa. O projeto fixa SDK .NET `10.0.100`, Razor Pages, API ASP.NET, Dapper e PostgreSQL. O container não possui `dotnet`; portanto restore, build, testes, inicialização, Swagger e E2E autenticado permanecem gates, e não foram declarados aprovados.
+- Agricultura já possuía o agregado genérico `agriculture_records` e a tela `/agriculture`; estoque, frota, custos e reposição já possuíam fluxos próprios. A ordem agrícola, porém, só armazenava JSON e transições permissivas, sem reservas, apontamentos, custódia, conferência concorrente ou custo verificável. O fluxo foi ampliado, sem criar um segundo cadastro de ordem agrícola e sem reutilizar a OS de manutenção da frota.
+
+## Matriz do recorte
+
+| Funcionalidade | Estado real encontrado | Tela / endpoint | Serviço / persistência | Regra incompleta encontrada | Dependência | Critério deste recorte |
+|---|---|---|---|---|---|---|
+| Ordem de campo | Parcial, JSON genérico | `/agriculture`; `/api/agriculture/work-orders` | `Agriculture360Service`; `agriculture_records` | sem número, matriz de estados e bloqueios | propriedade/talhão/pessoas | número legível, contexto selecionável e transições fechadas |
+| Programação | Ausente | detalhe; `.../{id}/resources` | `FieldOperationsService`; `field_work_order_resources` | sem disponibilidade/conflito | identidade e frota | tenant, manutenção e intervalo semiaberto validados no servidor |
+| Apontamento | Ausente na ordem | detalhe; `.../{id}/work-logs` | `field_work_logs` | sem idempotência/sobreposição/medidor | operador/equipamento | validação temporal, chave idempotente e confirmação imutável |
+| Materiais | Consumo direto parcial | detalhe; `.../materials/.../events` | tabelas de materiais/eventos + função canônica de estoque | reserva confundida com baixa | estoque/depósito | reserva, entrega, consumo, perda e devolução distintos e transacionais |
+| Conferência | Ausente | detalhe; `.../{id}/review` | snapshot `field_work_order_reviews` | conclusão sem pendências nem concorrência | apontamentos/materiais | bloqueios acionáveis, versão e única conclusão efetiva |
+| Custos | estimativa genérica | aba Custos no detalhe | projeção rastreável de material | zero ocultava desconhecido | custo unitário vigente | valores ausentes expostos como pendência; sem lançamento financeiro fictício |
+| Histórico | Parcial e `from_status` incorreto | aba Histórico | `agriculture_status_history` | origem era lida depois do update | ator autenticado | origem/destino/motivo/ator preservados |
+
+## Implementação e manual resumido
+
+- A migration incremental `085_field_service_orders.sql` mantém todos os objetos no schema `agro360`, habilita RLS e cria índices de conflito/consulta. O instalador completo recebeu o mesmo bloco sem alterar migrations anteriores.
+- O detalhe reúne planejamento, recursos, execução, materiais, custos, conferência e histórico. Campos usam lookups existentes, labels e unidades visíveis; o bloco “Como usar” documenta pré-requisitos, etapas e resultado.
+- Intervalos usam a regra `[início, término)`: há conflito quando `existente.início < novo.fim` e `existente.fim > novo.início`, permitindo operações consecutivas. Equipamento sem estado confiável, bloqueado ou em manutenção não é anunciado como disponível.
+- Consumo/perda baixam estoque uma vez e devolução referencia evento de origem e repõe estoque na mesma transação. Reenvio da mesma chave não duplica efeito. Reserva e entrega não baixam estoque.
+- A conferência bloqueia ordem sem responsável, sem apontamento ou com material ainda sob custódia. A versão é revalidada com lock; o resumo é preservado e a confirmação não recria movimentos.
+
+## Limites e próxima etapa
+
+- Sem SDK, PostgreSQL e navegador no container, ficaram pendentes restore/build/test, aplicação limpa/incremental da migration, cenários autenticados entre dois tenants, Swagger/hosts, console/rede e inspeção desktop/mobile. A verificação estática não substitui esses gates.
+- Mão de obra, equipamento e serviços continuam “indisponíveis” até existir tarifa vigente integrada; nenhum zero ou lançamento contábil foi fabricado. Reserva física de saldo/lote e necessidade de reposição devem ser conectadas ao fluxo canônico após homologar o modelo de lote/unidade em PostgreSQL.
+- Próxima etapa: executar migration e jornada E2E descartável; depois integrar tarifa vigente, lote/unidade e requisição de material autorizada, complementando os testes existentes sem criar uma nova classe.

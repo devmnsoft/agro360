@@ -2,14 +2,15 @@
 @model Agro360.Web.Pages.Agriculture.IndexModel
 @{ ViewData["Title"] = "Agricultura 360"; }
 <section class="page-content agriculture-360">
- <header class="page-heading"><div><span class="eyebrow">Sprint 11 · operação agrícola</span><h1>Agricultura <span>360</span></h1><p>Planejamento, execução, sanidade e custos no mesmo contexto.</p></div></header>
+ <header class="page-heading"><div><span class="eyebrow">Operações de campo</span><h1>Agricultura <span>360</span></h1><p>Planeje, libere, execute e confira ordens com recursos, materiais e custos rastreáveis.</p></div></header>
+ <details class="agriculture-help"><summary>Como usar</summary><p><strong>Pré-requisitos:</strong> propriedade, talhão, pessoas, máquinas e produtos ativos. Crie a ordem, programe os recursos sem sobreposição, libere, aponte a execução e trate todo material entregue antes da conferência.</p><p><strong>Resultado esperado:</strong> ordem concluída com histórico, custódia de materiais zerada e composição de custo identificável. Aplicações especializadas continuam sujeitas às regras técnicas do módulo Aplicações.</p></details>
  <nav class="livestock-modules" aria-label="Módulos agrícolas" id="agriculture-tabs">
   <button data-module="field-notes"><strong>Caderno de campo</strong><small>atividades e insumos</small></button><button data-module="plans"><strong>Planejamento</strong><small>previsto × realizado</small></button><button data-module="scouting"><strong>Monitoramento</strong><small>pragas e doenças</small></button><button data-module="recommendations"><strong>Recomendações</strong><small>orientação técnica</small></button><button data-module="applications"><strong>Aplicações</strong><small>estoque e custo</small></button><button data-module="irrigations"><strong>Irrigação</strong><small>lâmina e duração</small></button><button data-module="weather-records"><strong>Clima</strong><small>risco operacional</small></button><button data-module="work-orders"><strong>Ordens de serviço</strong><small>equipe e checklist</small></button>
  </nav>
- <section class="panel" aria-labelledby="form-title"><header class="panel-header"><div><span class="eyebrow">Novo registro</span><h2 id="form-title">Caderno de campo</h2></div></header>
+ <section class="panel" aria-labelledby="form-title"><header class="panel-header"><div><span class="eyebrow">Novo registro</span><h2 id="form-title">Ordem de serviço</h2></div></header>
   <div id="form-summary" class="validation-summary" role="alert" hidden></div>
   <form id="agriculture-form" novalidate>
-   <input type="hidden" name="module" value="field-notes" />
+   <input type="hidden" name="module" value="work-orders" />
    <div class="agriculture-form-grid">
     <label>Propriedade <input class="lookup" data-lookup="properties" data-target="propertyId" autocomplete="off" required minlength="2" placeholder="Busque pelo nome da fazenda" /><input type="hidden" name="propertyId" /></label>
     <label>Talhão <input class="lookup" data-lookup="fields" data-target="fieldId" autocomplete="off" required minlength="2" placeholder="Busque pelo nome e safra" /><input type="hidden" name="fieldId" /></label>
@@ -17,12 +18,19 @@
     <label>Cultura <input class="lookup" data-lookup="crops" data-target="cropId" autocomplete="off" placeholder="Busque pela cultura" /><input type="hidden" name="cropId" /></label>
     <label>Responsável <input class="lookup" data-lookup="people" data-target="responsibleId" autocomplete="off" placeholder="Busque pelo nome ou e-mail" /><input type="hidden" name="responsibleId" /></label>
     <label>Máquina <input class="lookup" data-lookup="machines" data-target="machineId" autocomplete="off" placeholder="Busque por nome ou identificação" /><input type="hidden" name="machineId" /></label>
-    <label>Atividade<input name="name" required minlength="3" maxlength="160" /></label><label>Data planejada<input name="plannedAt" type="datetime-local" required /></label><label>Área (ha)<input name="area" type="number" min="0.0001" step="0.0001" required /></label>
-    <label>Status<select name="status" required><option value="PLANNED">Planejada</option><option value="RELEASED">Liberada</option><option value="IN_PROGRESS">Em execução</option><option value="COMPLETED">Realizada</option><option value="CANCELLED">Cancelada</option></select></label>
+    <label>Objetivo da ordem *<input name="name" required minlength="3" maxlength="160" /></label>
+    <label>Tipo de operação *<select name="type" required><option value="">Selecione</option><option>Preparo de solo</option><option>Plantio</option><option>Adubação</option><option>Irrigação</option><option>Inspeção</option><option>Manutenção de área</option><option>Colheita</option><option>Transporte interno</option><option>Outra operação</option></select></label>
+    <label>Início previsto *<input name="plannedAt" type="datetime-local" required /></label><label>Término previsto *<input name="finishedAt" type="datetime-local" required /></label>
+    <label>Quantidade/área planejada *<input name="area" type="number" min="0.0001" step="0.0001" required /></label><label>Unidade *<select name="unit" required><option value="ha">hectare (ha)</option><option value="h">hora (h)</option><option value="t">tonelada (t)</option><option value="un">unidade (un)</option></select></label>
+    <label>Prioridade *<select name="priority" required><option>NORMAL</option><option>ALTA</option><option>URGENTE</option><option>BAIXA</option></select></label><label>Origem da demanda<input name="origin" maxlength="120" placeholder="Plano de safra, inspeção, solicitação…" /></label>
+    <label>Material previsto <input class="lookup" data-lookup="inventory-items" data-target="inventoryItemId" autocomplete="off" placeholder="Busque pelo produto" /><input type="hidden" name="inventoryItemId" /></label><label>Depósito <input class="lookup" data-lookup="warehouses" data-target="warehouseId" autocomplete="off" placeholder="Busque pelo depósito" /><input type="hidden" name="warehouseId" /></label>
+    <label>Quantidade do material<input name="quantity" type="number" min="0.000001" step="0.000001" /></label><label>Custo unitário estimado<input name="estimatedCost" type="number" min="0" step="0.01" /></label>
+    <label>Status<select name="status" required><option value="OPEN">Rascunho</option><option value="PLANNED">Planejada</option><option value="AWAITING_RESOURCES">Aguardando recursos</option></select></label>
     <label class="form-wide">Observações<textarea name="notes" maxlength="2000"></textarea></label>
    </div><button class="primary-button" type="submit"><span>Salvar registro</span></button><p id="form-result" role="status"></p>
   </form>
  </section>
- <section class="panel"><header class="panel-header"><h2>Registros recentes</h2></header><div id="agriculture-list" class="empty-row">Carregando registros...</div></section>
+ <section class="panel"><header class="panel-header"><h2>Ordens e registros recentes</h2></header><div id="agriculture-list" class="empty-row">Carregando registros...</div></section>
+ <section class="panel" id="field-order-detail" hidden aria-live="polite"><header class="panel-header"><h2>Detalhes da ordem</h2></header><div data-order-detail></div></section>
 </section>
 <script src="~/js/agriculture360.js" asp-append-version="true"></script>

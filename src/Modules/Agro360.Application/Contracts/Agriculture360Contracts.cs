@@ -35,7 +35,13 @@ public sealed record AgricultureCommand(
     bool ChecklistCompleted,
     string? Notes,
     string? CancellationReason,
-    IReadOnlyCollection<Guid>? FieldIds);
+    IReadOnlyCollection<Guid>? FieldIds,
+    string? Priority = null,
+    string? Origin = null,
+    string? Unit = null,
+    string? PauseReason = null,
+    string? ReopenReason = null,
+    long? Version = null);
 
 public sealed record AgricultureDashboard(
     long ActiveSeasons, decimal PlantedArea, long PlannedActivities, long OverdueActivities,
