@@ -79,6 +79,7 @@ public static class DependencyInjection
         services.AddScoped<IFleetService, FleetService>();
         services.AddScoped<IFleetOperationsService, FleetOperationsService>();
         services.AddScoped<IProcurementService, ProcurementService>();
+        services.AddScoped<IReplenishmentService, ReplenishmentService>();
         services.AddScoped<IIndustrialProductionService, IndustrialProductionService>();
         services.AddScoped<IExportTradingService, ExportTradingService>();
         services.AddScoped<FiscalIntegrationAdapter>();
