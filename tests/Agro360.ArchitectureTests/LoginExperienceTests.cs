@@ -84,6 +84,9 @@ public sealed class LoginExperienceTests
         Assert.Contains("must_change_password=true", migrator, StringComparison.Ordinal);
         Assert.Contains("diagnose-homologation", migrator, StringComparison.Ordinal);
         Assert.Contains("VerifyProvisionedIdentitiesAsync", migrator, StringComparison.Ordinal);
+        Assert.Contains("reset-santa-clara-password", migrator, StringComparison.Ordinal);
+        Assert.Contains("existing credential is never changed", migrator, StringComparison.Ordinal);
+        Assert.Contains("homologation_password_reset", migrator, StringComparison.Ordinal);
         Assert.Contains("select set_config('app.tenant_id',@TenantId,true)", migrator, StringComparison.Ordinal);
         Assert.Contains("hasher.Verify(item.Password, row.PasswordHash)", migrator, StringComparison.Ordinal);
         Assert.Contains("IsSupportedPasswordHash(row.PasswordHash)", migrator, StringComparison.Ordinal);
