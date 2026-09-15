@@ -27,7 +27,6 @@ if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
 }
 
 builder.Services.AddAgro360Infrastructure(builder.Configuration);
-builder.Services.AddHostedService<SuperAdminProvisioner>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

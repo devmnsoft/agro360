@@ -143,13 +143,19 @@ try {
     Set-TaskEnvironment Cors__AllowedOrigins__0 'http://127.0.0.1:1'
     Set-TaskEnvironment Bootstrap__Enabled 'false'
     Set-TaskEnvironment DataProtection__KeysPath "$evidence\keys"
-    Set-TaskEnvironment SuperAdmin__Email 'root.verify@agro360.local'
-    Set-TaskEnvironment SuperAdmin__Password $initialPassword
-    Set-TaskEnvironment SuperAdmin__TotpSecret (ConvertTo-Base32 $totpBytes)
+    Set-TaskEnvironment AGRO360_DATA_PROTECTION_KEYS_PATH "$evidence\keys"
+    Set-TaskEnvironment AGRO360_PROVISION_SUPERADMIN_PASSWORD $initialPassword
+    Set-TaskEnvironment AGRO360_PROVISION_SANTA_CLARA_PASSWORD $tenantAdminPassword
+    Set-TaskEnvironment AGRO360_PROVISION_SUPERADMIN_TOTP_SECRET (ConvertTo-Base32 $totpBytes)
+    Set-TaskEnvironment AGRO360_PROVISION_SUPERADMIN_TOTP_CODE (Get-Totp $totpBytes)
+    dotnet run --project src/Hosts/Agro360.Migrator -- provision-homologation --environment Development
+    Assert-Exit 'provisionamento explícito do SuperAdmin no PostgreSQL'
+    'AGRO360_PROVISION_SUPERADMIN_PASSWORD','AGRO360_PROVISION_SANTA_CLARA_PASSWORD','AGRO360_PROVISION_SUPERADMIN_TOTP_SECRET','AGRO360_PROVISION_SUPERADMIN_TOTP_CODE' |
+        ForEach-Object { Remove-Item "Env:\$_" -ErrorAction SilentlyContinue }
     Start-Api
     [void](Invoke-Api '/health')
 
-    $firstLogin = @{ tenantSlug = 'agro360-platform'; email = 'root.verify@agro360.local'; password = $initialPassword; mfaCode = Get-Totp $totpBytes }
+    $firstLogin = @{ tenantSlug = 'agro360-platform'; email = 'superadmin@mnsoft.com.br'; password = $initialPassword; mfaCode = Get-Totp $totpBytes }
     [void](Invoke-Api '/api/v1/auth/login' 400 'POST' $firstLogin)
     $firstLogin.newPassword = $newPassword
     $global = (Invoke-Api '/api/v1/auth/login' 200 'POST' $firstLogin).Content | ConvertFrom-Json
