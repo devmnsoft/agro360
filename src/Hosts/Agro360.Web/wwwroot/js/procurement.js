@@ -9,7 +9,7 @@
         catalog: { head: ["Código", "Item", "Categoria", "Tipo", "Situação"], row: item => [item.internal_code, item.name, item.category, item.item_type, badge(item.active ? "ATIVO" : "INATIVO")] },
         requisitions: { head: ["Número", "Prioridade", "Necessidade", "Itens", "Status"], row: item => [item.number, badge(item.priority), new Date(`${item.needed_on}T00:00`).toLocaleDateString("pt-BR"), item.item_count, badge(item.status)] },
         orders: { head: ["Número", "Fornecedor", "Entrega", "Total", "Status"], row: item => [item.number, item.supplier_name, new Date(`${item.delivery_on}T00:00`).toLocaleDateString("pt-BR"), Number(item.total).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), badge(item.status)] },
-        receipts: { head: ["Recebimento", "Pedido", "Fornecedor", "Data", "Itens", "Estoque", "Financeiro", "Status"], row: item => [item.number, item.order_number, item.supplier_name, new Date(item.received_at).toLocaleString("pt-BR"), item.item_count, badge(item.stock_integration_status), badge(item.finance_integration_status), badge(item.status)] }
+        receipts: { head: ["Recebimento", "Pedido", "Fornecedor", "Data", "Itens", "Estoque", "Financeiro", "Status", "Próxima ação"], row: item => [item.number, item.order_number, item.supplier_name, new Date(item.received_at).toLocaleString("pt-BR"), item.item_count, badge(item.stock_integration_status), badge(item.finance_integration_status), badge(item.status), `<button type="button" class="proc-link" data-receipt="${item.id}">${item.status === "DIVERGENT" ? "Inspecionar" : "Consultar"}</button>`] }
     };
 
     async function dashboard() {
@@ -29,8 +29,20 @@
             const rows = await request(`${name}?${query}`);
             const definition = tables[name];
             box.innerHTML = rows.length ? `<table><thead><tr>${definition.head.map(item => `<th>${item}</th>`).join("")}</tr></thead><tbody>${rows.map(row => `<tr>${definition.row(row).map(value => `<td>${value ?? "—"}</td>`).join("")}</tr>`).join("")}</tbody></table>` : '<div class="proc-empty">Nenhum registro encontrado para os filtros aplicados.</div>';
+            box.querySelectorAll("[data-receipt]").forEach(button => button.addEventListener("click", () => showReceipt(button.dataset.receipt)));
         } catch (error) { box.innerHTML = `<div class="proc-empty">${escape(error.message)}</div>`; }
     }
+
+    async function showReceipt(id) {
+        const dialog = document.querySelector("#receipt-detail-dialog"); const content = dialog.querySelector(".receipt-detail-content");
+        content.innerHTML = '<div class="proc-loading">Carregando recebimento…</div>'; if (!dialog.open) dialog.showModal();
+        try {
+            const data = await request(`receipts/${encodeURIComponent(id)}`), r = data.receipt;
+            content.innerHTML = `<section class="receipt-summary"><strong>${escape(r.number)}</strong><span>Pedido ${escape(r.order_number)}</span><span>${escape(r.supplier_name)}</span>${badge(r.status)}</section><h3>Itens, lotes e disponibilidade</h3><div class="proc-table"><table><thead><tr><th>Item / lote</th><th>Pedido</th><th>Recebido</th><th>Bloqueado</th><th>Disponível</th><th>Rejeitado</th><th>Ação</th></tr></thead><tbody>${data.items.map(i => `<tr><td>${escape(i.name)}<small>${escape(i.supplier_lot || "Sem lote")} · ${escape(i.unit)}</small></td><td>${i.ordered_quantity}</td><td>${i.quantity}</td><td>${Math.max(0, Number(i.quarantine_quantity)-Number(i.released_quantity)-Number(i.rejected_quantity))}</td><td>${i.released_quantity || (i.quality_status === "NOT_REQUIRED" ? i.quantity : 0)}</td><td>${i.rejected_quantity}</td><td>${i.quality_status === "PENDING" ? `<button type="button" class="proc-primary" data-quality="${i.id}" data-max="${Number(i.quantity)-Number(i.released_quantity)-Number(i.rejected_quantity)}">Decidir</button>` : escape(i.quality_status)}</td></tr>`).join("")}</tbody></table></div><h3>Histórico de qualidade</h3>${data.history.length ? data.history.map(h => `<p><strong>${escape(h.result)}</strong> · aceita ${h.accepted_quantity}, rejeitada ${h.rejected_quantity} · ${escape(h.reason || "Sem ressalva")}</p>`).join("") : '<p class="proc-empty">Nenhuma decisão registrada.</p>'}`;
+            content.querySelectorAll("[data-quality]").forEach(button => button.addEventListener("click", () => openQuality(button.dataset.quality, button.dataset.max, id)));
+        } catch (error) { content.innerHTML = `<div class="proc-empty" role="alert">${escape(error.message)}</div>`; }
+    }
+    function openQuality(itemId, maximum, receiptId) { const form = document.querySelector("#quality-form"); form.reset(); form.elements.receiptItemId.value = itemId; form.elements.receiptId.value = receiptId; form.elements.acceptedQuantity.max = maximum; form.elements.rejectedQuantity.max = maximum; form.querySelector("[data-quality-max]").textContent = `${maximum} unidade(s) aguardando decisão.`; document.querySelector("#quality-dialog").showModal(); }
 
     async function lookups() {
         try {
@@ -83,6 +95,7 @@
         } catch (error) { message.textContent = error.message; }
         finally { button.disabled = false; }
     }));
+    document.querySelector("#quality-form").addEventListener("submit", async event => { event.preventDefault(); const form = event.currentTarget; if (!form.reportValidity()) return; const values = Object.fromEntries(new FormData(form)); if (!await window.confirmDialog("Confirmar decisão de qualidade", "Somente a quantidade aceita será liberada. A decisão permanecerá no histórico.", "Registrar decisão")) return; const button = form.querySelector(".proc-primary"); button.disabled = true; try { await request(`receipt-items/${values.receiptItemId}/quality-decisions`, { method: "POST", body: JSON.stringify({ acceptedQuantity: Number(values.acceptedQuantity), rejectedQuantity: Number(values.rejectedQuantity), result: values.result, reason: values.reason || null, evidenceReference: values.evidenceReference || null, idempotencyKey: crypto.randomUUID() }) }); document.querySelector("#quality-dialog").close(); await showReceipt(values.receiptId); window.toastSuccess?.("Decisão registrada", "A disponibilidade foi atualizada somente para a quantidade aceita."); } catch (error) { form.querySelector(".form-message").textContent = error.message; } finally { button.disabled = false; } });
     document.querySelector('[data-lookup="orders"]').addEventListener("change", event => loadPendingItems(event.target.value).catch(error => { document.querySelector('[name="purchaseOrderItemId"]').innerHTML = `<option value="">${escape(error.message)}</option>`; }));
     document.querySelector("#proc-refresh").addEventListener("click", () => Promise.all([dashboard(), ...Object.keys(tables).map(name => list(name))]));
     dashboard(); Object.keys(tables).forEach(name => list(name)); lookups();

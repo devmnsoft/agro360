@@ -83,3 +83,14 @@ Correções implementadas:
 4. Continuar a matriz na ordem do plano mestre. As 35 páginas não exercitadas não estão aprovadas por esta auditoria e ações de provedor externo devem permanecer pendentes até configuração real.
 
 Não houve alteração estrutural de banco nesta rodada; migration e atualização do SQL consolidado não se aplicam. Nenhum binário foi adicionado.
+
+## Incremento 8.0 — recebimento assistido, qualidade e liberação (2026-09-15)
+
+| Página/ação | Inclusão e releitura | Transição/histórico | Permissão e tenant | Estado verificável |
+|---|---|---|---|---|
+| Procurement / novo recebimento | POST idempotente, saldo relido sob `FOR UPDATE`, lotes preservados por linha | presença física separada da disponibilidade; serviço não movimenta estoque | `purchasing.receive`, override separado, SQL tenant-scoped | verificação estática; runtime pendente por ausência de SDK/PostgreSQL |
+| Procurement / detalhe | GET por ID relê resumo, itens, quarentena e decisões | sem edição/exclusão genérica | `purchasing.read`, joins por tenant | verificação estática |
+| Procurement / inspeção/liberação | decisão parcial idempotente; nova consulta do detalhe após POST | histórico append-only; somente aceito gera movimento; rejeitado permanece rastreável | `compliance.approve`, RLS e tenant no comando | verificação estática; concorrência exige PostgreSQL descartável |
+| Procurement / listagem | pedido, fornecedor, data, status e próxima ação | filtros continuam no formulário ao abrir/fechar detalhe | `purchasing.read` | verificação estática |
+
+A migration `080_assisted_procurement_receipt.sql` cria uma representação de quarentena vinculada ao item, decisões históricas e vínculos idempotentes de liberação. Não foi implementado estorno/devolução nem encerramento autorizado de saldo neste incremento; essas operações permanecem pendências reais e não foram substituídas por exclusão genérica.

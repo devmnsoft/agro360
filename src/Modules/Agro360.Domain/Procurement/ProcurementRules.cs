@@ -38,6 +38,14 @@ public static class ProcurementRules
         if (requiresExpiry && expiry is null) throw new DomainException("Validade é obrigatória para este item.", "procurement.expiry_required");
     }
 
+    public static void QualityDecision(decimal inspected, decimal previouslyDecided, decimal accepted, decimal rejected, string result, string? reason)
+    {
+        if (accepted < 0 || rejected < 0 || accepted + rejected <= 0 || previouslyDecided + accepted + rejected > inspected)
+            throw new DomainException("As quantidades decididas devem ser positivas e não podem superar a quantidade sob inspeção.", "procurement.quality_quantity_invalid");
+        if (result is not ("APPROVED" or "CONDITIONALLY_APPROVED" or "REJECTED")) throw new DomainException("Resultado de inspeção inválido.", "procurement.quality_result_invalid");
+        if ((rejected > 0 || result != "APPROVED") && string.IsNullOrWhiteSpace(reason)) throw new DomainException("Reprovação ou aprovação condicionada exige justificativa.", "procurement.quality_reason_required");
+    }
+
     public static void Decision(decimal selectedTotal, decimal lowestTotal, string? justification)
     {
         if (selectedTotal > lowestTotal && string.IsNullOrWhiteSpace(justification)) throw new DomainException("Escolha acima do menor preço exige justificativa.", "procurement.decision_reason_required");
