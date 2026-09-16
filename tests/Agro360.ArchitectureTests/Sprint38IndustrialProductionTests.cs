@@ -2,6 +2,18 @@ namespace Agro360.ArchitectureTests;
 
 public sealed class Sprint38IndustrialProductionTests
 {
+    [Fact]
+    public void ProductionAndInventoryUseDistinctConsumptionContracts()
+    {
+        var root = Root();
+        var production = File.ReadAllText(Path.Combine(root, "src", "Modules", "Agro360.Application", "Contracts", "IndustrialProductionContracts.cs"));
+        var inventory = File.ReadAllText(Path.Combine(root, "src", "Modules", "Agro360.Application", "Contracts", "InventoryContracts.cs"));
+
+        Assert.Contains("record ProductionMaterialConsumptionCommand", production);
+        Assert.DoesNotContain("record MaterialConsumptionCommand", production);
+        Assert.Contains("record MaterialConsumptionCommand", inventory);
+    }
+
     [Fact] public void FullSqlContainsTenantScopedIndustrialFoundation() { var sql = File.ReadAllText(Path.Combine(Root(), "database", "agro360-postgres-full.sql")); foreach (var table in new[] { "production_industrial_plants", "production_lines", "production_work_centers", "production_shifts", "production_recipes", "production_recipe_versions", "production_orders", "production_step_records", "production_material_consumptions", "production_batches", "production_batch_traceability", "production_losses", "production_stoppages", "production_quality_checks", "production_costs", "production_reports_exports" }) Assert.Contains($"agro360.{table}", sql); Assert.Contains("tenant_id", sql); Assert.Contains("force row level security", sql); }
     [Fact] public void FormsDoNotRequestTechnicalIds() { var view = File.ReadAllText(Path.Combine(Root(), "src", "Hosts", "Agro360.Web", "Pages", "Production", "Index.cshtml")); Assert.DoesNotContain("type=\"text\" name=\"tenantId\"", view); Assert.Contains("data-lookup=\"products\"", view); Assert.Contains("data-lookup=\"operators\"", view); }
     [Fact] public void ApiExposesRealOperationalEndpoints() { var controller = File.ReadAllText(Path.Combine(Root(), "src", "Hosts", "Agro360.Api", "Controllers", "IndustrialProductionController.cs")); foreach (var endpoint in new[] { "recipes", "orders", "records", "consumptions", "quality", "stoppages", "traceability", "reports" }) Assert.Contains(endpoint, controller); }
