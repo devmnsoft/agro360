@@ -6,8 +6,26 @@ using Microsoft.AspNetCore.Mvc;
 namespace Agro360.Api.Controllers;
 
 [ApiController, Route("api/agriculture"), Authorize]
-public sealed class Agriculture360Controller(IAgriculture360Service agriculture, IFieldOperationsService fieldOperations) : ControllerBase
+public sealed class Agriculture360Controller(IAgriculture360Service agriculture, IFieldOperationsService fieldOperations, ISeasonTrackingService seasonTracking) : ControllerBase
 {
+    [HttpGet("seasons/{seasonId:guid}/overview"), Authorize(Policy = Permissions.AgricultureRead)]
+    public Task<SeasonTrackingOverview> SeasonOverview(Guid seasonId, [FromQuery] DateOnly? referenceDate, CancellationToken cancellationToken) => seasonTracking.OverviewAsync(seasonId, referenceDate, cancellationToken);
+
+    [HttpPost("plans/{planId:guid}/operations"), Authorize(Policy = Permissions.AgricultureWrite)]
+    public async Task<IActionResult> AddOperation(Guid planId, PlanOperationCommand command, CancellationToken cancellationToken)
+    { var result = await seasonTracking.AddOperationAsync(planId, command, cancellationToken); return Created($"/api/agriculture/operations/{result.Id}", result); }
+
+    [HttpPost("operations/{operationId:guid}/dependencies"), Authorize(Policy = Permissions.AgricultureWrite)]
+    public async Task<IActionResult> AddDependency(Guid operationId, OperationDependencyCommand command, CancellationToken cancellationToken)
+    { await seasonTracking.AddDependencyAsync(operationId, command, cancellationToken); return NoContent(); }
+
+    [HttpPost("operations/{operationId:guid}/orders"), Authorize(Policy = Permissions.AgricultureWrite)]
+    public async Task<IActionResult> GenerateOrder(Guid operationId, GenerateOperationOrderCommand command, CancellationToken cancellationToken)
+    { var id = await seasonTracking.GenerateOrderAsync(operationId, command, cancellationToken); return Ok(new { id }); }
+
+    [HttpPost("operations/{operationId:guid}/reschedule"), Authorize(Policy = Permissions.AgricultureWrite)]
+    public Task<PlanOperationDto> Reschedule(Guid operationId, RescheduleOperationCommand command, CancellationToken cancellationToken) => seasonTracking.RescheduleAsync(operationId, command, cancellationToken);
+
     [HttpGet("work-orders/{id:guid}"), Authorize(Policy = Permissions.AgricultureRead)]
     public Task<FieldOrderDetail> WorkOrder(Guid id, CancellationToken cancellationToken) => fieldOperations.DetailAsync(id, cancellationToken);
 

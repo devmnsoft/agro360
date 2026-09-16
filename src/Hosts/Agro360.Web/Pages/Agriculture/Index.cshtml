@@ -4,6 +4,12 @@
 <section class="page-content agriculture-360">
  <header class="page-heading"><div><span class="eyebrow">Operações de campo</span><h1>Agricultura <span>360</span></h1><p>Planeje, libere, execute e confira ordens com recursos, materiais e custos rastreáveis.</p></div></header>
  <details class="agriculture-help"><summary>Como usar</summary><p><strong>Pré-requisitos:</strong> propriedade, talhão, pessoas, máquinas e produtos ativos. Crie a ordem, programe os recursos sem sobreposição, libere, aponte a execução e trate todo material entregue antes da conferência.</p><p><strong>Resultado esperado:</strong> ordem concluída com histórico, custódia de materiais zerada e composição de custo identificável. Aplicações especializadas continuam sujeitas às regras técnicas do módulo Aplicações.</p></details>
+ <section class="panel season-tracking" aria-labelledby="season-tracking-title">
+  <header class="panel-header"><div><span class="eyebrow">Propriedade e safra</span><h2 id="season-tracking-title">Acompanhamento operacional</h2><p>Consulte planejado, realizado e pendências na mesma data de referência.</p></div></header>
+  <form id="season-context-form" class="season-context-filter"><label>Safra *<input id="season-context-search" autocomplete="off" placeholder="Busque pelo nome da safra" required /><input id="season-context-id" type="hidden" /></label><label>Data de referência<input id="season-reference-date" type="date" /></label><button class="primary-button">Acompanhar safra</button><button type="button" id="clear-season-context">Limpar contexto</button></form>
+  <div id="season-context-results" class="lookup-results" hidden></div>
+  <div id="season-overview" aria-live="polite" class="empty-row">Selecione uma safra para visualizar dados reais. Valores sem origem permanecem indisponíveis.</div>
+ </section>
  <nav class="livestock-modules" aria-label="Módulos agrícolas" id="agriculture-tabs">
   <button data-module="field-notes"><strong>Caderno de campo</strong><small>atividades e insumos</small></button><button data-module="plans"><strong>Planejamento</strong><small>previsto × realizado</small></button><button data-module="scouting"><strong>Monitoramento</strong><small>pragas e doenças</small></button><button data-module="recommendations"><strong>Recomendações</strong><small>orientação técnica</small></button><button data-module="applications"><strong>Aplicações</strong><small>estoque e custo</small></button><button data-module="irrigations"><strong>Irrigação</strong><small>lâmina e duração</small></button><button data-module="weather-records"><strong>Clima</strong><small>risco operacional</small></button><button data-module="work-orders"><strong>Ordens de serviço</strong><small>equipe e checklist</small></button>
  </nav>
@@ -34,3 +40,4 @@
  <section class="panel" id="field-order-detail" hidden aria-live="polite"><header class="panel-header"><h2>Detalhes da ordem</h2></header><div data-order-detail></div></section>
 </section>
 <script src="~/js/agriculture360.js" asp-append-version="true"></script>
+@section Styles { <link rel="stylesheet" href="~/css/agriculture-tracking.css" asp-append-version="true" /> }
