@@ -12,7 +12,8 @@ public sealed record FieldIssue(string Severity, string Code, string Message, st
 public sealed record FieldCostSummary(decimal? Planned, decimal? ActualMaterials, decimal? Labor, decimal? Equipment,
     decimal? Services, decimal? Losses, decimal? Actual, decimal? Variation, IReadOnlyCollection<string> PendingValues);
 public sealed record FieldOrderDetail(AgricultureRecord Order, long Version, IReadOnlyCollection<dynamic> Resources,
-    IReadOnlyCollection<dynamic> WorkLogs, IReadOnlyCollection<dynamic> Materials, IReadOnlyCollection<dynamic> History,
+    IReadOnlyCollection<dynamic> WorkLogs, IReadOnlyCollection<dynamic> Materials, IReadOnlyCollection<dynamic> MaterialHistory,
+    IReadOnlyCollection<dynamic> History,
     IReadOnlyCollection<FieldIssue> Issues, FieldCostSummary Costs);
 
 public interface IFieldOperationsService
