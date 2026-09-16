@@ -66,6 +66,23 @@ public sealed class AgricultureFormTests
     }
 
     [Fact]
+    public void FieldMaterialConsumptionHasHistoryIdempotencyAndTraceableReversal()
+    {
+        var service = File.ReadAllText(Path.Combine(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../")), "src/Modules/Agro360.Infrastructure/Services/FieldOperationsService.cs"));
+        var migration = File.ReadAllText(Path.Combine(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../")), "database/migrations/087_field_material_reversals.sql"));
+        var client = File.ReadAllText(Path.Combine(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../")), "src/Hosts/Agro360.Web/wwwroot/js/agriculture360.js"));
+
+        Assert.Contains("idempotency_payload_conflict", service);
+        Assert.Contains("source_event_id=@Id and event_type='REVERSAL'", service);
+        Assert.Contains("material_order_closed", service);
+        Assert.Contains("for update", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ux_field_material_single_reversal", migration);
+        Assert.Contains("data-consume", client);
+        Assert.Contains("data-reverse", client);
+        Assert.Contains("materialHistory", client);
+    }
+
+    [Fact]
     public void PropertiesFlowConnectsPagePoliciesServiceAndDatabaseGuards()
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
