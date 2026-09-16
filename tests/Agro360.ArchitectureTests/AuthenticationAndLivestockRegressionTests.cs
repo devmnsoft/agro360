@@ -15,6 +15,21 @@ public sealed class AuthenticationAndLivestockRegressionTests
         Assert.Contains("request_hash", service);
         Assert.DoesNotContain("delete from agro360.fulfillment", service, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void FulfillmentDispatchRevalidatesQualityAndReleasesPartialReservation()
+    {
+        var migration = Read("database/migrations/088_fulfillment_reservation_integrity.sql");
+        var service = Read("src/Modules/Agro360.Infrastructure/Services/LogisticsService.cs");
+
+        Assert.Contains("consumed_quantity", migration, StringComparison.Ordinal);
+        Assert.Contains("released_quantity", migration, StringComparison.Ordinal);
+        Assert.Contains("quality_status='APPROVED'", service, StringComparison.Ordinal);
+        Assert.Contains("expires_on>=current_date", service, StringComparison.Ordinal);
+        Assert.Contains("reserved=reserved-@ReservedQuantity", service, StringComparison.Ordinal);
+        Assert.Contains("'SALE'", service, StringComparison.Ordinal);
+        Assert.DoesNotContain("'SHIPMENT',@Quantity", service, StringComparison.Ordinal);
+    }
     private static readonly string Root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
     private static string Read(string path) => File.ReadAllText(Path.Combine(Root, path));
 
