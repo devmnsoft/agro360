@@ -45,6 +45,27 @@ public sealed class AgricultureFormTests
     }
 
     [Fact]
+    public void SeasonTrackingConnectsPlanOrdersDependenciesAndRealSources()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var migration = File.ReadAllText(Path.Combine(root, "database/migrations/086_season_operational_tracking.sql"));
+        var service = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Services/SeasonTrackingService.cs"));
+        var controller = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Api/Controllers/Agriculture360Controller.cs"));
+        var page = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/Pages/Agriculture/Index.cshtml"));
+
+        Assert.Contains("plan_record_id", migration);
+        Assert.Contains("unique(tenant_id,idempotency_key)", migration);
+        Assert.Contains("check(operation_id<>predecessor_id)", migration);
+        Assert.Contains("with recursive path", service);
+        Assert.Contains("cost_allocations", service);
+        Assert.Contains("harvest_records", service);
+        Assert.Contains("HttpPost(\"operations/{operationId:guid}/orders\")", controller);
+        Assert.Contains("Acompanhamento operacional", page);
+        Assert.Contains("Data de referência", page);
+        Assert.DoesNotContain("name=\"seasonId\"", page, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void PropertiesFlowConnectsPagePoliciesServiceAndDatabaseGuards()
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));

@@ -113,6 +113,13 @@ public sealed class Agriculture360Service(DatabaseExecutor database, ITenantCont
                 {
                     var ready = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select coalesce(nullif(data->>'propertyId',''),'')<>'' and coalesce(nullif(data->>'fieldId',''),'')<>'' and coalesce(nullif(data->>'responsibleId',''),'')<>'' and coalesce((data->>'plannedAt')::timestamptz,now())>=now()-interval '1 day' from agro360.agriculture_records where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id }, t, cancellationToken: cancellationToken));
                     if (!ready) throw new ConflictException("Complete propriedade, talhão, responsável e programação antes de liberar.", "agriculture.release_prerequisite");
+                    var dependency = await c.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition("""
+                        select p.id,p.name,p.status from agro360.agriculture_operation_orders l
+                        join agro360.agriculture_operation_dependencies d on d.tenant_id=l.tenant_id and d.operation_id=l.operation_id and d.blocking_type='REQUIRED' and d.deleted_at is null and d.exception_authorized_at is null
+                        join agro360.agriculture_plan_operations p on p.tenant_id=d.tenant_id and p.id=d.predecessor_id
+                        where l.tenant_id=@TenantId and l.work_order_id=@Id and p.status<>'COMPLETED' order by p.planned_start limit 1
+                        """, new { tenant.TenantId, Id = id }, t, cancellationToken: cancellationToken));
+                    if (dependency is not null) throw new ConflictException($"A predecessora {dependency.name} ({dependency.id}) está {dependency.status}. Abra /Agriculture?operationId={dependency.id}.", "agriculture.dependency_blocked");
                 }
             }
             var reason = next switch { "CANCELLED" => command?.CancellationReason, "PAUSED" => command?.PauseReason, _ => command?.Notes };
