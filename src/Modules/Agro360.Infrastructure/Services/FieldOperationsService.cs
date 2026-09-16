@@ -66,7 +66,24 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
     public Task AddMaterialAsync(Guid orderId, FieldMaterialCommand command, CancellationToken cancellationToken)
     {
         if (command.PlannedQuantity <= 0 || command.UnitCost < 0) throw new DomainException("Quantidade planejada e custo são inválidos.", "agriculture.material_invalid");
-        return database.InTenantTransactionAsync(async (c, t) => { await RequireEditableOrder(c, t, orderId, cancellationToken); await c.ExecuteAsync(new CommandDefinition("insert into agro360.field_work_order_materials(id,tenant_id,work_order_id,product_id,warehouse_id,unit,planned_quantity,unit_cost,created_by,updated_by) select @Id,@TenantId,@OrderId,p.id,@WarehouseId,p.base_unit,@Quantity,@UnitCost,@UserId,@UserId from agro360.inventory_products p where p.tenant_id=@TenantId and p.id=@ProductId and p.deleted_at is null on conflict(tenant_id,work_order_id,product_id,warehouse_id) do update set planned_quantity=excluded.planned_quantity,unit_cost=excluded.unit_cost,updated_at=now(),updated_by=excluded.updated_by,version=agro360.field_work_order_materials.version+1", new { Id = Guid.CreateVersion7(), tenant.TenantId, OrderId = orderId, command.ProductId, command.WarehouseId, Quantity = command.PlannedQuantity, command.UnitCost, tenant.UserId }, t, cancellationToken: cancellationToken)); }, cancellationToken);
+        return database.InTenantTransactionAsync(async (c, t) =>
+        {
+            await RequireEditableOrder(c, t, orderId, cancellationToken);
+            var affected = await c.ExecuteAsync(new CommandDefinition("""
+                insert into agro360.field_work_order_materials(id,tenant_id,work_order_id,product_id,warehouse_id,unit,planned_quantity,unit_cost,created_by,updated_by)
+                select @Id,@TenantId,@OrderId,p.id,@WarehouseId,p.base_unit,@Quantity,@UnitCost,@UserId,@UserId
+                  from agro360.inventory_products p
+                  join agro360.agriculture_records o on o.tenant_id=p.tenant_id and o.id=@OrderId and o.module='work-orders' and o.deleted_at is null
+                 where p.tenant_id=@TenantId and p.id=@ProductId and p.deleted_at is null
+                   and (@WarehouseId is null or exists(
+                       select 1 from agro360.inventory_warehouses w
+                        where w.tenant_id=@TenantId and w.id=@WarehouseId and w.deleted_at is null
+                          and w.farm_id=(o.data->>'propertyId')::uuid))
+                on conflict(tenant_id,work_order_id,product_id,warehouse_id) do update
+                  set planned_quantity=excluded.planned_quantity,unit_cost=excluded.unit_cost,updated_at=now(),updated_by=excluded.updated_by,version=agro360.field_work_order_materials.version+1
+                """, new { Id = Guid.CreateVersion7(), tenant.TenantId, OrderId = orderId, command.ProductId, command.WarehouseId, Quantity = command.PlannedQuantity, command.UnitCost, tenant.UserId }, t, cancellationToken: cancellationToken));
+            if (affected != 1) throw new DomainException("Produto ou depósito não pertence à propriedade ativa da ordem.", "agriculture.material_reference_invalid");
+        }, cancellationToken);
     }
 
     public Task ApplyMaterialEventAsync(Guid orderId, Guid materialId, FieldMaterialEventCommand command, CancellationToken cancellationToken) => database.InTenantTransactionAsync(async (c, t) =>
@@ -106,7 +123,7 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
         var row = await c.QuerySingleOrDefaultAsync<OrderRow>(new CommandDefinition("select id,module,status,created_at CreatedAt,data::text Data,version from agro360.agriculture_records where tenant_id=@TenantId and id=@Id and module='work-orders' and deleted_at is null for update", new { tenant.TenantId, Id = orderId }, t, cancellationToken: cancellationToken));
         if (row is null) throw new NotFoundException("Ordem de campo", orderId); if (row.Version != command.Version) throw new ConflictException("A ordem foi alterada. Recarregue e revise as mudanças antes de concluir.", "agriculture.version_conflict");
         var issues = await IssuesAsync(c, t, orderId, row, cancellationToken); if (issues.Any(i => i.Severity == "BLOCKER")) throw new ConflictException("Resolva os bloqueios obrigatórios antes de concluir.", "agriculture.review_blocked");
-        var changed = await c.ExecuteAsync(new CommandDefinition("update agro360.agriculture_records set status='COMPLETED',updated_at=now(),updated_by=@UserId,version=version+1 where tenant_id=@TenantId and id=@Id and version=@Version and status='AWAITING_REVIEW'", new { tenant.TenantId, Id = orderId, command.Version, tenant.UserId }, t, cancellationToken: cancellationToken)); if (changed != 1) throw new ConflictException("Somente uma conferência pode concluir a ordem.");
+        var changed = await c.ExecuteAsync(new CommandDefinition("update agro360.agriculture_records set status='COMPLETED',data=jsonb_set(data,'{actualFinishedAt}',to_jsonb(now()),true),updated_at=now(),updated_by=@UserId,version=version+1 where tenant_id=@TenantId and id=@Id and version=@Version and status='AWAITING_REVIEW'", new { tenant.TenantId, Id = orderId, command.Version, tenant.UserId }, t, cancellationToken: cancellationToken)); if (changed != 1) throw new ConflictException("Somente uma conferência pode concluir a ordem.");
         await c.ExecuteAsync(new CommandDefinition("insert into agro360.field_work_order_reviews(id,tenant_id,work_order_id,order_version,outcome,summary,notes,created_by) values(@Id,@TenantId,@OrderId,@Version,'COMPLETED',cast(@Summary as jsonb),@Notes,@UserId)", new { Id = Guid.CreateVersion7(), tenant.TenantId, OrderId = orderId, command.Version, Summary = JsonSerializer.Serialize(issues, JsonOptions), command.Notes, tenant.UserId }, t, cancellationToken: cancellationToken));
         await c.ExecuteAsync(new CommandDefinition("""
             update agro360.agriculture_plan_operations o set status='COMPLETED',updated_at=now(),updated_by=@UserId,version=version+1
