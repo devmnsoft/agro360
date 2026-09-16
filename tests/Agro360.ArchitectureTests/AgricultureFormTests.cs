@@ -83,6 +83,24 @@ public sealed class AgricultureFormTests
     }
 
     [Fact]
+    public void FieldOrderTransitionsProtectConcurrentChangesAndServerTimestamps()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var agriculture = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Services/Agriculture360Service.cs"));
+        var fieldOperations = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Services/FieldOperationsService.cs"));
+        var client = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/wwwroot/js/agriculture360.js"));
+
+        Assert.Contains("agriculture.version_required", agriculture);
+        Assert.Contains("and (@Version is null or version=@Version)", agriculture);
+        Assert.Contains("actualStartedAt", agriculture);
+        Assert.Contains("actualFinishedAt", fieldOperations);
+        Assert.Contains("let payload={version}", client);
+        Assert.Contains("farm_id=@PropertyId", agriculture);
+        Assert.Contains("w.farm_id=(o.data->>'propertyId')::uuid", fieldOperations);
+        Assert.Contains("Nenhuma opção compatível com a propriedade selecionada.", client);
+    }
+
+    [Fact]
     public void PropertiesFlowConnectsPagePoliciesServiceAndDatabaseGuards()
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
