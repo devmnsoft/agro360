@@ -21,6 +21,31 @@ public sealed record DossierCommand([Required] Guid LotId, [Required] Guid Buyer
 public sealed record ComplianceDashboard(int PendingInspections, int OpenNonConformities, int BlockedLots, int OverdueActions, int AwaitingVerification, int ReopenedCases, int PendingDocuments, int ExpiredDocuments, int ExpiringDocuments, int EligibleLots, int PendingAudits, decimal EsgScore, int ValidCertifications, int ExpiredCertifications, int ExportEligibleProducts, int CriticalRisks);
 public sealed record EvidenceCommand([Required, MaxLength(240)] string FileName, [Required, Url] string StorageUrl, [Required, MaxLength(64)] string Sha256);
 public sealed record ActionCommand([Required, MaxLength(500)] string Reason);
+public sealed record NonConformityTransitionCommand([Required, MaxLength(500)] string Reason, long ExpectedVersion);
+public sealed record NonConformityDetail(Guid Id, long Number, string Title, string Classification, string Severity, string Origin, string EntityName, string Status, Guid ResponsibleId, DateOnly DueOn, long Version, string? RootCause, IReadOnlyList<string> AvailableTransitions, int OpenActions, int CompletedActions, int VerificationCount, int ActiveRestrictions, string? LatestVerificationResult);
+public sealed record EffectivenessVerification(Guid Id, Guid NonConformityId, string CriterionType, string Criterion, int CriterionVersion, string Method, Guid ResponsibleId, DateOnly DueOn, DateOnly? ObservationStartedOn, DateOnly? ObservationEndedOn, string EvidenceRequirements, decimal? ExpectedValue, decimal? ObservedValue, string? Unit, string? ComparisonOperator, decimal? PercentageBasis, string ResultObserved, string Conclusion, string Result, DateTimeOffset DecidedAt, Guid DecidedBy);
+public sealed record EffectivenessVerificationCommand(
+    [Required, MaxLength(16)] string CriterionType,
+    [Required, MaxLength(1000)] string Criterion,
+    [Required, MaxLength(500)] string Method,
+    [Required] Guid ResponsibleId,
+    [Required] DateOnly DueOn,
+    DateOnly? ObservationStartedOn,
+    DateOnly? ObservationEndedOn,
+    [Required, MaxLength(1000)] string EvidenceRequirements,
+    decimal? ExpectedValue,
+    decimal? ObservedValue,
+    [MaxLength(30)] string? Unit,
+    [MaxLength(8)] string? ComparisonOperator,
+    decimal? PercentageBasis,
+    [Required, MaxLength(1000)] string ResultObserved,
+    [Required, MaxLength(1000)] string Conclusion,
+    [Required, MaxLength(16)] string Result,
+    [Required, MaxLength(120)] string IdempotencyKey,
+    long ExpectedCaseVersion);
+public sealed record RelatedCase(Guid Id, long Number, string Title, string Status, string MatchReason, DateTimeOffset IdentifiedAt);
+public sealed record RelatedCaseQuery(Guid? ProductId, Guid? LotId, Guid? UnitId, string? Classification, string? Origin, string? RootCause, DateOnly? From, DateOnly? To);
+public sealed record RelatedCaseLinkCommand([Required] Guid RelatedNonConformityId, [Required, MaxLength(500)] string Justification, long ExpectedCaseVersion);
 public sealed record PublicDossier(string CertificateCode, string Product, string Lot, string Origin, string Status, DateTimeOffset IssuedAt, string VerificationHash);
 
 public interface IComplianceService
@@ -29,7 +54,8 @@ public interface IComplianceService
     Task<IReadOnlyList<ProductRule>> RulesAsync(Guid? productId, string? market, CancellationToken ct); Task<Guid> SaveRuleAsync(Guid? id, ProductRuleCommand command, CancellationToken ct); Task SetLotBlockAsync(Guid lotId, bool blocked, string reason, CancellationToken ct);
     Task<IReadOnlyList<Certification>> CertificationsAsync(string? status, CancellationToken ct); Task<Guid> SaveCertificationAsync(Guid? id, CertificationCommand command, CancellationToken ct); Task DecideCertificationAsync(Guid id, bool approve, string reason, CancellationToken ct);
     Task<IReadOnlyList<ChainAudit>> AuditsAsync(string? status, CancellationToken ct); Task<Guid> SaveAuditAsync(Guid? id, AuditCommand command, CancellationToken ct); Task CompleteAuditAsync(Guid id, CancellationToken ct);
-    Task<IReadOnlyList<NonConformity>> NonConformitiesAsync(string? status, CancellationToken ct); Task<Guid> SaveNonConformityAsync(Guid? id, NonConformityCommand command, CancellationToken ct); Task CloseNonConformityAsync(Guid id, string reason, CancellationToken ct);
+    Task<IReadOnlyList<NonConformity>> NonConformitiesAsync(string? status, CancellationToken ct); Task<Guid> SaveNonConformityAsync(Guid? id, NonConformityCommand command, CancellationToken ct); Task CloseNonConformityAsync(Guid id, string reason, long expectedVersion, CancellationToken ct);
+    Task<NonConformityDetail> NonConformityAsync(Guid id, CancellationToken ct); Task<IReadOnlyList<EffectivenessVerification>> VerificationsAsync(Guid id, CancellationToken ct); Task<Guid> AddVerificationAsync(Guid id, EffectivenessVerificationCommand command, CancellationToken ct); Task<IReadOnlyList<RelatedCase>> RelatedCasesAsync(Guid id, RelatedCaseQuery query, CancellationToken ct); Task LinkRelatedCaseAsync(Guid id, RelatedCaseLinkCommand command, CancellationToken ct);
     Task AttachEvidenceAsync(string entityType, Guid entityId, EvidenceCommand command, CancellationToken ct);
     Task<IReadOnlyList<ExportDossier>> DossiersAsync(CancellationToken ct); Task<Guid> CreateDossierAsync(DossierCommand command, CancellationToken ct); Task<byte[]> ExportDossierAsync(Guid id, CancellationToken ct); Task<PublicDossier?> PublicDossierAsync(string certificate, CancellationToken ct);
     Task<ComplianceDashboard> DashboardAsync(CancellationToken ct);

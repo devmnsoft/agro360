@@ -53,3 +53,23 @@ A migration `090_quality_nonconformity_capa.sql` é incremental, mantém a tabel
 ### Evidências e pendências
 
 A inspeção estática confirmou migração e instalador consolidados, regras de transição no domínio, liberação independente no serviço e controles responsivos/teclado na página. O ambiente desta execução não possui o SDK .NET nem PostgreSQL/`psql`; restore, build, testes, Swagger, inicialização e cenários transacionais em base isolada continuam gates obrigatórios, e não são declarados como executados. A integração de cada serviço de expedição/reserva à função `compliance_lot_has_active_restriction` deve ser homologada antes de produção; o vínculo opcional `task_id` evita criar uma segunda central, mas a sincronização com tarefas existentes permanece uma integração explícita, sem atualização circular automática.
+
+## Evolução 9.1 — verificação de eficácia rastreável
+
+A verificação passou a ser uma decisão própria, posterior à execução. Ela registra tipo e versão do critério, método, responsável, prazo, período de observação, evidências exigidas, referência e medição quantitativas estruturadas, resultado observado, conclusão, data e autor do contexto autenticado. Os resultados persistidos continuam sendo `EFFECTIVE`, `INEFFECTIVE` e `INCONCLUSIVE`; os textos exibidos são traduzidos somente na interface.
+
+### Como usar
+
+**Finalidade.** Comprovar se o conjunto de ações produziu o efeito esperado sem confundir execução, avaliação, confirmação de eficácia e encerramento.
+
+**Pré-requisitos.** O caso deve estar em `AWAITING_VERIFICATION`, as ações obrigatórias devem refletir sua execução real, o verificador precisa de `compliance.approve` e a versão exibida deve continuar atual. Quando `compliance_parameters.segregateEffectivenessVerifier` estiver habilitado, quem concluiu uma ação do caso não pode decidir sua eficácia.
+
+**Etapas.** Abra a não conformidade, confira plano, bloqueios e histórico; escolha critério qualitativo, quantitativo ou documental; informe método, responsável e prazo; registre período, evidências necessárias e observação; confirme a conclusão. Critério quantitativo exige unidade, operador, referência e medição. Percentual exige base positiva. A interface envia uma chave idempotente e o servidor revalida tenant, estado e versão dentro da mesma transação.
+
+**Resultado esperado.** A avaliação é acrescentada ao histórico com snapshot das ações. `EFFECTIVE` habilita a análise de encerramento, mas não encerra o caso nem libera lote; `INEFFECTIVE` sinaliza revisão do plano; `INCONCLUSIVE` mantém acompanhamento. Uma nova avaliação não altera decisões anteriores.
+
+### Recorrência, fechamento e limitações
+
+A consulta de possíveis recorrências usa somente produto, lote, unidade, classificação, processo, causa informada e período dos dados autorizados do tenant. A tela mostra o critério consultado, não une ocorrências e não interpreta ausência de candidatos como prova de ausência de recorrência. O vínculo entre casos requer justificativa e preserva ambos os casos.
+
+O fechamento volta a calcular no servidor causa, evidência/justificativa, ações obrigatórias e última eficácia, valida a matriz central de transições e usa versão otimista. Restrições de lote continuam independentes; nenhuma avaliação ou transição as libera. A migration incremental `091_quality_effectiveness_verification.sql` amplia os registros existentes sem excluí-los e adiciona vínculos justificados com RLS.
