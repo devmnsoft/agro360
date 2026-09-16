@@ -49,6 +49,14 @@ public interface IStorageService
     Task<Guid> CreateShipmentAsync(ShipmentCommand command, CancellationToken ct); Task LoadShipmentAsync(Guid id, LoadShipmentCommand command, CancellationToken ct); Task ShipmentStatusAsync(Guid id, string status, string? reason, CancellationToken ct);
     Task<StorageDashboard> DashboardAsync(CancellationToken ct);
 }
+
+public sealed record AfterSalesQuery(int Page = 1, int PageSize = 20, string? Search = null, Guid? CustomerId = null, string? Status = null, Guid? AssigneeId = null, string? Type = null, DateOnly? From = null, DateOnly? To = null);
+public sealed record CreateOccurrenceCommand(Guid CustomerId, Guid OrderId, Guid ShipmentId, Guid? ShipmentItemId, Guid? StockLotId, string Type, string Description, decimal? AffectedQuantity, string? Unit, DateTimeOffset OccurredAt, Guid? AssigneeId, DateTimeOffset? DueAt, Guid? EvidenceDocumentId, bool EvidencePending, string IdempotencyKey);
+public sealed record TransitionOccurrenceCommand(string Status, string Reason, long ExpectedVersion);
+public sealed record ProposeSolutionCommand(string Type, string Description, bool Required, DateTimeOffset? DueAt, string IdempotencyKey);
+public sealed record CommercialAdjustmentCommand(string Type, string Currency, decimal ProposedAmount, string Reason, string IdempotencyKey);
+public sealed record AfterSalesPage(IReadOnlyList<dynamic> Items, int Page, int PageSize, long Total);
+
 public interface ILogisticsService
 {
     Task<IReadOnlyList<dynamic>> ListAsync(CancellationToken ct); Task<Guid> SaveAsync(Guid? id, TripCommand command, CancellationToken ct); Task AddOccurrenceAsync(Guid id, TripOccurrenceCommand command, CancellationToken ct); Task CompleteAsync(Guid id, CancellationToken ct);
@@ -61,5 +69,11 @@ public interface ILogisticsService
     Task<Guid> RegisterReturnAsync(ReturnCommand command, CancellationToken ct);
     Task<Guid> ReceiveReturnAsync(Guid id, ReceiveReturnCommand command, CancellationToken ct);
     Task<Guid> DecideReturnAsync(Guid id, DecideReturnCommand command, CancellationToken ct);
+    Task<AfterSalesPage> OccurrencesAsync(AfterSalesQuery query, CancellationToken ct);
+    Task<dynamic?> OccurrenceAsync(Guid id, CancellationToken ct);
+    Task<Guid> CreateOccurrenceAsync(CreateOccurrenceCommand command, CancellationToken ct);
+    Task TransitionOccurrenceAsync(Guid id, TransitionOccurrenceCommand command, CancellationToken ct);
+    Task<Guid> ProposeSolutionAsync(Guid id, ProposeSolutionCommand command, CancellationToken ct);
+    Task<Guid> RegisterAdjustmentAsync(Guid id, CommercialAdjustmentCommand command, CancellationToken ct);
 }
 public interface IDeliveryContractService { Task<IReadOnlyList<dynamic>> ListAsync(CancellationToken ct); Task<Guid> SaveAsync(Guid? id, DeliveryContractCommand command, CancellationToken ct); }

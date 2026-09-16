@@ -61,6 +61,9 @@ public static class Permissions
     public const string StorageWrite = "storage.write";
     public const string LogisticsRead = "logistics.read";
     public const string LogisticsWrite = "logistics.write";
+    public const string AfterSalesRead = "after-sales.read";
+    public const string AfterSalesWrite = "after-sales.write";
+    public const string AfterSalesApprove = "after-sales.approve";
     public const string TraceabilityRead = "traceability.read";
     public const string TraceabilityWrite = "traceability.write";
     public const string LedgerValidate = "ledger.validate";
@@ -161,7 +164,7 @@ public static class Permissions
         PurchasingRead, PurchasingWrite, PurchasingApprove, PurchasingRequest, PurchasingReceive, PurchasingOverrideExcess, PurchasingHomologate, PurchasingExport,
         ProductionRead, ProductionWrite, ProductionRelease, ProductionOperate, ProductionQuality, ProductionCancel, ProductionExport,
         FleetRead, FleetWrite, FleetMeterOverride, MaintenanceRead, MaintenanceWrite,
-        DashboardRead, StorageRead, StorageWrite, LogisticsRead, LogisticsWrite,
+        DashboardRead, StorageRead, StorageWrite, LogisticsRead, LogisticsWrite, AfterSalesRead, AfterSalesWrite, AfterSalesApprove,
         TraceabilityRead, TraceabilityWrite, LedgerValidate, RegionalLogisticsRead,
         RegionalLogisticsWrite, SalesNetworkRead, SalesNetworkWrite, SalesNetworkApprove,
         IntelligenceRead, IntelligenceWrite, IntelligenceStrategic, IntelligenceExport, ComplianceRead, ComplianceWrite, ComplianceApprove, EsgRead, EsgWrite,
