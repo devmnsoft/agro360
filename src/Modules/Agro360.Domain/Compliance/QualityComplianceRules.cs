@@ -3,7 +3,7 @@ namespace Agro360.Domain.Compliance;
 /// <summary>Pure business rules shared by quality use cases. Regulatory limits remain tenant-configured.</summary>
 public static class QualityComplianceRules
 {
-    private static readonly IReadOnlyDictionary<string, string[]> AllowedTransitions =
+    private static readonly Dictionary<string, string[]> AllowedTransitions =
         new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
             ["OPEN"] = ["ANALYSIS", "CANCELLED"],
@@ -60,6 +60,10 @@ public static class QualityComplianceRules
         bool mandatoryActionsCompleted,
         string? effectiveVerificationResult)
     {
+        if (string.IsNullOrWhiteSpace(currentStatus) || !AllowedTransitions.ContainsKey(currentStatus))
+            throw new ArgumentException("Estado atual da não conformidade é desconhecido.", nameof(currentStatus));
+        if (string.IsNullOrWhiteSpace(targetStatus))
+            throw new ArgumentException("Informe o estado de destino.", nameof(targetStatus));
         if (!AllowedTransitions.TryGetValue(currentStatus, out var allowed) ||
             !allowed.Contains(targetStatus, StringComparer.OrdinalIgnoreCase))
             throw new InvalidOperationException($"Transição de {currentStatus} para {targetStatus} não permitida.");
@@ -76,6 +80,29 @@ public static class QualityComplianceRules
             if (!string.Equals(effectiveVerificationResult, "EFFECTIVE", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("O encerramento exige verificação de eficácia válida.");
         }
+    }
+
+    public static IReadOnlyList<string> AvailableTransitions(string currentStatus)
+    {
+        if (string.IsNullOrWhiteSpace(currentStatus) || !AllowedTransitions.TryGetValue(currentStatus, out var allowed))
+            throw new ArgumentException("Estado atual da não conformidade é desconhecido.", nameof(currentStatus));
+        return Array.AsReadOnly((string[])allowed.Clone());
+    }
+
+    public static void EnsureEffectivenessCriterion(
+        string criterionType, string? unit, string? comparisonOperator, decimal? expectedValue,
+        decimal? observedValue, decimal? percentageBasis)
+    {
+        var type = criterionType?.ToUpperInvariant();
+        if (type is not ("QUALITATIVE" or "QUANTITATIVE" or "DOCUMENTAL"))
+            throw new ArgumentException("Tipo de critério inválido.", nameof(criterionType));
+        if (type != "QUANTITATIVE") return;
+        if (string.IsNullOrWhiteSpace(unit) || comparisonOperator is not ("GT" or "GTE" or "EQ" or "LTE" or "LT"))
+            throw new ArgumentException("Critério quantitativo exige unidade e operador válidos.");
+        if (!expectedValue.HasValue) throw new ArgumentException("Critério quantitativo exige referência esperada.");
+        if (unit.Equals("%", StringComparison.OrdinalIgnoreCase) && (!percentageBasis.HasValue || percentageBasis <= 0))
+            throw new ArgumentException("Percentual exige base de cálculo maior que zero.");
+        if (!observedValue.HasValue) throw new ArgumentException("Ausência de medição não representa zero.");
     }
 
     public static void EnsureAuditCanClose(bool hasScope, int checklistItems, bool reportRejected, string? reason)
