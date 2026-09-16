@@ -23,4 +23,18 @@ public sealed class ComplianceFormTests
         Assert.Contains("certificate:regex(^[[A-Fa-f0-9]]{{20}}$)", controller);
         Assert.Contains("AllowAnonymous", controller);
     }
+
+    [Fact]
+    public void QualityEvolutionKeepsIndependentRestrictionsAndAuditableDecisions()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var sql = File.ReadAllText(Path.Combine(root, "database/migrations/090_quality_nonconformity_capa.sql"));
+        Assert.Contains("compliance_lot_restrictions", sql);
+        Assert.Contains("where released_at is null", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("compliance_nc_action_due_history", sql);
+        Assert.Contains("compliance_nc_verifications", sql);
+        Assert.Contains("idempotency_key", sql);
+        Assert.Contains("version bigint", sql);
+        Assert.DoesNotContain("on delete cascade", sql, StringComparison.OrdinalIgnoreCase);
+    }
 }

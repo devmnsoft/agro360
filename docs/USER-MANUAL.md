@@ -75,3 +75,7 @@ Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo pers
 **Leitura dos saldos.** Previsto não representa estoque reservado. Solicitado e aprovado documentam demanda/autorização. Reservado compromete disponibilidade, mas não baixa o físico. Entregue transfere a responsabilidade para a equipe e efetiva a saída. O saldo em custódia é `entregue - consumido - devolvido - perdido`; a necessidade não atendida é `máximo(0, previsto - entregue)`. Custos desconhecidos permanecem pendentes, nunca são mostrados como zero.
 
 **Resultado esperado.** Materiais sem saldo em custódia e apontamentos obrigatórios registrados deixam de bloquear a conclusão. Reenvios com a mesma chave não duplicam movimentos, devoluções não excedem o saldo da entrega e ordens concluídas não podem ser concluídas novamente sem uma transição auditada.
+
+## Central de Qualidade
+
+Acesse **Qualidade** para acompanhar inspeções pendentes, não conformidades, lotes com restrição, ações vencidas, verificações, reaberturas e documentos. Use os filtros antes de abrir um indicador. O fluxo recomendado é problema → contenção → análise → ações → verificação; hipótese não é causa confirmada e ação concluída não significa eficácia. Encerrar um caso não libera automaticamente o lote: confira e libere cada restrição remanescente com permissão e justificativa.
