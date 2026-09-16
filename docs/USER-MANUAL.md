@@ -63,3 +63,15 @@ Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo pers
 2. Após o acesso, o menu exibe somente itens autorizados e destaca a tela atual.
 3. Em qualquer módulo, abra **Como usar esta tela** para conferir finalidade, campos, ações e efeitos da gravação.
 4. Use **Testar conexão com a API** no acesso para validar API, banco e Swagger no ambiente de desenvolvimento.
+
+## Materiais da ordem e conferência operacional
+
+**Finalidade.** Acompanhar o material desde a previsão da operação até a prestação de contas da equipe, sem confundir planejamento, reserva e movimentação física.
+
+**Pré-requisitos.** Selecione o cliente e a unidade autorizados, mantenha produto, unidade, depósito e lotes cadastrados, e gere a ordem a partir de uma operação da safra. O usuário precisa das permissões do módulo para cada ação.
+
+**Como usar.** Na ordem, consulte **Planejamento** e **Materiais**; crie a requisição; aprove quando exigido; reserve o saldo; confirme a entrega e seus lotes; depois registre consumo, devolução vinculada à entrega ou perda com motivo e responsável. Cada confirmação informa registro, quantidade e consequência. Em **Conferência**, resolva primeiro ocorrências classificadas como bloqueio, avalie advertências e informações e então conclua usando a versão mais recente da ordem.
+
+**Leitura dos saldos.** Previsto não representa estoque reservado. Solicitado e aprovado documentam demanda/autorização. Reservado compromete disponibilidade, mas não baixa o físico. Entregue transfere a responsabilidade para a equipe e efetiva a saída. O saldo em custódia é `entregue - consumido - devolvido - perdido`; a necessidade não atendida é `máximo(0, previsto - entregue)`. Custos desconhecidos permanecem pendentes, nunca são mostrados como zero.
+
+**Resultado esperado.** Materiais sem saldo em custódia e apontamentos obrigatórios registrados deixam de bloquear a conclusão. Reenvios com a mesma chave não duplicam movimentos, devoluções não excedem o saldo da entrega e ordens concluídas não podem ser concluídas novamente sem uma transição auditada.
