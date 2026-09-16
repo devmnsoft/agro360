@@ -45,3 +45,28 @@ O repositório usa .NET 10, Razor Pages, JavaScript/CSS nativos, PostgreSQL e Da
 ## Evidências e pendências
 
 Há cobertura estática na classe existente `AuthenticationAndLivestockRegressionTests`, incluindo tipo do movimento, revalidação de qualidade/validade e liberação parcial. O ambiente desta execução não disponibilizou o SDK `dotnet` nem PostgreSQL isolado; portanto restore, build, suíte, Swagger, hosts, concorrência real, rollback induzido e percurso desktop/mobile permanecem pendentes de execução. A UI atual oferece painel e fila reais, mas formulários operacionais completos de reserva, conferência, entrega e retorno ainda dependem da evolução dos seletores/lookups; não foram simulados nesta entrega.
+
+## Incremento 8.9 — pós-venda operacional e devoluções rastreáveis (2026-09-16)
+
+### Situação encontrada
+
+A expedição transacional, tentativa de entrega, autorização simples de retorno, recebimento parcial e decisão básica de qualidade já existiam. O retorno físico permanecia separado da disponibilidade, porém não havia um caso de pós-venda que ligasse cliente, pedido, expedição, pendências, solução e decisão comercial. A tela logística expunha a fila de pedidos, mas não oferecia listagem paginada nem acompanhamento cronológico dos casos.
+
+### Entrega
+
+- A migration `089_after_sales_returns.sql` adiciona ocorrências numeradas, histórico imutável, soluções, ajustes comerciais e substituições, sempre no schema `agro360`, com RLS, chaves tenant-scoped e idempotência no banco.
+- A ocorrência valida no servidor cliente/pedido/expedição/item/lote, unidade e quantidade elegível sob lock. Casos sem produto não exigem lote ou quantidade. A listagem alerta ocorrências semelhantes, sem bloquear o registro.
+- A máquina de estados admite aberta, análise, aguardando informação, solução proposta, aguardando execução, resolvida e cancelada. Cancelamento/reabertura exigem justificativa e produzem evento; resolução é recusada enquanto ação obrigatória, retorno ou execução financeira estiver pendente.
+- Propor solução não a conclui. Prazos e responsáveis continuam nulos quando não informados. Ajustes nascem como proposta e a tela declara **execução financeira pendente**; nenhum crédito, reembolso ou autorização fiscal é fabricado.
+- A autorização física existente ganhou vínculo opcional com ocorrência, local, responsável, condições e prazo. Recebimento parcial mantém o saldo consultável e material indisponível até decisão de qualidade. Destinações parciais continuam limitadas por lock e versão otimista.
+- `/AfterSales` usa o template claro e responsivo, filtros preservados no formulário, paginação de servidor, ordenação estável, alerta acessível e visão concentrada de origem, quantidade, pendências, soluções, retornos, ajustes e histórico.
+
+### API e manual rápido
+
+`GET /api/logistics/trips/after-sales` lista com `page`, `pageSize`, `search`, `customerId`, `status`, `assigneeId`, `type`, `from` e `to`. `GET /after-sales/{id}` retorna a visão do caso. `POST /after-sales` abre de forma idempotente; `POST /{id}/transitions`, `/solutions` e `/adjustments` tratam o caso conforme permissões `after-sales.read`, `after-sales.write` e `after-sales.approve`.
+
+Na operação, abra o caso a partir da expedição para não digitar identificadores técnicos; informe fato e descrição, vincule item/lote apenas quando aplicável, proponha a solução e acompanhe as pendências. Recebimento de devolução representa presença física, não saldo vendável. Somente marque resolvida após a execução real indicada na visão do caso.
+
+### Dependências e evidências
+
+A execução de crédito/reembolso e o documento fiscal dependem dos fluxos financeiros/fiscais reais e permanecem explicitamente pendentes; a decisão de pós-venda não os simula. Geração de complemento/substituição registra a intenção e deve ser vinculada a uma expedição criada pelo fluxo normal de reserva, separação, conferência e despacho. Neste ambiente, o SDK .NET e PostgreSQL não estavam disponíveis; restore, build, testes, aplicação em base descartável, Swagger, inicialização e inspeção visual desktop/mobile não puderam ser executados. A verificação realizada foi estática e não substitui esses gates.

@@ -228,4 +228,18 @@ public sealed class AuthenticationAndLivestockRegressionTests
         Assert.Contains("'HEALTH' as Source", service, StringComparison.Ordinal);
         Assert.Contains("order by OccurredOn desc", service, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void AfterSalesKeepsCasePhysicalReturnQualityAndMoneySeparate()
+    {
+        var migration = Read("database/migrations/089_after_sales_returns.sql");
+        var service = Read("src/Modules/Agro360.Infrastructure/Services/LogisticsService.cs");
+        Assert.Contains("after_sales_occurrences", migration);
+        Assert.Contains("PARTIALLY_RECEIVED", migration);
+        Assert.Contains("EXECUTION_PENDING", migration);
+        Assert.Contains("unique(tenant_id,idempotency_key)", migration);
+        Assert.Contains("for update", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Ações obrigatórias, devolução ou execução financeira", service);
+        Assert.DoesNotContain("delete from agro360.after_sales", service, StringComparison.OrdinalIgnoreCase);
+    }
 }
