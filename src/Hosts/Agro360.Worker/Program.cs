@@ -18,6 +18,7 @@ builder.Services.AddAgro360Infrastructure(builder.Configuration);
 builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection(OutboxOptions.SectionName));
 builder.Services.AddSingleton<IOutboxPublisher, LoggingOutboxPublisher>();
 builder.Services.AddHostedService<OutboxWorker>();
+builder.Services.AddHostedService<InspectionScheduleWorker>();
 
 var host = builder.Build();
 await host.RunAsync();
