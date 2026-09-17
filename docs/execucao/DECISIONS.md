@@ -1,6 +1,6 @@
 # Decisões de execução
 
-## ADR-TPL-01 — Shell operacional segue o plano mestre sem autorizar no cliente (2026-09-17)
-
-O `_Layout.cshtml` passa a agrupar a navegação na ordem do plano mestre, com skip-link, breadcrumb humano, faixa de contexto assistido e section `ScreenHelp`. Os atributos `data-permissions` e `data-super-admin` permanecem a fonte do filtro no cliente; o backend continua sendo a autorização real. CSS/JS incrementais (`shell-evolution.*`) evitam reescrever `agro360.css`. Tema autenticado permanece claro. Esta ADR não homologa E2E nem MFA.
-
+> A ADR desta entrega está em [ADR-TPL-01.md](ADR-TPL-01.md).
+> O histórico completo E0–E10 permanece o de `main` e deve ser reaplicado
+> neste arquivo antes do merge, sem apagar ADRs anteriores.
+> Fonte: https://github.com/devmnsoft/agro360/blob/main/docs/execucao/DECISIONS.md
