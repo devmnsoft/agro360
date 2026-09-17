@@ -1,3 +1,14 @@
+## Modelos de inspeção e execução guiada — 2026-09-16
+
+Branch `codex/inspection-models-checklists` a partir de `main` (`6e8b5b2`). Alterações locais de `appsettings.json` (ConnectionStrings do usuário) preservadas e fora do escopo de commit. SDK efetivo 10.0.400; AllowedTransitions em `QualityComplianceRules` confirmado como `Dictionary<string, string[]>`.
+
+**Entregue:** migration `092_quality_inspection_models.sql` + consolidado; domínio `InspectionModelRules`; `IInspectionService`/`InspectionService`; API `InspectionController`; UI `/Inspections`; Worker `InspectionScheduleWorker`; permissões de modelo/publicação/execução; extensão de `ComplianceFormTests`; doc em `QUALITY-COMPLIANCE.md`.
+
+**Evidências locais:** `dotnet restore/build -c Release` êxito; `ComplianceFormTests` 7/7; UnitTests 11/11; `node --check` em `inspections.js`. Instalação PostgreSQL limpa/incremental, API/Swagger autenticados, E2E navegador e os 15 cenários operacionais da especificação **não foram homologados** nesta rodada.
+
+**Continuidade:** aplicar 092 em base descartável limpa e upgrade; exercitar publicar→executar→NC/restrição→reinspeção→agenda sem duplicidade; ligar eventos de recebimento/produção/expedição/devolução somente onde o fluxo real já existir.
+
+
 ## Conferência de compras e divergências — 2026-09-15
 
 A migration incremental 084 e o instalador consolidado agora persistem documento de cobrança, vínculo explícito com item/recebimento aceito, snapshot de tolerâncias, conferência idempotente e divergências auditáveis. A API aplica tenant, saldo aceito, moeda, unidade, total recalculado e segregação; a nova aba de Compras deixa explícito que conferência não é validação fiscal nem pagamento. Diagnóstico, mapa do ciclo, regras, endpoints e pendências estão em `docs/CONFERENCIA-COMPRAS-E-DIVERGENCIAS.md`. O JavaScript passou no parser; runtime .NET/PostgreSQL/browser permanece pendente porque essas ferramentas/serviços não estão disponíveis neste ambiente.

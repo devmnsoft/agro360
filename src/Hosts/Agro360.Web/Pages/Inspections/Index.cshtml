@@ -1,0 +1,72 @@
+@page "/inspections"
+@model Agro360.Web.Pages.Inspections.IndexModel
+@{ViewData["Title"]="Modelos e Inspeções";}
+<link rel="stylesheet" href="~/css/inspections.css" asp-append-version="true" />
+<section class="inspections-page">
+  <header>
+    <div>
+      <span class="eyebrow">Qualidade operacional</span>
+      <h1>Modelos e Inspeções</h1>
+      <p>Defina checklists versionados, execute inspeções com rascunho e evidências, e registre o resultado sem ambiguidade de aprovação.</p>
+    </div>
+    <button class="primary-button" id="inspections-primary" type="button">Novo modelo</button>
+  </header>
+
+  <details class="inspections-help">
+    <summary>Como usar</summary>
+    <div>
+      <p><strong>Finalidade:</strong> padronizar critérios de conformidade por processo e registrar execuções auditáveis com resultado explicado.</p>
+      <p><strong>Pré-requisitos:</strong> permissão de leitura/execução, unidade e inspetor ativos, e modelo publicado vigente para a data de referência.</p>
+      <p><strong>Passos:</strong> cadastre o modelo → monte seções e critérios no rascunho → envie para revisão e publique → inicie a inspeção pelo contexto → salve respostas → conclua e, se preciso, reinspecione.</p>
+      <p><strong>Resultado esperado:</strong> execução com progresso claro (preenchimento × aprovação), critérios determinantes e efeitos sugeridos — ausência de modelo gera pendência, nunca aprovação automática.</p>
+    </div>
+  </details>
+
+  <nav class="inspections-tabs" aria-label="Áreas de inspeção">
+    <button class="active" type="button" data-view="models">Modelos</button>
+    <button type="button" data-view="runs">Inspeções</button>
+    <button type="button" data-view="execution">Execução</button>
+    <button type="button" data-view="result">Resultado</button>
+    <button type="button" data-view="schedules">Programações</button>
+  </nav>
+
+  <div class="inspections-toolbar" aria-label="Filtros">
+    <label>Processo
+      <select id="insp-process">
+        <option value="">Todos</option>
+        <option value="PURCHASE_RECEIPT">Recebimento de compra</option>
+        <option value="HARVEST_RECEIPT">Recebimento de colheita</option>
+        <option value="PRODUCTION">Produção</option>
+        <option value="STORAGE">Armazenagem</option>
+        <option value="SHIPMENT">Expedição</option>
+        <option value="RETURN">Devolução</option>
+      </select>
+    </label>
+    <label>Status
+      <select id="insp-status">
+        <option value="">Todos</option>
+      </select>
+    </label>
+    <label>Pesquisar
+      <input id="insp-search" type="search" autocomplete="off" placeholder="Código, nome, número ou inspetor" />
+    </label>
+    <button id="insp-refresh" type="button">Atualizar</button>
+  </div>
+
+  <div id="inspections-status" role="status">Carregando…</div>
+  <main id="inspections-content" aria-live="polite"></main>
+</section>
+
+<dialog id="insp-dialog">
+  <form id="insp-form">
+    <h2 id="insp-form-title">Confirmar</h2>
+    <div id="insp-fields"></div>
+    <p class="form-message" role="alert"></p>
+    <footer>
+      <button type="button" data-close>Cancelar</button>
+      <button class="primary-button" type="submit">Salvar</button>
+    </footer>
+  </form>
+</dialog>
+
+@section Scripts{<script src="~/js/inspections.js" asp-append-version="true" defer></script>}

@@ -73,3 +73,55 @@ A verificação passou a ser uma decisão própria, posterior à execução. Ela
 A consulta de possíveis recorrências usa somente produto, lote, unidade, classificação, processo, causa informada e período dos dados autorizados do tenant. A tela mostra o critério consultado, não une ocorrências e não interpreta ausência de candidatos como prova de ausência de recorrência. O vínculo entre casos requer justificativa e preserva ambos os casos.
 
 O fechamento volta a calcular no servidor causa, evidência/justificativa, ações obrigatórias e última eficácia, valida a matriz central de transições e usa versão otimista. Restrições de lote continuam independentes; nenhuma avaliação ou transição as libera. A migration incremental `091_quality_effectiveness_verification.sql` amplia os registros existentes sem excluí-los e adiciona vínculos justificados com RLS.
+
+## Evolução 9.2 — Modelos de inspeção, checklists versionados e execução guiada (2026-09-16)
+
+### Estado encontrado
+
+| Capacidade | Antes desta entrega | Nesta entrega |
+|---|---|---|
+| Especificação por produto (`quality_specifications`) | Numérica/min-max, usada na colheita | Preservada; não substituída |
+| Inspeção operacional (`quality_inspections`) | Conclusão pontual sem checklist guiado completo | Ponte opcional `model_version_id`/`run_id` |
+| CAPA / restrições / tarefas | Central 9.0–9.1 | Reutilizada pelos efeitos da inspeção |
+| Modelos configuráveis por processo | Ausentes | Catálogo + versões + seções + critérios |
+| Execução com rascunho/concorrência | Parcial na colheita | Runs com `row_version`, `last_saved_at` e progresso |
+| Programação periódica | Ausente para qualidade | Schedules + `InspectionScheduleWorker` |
+
+### Regras implementadas
+
+1. Versão publicada é imutável; alteração gera novo rascunho (cópia com `stable_key` preservado).
+2. Publicação supersede a versão PUBLISHED anterior; vigência auditada em `quality_inspection_model_audits`.
+3. Seleção por processo + especificidade (produto > categoria > unidade) + precedência; empate sem política → ambiguidade explícita (sem escolha arbitrária).
+4. Ausência de modelo obrigatório gera pendência, nunca aprovação automática.
+5. Resposta ausente ≠ zero; N/A só quando permitido e com justificativa quando exigida; unidades incompatíveis não são comparadas.
+6. Critério crítico reprovado não é compensado por média/pesos; N/A fica fora da base ponderada.
+7. Resultado (`CONFORMING` / `NON_CONFORMING` / `INCONCLUSIVE`) é calculado no backend e lista os critérios determinantes.
+8. Efeitos (NC, restrição, ação, revisão) são idempotentes por `(run, criterion, effect_type)` e não liberam restrições independentes.
+9. Reinspeção não sobrescreve a concluída; preserva histórico e pode usar nova versão publicada.
+10. Geração periódica usa chave `schedule_generation_key` e não cria backlog ilimitado quando `allow_catchup=false`.
+
+### Telas e API
+
+- Página `/Inspections` (Modelos, Inspeções, Execução, Resultado, Programações) com ajuda contextual.
+- API `api/inspections/*` com permissões separadas: `compliance.inspection-models.write`, `compliance.inspection-models.publish`, `compliance.inspections.execute` (liberação de material permanece em `compliance.approve`).
+- Worker `InspectionScheduleWorker` no host existente (sem mecanismo paralelo).
+
+### Migração
+
+- Incremental: `092_quality_inspection_models.sql` (schema `agro360`, RLS, soft-delete, versão de schema `9.2.0`).
+- Instalador consolidado atualizado em `database/agro360-postgres-full.sql`.
+
+### Manual resumido
+
+1. Cadastre o modelo (código, processo, precedência, categoria/unidade quando couber).
+2. Monte seções/critérios no rascunho; envie para revisão; publique com vigência.
+3. Inicie a inspeção pelo contexto; se houver ambiguidade, escolha autorizada ou bloqueio claro.
+4. Salve rascunhos (só confirma “salvo” após resposta do servidor); conclua somente com obrigatórios respondidos.
+5. Trate NC/restrições pelos fluxos já existentes da Central; nova inspeção aprovada não remove bloqueios independentes.
+
+### Evidências e pendências
+
+- Restore/build Release: êxito (0 avisos/erros).
+- Testes: `ComplianceFormTests` (7) e `UnitTests` (11) aprovados; suíte completa de Architecture ainda contém falhas pré-existentes (`HarvestClosing…`, `ProcessCentral…`) e a falha local de `DefaultConnection` nos `appsettings` do usuário (não commitados).
+- Integração PostgreSQL limpa/incremental, Swagger autenticado, navegador desktop/mobile e cenários transacionais 1–15 da especificação: **não homologados nesta máquina nesta entrega**; gates obrigatórios antes de produção.
+- Integrações de ponta a ponta com recebimento de compra, produção industrial, armazenagem, expedição e devolução: **parcialmente preparadas** (process codes e seleção); o acionamento automático por evento operacional nesses módulos permanece pendente onde o gancho de domínio ainda não chama `StartRunAsync`/`resolve`.

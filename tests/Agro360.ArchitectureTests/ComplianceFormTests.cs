@@ -68,4 +68,47 @@ public sealed class ComplianceFormTests
         Assert.Contains("expectedCaseVersion", js);
         Assert.Contains("crypto.randomUUID", js);
     }
+
+    [Fact]
+    public void InspectionModelsAreVersionedGuidedAndTenantScoped()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var migration = File.ReadAllText(Path.Combine(root, "database/migrations/092_quality_inspection_models.sql"));
+        var rules = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Domain/Compliance/InspectionModelRules.cs"));
+        var service = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Services/InspectionService.cs"));
+        var controller = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Api/Controllers/InspectionController.cs"));
+        var html = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/Pages/Inspections/Index.cshtml"));
+        var js = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/wwwroot/js/inspections.js"));
+
+        Assert.Contains("quality_inspection_models", migration);
+        Assert.Contains("quality_inspection_model_versions", migration);
+        Assert.Contains("quality_inspection_runs", migration);
+        Assert.Contains("quality_inspection_effects", migration);
+        Assert.Contains("ux_quality_inspection_model_versions_published", migration);
+        Assert.Contains("stable_key", migration);
+        Assert.Contains("tenant_id=@TenantId", service);
+        Assert.Contains("EnsureCanPublish", rules);
+        Assert.Contains("SelectApplicableModel", rules);
+        Assert.Contains("ComputeOverallResult", rules);
+        Assert.Contains("ComplianceInspectionModelsPublish", controller);
+        Assert.Contains("ComplianceInspectionsExecute", controller);
+        Assert.Contains("compliance.inspection-models.publish", File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Application/Permissions.cs")));
+        Assert.Contains("compliance.inspections.execute", File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Application/Permissions.cs")));
+        Assert.Contains("Como usar", html);
+        Assert.Contains("reportValidity", js);
+        Assert.Contains("lastSavedAt", js);
+        Assert.Contains("/api/inspections/runs", js);
+        Assert.DoesNotContain("on delete cascade", migration, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ID técnico", html + js, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AllowedTransitionsRemainDictionaryBased()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var rules = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Domain/Compliance/QualityComplianceRules.cs"));
+        Assert.Contains("Dictionary<string, string[]> AllowedTransitions", rules);
+        Assert.Contains("[\"OPEN\"]", rules.Replace(" ", string.Empty));
+        Assert.Contains("Array.AsReadOnly", rules);
+    }
 }

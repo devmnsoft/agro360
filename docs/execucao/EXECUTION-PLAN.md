@@ -1,5 +1,12 @@
 # Plano de execução Agro360
 
+## Recorte ativo — modelos de inspeção 9.2 (2026-09-16)
+
+1. **Concluído no código:** catálogo versionado, critérios tipados, publicação imutável, seleção por especificidade/precedência, execução guiada com rascunho/OCC, resultado backend, efeitos idempotentes em NC/restrição/ação, reinspeção, agendas + Worker, UI `/Inspections` e API `api/inspections`.
+2. **Reutiliza:** Central CAPA 9.0–9.1, documentos/evidências, Outbox/Worker host, permissões `compliance.*` estendidas.
+3. **Gate pendente:** instalação limpa/incremental PostgreSQL com 092, E2E autenticado dos 15 cenários, acionamento por evento nos módulos de recebimento/produção/expedição/devolução.
+4. **Não criar:** segunda central de NC, segundo agendador ou exclusão física.
+
 ## Recorte ativo — fechamento gerencial 7.7
 
 1. **Concluído no código:** consolidação segura da safra, conferências quantitativas, custos vinculados, pendências acionáveis, execução idempotente, versões/snapshots e revisão retroativa.
