@@ -4,6 +4,7 @@
     var apiBaseUrl = Configuration["ApiBaseUrl"] ?? "http://localhost:8081";
     var environmentName = HostEnvironment.IsDevelopment() ? "Desenvolvimento"
         : HostEnvironment.IsStaging() ? "Homologação" : "Produção";
+    var breadcrumb = (ViewData["Breadcrumb"] as string) ?? (ViewData["Title"] as string) ?? "Agro 360";
 }
 <!doctype html>
 <html lang="pt-BR" data-theme="light">
@@ -18,10 +19,12 @@
     <link rel="icon" href="~/icons/agro360.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="~/css/agro360.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/forms.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/shell-evolution.css" asp-append-version="true" />
     @await RenderSectionAsync("Styles", required: false)
     @await RenderSectionAsync("Head", required: false)
 </head>
 <body>
+    <a class="skip-link" href="#main-content">Ir para o conteúdo</a>
     <svg class="icon-sprite" aria-hidden="true">
         <symbol id="i-grid" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></symbol>
         <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M20 4C11 4 5 8.4 5 15c0 1.2.3 2.2.8 3.1M20 4c0 9-4.4 15-11 15-1.2 0-2.2-.3-3.1-.8M20 4 5 19"/></symbol>
@@ -52,36 +55,65 @@
                 <button type="button" data-feature="context">Alterar contexto <svg><use href="#i-arrow" /></svg></button>
             </div>
             <nav class="main-nav" aria-label="Navegação principal">
-                <span class="nav-label">Início</span>
-                <a class="active" href="/" data-permissions="dashboard.read"><svg><use href="#i-grid" /></svg><span>Início / Dashboard</span></a>
+                <span class="nav-label">Administração MNSOFT</span>
                 <a href="/Saas" data-super-admin="true"><svg><use href="#i-grid" /></svg><span>Administração SaaS MNSOFT</span><i>global</i></a>
-                <span class="nav-label">Organização e equipe</span>
-                <a href="/Saas" data-permissions="account.users.read"><svg><use href="#i-grid" /></svg><span>Usuários e Perfis</span></a>
+
+                <span class="nav-label">Visão geral</span>
+                <a class="active" href="/" data-permissions="dashboard.read"><svg><use href="#i-grid" /></svg><span>Início / Dashboard</span></a>
+                <a href="/Work" data-permissions="work.read"><svg><use href="#i-bell" /></svg><span>Tarefas e Alertas</span></a>
+                <a href="/Deployment" data-permissions="deployment.read"><svg><use href="#i-chart" /></svg><span>Central de Implantação</span></a>
+
+                <span class="nav-label">Fazendas e unidades</span>
                 <a href="/Properties" data-permissions="properties.read"><svg><use href="#i-map" /></svg><span>Fazendas e Unidades</span></a>
-                <span class="nav-label">Operações</span>
+
+                <span class="nav-label">Agricultura</span>
                 <a href="/Agriculture" data-permissions="agriculture.read"><svg><use href="#i-leaf" /></svg><span>Agricultura</span></a>
                 <a href="/Harvest" data-permissions="agriculture.read"><svg><use href="#i-leaf" /></svg><span>Colheita e Recebimento</span></a>
+                <a href="/Costs" data-permissions="finance.read"><svg><use href="#i-chart" /></svg><span>Custos da Safra</span></a>
+
+                <span class="nav-label">Pecuária</span>
                 <a href="/livestock" data-permissions="livestock.read"><svg><use href="#i-animal" /></svg><span>Pecuária</span></a>
-                <a href="/Fleet" data-permissions="fleet.read"><svg><use href="#i-truck" /></svg><span>Frota e Manutenção</span></a>
+
+                <span class="nav-label">Produção agroindustrial</span>
+                <a href="/Production" data-permissions="production.read"><svg><use href="#i-chart" /></svg><span>Produção Agroindustrial</span></a>
+
+                <span class="nav-label">Estoque e almoxarifado</span>
                 <a href="/Inventory" data-permissions="inventory.read,storage.read"><svg><use href="#i-box" /></svg><span>Estoque e Almoxarifado</span></a>
                 <a href="/Replenishment" data-permissions="inventory.read"><svg><use href="#i-box" /></svg><span>Reposição e Necessidades</span></a>
+
+                <span class="nav-label">Compras</span>
                 <a href="/Procurement" data-permissions="purchasing.read"><svg><use href="#i-box" /></svg><span>Compras e Fornecedores</span></a>
-                <a href="/Production" data-permissions="production.read"><svg><use href="#i-chart" /></svg><span>Produção Agroindustrial</span></a>
+
+                <span class="nav-label">Comercial</span>
                 <a href="/Commercial" data-permissions="commercial.read"><svg><use href="#i-coins" /></svg><span>Comercial e Vendas</span></a>
-                <a href="/Fiscal" data-permissions="fiscal.read"><svg><use href="#i-chart" /></svg><span>Fiscal</span></a>
-                <a href="/Finance" data-permissions="finance.read"><svg><use href="#i-coins" /></svg><span>Financeiro e Custos</span></a>
-                <a href="/Costs" data-permissions="finance.read"><svg><use href="#i-chart" /></svg><span>Custos da Safra</span></a>
-                <a href="/Logistics" data-permissions="logistics.read"><svg><use href="#i-truck" /></svg><span>Expedição e Entrega</span></a>
                 <a href="/AfterSales" data-permissions="after-sales.read"><svg><use href="#i-box" /></svg><span>Pós-venda</span></a>
+
+                <span class="nav-label">Financeiro e controladoria</span>
+                <a href="/Finance" data-permissions="finance.read"><svg><use href="#i-coins" /></svg><span>Financeiro e Custos</span></a>
+
+                <span class="nav-label">Fiscal e documentos</span>
+                <a href="/Fiscal" data-permissions="fiscal.read"><svg><use href="#i-chart" /></svg><span>Fiscal</span></a>
+                <a href="/Documents" data-permissions="documents.read"><svg><use href="#i-box" /></svg><span>Documentos e Evidências</span></a>
+
+                <span class="nav-label">Logística</span>
+                <a href="/Logistics" data-permissions="logistics.read"><svg><use href="#i-truck" /></svg><span>Expedição e Entrega</span></a>
+
+                <span class="nav-label">Qualidade e compliance</span>
                 <a href="/Compliance" data-permissions="compliance.read,esg.read"><svg><use href="#i-leaf" /></svg><span>Qualidade e Compliance</span></a>
                 <a href="/Inspections" data-permissions="compliance.read,compliance.inspections.execute"><svg><use href="#i-leaf" /></svg><span>Modelos e Inspeções</span></a>
-                <a href="/Documents" data-permissions="documents.read"><svg><use href="#i-box" /></svg><span>Documentos e Evidências</span></a>
+
+                <span class="nav-label">Frota e manutenção</span>
+                <a href="/Fleet" data-permissions="fleet.read"><svg><use href="#i-truck" /></svg><span>Frota e Manutenção</span></a>
+
+                <span class="nav-label">Relatórios e BI</span>
                 <a href="/Reports" data-permissions="intelligence.read,finance.export"><svg><use href="#i-chart" /></svg><span>Relatórios e Analytics</span></a>
-                <a href="/Deployment" data-permissions="deployment.read"><svg><use href="#i-chart" /></svg><span>Central de Implantação</span></a>
-                <a href="/Work" data-permissions="work.read"><svg><use href="#i-bell" /></svg><span>Tarefas e Alertas</span></a>
-                <span class="nav-label">Conta e módulos</span>
+
+                <span class="nav-label">Administração da conta</span>
+                <a href="/Saas" data-permissions="account.users.read"><svg><use href="#i-grid" /></svg><span>Usuários e Perfis</span></a>
                 <a href="/Ecosystem" data-permissions="marketplace.read"><svg><use href="#i-grid" /></svg><span>Meus módulos</span></a>
                 <a href="/Governance" data-permissions="governance.read,integrations.read"><svg><use href="#i-grid" /></svg><span>Configurações</span></a>
+
+                <span class="nav-label">Ajuda</span>
                 <a href="/Support" data-public-menu="true"><svg><use href="#i-bell" /></svg><span>Ajuda / Manual do Sistema</span></a>
             </nav>
             <div class="sidebar-footer">
@@ -93,7 +125,7 @@
             </div>
         </aside>
 
-        <main class="main-content">
+        <main class="main-content" id="main-content">
             <header class="topbar">
                 <button class="icon-button menu-button" type="button" id="menu-button" aria-label="Abrir menu"><svg><use href="#i-menu" /></svg></button>
                 <button class="search-trigger" type="button" id="search-trigger">
@@ -104,14 +136,30 @@
                     <a class="icon-button notification-button" href="/Compliance" aria-label="Alertas de conformidade"><svg><use href="#i-bell" /></svg><span></span></a>
                 </div>
             </header>
-            <details class="screen-help global-screen-help">
-                <summary><span>Como usar esta tela</span><small>orientação rápida</small></summary>
+            <div class="assisted-context-banner" id="assisted-context-banner" hidden data-visible="false" role="status">
                 <div>
-                    <p><strong>Para que serve:</strong> esta área reúne os dados e ações de @ViewData["Title"] disponíveis para o seu cliente e perfil.</p>
-                    <p><strong>Como trabalhar:</strong> confira o contexto ativo, preencha os campos marcados com * e use os seletores por nome — nunca informe IDs técnicos.</p>
-                    <p><strong>Regras e resultado:</strong> plano, status, permissões e validações podem limitar ações. Ao salvar, o dado é persistido e auditado; ações críticas pedem confirmação e qualquer falha apresenta uma orientação ou código de suporte.</p>
+                    <strong>Contexto assistido</strong>
+                    <small>Você está operando como SuperAdmin no ambiente do cliente. Toda ação é auditada no ator real.</small>
                 </div>
-            </details>
+            </div>
+            <nav class="page-breadcrumb" id="page-breadcrumb" aria-label="Você está em">
+                <span aria-current="page">@breadcrumb</span>
+            </nav>
+            @if (IsSectionDefined("ScreenHelp"))
+            {
+                @await RenderSectionAsync("ScreenHelp")
+            }
+            else
+            {
+                <details class="screen-help global-screen-help">
+                    <summary><span>Como usar esta tela</span><small>orientação rápida</small></summary>
+                    <div>
+                        <p><strong>Para que serve:</strong> esta área reúne os dados e ações de @ViewData["Title"] disponíveis para o seu cliente e perfil.</p>
+                        <p><strong>Como trabalhar:</strong> confira o contexto ativo, preencha os campos marcados com * e use os seletores por nome — nunca informe IDs técnicos.</p>
+                        <p><strong>Regras e resultado:</strong> plano, status, permissões e validações podem limitar ações. Ao salvar, o dado é persistido e auditado; ações críticas pedem confirmação e qualquer falha apresenta uma orientação ou código de suporte.</p>
+                    </div>
+                </details>
+            }
             @RenderBody()
         </main>
     </div>
@@ -178,6 +226,7 @@
     </dialog>
     <script src="~/js/agro360.js" asp-append-version="true"></script>
     <script src="~/js/forms.js" asp-append-version="true"></script>
+    <script src="~/js/shell-evolution.js" asp-append-version="true"></script>
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>
