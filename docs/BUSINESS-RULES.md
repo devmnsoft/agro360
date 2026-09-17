@@ -109,3 +109,38 @@ Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo pers
 - A navegação é derivada das permissões devolvidas pelo login; o Super Administrador da plataforma é a exceção global.
 - Links administrativos globais permanecem exclusivos do Super Administrador.
 - A ausência de componentes do dashboard em uma página de módulo não pode interromper login, refresh token, menu ou scripts específicos do módulo.
+
+## Evolução 2026-09-17 — invariantes confirmadas pelos ADRs
+
+Estas regras já vigoram no código/decisões e passam a integrar o catálogo
+canônico. Não enfraquecem as seções anteriores.
+
+### Distinções de fato (não colapsar em um status)
+
+- Colheita: estimativa ≠ quantidade apontada ≠ quantidade recebida ≠ quantidade aceita ≠ quantidade comercial.
+- Estoque: reserva ≠ saída física ≠ disponibilidade para venda.
+- Logística: reserva de lote ≠ confirmação de expedição ≠ aceite da entrega ≠ retorno disponível.
+- Retorno: recebimento físico ≠ inspeção ≠ destinação ≠ conciliação financeira.
+- Qualidade: restrição de lote é independente do status do lote; ausência de reprovação não aprova.
+- Fechamento de safra: snapshot versionado; não encerra pedido, ordem, título ou estoque.
+- Frota: situação cadastral ≠ status operacional ≠ ocupação na agenda.
+- Pecuária: animal identificado ≠ lote de manejo ≠ localização ≠ lote de produto/insumo.
+- Central de Operações: ocorrência projetada não é resolvida na Central.
+- Mobile: `PENDING` no dispositivo não significa aplicado no servidor.
+- SaaS: feature flag ≠ módulo contratado ≠ permissão do usuário.
+- Cobrança MNSOFT ≠ contas a pagar/receber da fazenda.
+
+### Transições e concorrência
+
+- Estado final não reabre implicitamente.
+- Escrita crítica relê com lock ou versão otimista antes de mutar.
+- Chave idempotente com o mesmo hash recupera o resultado; hash diferente é conflito.
+- Soft-delete não substitui estorno, cancelamento ou movimento inverso.
+- Carência sanitária só se estende; venda bloqueada até `saleDate > withdrawalUntil`.
+- Destinação de qualidade e disponibilidade de estoque só ocorrem no serviço dono.
+
+### Template e autorização
+
+- Menu deriva de permissões do backend; ocultar item no shell não autoriza.
+- SuperAdmin em dados de cliente exige contexto selecionado, faixa visual permanente e auditoria do ator real.
+- Ajuda contextual não altera regra; a validação do servidor permanece a fonte da verdade.
