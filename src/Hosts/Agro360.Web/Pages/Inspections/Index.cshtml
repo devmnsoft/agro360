@@ -1,7 +1,22 @@
 @page "/inspections"
 @model Agro360.Web.Pages.Inspections.IndexModel
-@{ViewData["Title"]="Modelos e Inspeções";}
+@{
+  ViewData["Title"] = "Modelos e Inspeções";
+  ViewData["Breadcrumb"] = "Qualidade / Modelos e inspeções";
+}
 <link rel="stylesheet" href="~/css/inspections.css" asp-append-version="true" />
+
+@section ScreenHelp {
+<details class="screen-help">
+  <summary><span>Como usar esta tela</span><small>orientação de qualidade operacional</small></summary>
+  <div>
+    <p><strong>Para que serve:</strong> padronizar critérios de conformidade por processo, executar inspeções com rascunho e evidências, e monitorar o resultado de aprovação e os gatilhos gerados por eventos operacionais.</p>
+    <p><strong>Como trabalhar:</strong> cadastre o modelo com seções e critérios no rascunho → envie para revisão e publique. No recebimento ou apontamento industrial, o gatilho automático gera o intent de inspeção. Acompanhe a execução, responda aos itens e conclua para registrar o veredito.</p>
+    <p><strong>Regras e resultado:</strong> ausência de modelo deixa o fato de recebimento retido em inspeção (nunca aprovação automática). Modelos ambíguos exigem seleção manual antes do início. Retorno de devolução ou recebimento mantêm status aguardando inspeção sem liberar lote como disponível até a conclusão do checklist.</p>
+  </div>
+</details>
+}
+
 <section class="inspections-page">
   <header>
     <div>
@@ -12,19 +27,10 @@
     <button class="primary-button" id="inspections-primary" type="button">Novo modelo</button>
   </header>
 
-  <details class="inspections-help">
-    <summary>Como usar</summary>
-    <div>
-      <p><strong>Finalidade:</strong> padronizar critérios de conformidade por processo e registrar execuções auditáveis com resultado explicado.</p>
-      <p><strong>Pré-requisitos:</strong> permissão de leitura/execução, unidade e inspetor ativos, e modelo publicado vigente para a data de referência.</p>
-      <p><strong>Passos:</strong> cadastre o modelo → monte seções e critérios no rascunho → envie para revisão e publique → inicie a inspeção pelo contexto → salve respostas → conclua e, se preciso, reinspecione.</p>
-      <p><strong>Resultado esperado:</strong> execução com progresso claro (preenchimento × aprovação), critérios determinantes e efeitos sugeridos — ausência de modelo gera pendência, nunca aprovação automática.</p>
-    </div>
-  </details>
-
   <nav class="inspections-tabs" aria-label="Áreas de inspeção">
     <button class="active" type="button" data-view="models">Modelos</button>
     <button type="button" data-view="runs">Inspeções</button>
+    <button type="button" data-view="intents">Gatilhos por Evento</button>
     <button type="button" data-view="execution">Execução</button>
     <button type="button" data-view="result">Resultado</button>
     <button type="button" data-view="schedules">Programações</button>

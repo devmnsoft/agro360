@@ -10,7 +10,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Agro360.Infrastructure.Services;
 
-public sealed class HarvestService(DatabaseExecutor database, ITenantContext tenant, ILogger<HarvestService> logger) : IHarvestService
+public sealed class HarvestService(
+    DatabaseExecutor database,
+    ITenantContext tenant,
+    ILogger<HarvestService> logger,
+    IOperationalInspectionTrigger inspectionTrigger) : IHarvestService
 {
     private static readonly JsonSerializerOptions SnapshotJsonOptions = new()
     {
@@ -76,29 +80,62 @@ public sealed class HarvestService(DatabaseExecutor database, ITenantContext ten
         return new HarvestOperationDto(id,"HARVEST","AWAITING_RECEIPT",qty,unit,qty,command.OperationalAt,reference,1);
     },cancellationToken);
 
-    public Task<HarvestOperationDto> ReceiveAsync(ReceiveHarvestCommand command,CancellationToken cancellationToken)=>database.InTenantTransactionAsync(async(db,tx)=>
+    public async Task<HarvestOperationDto> ReceiveAsync(ReceiveHarvestCommand command, CancellationToken cancellationToken)
     {
-        var key=Required(command.IdempotencyKey,nameof(command.IdempotencyKey));var hash=Hash(command);var replay=await Replay(db,tx,"production_receipts",key,hash,"RECEIPT",cancellationToken);if(replay is not null)return replay;
-        var qty=Guard.Positive(command.ReceivedQuantity,nameof(command.ReceivedQuantity));var unit=Required(command.Unit,nameof(command.Unit),16).ToLowerInvariant();
-        var source=await db.QuerySingleOrDefaultAsync<ReceiptSource>(new CommandDefinition("""
-          select r.harvested_quantity Quantity,r.unit,p.product_id ProductId,p.destination_warehouse_id WarehouseId,r.operational_at,
-          coalesce((select sum(x.received_quantity) from agro360.production_receipts x where x.tenant_id=r.tenant_id and x.harvest_record_id=r.id),0) Received
-          from agro360.harvest_records r join agro360.harvest_plans p on p.tenant_id=r.tenant_id and p.id=r.plan_id
-          where r.tenant_id=@TenantId and r.id=@Id and r.status<>'CANCELLED' for update of r;
-          """,new{tenant.TenantId,Id=command.HarvestRecordId},tx,cancellationToken:cancellationToken))??throw new NotFoundException("Apontamento de colheita",command.HarvestRecordId);
-        if(qty>source.Quantity-source.Received)throw new ConflictException("A quantidade excede o saldo ainda não recebido.","harvest.receipt_exceeds_balance");
-        if(command.WarehouseId!=source.WarehouseId)throw new DomainException("O local difere do destino conferido no planejamento.","harvest.warehouse_mismatch");
-        if(!string.Equals(unit,source.Unit,StringComparison.OrdinalIgnoreCase))throw new DomainException("A unidade difere da origem.","harvest.unit_mismatch");
-        decimal? net=null;if(command.GrossWeight.HasValue||command.TareWeight.HasValue){if(unit is not("kg" or "t" or "g" or "arroba"))throw new DomainException("Tara só é aceita para unidade de massa.","harvest.tare_incompatible");if(!command.GrossWeight.HasValue||!command.TareWeight.HasValue||command.GrossWeight.Value<command.TareWeight.Value)throw new DomainException("O peso bruto deve ser maior ou igual à tara.","harvest.invalid_weight");net=command.GrossWeight.Value-command.TareWeight.Value;}
-        var id=Guid.CreateVersion7();var remaining=source.Quantity-source.Received-qty;var status=remaining==0?"RECEIVED":"PARTIALLY_RECEIVED";
-        await db.ExecuteAsync(new CommandDefinition("""
-          insert into agro360.production_receipts(id,tenant_id,harvest_record_id,warehouse_id,product_id,received_at,received_quantity,unit,gross_weight,tare_weight,net_weight,lot_number,entry_mode,divergence_reason,notes,idempotency_key,request_hash,created_by)
-          values(@Id,@TenantId,@HarvestId,@WarehouseId,@ProductId,@At,@Quantity,@Unit,@Gross,@Tare,@Net,@Lot,@Mode,@Divergence,@Notes,@Key,@Hash,@UserId);
-          update agro360.harvest_records set status=@Status,updated_at=now(),updated_by=@UserId,version=version+1 where tenant_id=@TenantId and id=@HarvestId;
-          """,new{Id=id,tenant.TenantId,HarvestId=command.HarvestRecordId,command.WarehouseId,source.ProductId,At=command.ReceivedAt,Quantity=qty,Unit=unit,Gross=command.GrossWeight,Tare=command.TareWeight,Net=net,Lot=Required(command.LotNumber,nameof(command.LotNumber),100),Mode=Required(command.EntryMode,nameof(command.EntryMode),16).ToUpperInvariant(),Divergence=command.DivergenceReason,command.Notes,Key=key,Hash=hash,UserId=tenant.UserId,Status=status},tx,cancellationToken:cancellationToken));
-        await Audit(db,tx,"receive","ProductionReceipt",id,cancellationToken);
-        return new HarvestOperationDto(id,"RECEIPT","AWAITING_INSPECTION",qty,unit,qty,command.ReceivedAt,command.LotNumber,1);
-    },cancellationToken);
+        Guid? createdReceiptId = null;
+        Guid? receivedProductId = null;
+        var result = await database.InTenantTransactionAsync(async (db, tx) =>
+        {
+            var key = Required(command.IdempotencyKey, nameof(command.IdempotencyKey));
+            var hash = Hash(command);
+            var replay = await Replay(db, tx, "production_receipts", key, hash, "RECEIPT", cancellationToken);
+            if (replay is not null) return replay;
+            var qty = Guard.Positive(command.ReceivedQuantity, nameof(command.ReceivedQuantity));
+            var unit = Required(command.Unit, nameof(command.Unit), 16).ToLowerInvariant();
+            var source = await db.QuerySingleOrDefaultAsync<ReceiptSource>(new CommandDefinition("""
+                select r.harvested_quantity Quantity, r.unit, p.product_id ProductId, p.destination_warehouse_id WarehouseId, r.operational_at,
+                coalesce((select sum(x.received_quantity) from agro360.production_receipts x where x.tenant_id=r.tenant_id and x.harvest_record_id=r.id),0) Received
+                from agro360.harvest_records r join agro360.harvest_plans p on p.tenant_id=r.tenant_id and p.id=r.plan_id
+                where r.tenant_id=@TenantId and r.id=@Id and r.status<>'CANCELLED' for update of r;
+                """, new { tenant.TenantId, Id = command.HarvestRecordId }, tx, cancellationToken: cancellationToken))
+                ?? throw new NotFoundException("Apontamento de colheita", command.HarvestRecordId);
+            if (qty > source.Quantity - source.Received) throw new ConflictException("A quantidade excede o saldo ainda não recebido.", "harvest.receipt_exceeds_balance");
+            if (command.WarehouseId != source.WarehouseId) throw new DomainException("O local difere do destino conferido no planejamento.", "harvest.warehouse_mismatch");
+            if (!string.Equals(unit, source.Unit, StringComparison.OrdinalIgnoreCase)) throw new DomainException("A unidade difere da origem.", "harvest.unit_mismatch");
+            decimal? net = null;
+            if (command.GrossWeight.HasValue || command.TareWeight.HasValue)
+            {
+                if (unit is not ("kg" or "t" or "g" or "arroba")) throw new DomainException("Tara só é aceita para unidade de massa.", "harvest.tare_incompatible");
+                if (!command.GrossWeight.HasValue || !command.TareWeight.HasValue || command.GrossWeight.Value < command.TareWeight.Value) throw new DomainException("O peso bruto deve ser maior ou igual à tara.", "harvest.invalid_weight");
+                net = command.GrossWeight.Value - command.TareWeight.Value;
+            }
+            var id = Guid.CreateVersion7();
+            var remaining = source.Quantity - source.Received - qty;
+            var status = remaining == 0 ? "RECEIVED" : "PARTIALLY_RECEIVED";
+            await db.ExecuteAsync(new CommandDefinition("""
+                insert into agro360.production_receipts(id,tenant_id,harvest_record_id,warehouse_id,product_id,received_at,received_quantity,unit,gross_weight,tare_weight,net_weight,lot_number,entry_mode,divergence_reason,notes,idempotency_key,request_hash,created_by)
+                values(@Id,@TenantId,@HarvestId,@WarehouseId,@ProductId,@At,@Quantity,@Unit,@Gross,@Tare,@Net,@Lot,@Mode,@Divergence,@Notes,@Key,@Hash,@UserId);
+                update agro360.harvest_records set status=@Status,updated_at=now(),updated_by=@UserId,version=version+1 where tenant_id=@TenantId and id=@HarvestId;
+                """, new { Id = id, tenant.TenantId, HarvestId = command.HarvestRecordId, command.WarehouseId, source.ProductId, At = command.ReceivedAt, Quantity = qty, Unit = unit, Gross = command.GrossWeight, Tare = command.TareWeight, Net = net, Lot = Required(command.LotNumber, nameof(command.LotNumber), 100), Mode = Required(command.EntryMode, nameof(command.EntryMode), 16).ToUpperInvariant(), Divergence = command.DivergenceReason, command.Notes, Key = key, Hash = hash, UserId = tenant.UserId, Status = status }, tx, cancellationToken: cancellationToken));
+            await Audit(db, tx, "receive", "ProductionReceipt", id, cancellationToken);
+            createdReceiptId = id;
+            receivedProductId = source.ProductId;
+            return new HarvestOperationDto(id, "RECEIPT", "AWAITING_INSPECTION", qty, unit, qty, command.ReceivedAt, command.LotNumber, 1);
+        }, cancellationToken);
+
+        if (createdReceiptId.HasValue)
+        {
+            await inspectionTrigger.TryStartFromOriginAsync(new OperationalInspectionEventRequest(
+                ProcessCode: "HARVEST_RECEIPT",
+                OriginType: "production_receipts",
+                OriginId: createdReceiptId.Value,
+                ProductId: receivedProductId,
+                UnitId: command.WarehouseId,
+                Notes: $"Recebimento de colheita lote {command.LotNumber}"), cancellationToken);
+        }
+
+        return result;
+    }
 
     public Task<HarvestOperationDto> InspectAsync(CompleteHarvestInspectionCommand command,CancellationToken cancellationToken)=>database.InTenantTransactionAsync(async(db,tx)=>
     {

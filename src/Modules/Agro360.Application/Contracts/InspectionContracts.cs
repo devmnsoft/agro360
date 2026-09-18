@@ -410,3 +410,50 @@ public interface IInspectionService
     /// <summary>Worker entry: runs generation with explicit tenant_id (no request ITenantContext).</summary>
     Task<InspectionDueScheduleGenerationResult> GenerateDueSchedulesForTenantAsync(Guid tenantId, DateOnly asOf, CancellationToken ct);
 }
+
+// --- Event Intents (AG-Q-EVT-001) ---
+
+public sealed record OperationalInspectionEventRequest(
+    [Required, MaxLength(40)] string ProcessCode,
+    [Required, MaxLength(60)] string OriginType,
+    Guid OriginId,
+    Guid? ProductId = null,
+    Guid? LotId = null,
+    Guid? UnitId = null,
+    [MaxLength(2000)] string? Notes = null,
+    [MaxLength(120)] string? CustomIdempotencyKey = null,
+    [MaxLength(128)] string? RequestHash = null);
+
+public sealed record OperationalInspectionEventResult(
+    Guid IntentId,
+    string ProcessCode,
+    string OriginType,
+    Guid OriginId,
+    string Status,
+    Guid? RunId,
+    string? Message);
+
+public sealed record InspectionEventIntentListItem(
+    Guid Id,
+    string ProcessCode,
+    string OriginType,
+    Guid OriginId,
+    string Status,
+    Guid? RunId,
+    string? RunNumber,
+    string? Notes,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+public interface IOperationalInspectionTrigger
+{
+    Task<OperationalInspectionEventResult> TryStartFromOriginAsync(
+        OperationalInspectionEventRequest request,
+        CancellationToken ct);
+
+    Task<IReadOnlyList<InspectionEventIntentListItem>> ListEventIntentsAsync(
+        string? process,
+        string? status,
+        int? limit,
+        CancellationToken ct);
+}

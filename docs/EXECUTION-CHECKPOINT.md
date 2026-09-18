@@ -1,3 +1,28 @@
+## Gatilhos operacionais de inspeção por eventos (AG-Q-EVT-001) — 2026-09-18
+
+Branch `feat/ag-q-evt-001-inspection-hooks` a partir de `main` (`dfea21291d9e1c7c924777b2c913e007511f3ef7`). Alterações locais em segredos e configurações do usuário preservadas e fora do commit.
+
+**Entregue:**
+- Contrato e serviço `IOperationalInspectionTrigger` / `OperationalInspectionTrigger`.
+- Migration incremental `093_quality_inspection_event_intents.sql` + bloco em `database/agro360-postgres-full.sql` (migration 092 preservada 100% imutável).
+- Tabela `agro360.quality_inspection_event_intents` com chave de idempotência `EVT:{process}:{originId:N}`, hash de payload, índices, RLS e grant `agro360_app`.
+- Ganchos operacionais pós-commit:
+  - `HarvestService.ReceiveAsync` → `HARVEST_RECEIPT` (id da produção).
+  - `LogisticsService.ReceiveReturnAsync` → `RETURN` (id da devolução).
+  - `ProcurementService.ReceiveAsync` → `PURCHASE_RECEIPT` (id do recebimento de compra).
+  - `IndustrialProductionService.RegisterOutputAsync` → `PRODUCTION` (id do lote industrial).
+- Controller API: endpoint `GET /api/inspections/event-intents`.
+- Template `/Inspections`: breadcrumb `Qualidade / Modelos e inspeções`, `@section ScreenHelp`, aba de gatilhos por evento com status em português.
+- Documentação atualizada: ADR-Q-EVT-01 em `DECISIONS.md`, seção 9.2 em `QUALITY-COMPLIANCE.md` e `EXECUTION-PLAN.md`.
+
+**Evidências locais:**
+- `dotnet restore/build -c Release` aprovado (0 avisos, 0 erros).
+- `node --check src/Hosts/Agro360.Web/wwwroot/js/inspections.js` aprovado.
+- `git diff --check` aprovado.
+
+**Pendência:**
+- Suíte E2E dos 15 cenários de inspeção de 092 e homologação de módulo vendável permanecem explicitamente pendentes para `AG-Q-092-E2E`. Próximas frentes ordenadas: AG-Q-092-E2E → AG-E8-RET-001 → AG-E6-GEN-001 → AG-E1-002.
+
 ## Modelos de inspeção e execução guiada — 2026-09-16
 
 Branch `codex/inspection-models-checklists` a partir de `main` (`6e8b5b2`). Alterações locais de `appsettings.json` (ConnectionStrings do usuário) preservadas e fora do escopo de commit. SDK efetivo 10.0.400; AllowedTransitions em `QualityComplianceRules` confirmado como `Dictionary<string, string[]>`.

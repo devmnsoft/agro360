@@ -33,6 +33,13 @@
     models: [['ACTIVE', 'Ativo'], ['INACTIVE', 'Inativo']],
     runs: [['IN_PROGRESS', 'Em andamento'], ['PENDING_REVIEW', 'Aguardando revisão'], ['COMPLETED', 'Concluída'], ['CANCELLED', 'Cancelada']],
     schedules: [['ACTIVE', 'Ativa'], ['INACTIVE', 'Inativa']],
+    intents: [
+      ['STARTED', 'Iniciada'],
+      ['PENDING_MODEL', 'Sem modelo'],
+      ['AMBIGUOUS', 'Ambiguidade'],
+      ['SKIPPED_NO_ACTOR', 'Sem operador'],
+      ['PENDING', 'Pendente']
+    ],
     execution: [],
     result: []
   };
@@ -41,6 +48,7 @@
   let models = [];
   let runs = [];
   let schedules = [];
+  let intents = [];
   let currentModel = null;
   let currentVersion = null;
   let currentRun = null;
@@ -48,6 +56,14 @@
   let mobileSection = 0;
   let busy = false;
   let draftDirty = false;
+
+  const INTENT_STATUS_LABELS = {
+    STARTED: 'Iniciada',
+    PENDING_MODEL: 'Sem modelo',
+    AMBIGUOUS: 'Ambiguidade',
+    SKIPPED_NO_ACTOR: 'Ignorado (sem operador)',
+    PENDING: 'Pendente'
+  };
 
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmt = iso => {
@@ -57,6 +73,7 @@
   const session = () => { try { return JSON.parse(localStorage.getItem('agro360.session') || 'null'); } catch { return null; } };
   const processLabel = code => PROCESS_OPTS.find(x => x[0] === code)?.[1] || code || '—';
   const typeLabel = t => CRITERION_TYPES.find(x => x[0] === t)?.[1] || t || '—';
+  const intentStatusLabel = s => INTENT_STATUS_LABELS[String(s || '').toUpperCase()] || s || '—';
   const pill = (s) => `<span class="status-pill status-${esc(String(s || '').toLowerCase())}">${esc(s || '—')}</span>`;
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `k-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   const setStatus = (msg, done = false) => { statusEl.textContent = msg || ''; if (done) busy = false; };
@@ -98,7 +115,7 @@
   }
 
   function syncPrimary() {
-    const map = { models: 'Novo modelo', runs: 'Iniciar inspeção', schedules: 'Nova programação', execution: 'Salvar rascunho', result: 'Voltar às inspeções' };
+    const map = { models: 'Novo modelo', runs: 'Iniciar inspeção', schedules: 'Nova programação', execution: 'Salvar rascunho', result: 'Voltar às inspeções', intents: 'Atualizar' };
     primaryBtn.textContent = map[view] || 'Ação';
     primaryBtn.hidden = false;
   }
@@ -121,6 +138,7 @@
       else if (view === 'execution') renderExecution();
       else if (view === 'result') renderResult();
       else if (view === 'schedules') await loadSchedules();
+      else if (view === 'intents') await loadIntents();
       finishLoading();
     } catch (e) {
       finishLoading(e.message);
@@ -1284,12 +1302,63 @@
     }
   });
 
+  // ——— Intents ———
+  async function loadIntents() {
+    const qs = new URLSearchParams();
+    if (processSel.value) qs.set('process', processSel.value);
+    if (statusSel.value) qs.set('status', statusSel.value);
+    let data;
+    try {
+      data = await request(`/api/inspections/event-intents?${qs}`);
+    } catch (err) {
+      if (err.status === 401 || err.status === 403) {
+        content.innerHTML = `<div class="empty-state"><h2>Acesso restrito</h2><p>Você não possui permissão para visualizar o histórico de gatilhos operacionais de qualidade.</p></div>`;
+        return;
+      }
+      throw err;
+    }
+    intents = Array.isArray(data) ? data : (data?.items || []);
+    const filtered = intents.filter(qMatch);
+    content.innerHTML = filtered.length
+      ? `<div class="insp-list">${filtered.map(it => `
+          <article class="data-card" tabindex="0">
+            <div>
+              <strong>${esc(processLabel(it.processCode))}</strong>
+              <small>Origem: ${esc(it.originType)} · Data: ${fmt(it.createdAt)}</small>
+              ${it.payloadSummary ? `<p class="hint" style="margin-top:0.25rem;font-size:0.85rem">${esc(it.payloadSummary)}</p>` : ''}
+              ${it.notes ? `<p class="notice" style="margin-top:0.5rem">${esc(it.notes)}</p>` : ''}
+            </div>
+            <div class="insp-actions" style="display:flex;flex-direction:column;align-items:flex-end;gap:0.5rem">
+              <span class="status-pill status-${esc(String(it.status || '').toLowerCase())}">${esc(intentStatusLabel(it.status))}</span>
+              ${it.inspectionRunId ? `<button type="button" class="ghost-button" data-view-run="${esc(it.inspectionRunId)}">Ver inspeção</button>` : ''}
+            </div>
+          </article>`).join('')}</div>`
+      : `<div class="empty-state"><h2>Nenhum gatilho de evento</h2><p>Recebimentos de compra, colheita, devoluções e apontamentos de produção registram intenções automáticas de inspeção.</p></div>`;
+
+    content.querySelectorAll('[data-view-run]').forEach(b => {
+      b.onclick = async () => {
+        try {
+          setStatus('Carregando inspeção…');
+          currentRun = await request(`/api/inspections/runs/${b.dataset.viewRun}`);
+          lastCompleteResult = null;
+          const st = String(currentRun.status || '').toUpperCase();
+          setView(st === 'COMPLETED' || st === 'CANCELLED' ? 'result' : 'execution');
+        } catch (e) {
+          alert('Não foi possível carregar a inspeção: ' + e.message);
+        } finally {
+          finishLoading();
+        }
+      };
+    });
+  }
+
   primaryBtn.addEventListener('click', () => {
     if (view === 'models') { currentModel = null; openModelMetaForm(null); }
     else if (view === 'runs') openStartInspection();
     else if (view === 'schedules') openScheduleForm(null);
     else if (view === 'execution') saveAnswers();
     else if (view === 'result') { currentRun = null; setView('runs'); }
+    else if (view === 'intents') loadIntents();
   });
 
   document.querySelectorAll('.inspections-tabs button').forEach(b => b.onclick = () => {
@@ -1297,12 +1366,13 @@
     setView(b.dataset.view);
   });
   document.querySelector('#insp-refresh').onclick = load;
-  processSel.onchange = () => { if (view === 'models' || view === 'runs' || view === 'schedules') load(); };
-  statusSel.onchange = () => { if (view === 'models' || view === 'runs' || view === 'schedules') load(); };
+  processSel.onchange = () => { if (view === 'models' || view === 'runs' || view === 'schedules' || view === 'intents') load(); };
+  statusSel.onchange = () => { if (view === 'models' || view === 'runs' || view === 'schedules' || view === 'intents') load(); };
   searchInput.oninput = () => {
     if (view === 'models' && !currentModel) loadModels();
     else if (view === 'runs') loadRuns();
     else if (view === 'schedules') loadSchedules();
+    else if (view === 'intents') loadIntents();
   };
   document.querySelector('[data-close]').onclick = () => dialog.close();
 

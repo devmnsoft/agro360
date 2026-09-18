@@ -78,4 +78,8 @@ internal static partial class InfrastructureLogMessages
     internal static partial void MfaRequested(ILogger logger, Guid tenantId, Guid userId, string traceId);
     [LoggerMessage(1037, LogLevel.Information, "MFA concluído. TenantId: {TenantId}; UserId: {UserId}; TraceId: {TraceId}")]
     internal static partial void MfaCompleted(ILogger logger, Guid tenantId, Guid userId, string traceId);
+    [LoggerMessage(1038, LogLevel.Warning, "Tentativa de trigger de inspeção com processo inválido: {ProcessCode}")]
+    internal static partial void InvalidInspectionProcessCode(ILogger logger, string processCode);
+    [LoggerMessage(1039, LogLevel.Error, "Falha ao registrar/iniciar gatilho de inspeção por evento {ProcessCode}:{OriginId}")]
+    internal static partial void OperationalInspectionTriggerFailed(ILogger logger, string processCode, Guid originId, Exception exception);
 }
