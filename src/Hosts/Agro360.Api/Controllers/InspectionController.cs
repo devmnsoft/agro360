@@ -6,8 +6,19 @@ using Microsoft.AspNetCore.Mvc;
 namespace Agro360.Api.Controllers;
 
 [ApiController, Route("api/inspections"), Authorize(Policy = Permissions.ComplianceRead)]
-public sealed class InspectionController(IInspectionService service, ILogger<InspectionController> logger) : ControllerBase
+public sealed class InspectionController(
+    IInspectionService service,
+    IOperationalInspectionTrigger trigger,
+    ILogger<InspectionController> logger) : ControllerBase
 {
+    [HttpGet("event-intents")]
+    public Task<IReadOnlyList<InspectionEventIntentListItem>> ListEventIntents(
+        [FromQuery] string? process,
+        [FromQuery] string? status,
+        [FromQuery] int? limit,
+        CancellationToken ct) =>
+        trigger.ListEventIntentsAsync(process, status, limit, ct);
+
     [HttpGet("models")]
     public Task<IReadOnlyList<InspectionModelListItem>> ListModels(string? process, string? status, CancellationToken ct) =>
         service.ListModelsAsync(process, status, ct);

@@ -1,10 +1,20 @@
 # Plano de execução Agro360
 
+## Recorte ativo — Gatilhos operacionais de inspeção por eventos AG-Q-EVT-001 (2026-09-18)
+
+1. **Concluído no código:** contrato e serviço `IOperationalInspectionTrigger`, migration incremental `093_quality_inspection_event_intents.sql` + consolidado (092 imutável), ganchos pós-commit em `HarvestService.ReceiveAsync` (HARVEST_RECEIPT), `LogisticsService.ReceiveReturnAsync` (RETURN), `ProcurementService.ReceiveAsync` (PURCHASE_RECEIPT) e `IndustrialProductionService.RegisterOutputAsync` (PRODUCTION); endpoint `GET /api/inspections/event-intents`; UI `/Inspections` com breadcrumb, `@section ScreenHelp`, aba de gatilhos por evento com status em português; ADR-Q-EVT-01 e documentações.
+2. **Ordem de continuidade pós-merge (estrita):**
+   - 1º `AG-Q-092-E2E` (Validação E2E dos 15 cenários de inspeção de 092 em PostgreSQL descartável)
+   - 2º `AG-E8-RET-001` (Recebimento, conferência e qualidade definitiva de devolução/retorno)
+   - 3º `AG-E6-GEN-001` (Genealogia completa da safra até produção e expedição)
+   - 4º `AG-E1-002` (MFA real, elevação SuperAdmin e suporte assistido auditado)
+3. **Não criar:** segundo agendador, aprovação sem modelo ou exclusão física.
+
 ## Recorte ativo — modelos de inspeção 9.2 (2026-09-16)
 
 1. **Concluído no código:** catálogo versionado, critérios tipados, publicação imutável, seleção por especificidade/precedência, execução guiada com rascunho/OCC, resultado backend, efeitos idempotentes em NC/restrição/ação, reinspeção, agendas + Worker, UI `/Inspections` e API `api/inspections`.
 2. **Reutiliza:** Central CAPA 9.0–9.1, documentos/evidências, Outbox/Worker host, permissões `compliance.*` estendidas.
-3. **Gate pendente:** instalação limpa/incremental PostgreSQL com 092, E2E autenticado dos 15 cenários, acionamento por evento nos módulos de recebimento/produção/expedição/devolução.
+3. **Gate pendente:** instalação limpa/incremental PostgreSQL com 092/093, E2E autenticado dos 15 cenários (AG-Q-092-E2E).
 4. **Não criar:** segunda central de NC, segundo agendador ou exclusão física.
 
 ## Recorte ativo — fechamento gerencial 7.7

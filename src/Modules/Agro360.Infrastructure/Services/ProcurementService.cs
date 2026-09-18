@@ -12,7 +12,11 @@ using Npgsql;
 
 namespace Agro360.Infrastructure.Services;
 
-public sealed class ProcurementService(DatabaseExecutor db, ITenantContext tenant, ILogger<ProcurementService> logger) : IProcurementService
+public sealed class ProcurementService(
+    DatabaseExecutor db,
+    ITenantContext tenant,
+    ILogger<ProcurementService> logger,
+    IOperationalInspectionTrigger inspectionTrigger) : IProcurementService
 {
     public Task<dynamic> DashboardAsync(CancellationToken ct) => Tx(async (c, t) => await c.QuerySingleAsync(new CommandDefinition("select count(*) filter(where status='OPEN') requisitions_open,count(*) filter(where status='OPEN' and priority='URGENT') requisitions_urgent,(select count(*) from agro360.procurement_quotations where tenant_id=@TenantId and status in('SENT','PARTIAL','RESPONDED','ANALYSIS')) quotations_running,(select count(*) from agro360.procurement_purchase_orders where tenant_id=@TenantId and status='AWAITING_APPROVAL') orders_awaiting_approval,(select count(*) from agro360.procurement_purchase_orders where tenant_id=@TenantId and status='PARTIALLY_RECEIVED') orders_partially_received,(select count(*) from agro360.procurement_receipts where tenant_id=@TenantId and status='DIVERGENT') divergent_receipts,(select count(*) from agro360.procurement_suppliers where tenant_id=@TenantId and status in('ACTIVE','APPROVED')) active_suppliers,(select count(*) from agro360.procurement_suppliers where tenant_id=@TenantId and status='BLOCKED') blocked_suppliers,(select coalesce(sum(total),0) from agro360.procurement_purchase_orders where tenant_id=@TenantId and status not in('DRAFT','CANCELLED') and approved_at>=date_trunc('month',now())) purchased_month from agro360.procurement_requisitions where tenant_id=@TenantId", new { tenant.TenantId }, t, cancellationToken: ct)));
     public Task<IReadOnlyList<dynamic>> SuppliersAsync(ProcurementQuery q, CancellationToken ct) => List("select * from agro360.procurement_suppliers where tenant_id=@TenantId and deleted_at is null and (@Search is null or legal_name ilike '%'||@Search||'%' or trade_name ilike '%'||@Search||'%') and (@Status is null or status=@Status) and (@Category is null or main_category=@Category) order by legal_name limit @Take offset @Skip", q, ct);
@@ -54,100 +58,120 @@ public sealed class ProcurementService(DatabaseExecutor db, ITenantContext tenan
     }
     public Task<IReadOnlyList<dynamic>> OrdersAsync(ProcurementQuery q, CancellationToken ct) => List("select o.*,s.legal_name supplier_name,(select oi.id from agro360.procurement_purchase_order_items oi where oi.tenant_id=o.tenant_id and oi.purchase_order_id=o.id and oi.received_quantity<oi.quantity order by oi.created_at limit 1) pending_item_id from agro360.procurement_purchase_orders o join agro360.procurement_suppliers s on s.tenant_id=o.tenant_id and s.id=o.supplier_id where o.tenant_id=@TenantId and o.deleted_at is null and (@Search is null or o.number ilike '%'||@Search||'%' or s.legal_name ilike '%'||@Search||'%') and (@Status is null or o.status=@Status) order by o.created_at desc limit @Take offset @Skip", q, ct);
     public Task ApproveOrderAsync(Guid id, string? comment, CancellationToken ct) => Tx(async (c, t) => { var row = await c.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition("select o.requester_id,s.status supplier_status from agro360.procurement_purchase_orders o join agro360.procurement_suppliers s on s.tenant_id=o.tenant_id and s.id=o.supplier_id where o.tenant_id=@TenantId and o.id=@Id for update", new { tenant.TenantId, Id = id }, t, cancellationToken: ct)) ?? throw new NotFoundException("Pedido", id); if ((string)row.supplier_status == "BLOCKED") throw new DomainException("Fornecedor bloqueado.", "agro360.procurement_supplier_blocked"); var n = await c.ExecuteAsync(new CommandDefinition("update agro360.procurement_purchase_orders set status='APPROVED',approved_at=now(),approved_by=@UserId,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id and status='AWAITING_APPROVAL';insert into agro360.procurement_purchase_order_events(id,tenant_id,purchase_order_id,event_type,comment,created_by,updated_by) values(gen_random_uuid(),@TenantId,@Id,'APPROVED',@Comment,@UserId,@UserId)", new { tenant.TenantId, tenant.UserId, Id = id, Comment = comment }, t, cancellationToken: ct)); if (n < 2) throw new ConflictException("Pedido não está aguardando aprovação."); InfrastructureLogMessages.PurchaseOrderApproved(logger, id); });
-    public Task<Guid> ReceiveAsync(ProcurementReceiptCommand x, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    public async Task<Guid> ReceiveAsync(ProcurementReceiptCommand x, CancellationToken ct)
     {
-        if (x.Items.Count == 0) throw new DomainException("Informe os itens recebidos.", "agro360.procurement_items_required");
-        if (string.IsNullOrWhiteSpace(x.IdempotencyKey) || x.IdempotencyKey.Trim().Length is < 16 or > 100) throw new DomainException("A chave de idempotência do recebimento é obrigatória.", "agro360.procurement_idempotency_required");
-        if (x.Installments is < 1 or > 60 || x.FinanceAccountId is null || x.FirstDueOn is null || x.FirstDueOn < DateOnly.FromDateTime(x.ReceivedAt.UtcDateTime)) throw new DomainException("Conta financeira, primeiro vencimento e parcelas válidas são obrigatórios.", "agro360.procurement_financial_forecast_invalid");
-
-        var idempotencyKey = x.IdempotencyKey.Trim();
-        var requestFingerprint = ReceiptFingerprint(x);
-        await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"{tenant.TenantId:N}:{idempotencyKey}" }, t, cancellationToken: ct));
-        var existing = await c.QuerySingleOrDefaultAsync<ExistingReceipt>(new CommandDefinition("select id,request_fingerprint RequestFingerprint from agro360.procurement_receipts where tenant_id=@TenantId and idempotency_key=@IdempotencyKey", new { tenant.TenantId, IdempotencyKey = idempotencyKey }, t, cancellationToken: ct));
-        if (existing is not null)
+        Guid? createdReceiptId = null;
+        Guid? firstProductId = null;
+        var resultId = await db.InTenantTransactionAsync(async (c, t) =>
         {
-            if (!string.Equals(existing.RequestFingerprint, requestFingerprint, StringComparison.Ordinal))
-                throw new ConflictException("A chave de idempotência já foi utilizada com outro conteúdo.");
-            return existing.Id;
-        }
+            if (x.Items.Count == 0) throw new DomainException("Informe os itens recebidos.", "agro360.procurement_items_required");
+            if (string.IsNullOrWhiteSpace(x.IdempotencyKey) || x.IdempotencyKey.Trim().Length is < 16 or > 100) throw new DomainException("A chave de idempotência do recebimento é obrigatória.", "agro360.procurement_idempotency_required");
+            if (x.Installments is < 1 or > 60 || x.FinanceAccountId is null || x.FirstDueOn is null || x.FirstDueOn < DateOnly.FromDateTime(x.ReceivedAt.UtcDateTime)) throw new DomainException("Conta financeira, primeiro vencimento e parcelas válidas são obrigatórios.", "agro360.procurement_financial_forecast_invalid");
 
-        var order = await c.QuerySingleOrDefaultAsync<ReceiptOrderRow>(new CommandDefinition("select o.id,o.total,o.cost_center_id CostCenterId,s.legal_name SupplierName from agro360.procurement_purchase_orders o join agro360.procurement_suppliers s on s.tenant_id=o.tenant_id and s.id=o.supplier_id where o.tenant_id=@TenantId and o.id=@OrderId and o.status in('APPROVED','SENT','PARTIALLY_RECEIVED') and o.deleted_at is null for update of o", new { tenant.TenantId, OrderId = x.PurchaseOrderId }, t, cancellationToken: ct)) ?? throw new DomainException("Pedido não está apto ao recebimento.", "agro360.procurement_order_not_receivable");
-        var financeAccountValid = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.finance_chart_of_accounts where tenant_id=@TenantId and id=@AccountId and active and type in('EXPENSE','COST','LIABILITY'))", new { tenant.TenantId, AccountId = x.FinanceAccountId }, t, cancellationToken: ct));
-        if (!financeAccountValid) throw new DomainException("Conta financeira inexistente ou incompatível.", "agro360.procurement_finance_account_invalid");
-
-        var itemIds = x.Items.Select(item => item.PurchaseOrderItemId).Distinct().ToArray();
-        var rows = (await c.QueryAsync<ReceiptItemRow>(new CommandDefinition("select oi.id,oi.quantity,oi.received_quantity ReceivedQuantity,oi.unit_price UnitPrice,oi.unit,c.name,c.requires_lot RequiresLot,c.requires_expiry RequiresExpiry,c.requires_inspection RequiresInspection,c.item_type ItemType,c.related_product_id RelatedProductId,p.base_unit ProductBaseUnit from agro360.procurement_purchase_order_items oi join agro360.procurement_item_catalog c on c.tenant_id=oi.tenant_id and c.id=oi.catalog_item_id left join agro360.inventory_products p on p.tenant_id=c.tenant_id and p.id=c.related_product_id and p.deleted_at is null where oi.tenant_id=@TenantId and oi.purchase_order_id=@OrderId and oi.id=any(@ItemIds) order by oi.id for update of oi", new { tenant.TenantId, OrderId = x.PurchaseOrderId, ItemIds = itemIds }, t, cancellationToken: ct))).ToDictionary(item => item.Id);
-        if (rows.Count != itemIds.Length) throw new DomainException("Um ou mais itens não pertencem ao pedido.", "agro360.procurement_receipt_item_invalid");
-
-        var runningQuantity = rows.ToDictionary(pair => pair.Key, pair => pair.Value.ReceivedQuantity);
-        var requiresStock = false;
-        foreach (var item in x.Items)
-        {
-            var row = rows[item.PurchaseOrderItemId];
-            ProcurementRules.Receipt(row.Quantity, runningQuantity[row.Id], item.Quantity, x.OverrideExcess, x.ExcessJustification, row.RequiresLot, item.SupplierLot, row.RequiresExpiry, item.ExpiresOn);
-            runningQuantity[row.Id] += item.Quantity;
-            if (row.ItemType != "SERVICE")
+            var idempotencyKey = x.IdempotencyKey.Trim();
+            var requestFingerprint = ReceiptFingerprint(x);
+            await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"{tenant.TenantId:N}:{idempotencyKey}" }, t, cancellationToken: ct));
+            var existing = await c.QuerySingleOrDefaultAsync<ExistingReceipt>(new CommandDefinition("select id,request_fingerprint RequestFingerprint from agro360.procurement_receipts where tenant_id=@TenantId and idempotency_key=@IdempotencyKey", new { tenant.TenantId, IdempotencyKey = idempotencyKey }, t, cancellationToken: ct));
+            if (existing is not null)
             {
-                requiresStock = true;
-                if (row.RelatedProductId is null) throw new DomainException($"O item '{row.Name}' não está vinculado a produto de estoque.", "agro360.procurement_stock_product_required");
-                if (!string.Equals(row.Unit, row.ProductBaseUnit, StringComparison.OrdinalIgnoreCase)) throw new DomainException($"A unidade de compra de '{row.Name}' ({row.Unit}) difere da unidade-base ({row.ProductBaseUnit}); cadastre uma conversão explícita antes de receber.", "agro360.procurement_unit_conversion_required");
+                if (!string.Equals(existing.RequestFingerprint, requestFingerprint, StringComparison.Ordinal))
+                    throw new ConflictException("A chave de idempotência já foi utilizada com outro conteúdo.");
+                return existing.Id;
             }
-        }
 
-        if (requiresStock)
-        {
-            if (x.WarehouseId is null) throw new DomainException("Selecione o depósito para a entrada física.", "agro360.procurement_warehouse_required");
-            var warehouseValid = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.inventory_warehouses where tenant_id=@TenantId and id=@WarehouseId and deleted_at is null)", new { tenant.TenantId, x.WarehouseId }, t, cancellationToken: ct));
-            if (!warehouseValid) throw new DomainException("Depósito inexistente para esta organização.", "agro360.procurement_warehouse_invalid");
-        }
+            var order = await c.QuerySingleOrDefaultAsync<ReceiptOrderRow>(new CommandDefinition("select o.id,o.total,o.cost_center_id CostCenterId,s.legal_name SupplierName from agro360.procurement_purchase_orders o join agro360.procurement_suppliers s on s.tenant_id=o.tenant_id and s.id=o.supplier_id where o.tenant_id=@TenantId and o.id=@OrderId and o.status in('APPROVED','SENT','PARTIALLY_RECEIVED') and o.deleted_at is null for update of o", new { tenant.TenantId, OrderId = x.PurchaseOrderId }, t, cancellationToken: ct)) ?? throw new DomainException("Pedido não está apto ao recebimento.", "agro360.procurement_order_not_receivable");
+            var financeAccountValid = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.finance_chart_of_accounts where tenant_id=@TenantId and id=@AccountId and active and type in('EXPENSE','COST','LIABILITY'))", new { tenant.TenantId, AccountId = x.FinanceAccountId }, t, cancellationToken: ct));
+            if (!financeAccountValid) throw new DomainException("Conta financeira inexistente ou incompatível.", "agro360.procurement_finance_account_invalid");
 
-        var id = Guid.CreateVersion7();
-        var number = await Number(c, t, "RCV", ct);
-        await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_receipts(id,tenant_id,number,purchase_order_id,received_at,responsible_id,invoice_document,status,excess_justification,stock_integration_status,finance_integration_status,idempotency_key,request_fingerprint,warehouse_id,created_by,updated_by) values(@Id,@TenantId,@Number,@OrderId,@ReceivedAt,@UserId,@Invoice,'PENDING',@Reason,'PENDING','PENDING',@IdempotencyKey,@RequestFingerprint,@WarehouseId,@UserId,@UserId)", new { Id = id, tenant.TenantId, Number = number, OrderId = x.PurchaseOrderId, x.ReceivedAt, tenant.UserId, Invoice = x.InvoiceDocument, Reason = x.ExcessJustification, IdempotencyKey = idempotencyKey, RequestFingerprint = requestFingerprint, x.WarehouseId }, t, cancellationToken: ct));
+            var itemIds = x.Items.Select(item => item.PurchaseOrderItemId).Distinct().ToArray();
+            var rows = (await c.QueryAsync<ReceiptItemRow>(new CommandDefinition("select oi.id,oi.quantity,oi.received_quantity ReceivedQuantity,oi.unit_price UnitPrice,oi.unit,c.name,c.requires_lot RequiresLot,c.requires_expiry RequiresExpiry,c.requires_inspection RequiresInspection,c.item_type ItemType,c.related_product_id RelatedProductId,p.base_unit ProductBaseUnit from agro360.procurement_purchase_order_items oi join agro360.procurement_item_catalog c on c.tenant_id=oi.tenant_id and c.id=oi.catalog_item_id left join agro360.inventory_products p on p.tenant_id=c.tenant_id and p.id=c.related_product_id and p.deleted_at is null where oi.tenant_id=@TenantId and oi.purchase_order_id=@OrderId and oi.id=any(@ItemIds) order by oi.id for update of oi", new { tenant.TenantId, OrderId = x.PurchaseOrderId, ItemIds = itemIds }, t, cancellationToken: ct))).ToDictionary(item => item.Id);
+            if (rows.Count != itemIds.Length) throw new DomainException("Um ou mais itens não pertencem ao pedido.", "agro360.procurement_receipt_item_invalid");
 
-        foreach (var item in x.Items)
-        {
-            var row = rows[item.PurchaseOrderItemId];
-            var receiptItemId = Guid.CreateVersion7();
-            var expired = item.ExpiresOn is not null && item.ExpiresOn < DateOnly.FromDateTime(DateTime.UtcNow);
-            var requiresQuality = row.RequiresInspection || expired;
-            var qualityStatus = requiresQuality ? "PENDING" : "NOT_REQUIRED";
-            await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_receipt_items(id,tenant_id,receipt_id,purchase_order_item_id,quantity,supplier_lot,expires_on,quality_status,notes,created_by,updated_by) values(@Id,@TenantId,@ReceiptId,@PurchaseOrderItemId,@Quantity,@SupplierLot,@ExpiresOn,@QualityStatus,@Notes,@UserId,@UserId); update agro360.procurement_purchase_order_items set received_quantity=received_quantity+@Quantity,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@PurchaseOrderItemId", new { Id = receiptItemId, tenant.TenantId, ReceiptId = id, item.PurchaseOrderItemId, item.Quantity, item.SupplierLot, item.ExpiresOn, QualityStatus = qualityStatus, item.Notes, tenant.UserId }, t, cancellationToken: ct));
-            if (row.ItemType != "SERVICE" && !requiresQuality)
+            var runningQuantity = rows.ToDictionary(pair => pair.Key, pair => pair.Value.ReceivedQuantity);
+            var requiresStock = false;
+            foreach (var item in x.Items)
             {
-                var movementId = await c.ExecuteScalarAsync<Guid>(new CommandDefinition("select agro360.inventory_apply_stock_movement(@TenantId,@WarehouseId,@ProductId,@Quantity,@UnitCost,'PURCHASE_RECEIPT',@ReferenceId,@Lot,@ExpiresOn,@UserId,@Reason)", new { tenant.TenantId, x.WarehouseId, ProductId = row.RelatedProductId, item.Quantity, UnitCost = row.UnitPrice, ReferenceId = receiptItemId, Lot = item.SupplierLot, item.ExpiresOn, tenant.UserId, Reason = $"Recebimento {number}" }, t, cancellationToken: ct));
-                await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_receipt_stock_links(tenant_id,receipt_item_id,stock_movement_id,created_by) values(@TenantId,@ReceiptItemId,@MovementId,@UserId)", new { tenant.TenantId, ReceiptItemId = receiptItemId, MovementId = movementId, tenant.UserId }, t, cancellationToken: ct));
+                var row = rows[item.PurchaseOrderItemId];
+                ProcurementRules.Receipt(row.Quantity, runningQuantity[row.Id], item.Quantity, x.OverrideExcess, x.ExcessJustification, row.RequiresLot, item.SupplierLot, row.RequiresExpiry, item.ExpiresOn);
+                runningQuantity[row.Id] += item.Quantity;
+                if (row.ItemType != "SERVICE")
+                {
+                    requiresStock = true;
+                    if (row.RelatedProductId is null) throw new DomainException($"O item '{row.Name}' não está vinculado a produto de estoque.", "agro360.procurement_stock_product_required");
+                    if (!string.Equals(row.Unit, row.ProductBaseUnit, StringComparison.OrdinalIgnoreCase)) throw new DomainException($"A unidade de compra de '{row.Name}' ({row.Unit}) difere da unidade-base ({row.ProductBaseUnit}); cadastre uma conversão explícita antes de receber.", "agro360.procurement_unit_conversion_required");
+                }
             }
-            else if (row.ItemType != "SERVICE")
-            {
-                await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_receipt_quarantine(tenant_id,receipt_item_id,warehouse_id,product_id,quantity,unit,lot_number,expires_on,status,reason,created_by,updated_by) values(@TenantId,@ReceiptItemId,@WarehouseId,@ProductId,@Quantity,@Unit,@Lot,@ExpiresOn,'PENDING',@Reason,@UserId,@UserId)", new { tenant.TenantId, ReceiptItemId = receiptItemId, x.WarehouseId, ProductId = row.RelatedProductId, item.Quantity, row.Unit, Lot = item.SupplierLot, item.ExpiresOn, Reason = expired ? "Validade vencida: liberação depende de decisão autorizada." : "Inspeção obrigatória pendente.", tenant.UserId }, t, cancellationToken: ct));
-            }
-        }
 
-        var forecastExists = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.procurement_order_financial_links where tenant_id=@TenantId and purchase_order_id=@OrderId)", new { tenant.TenantId, OrderId = x.PurchaseOrderId }, t, cancellationToken: ct));
-        if (!forecastExists)
+            if (requiresStock)
+            {
+                if (x.WarehouseId is null) throw new DomainException("Selecione o depósito para a entrada física.", "agro360.procurement_warehouse_required");
+                var warehouseValid = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.inventory_warehouses where tenant_id=@TenantId and id=@WarehouseId and deleted_at is null)", new { tenant.TenantId, x.WarehouseId }, t, cancellationToken: ct));
+                if (!warehouseValid) throw new DomainException("Depósito inexistente para esta organização.", "agro360.procurement_warehouse_invalid");
+            }
+
+            var id = Guid.CreateVersion7();
+            var number = await Number(c, t, "RCV", ct);
+            await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_receipts(id,tenant_id,number,purchase_order_id,received_at,responsible_id,invoice_document,status,excess_justification,stock_integration_status,finance_integration_status,idempotency_key,request_fingerprint,warehouse_id,created_by,updated_by) values(@Id,@TenantId,@Number,@OrderId,@ReceivedAt,@UserId,@Invoice,'PENDING',@Reason,'PENDING','PENDING',@IdempotencyKey,@RequestFingerprint,@WarehouseId,@UserId,@UserId)", new { Id = id, tenant.TenantId, Number = number, OrderId = x.PurchaseOrderId, x.ReceivedAt, tenant.UserId, Invoice = x.InvoiceDocument, Reason = x.ExcessJustification, IdempotencyKey = idempotencyKey, RequestFingerprint = requestFingerprint, x.WarehouseId }, t, cancellationToken: ct));
+
+            foreach (var item in x.Items)
+            {
+                var row = rows[item.PurchaseOrderItemId];
+                var receiptItemId = Guid.CreateVersion7();
+                var expired = item.ExpiresOn is not null && item.ExpiresOn < DateOnly.FromDateTime(DateTime.UtcNow);
+                var requiresQuality = row.RequiresInspection || expired;
+                var qualityStatus = requiresQuality ? "PENDING" : "NOT_REQUIRED";
+                await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_receipt_items(id,tenant_id,receipt_id,purchase_order_item_id,quantity,supplier_lot,expires_on,quality_status,notes,created_by,updated_by) values(@Id,@TenantId,@ReceiptId,@PurchaseOrderItemId,@Quantity,@SupplierLot,@ExpiresOn,@QualityStatus,@Notes,@UserId,@UserId); update agro360.procurement_purchase_order_items set received_quantity=received_quantity+@Quantity,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@PurchaseOrderItemId", new { Id = receiptItemId, tenant.TenantId, ReceiptId = id, item.PurchaseOrderItemId, item.Quantity, item.SupplierLot, item.ExpiresOn, QualityStatus = qualityStatus, item.Notes, tenant.UserId }, t, cancellationToken: ct));
+                if (row.ItemType != "SERVICE" && !requiresQuality)
+                {
+                    var movementId = await c.ExecuteScalarAsync<Guid>(new CommandDefinition("select agro360.inventory_apply_stock_movement(@TenantId,@WarehouseId,@ProductId,@Quantity,@UnitCost,'PURCHASE_RECEIPT',@ReferenceId,@Lot,@ExpiresOn,@UserId,@Reason)", new { tenant.TenantId, x.WarehouseId, ProductId = row.RelatedProductId, item.Quantity, UnitCost = row.UnitPrice, ReferenceId = receiptItemId, Lot = item.SupplierLot, item.ExpiresOn, tenant.UserId, Reason = $"Recebimento {number}" }, t, cancellationToken: ct));
+                    await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_receipt_stock_links(tenant_id,receipt_item_id,stock_movement_id,created_by) values(@TenantId,@ReceiptItemId,@MovementId,@UserId)", new { tenant.TenantId, ReceiptItemId = receiptItemId, MovementId = movementId, tenant.UserId }, t, cancellationToken: ct));
+                }
+                else if (row.ItemType != "SERVICE")
+                {
+                    await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_receipt_quarantine(tenant_id,receipt_item_id,warehouse_id,product_id,quantity,unit,lot_number,expires_on,status,reason,created_by,updated_by) values(@TenantId,@ReceiptItemId,@WarehouseId,@ProductId,@Quantity,@Unit,@Lot,@ExpiresOn,'PENDING',@Reason,@UserId,@UserId)", new { tenant.TenantId, ReceiptItemId = receiptItemId, x.WarehouseId, ProductId = row.RelatedProductId, item.Quantity, row.Unit, Lot = item.SupplierLot, item.ExpiresOn, Reason = expired ? "Validade vencida: liberação depende de decisão autorizada." : "Inspeção obrigatória pendente.", tenant.UserId }, t, cancellationToken: ct));
+                }
+            }
+
+            var forecastExists = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.procurement_order_financial_links where tenant_id=@TenantId and purchase_order_id=@OrderId)", new { tenant.TenantId, OrderId = x.PurchaseOrderId }, t, cancellationToken: ct));
+            if (!forecastExists)
+            {
+                var remaining = decimal.Round(order.Total, 2, MidpointRounding.AwayFromZero);
+                if (remaining <= 0 || remaining * 100 < x.Installments) throw new DomainException("O total do pedido não permite gerar parcelas positivas na quantidade informada.", "agro360.procurement_installments_amount_invalid");
+                var regularAmount = decimal.Floor(remaining * 100 / x.Installments) / 100;
+                for (var installment = 1; installment <= x.Installments; installment++)
+                {
+                    var amount = installment == x.Installments ? remaining : regularAmount;
+                    remaining -= amount;
+                    var payableId = Guid.CreateVersion7();
+                    var dueOn = x.FirstDueOn.Value.AddMonths(installment - 1);
+                    await c.ExecuteAsync(new CommandDefinition("insert into agro360.finance_payables(id,tenant_id,supplier_name,document,original_amount,discount,interest,fine,final_amount,balance,issued_on,due_on,account_id,cost_center_id,notes,source_id,status,created_by) values(@Id,@TenantId,@Supplier,@Document,@Amount,0,0,0,@Amount,@Amount,@IssuedOn,@DueOn,@AccountId,@CostCenterId,@Notes,@OrderId,'OPEN',@UserId); insert into agro360.procurement_order_financial_links(tenant_id,purchase_order_id,installment,payable_id,amount,created_by) values(@TenantId,@OrderId,@Installment,@Id,@Amount,@UserId)", new { Id = payableId, tenant.TenantId, Supplier = order.SupplierName, Document = x.InvoiceDocument, Amount = amount, IssuedOn = DateOnly.FromDateTime(x.ReceivedAt.UtcDateTime), DueOn = dueOn, AccountId = x.FinanceAccountId, order.CostCenterId, Notes = $"Previsão do pedido {x.PurchaseOrderId:N} · parcela {installment}/{x.Installments}", OrderId = x.PurchaseOrderId, Installment = installment, tenant.UserId }, t, cancellationToken: ct));
+                }
+            }
+
+            var hasPendingQuantity = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.procurement_purchase_order_items where tenant_id=@TenantId and purchase_order_id=@OrderId and received_quantity<quantity)", new { tenant.TenantId, OrderId = x.PurchaseOrderId }, t, cancellationToken: ct));
+            var hasPendingQuality = x.Items.Any(item => rows[item.PurchaseOrderItemId].RequiresInspection || (item.ExpiresOn is not null && item.ExpiresOn < DateOnly.FromDateTime(DateTime.UtcNow)));
+            var receiptStatus = hasPendingQuality ? "DIVERGENT" : hasPendingQuantity ? "PARTIAL" : "RECEIVED";
+            var orderStatus = hasPendingQuantity ? "PARTIALLY_RECEIVED" : hasPendingQuality ? "DIVERGENT" : "RECEIVED";
+            await c.ExecuteAsync(new CommandDefinition("update agro360.procurement_receipts set status=@ReceiptStatus,stock_integration_status=@StockStatus,finance_integration_status='COMPLETED',updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id; update agro360.procurement_purchase_orders set status=@OrderStatus,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@OrderId; insert into agro360.procurement_purchase_order_events(id,tenant_id,purchase_order_id,event_type,comment,metadata,created_by,updated_by) values(gen_random_uuid(),@TenantId,@OrderId,'RECEIPT_INTEGRATED',@Comment,jsonb_build_object('receiptId',@Id,'stockStatus',@StockStatus,'financeStatus','COMPLETED'),@UserId,@UserId)", new { tenant.TenantId, tenant.UserId, Id = id, OrderId = x.PurchaseOrderId, ReceiptStatus = receiptStatus, OrderStatus = orderStatus, StockStatus = !requiresStock ? "NOT_APPLICABLE" : hasPendingQuality ? "PENDING" : "COMPLETED", Comment = hasPendingQuality ? "Entrada física concluída; inspeção de qualidade pendente." : "Entrada física e previsão financeira concluídas." }, t, cancellationToken: ct));
+            await Audit(c, t, "RECEIPT", id, "INTEGRATED", new { x.PurchaseOrderId, ReceiptStatus = receiptStatus, OrderStatus = orderStatus }, ct);
+            createdReceiptId = id;
+            firstProductId = rows.Values.FirstOrDefault(r => r.RelatedProductId.HasValue)?.RelatedProductId;
+            return id;
+        }, ct);
+
+        if (createdReceiptId.HasValue)
         {
-            var remaining = decimal.Round(order.Total, 2, MidpointRounding.AwayFromZero);
-            if (remaining <= 0 || remaining * 100 < x.Installments) throw new DomainException("O total do pedido não permite gerar parcelas positivas na quantidade informada.", "agro360.procurement_installments_amount_invalid");
-            var regularAmount = decimal.Floor(remaining * 100 / x.Installments) / 100;
-            for (var installment = 1; installment <= x.Installments; installment++)
-            {
-                var amount = installment == x.Installments ? remaining : regularAmount;
-                remaining -= amount;
-                var payableId = Guid.CreateVersion7();
-                var dueOn = x.FirstDueOn.Value.AddMonths(installment - 1);
-                await c.ExecuteAsync(new CommandDefinition("insert into agro360.finance_payables(id,tenant_id,supplier_name,document,original_amount,discount,interest,fine,final_amount,balance,issued_on,due_on,account_id,cost_center_id,notes,source_id,status,created_by) values(@Id,@TenantId,@Supplier,@Document,@Amount,0,0,0,@Amount,@Amount,@IssuedOn,@DueOn,@AccountId,@CostCenterId,@Notes,@OrderId,'OPEN',@UserId); insert into agro360.procurement_order_financial_links(tenant_id,purchase_order_id,installment,payable_id,amount,created_by) values(@TenantId,@OrderId,@Installment,@Id,@Amount,@UserId)", new { Id = payableId, tenant.TenantId, Supplier = order.SupplierName, Document = x.InvoiceDocument, Amount = amount, IssuedOn = DateOnly.FromDateTime(x.ReceivedAt.UtcDateTime), DueOn = dueOn, AccountId = x.FinanceAccountId, order.CostCenterId, Notes = $"Previsão do pedido {x.PurchaseOrderId:N} · parcela {installment}/{x.Installments}", OrderId = x.PurchaseOrderId, Installment = installment, tenant.UserId }, t, cancellationToken: ct));
-            }
+            await inspectionTrigger.TryStartFromOriginAsync(new OperationalInspectionEventRequest(
+                ProcessCode: "PURCHASE_RECEIPT",
+                OriginType: "procurement_receipts",
+                OriginId: createdReceiptId.Value,
+                ProductId: firstProductId,
+                UnitId: x.WarehouseId,
+                Notes: $"Recebimento de compra doc {x.InvoiceDocument}"), ct);
         }
 
-        var hasPendingQuantity = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.procurement_purchase_order_items where tenant_id=@TenantId and purchase_order_id=@OrderId and received_quantity<quantity)", new { tenant.TenantId, OrderId = x.PurchaseOrderId }, t, cancellationToken: ct));
-        var hasPendingQuality = x.Items.Any(item => rows[item.PurchaseOrderItemId].RequiresInspection || (item.ExpiresOn is not null && item.ExpiresOn < DateOnly.FromDateTime(DateTime.UtcNow)));
-        var receiptStatus = hasPendingQuality ? "DIVERGENT" : hasPendingQuantity ? "PARTIAL" : "RECEIVED";
-        var orderStatus = hasPendingQuantity ? "PARTIALLY_RECEIVED" : hasPendingQuality ? "DIVERGENT" : "RECEIVED";
-        await c.ExecuteAsync(new CommandDefinition("update agro360.procurement_receipts set status=@ReceiptStatus,stock_integration_status=@StockStatus,finance_integration_status='COMPLETED',updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id; update agro360.procurement_purchase_orders set status=@OrderStatus,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@OrderId; insert into agro360.procurement_purchase_order_events(id,tenant_id,purchase_order_id,event_type,comment,metadata,created_by,updated_by) values(gen_random_uuid(),@TenantId,@OrderId,'RECEIPT_INTEGRATED',@Comment,jsonb_build_object('receiptId',@Id,'stockStatus',@StockStatus,'financeStatus','COMPLETED'),@UserId,@UserId)", new { tenant.TenantId, tenant.UserId, Id = id, OrderId = x.PurchaseOrderId, ReceiptStatus = receiptStatus, OrderStatus = orderStatus, StockStatus = !requiresStock ? "NOT_APPLICABLE" : hasPendingQuality ? "PENDING" : "COMPLETED", Comment = hasPendingQuality ? "Entrada física concluída; inspeção de qualidade pendente." : "Entrada física e previsão financeira concluídas." }, t, cancellationToken: ct));
-        await Audit(c, t, "RECEIPT", id, "INTEGRATED", new { x.PurchaseOrderId, ReceiptStatus = receiptStatus, OrderStatus = orderStatus }, ct);
-        return id;
-    }, ct);
+        return resultId;
+    }
     public Task<IReadOnlyList<dynamic>> ReceiptsAsync(ProcurementQuery q, CancellationToken ct) => List("select r.id,r.number,o.number order_number,s.legal_name supplier_name,r.received_at,r.status,r.stock_integration_status,r.finance_integration_status,r.invoice_document,(select count(*) from agro360.procurement_receipt_items i where i.tenant_id=r.tenant_id and i.receipt_id=r.id) item_count from agro360.procurement_receipts r join agro360.procurement_purchase_orders o on o.tenant_id=r.tenant_id and o.id=r.purchase_order_id join agro360.procurement_suppliers s on s.tenant_id=o.tenant_id and s.id=o.supplier_id where r.tenant_id=@TenantId and r.deleted_at is null and (@Search is null or r.number ilike '%'||@Search||'%' or o.number ilike '%'||@Search||'%' or s.legal_name ilike '%'||@Search||'%') and (@Status is null or r.status=@Status) order by r.received_at desc limit @Take offset @Skip", q, ct);
     public Task<dynamic> ReceiptAsync(Guid id, CancellationToken ct) => db.InTenantTransactionAsync<dynamic>(async (c, t) =>
     {

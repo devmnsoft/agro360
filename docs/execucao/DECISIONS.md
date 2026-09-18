@@ -1,5 +1,19 @@
 # Decisões de execução
 
+## ADR-Q-EVT-01 — Gatilhos operacionais de qualidade disparam por evento pós-commit com idempotência e retenção explícita (2026-09-18)
+
+- **Contexto**: A entrega AG-Q-EVT-001 liga eventos operacionais de recebimento (compra, colheita, devoluções) e apontamento industrial ao motor de inspeção (092).
+- **Decisão**:
+  - `IOperationalInspectionTrigger` é executado **após o commit** do fato de origem. Falhas de modelo, ambiguidade ou erros técnicos não desfazem o recebimento/apontamento de origem e são persistidos na tabela `agro360.quality_inspection_event_intents`.
+  - Idempotência é garantida pela chave `EVT:{process}:{originId:N}` e hash estável do payload. Tentativa com mesmo hash devolve o intent existente (replay seguro); divergência de hash sinaliza conflito.
+  - O recebimento mantém o status de qualidade do lote/recibo em `AWAITING_INSPECTION`. O gancho jamais destina, jamais libera lote para disponível e não gera aprovação presumida.
+  - Se nenhum modelo for resolvido: intent registra `PENDING_MODEL` e o fato operacional permanece retido.
+  - Se houver empate de especificidade/precedência: intent registra `AMBIGUOUS` sem iniciar run automática.
+  - Se não houver operador/inspetor autenticado: intent registra `SKIPPED_NO_ACTOR`.
+  - Se modelo único for resolvido e houver inspetor: intent registra `STARTED` e inicia `StartRunAsync` com seleção `AUTOMATIC`.
+  - Estados permitidos de intent: `PENDING | STARTED | AMBIGUOUS | PENDING_MODEL | SKIPPED_NO_ACTOR`.
+  - Preserva-se a imutabilidade estrita da migration 092; schema aditivo isolado na migration 093 (`093_quality_inspection_event_intents.sql`).
+
 ## ADR-TPL-01 — Shell operacional segue o plano mestre sem autorizar no cliente (2026-09-17)
 
 O `_Layout.cshtml` passa a agrupar a navegação na ordem do plano mestre, com skip-link, breadcrumb humano, faixa de contexto assistido e section `ScreenHelp`. Os atributos `data-permissions` e `data-super-admin` permanecem a fonte do filtro no cliente; o backend continua sendo a autorização real. CSS/JS incrementais (`shell-evolution.*`) evitam reescrever `agro360.css`. Tema autenticado permanece claro. Esta ADR não homologa E2E nem MFA.

@@ -124,4 +124,27 @@ O fechamento volta a calcular no servidor causa, evidência/justificativa, açõ
 - Restore/build Release: êxito (0 avisos/erros).
 - Testes: `ComplianceFormTests` (7) e `UnitTests` (11) aprovados; suíte completa de Architecture ainda contém falhas pré-existentes (`HarvestClosing…`, `ProcessCentral…`) e a falha local de `DefaultConnection` nos `appsettings` do usuário (não commitados).
 - Integração PostgreSQL limpa/incremental, Swagger autenticado, navegador desktop/mobile e cenários transacionais 1–15 da especificação: **não homologados nesta máquina nesta entrega**; gates obrigatórios antes de produção.
-- Integrações de ponta a ponta com recebimento de compra, produção industrial, armazenagem, expedição e devolução: **parcialmente preparadas** (process codes e seleção); o acionamento automático por evento operacional nesses módulos permanece pendente onde o gancho de domínio ainda não chama `StartRunAsync`/`resolve`.
+- Integrações de ponta a ponta com recebimento de compra, produção industrial, armazenagem, expedição e devolução: ganchos operacionais por evento implementados via `IOperationalInspectionTrigger` na entrega AG-Q-EVT-001.
+
+### Evolução AG-Q-EVT-001 — Gatilhos operacionais por evento (2026-09-18)
+
+- **Contrato e Serviço**: `IOperationalInspectionTrigger` / `OperationalInspectionTrigger`.
+- **Ganchos Conectados (pós-commit do fato de origem)**:
+  - `HarvestService.ReceiveAsync` → `HARVEST_RECEIPT`, originId = `production_receipts.id`.
+  - `LogisticsService.ReceiveReturnAsync` → `RETURN`, originId = `fulfillment_return_receipts.id`.
+  - `ProcurementService.ReceiveAsync` → `PURCHASE_RECEIPT`, originId = `purchase_receipts.id`.
+  - `IndustrialProductionService.RegisterOutputAsync` → `PRODUCTION`, originId = `industrial_batches.id`.
+- **Idempotência**: Chave única `EVT:{process}:{originId:N}` e hash estável SHA-256 do payload.
+- **Tabela de Intents**: `agro360.quality_inspection_event_intents` (Migration incremental `093_quality_inspection_event_intents.sql`, schema `9.3.0`, RLS habilitado, grant `agro360_app`).
+- **Estados do Intent**: `PENDING`, `STARTED`, `AMBIGUOUS`, `PENDING_MODEL`, `SKIPPED_NO_ACTOR`.
+- **Regras Operacionais**:
+  - O gancho roda **estritamente após o commit** da transação de origem; falhas de modelo ou técnicas nunca desfazem o recebimento/apontamento.
+  - O recebimento mantém o material em `AWAITING_INSPECTION`; o gancho não move para `AVAILABLE` e não destina devolução.
+  - Sem modelo → `PENDING_MODEL` (nunca aprova automaticamente).
+  - Empate de modelos → `AMBIGUOUS` sem run arbitrária.
+  - Sem usuário/inspetor → `SKIPPED_NO_ACTOR`.
+  - Modelo único → `STARTED` com início de run via `StartRunAsync` (modo `AUTOMATIC`).
+- **API e UI**:
+  - `GET /api/inspections/event-intents`.
+  - `/Inspections`: breadcrumb `Qualidade / Modelos e inspeções`, `@section ScreenHelp`, aba de gatilhos por evento com status em português.
+- **Pendência**: E2E dos 15 cenários de inspeção permanece sob o pacote `AG-Q-092-E2E`.
