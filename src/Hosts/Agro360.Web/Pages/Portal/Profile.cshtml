@@ -1,0 +1,80 @@
+@page
+@{
+    Layout = "_PortalLayout";
+    ViewData["Title"] = "Meu Perfil e Segurança";
+}
+
+<section id="portal-profile-page">
+    <div class="portal-hero">
+        <div>
+            <span class="eyebrow">SEGURANÇA E ACESSO</span>
+            <h1>Meu Perfil</h1>
+            <p>Gerencie as credenciais e visualize as permissões atribuídas à sua conta externa.</p>
+        </div>
+    </div>
+
+    <div class="portal-columns">
+        <div class="portal-main-col">
+            <div class="card auth-card" style="margin-bottom: 24px;">
+                <span class="eyebrow">DADOS DA CONTA</span>
+                <h2>Informações de Acesso</h2>
+                <div class="profile-info-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px;">
+                    <div>
+                        <span class="detail-label">Nome Completo</span>
+                        <strong id="profile-name">-</strong>
+                    </div>
+                    <div>
+                        <span class="detail-label">E-mail Cadastrado</span>
+                        <strong id="profile-email">-</strong>
+                    </div>
+                    <div>
+                        <span class="detail-label">Perfil Externo</span>
+                        <span id="profile-role" class="status">-</span>
+                    </div>
+                    <div>
+                        <span class="detail-label">Ambiente / Status</span>
+                        <span class="status available">Ativo e Conectado</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Formulário de Alteração de Senha -->
+            <form id="profile-password-form" class="portal-form flow-card">
+                <span class="eyebrow">SEGURANÇA</span>
+                <h2>Alterar Minha Senha</h2>
+                <p>Para sua segurança, informe sua senha atual e defina uma nova senha forte.</p>
+
+                <label>
+                    Senha Atual *
+                    <input name="currentPassword" type="password" autocomplete="current-password" required minlength="12">
+                </label>
+
+                <label>
+                    Nova Senha *
+                    <input name="newPassword" type="password" autocomplete="new-password" required minlength="12" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}" aria-describedby="new-password-help">
+                </label>
+                <small id="new-password-help">Mínimo de 12 caracteres contendo letras maiúsculas, minúsculas, números e caracteres especiais.</small>
+
+                <label>
+                    Confirmar Nova Senha *
+                    <input name="confirmPassword" type="password" autocomplete="new-password" required minlength="12">
+                </label>
+
+                <div class="form-feedback" role="status"></div>
+                <button class="primary button" type="submit">Atualizar Senha</button>
+            </form>
+        </div>
+
+        <aside class="portal-side-col">
+            <div class="card help-card">
+                <span class="eyebrow">BOAS PRÁTICAS</span>
+                <h3>Proteção de Conta</h3>
+                <ul>
+                    <li>Nunca compartilhe suas credenciais pessoais.</li>
+                    <li>Sua conta registra auditoria individual para cada download, cotação e solicitação.</li>
+                    <li>Em caso de suspeita de comprometimento, altere sua senha imediatamente.</li>
+                </ul>
+            </div>
+        </aside>
+    </div>
+</section>

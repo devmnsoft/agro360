@@ -1,0 +1,41 @@
+@page
+@{
+    Layout = "_PortalLayout";
+    ViewData["Title"] = "Suporte e Central de Ajuda";
+}
+
+<section id="portal-support">
+    <div class="portal-hero">
+        <div>
+            <span class="eyebrow">CENTRAL DE AJUDA E ORIENTAÇÃO</span>
+            <h1>Como podemos te ajudar?</h1>
+            <p>Consulte guias operacionais, perguntas frequentes ou fale diretamente com a equipe de atendimento.</p>
+        </div>
+        <a class="primary button" href="/Portal/Requests?new=true">Abrir Chamado / Dúvida</a>
+    </div>
+
+    <form id="support-search-form" class="filters" style="grid-template-columns: 1fr auto;">
+        <label>
+            Buscar na base de conhecimento
+            <input name="search" id="support-search-input" type="search" placeholder="Ex.: emissão de laudo, cotações, entrega, colheita...">
+        </label>
+        <button class="secondary button" type="submit">Pesquisar</button>
+    </form>
+
+    <div class="support-articles-grid" id="support-articles-list" aria-live="polite">
+        <div class="empty">Carregando artigos e orientações…</div>
+    </div>
+
+    <!-- Modal de Visualização de Artigo -->
+    <dialog id="article-dialog" class="portal-dialog">
+        <div class="portal-form">
+            <button class="dialog-close" type="button" aria-label="Fechar modal">×</button>
+            <span class="eyebrow" id="article-category">GUIA OPERACIONAL</span>
+            <h2 id="article-title">Título do Artigo</h2>
+            <div id="article-content" class="article-body"></div>
+            <div class="dialog-actions">
+                <button type="button" class="secondary" data-close-article>Fechar</button>
+            </div>
+        </div>
+    </dialog>
+</section>

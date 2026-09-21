@@ -1,5 +1,26 @@
 # Plano de execução Agro360
 
+## Recorte concluído — Portal Externo SaaS, Autoatendimento e Rastreabilidade Segura AG-PORTAL-EXT-001 (2026-09-21)
+
+1. **Concluído no código:**
+   - Portal externo SaaS totalmente isolado da administração interna (`/Portal/*` e `api/portal/*`).
+   - Autenticação e claims estritas: tokens externos recebem exclusivamente `portal.access` e claims de perfil externo (`agro360.portal_profile.*`), sem permissões administrativas.
+   - Fluxo completo de convite seguro com token hash, primeiro acesso com aceitação de termos versionados e validação estrita de senha forte (`PortalRules.ValidatePasswordStrength`).
+   - Rastreabilidade pública/privada de lote segura (`/Portal/Traceability` e `GET /api/portal/traceability/{lotCode}`) com sanitização estrita: custos, margens, preços, operadores internos, `tenant_id` e GUIDs brutos omitidos.
+   - Central de solicitações externas (`/Portal/Requests`) com upload de evidências validado, timeline de eventos e cancelamento motivado com justificativa obrigatória auditada.
+   - Catálogo Marketplace B2B operacional (`/Portal/Marketplace`) e consulta de cotações próprias (`/api/portal/marketplace/my-quotes`), sem simulação de faturamento ou pagamentos fictícios.
+   - Documentos e laudos autorizados (`/Portal/Documents`) com download seguro e auditoria em `portal_external_audit_events`.
+   - Base de conhecimento pública e suporte operacional (`/Portal/Support`).
+   - Gestão de perfil e alteração de senha segura (`/Portal/Profile`).
+   - Front-end responsivo e acessível (`_PortalLayout.cshtml`, `portal.js`, `portal.css`) com suporte a 360px–1920px, toasts nativos, sanitização de GUIDs, modal de justificativa obrigatória e proibição total de `alert()` e SweetAlert.
+   - DDL incremental `097_portal_external_hardening.sql` (schema `9.7.0`), índices operacionais compostos, RLS em todas as 26 tabelas `portal_*` e consolidação em `database/agro360-postgres-full.sql`.
+2. **Evidências:**
+   - `dotnet build -c Release`: 0 erros, 0 avisos (PASS).
+   - `dotnet test tests/Agro360.UnitTests -c Release`: 127/127 aprovados (100% PASS).
+   - `dotnet test tests/Agro360.ArchitectureTests -c Release`: 147/147 aprovados (100% PASS).
+   - Instalação limpa Full SQL e idempotência da migration 097 validadas no PostgreSQL 18.0: PASS.
+   - `git diff --check`: 0 erros (PASS).
+
 ## Recorte concluído — Destinação e Qualidade de Retorno + Feedback Global AG-E8-RET-001 (2026-09-21)
 
 1. **Concluído no código:**

@@ -23,9 +23,14 @@ Homologue em 360, 768, 1280 e 1920 px; temas claro/escuro; teclado; leitor de te
 
 Alvos de toque têm no mínimo 44 px; formulários passam a uma coluna em até 650 px; a navegação inferior permanece acessível em celular. Estados offline usam rótulos textuais além de cor (`Pendente`/`Falhou`) e tabelas operacionais devem virar cards sem scroll horizontal.
 
-## Superfície externa premium
+## Superfície externa premium (Portal Externo AG-PORTAL-EXT-001)
 
-O Portal usa `portal.css`, identidade clara e comercial, largura máxima de 1240 px, cards de 16 px, foco visível e contraste sóbrio. Em até 800 px, grids viram cards em uma coluna e a navegação passa ao rodapé. Estados vazios explicam a próxima ação; skeletons são discretos; diálogos mantêm título, fechar, validação e feedback. Evite IDs técnicos, jargão administrativo, ações sem endpoint e disponibilidade fictícia.
+O Portal Externo usa `portal.css` e `_PortalLayout.cshtml` dedicados, com identidade corporativa clara, moderna e comercial, com largura máxima centralizada de 1280 px, cards com raio de 16 px, foco visível (`focus-visible: 2px solid #16a34a`) e contraste WCAG AA sóbrio.
+- **Responsividade Adaptativa (360px a 1920px)**: Em telas menores ou iguais a 768px, os grids colapsam para visualização em cards de coluna única, tabelas recebem contêiner com rolagem horizontal e a navegação superior se adapta sem quebras.
+- **Proibição Estrita de Alert/SweetAlert**: É terminantemente proibido o uso de `window.alert()`, `window.confirm()` ou bibliotecas invasivas como SweetAlert. Todo feedback utiliza a região de toast acessível (`#portal-toast-region` com `role="status"` e `aria-live="polite"`) ou diálogos modais nativos acessíveis (`<dialog id="portalActionModal">`).
+- **Ações Críticas com Motivo Obrigatório**: Cancelamentos ou rejeições acionam o diálogo modal com campo de justificativa obrigatório (`requireReason: true`), validando o preenchimento antes do envio.
+- **Sanitização de Identificadores Técnicos**: A interface expõe apenas códigos operacionais legíveis (ex.: número do pedido, código do lote, código da solicitação). GUIDs brutos de banco e `tenant_id` são rigorosamente filtrados do DOM e das mensagens ao usuário.
+- **Feedback de Rede e Permissão**: Diferenciação clara entre sessão expirada (401), permissão insuficiente (403), recurso indisponível e falhas de conectividade offline.
 
 ## Sprint 28 — Qualidade e Compliance
 Implementação persistente de requisitos configuráveis, especificações versionadas, inspeções, decisão auditável de lotes, não conformidades/CAPA, auditorias, beneficiamento e prontidão de exportação. Homologar regras e UX conforme [Qualidade e Compliance](QUALITY-COMPLIANCE.md) e [Prontidão para exportação](EXPORT-READINESS.md).

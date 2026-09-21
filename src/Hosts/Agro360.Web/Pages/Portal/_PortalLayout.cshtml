@@ -1,1 +1,67 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#123d2c"><title>@ViewData["Title"] · Portal Agro360</title><link rel="stylesheet" href="~/css/portal.css" asp-append-version="true"></head><body class="portal-body"><header class="portal-header"><a class="portal-brand" href="/Portal"><img src="/icons/agro360.svg" alt=""><span><strong>Portal Agro360</strong><small>Negócios conectados ao campo</small></span></a><nav aria-label="Navegação principal"><a href="/Portal">Início</a><a href="/Portal/Marketplace">Marketplace</a><a href="/Portal/Requests">Solicitações</a><button id="portal-logout" type="button">Sair</button></nav></header><main class="portal-main">@RenderBody()</main><nav class="portal-mobile" aria-label="Navegação móvel"><a href="/Portal">Início</a><a href="/Portal/Marketplace">Catálogo</a><a href="/Portal/Requests">Solicitações</a></nav><script src="~/js/portal.js" asp-append-version="true"></script></body></html>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#123d2c">
+    <title>@ViewData["Title"] · Portal Agro360</title>
+    <link rel="stylesheet" href="~/css/portal.css" asp-append-version="true">
+</head>
+<body class="portal-body">
+    <header class="portal-header">
+        <a class="portal-brand" href="/Portal">
+            <img src="/icons/agro360.svg" alt="" width="38" height="38">
+            <span>
+                <strong>Portal Agro360</strong>
+                <small>Autoatendimento e Operações Conectadas</small>
+            </span>
+        </a>
+        <nav aria-label="Navegação principal">
+            <a href="/Portal">Início</a>
+            <a href="/Portal/Requests">Solicitações</a>
+            <a href="/Portal/Traceability">Rastreabilidade</a>
+            <a href="/Portal/Marketplace">Marketplace</a>
+            <a href="/Portal/Documents">Documentos</a>
+            <a href="/Portal/Support">Suporte</a>
+            <a href="/Portal/Profile">Meu Perfil</a>
+            <button id="portal-logout" type="button" class="portal-btn-logout">Sair</button>
+        </nav>
+    </header>
+
+    <main class="portal-main" id="main-content">
+        @RenderBody()
+    </main>
+
+    <nav class="portal-mobile" aria-label="Navegação móvel">
+        <a href="/Portal">Início</a>
+        <a href="/Portal/Requests">Solicitações</a>
+        <a href="/Portal/Traceability">Rastrear</a>
+        <a href="/Portal/Marketplace">Catálogo</a>
+        <a href="/Portal/Documents">Documentos</a>
+        <a href="/Portal/Support">Ajuda</a>
+        <a href="/Portal/Profile">Perfil</a>
+    </nav>
+
+    <div id="portal-toast-region" class="portal-toast-region" aria-live="polite" aria-atomic="true"></div>
+
+    <dialog id="portal-confirm-dialog" class="portal-dialog">
+        <form id="portal-confirm-form" class="portal-form">
+            <button class="dialog-close" type="button" aria-label="Fechar modal">×</button>
+            <span class="eyebrow">CONFIRMAÇÃO OBRIGATÓRIA</span>
+            <h2 id="portal-confirm-title">Confirmar ação</h2>
+            <p id="portal-confirm-message">Esta ação requer justificativa registrada para auditoria.</p>
+            <label id="portal-confirm-reason-label">
+                Motivo / Justificativa *
+                <textarea name="reason" id="portal-confirm-reason" required minlength="5" maxlength="500" rows="3" placeholder="Descreva o motivo da ação..."></textarea>
+            </label>
+            <div class="form-feedback" role="status"></div>
+            <div class="dialog-actions">
+                <button type="button" class="secondary" id="portal-confirm-cancel">Voltar</button>
+                <button type="submit" class="primary" id="portal-confirm-submit">Confirmar</button>
+            </div>
+        </form>
+    </dialog>
+
+    <script src="~/js/portal.js" asp-append-version="true"></script>
+</body>
+</html>

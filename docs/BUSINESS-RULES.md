@@ -150,3 +150,13 @@ canônico. Não enfraquecem as seções anteriores.
 - Somente lote com qualidade `APPROVED` e origem comprovada pode ser publicado como liberado; bloqueio ou quarentena nunca são mascarados.
 - Publicação exige `traceability.publish`; revogação preserva histórico, exige motivo e torna o código indisponível publicamente.
 - Unidades heterogêneas não são consolidadas sem conversão explícita; vínculo manual exige justificativa e revisão.
+
+## Portal Externo SaaS e Autoatendimento AG-PORTAL-EXT-001
+
+1. **Segregação de Autorização**: O token de acesso externo recebe exclusivamente o escopo `portal.access` e claims específicas de perfil (`agro360.portal_profile.*`). Nenhuma policy administrativa é concedida.
+2. **Senha Forte**: O primeiro acesso e a alteração de senha exigem complexidade estrita (mínimo de 10 caracteres contendo maiúscula, minúscula, dígito e símbolo especial).
+3. **Higienização de Rastreabilidade**: Consultas no portal externo nunca expõem custos operacionais, margens, preços internos, `tenant_id`, GUIDs técnicos, operadores internos ou inconformidades internas não resolvidas.
+4. **Cancelamento Motivado**: O cancelamento de solicitações externas exige justificativa textual explícita e gera evento auditado em `portal_external_audit_events`.
+5. **Marketplace Sem Faturamento Fictício**: O catálogo externo opera por cotação (`REQUESTED`); cotações não geram títulos a receber nem baixas no estoque até homologação interna.
+6. **Download Seguro de Documentos**: O download de laudos e certificados verifica autorização por entidade vinculada (`portal_document_permissions`) e é auditado com registro de data/hora UTC e IP.
+7. **Idempotência e RLS**: Todas as 26 tabelas `portal_*` possuem RLS habilitado com `platform_enable_tenant_rls(...)` e índices compostos por `(tenant_id, ...)`.

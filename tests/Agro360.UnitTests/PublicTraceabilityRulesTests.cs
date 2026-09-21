@@ -41,13 +41,15 @@ public sealed class PublicTraceabilityRulesTests
         Assert.Equal("traceability.revocation_reason_required", exception.Code);
     }
 
+    private static readonly JsonSerializerOptions JsonWebOptions = new(JsonSerializerDefaults.Web);
+
     [Fact]
     public void PublicContractDoesNotExposeInternalIdentifiersOrFinancialData()
     {
         var payload = new PublicTraceDto("opaque", "Café", "LT-001", "Origem rastreada", "Fazenda Boa",
             "Safra 2026", "Café", ["Conforme"], [new("Qualidade", "Aprovado", DateTimeOffset.UtcNow)],
             "LIBERADO", DateTimeOffset.UtcNow);
-        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var json = JsonSerializer.Serialize(payload, JsonWebOptions);
 
         Assert.DoesNotContain("tenantId", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("userId", json, StringComparison.OrdinalIgnoreCase);

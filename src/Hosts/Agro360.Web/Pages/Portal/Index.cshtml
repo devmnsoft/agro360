@@ -1,3 +1,74 @@
 @page
-@{Layout="_PortalLayout";ViewData["Title"]="Visão geral";}
-<section id="portal-dashboard"><div class="portal-hero"><div><span class="eyebrow">VISÃO GERAL</span><h1>Olá, <span data-name>parceiro</span>.</h1><p data-profile>Confira o que precisa da sua atenção hoje.</p></div><a class="primary button" href="/Portal/Requests?new=true">Nova solicitação</a></div><div class="metric-grid" data-metrics aria-live="polite"><div class="skeleton"></div><div class="skeleton"></div></div><div class="portal-columns"><section><div class="section-heading"><div><span class="eyebrow">COMUNICADOS</span><h2>Informações importantes</h2></div></div><div class="stack" data-announcements><div class="empty">Carregando seus comunicados…</div></div></section><aside class="help-card"><span class="eyebrow">PRECISA DE AJUDA?</span><h2>Fale com a equipe responsável</h2><p>Abra uma solicitação e acompanhe cada resposta pelo portal.</p><a class="secondary button" href="/Portal/Requests?new=true">Abrir solicitação</a></aside></div></section>
+@{
+    Layout = "_PortalLayout";
+    ViewData["Title"] = "Visão Geral";
+}
+
+<section id="portal-dashboard">
+    <div class="portal-hero">
+        <div>
+            <span class="eyebrow">PORTAL EXTERNO SAAS</span>
+            <h1>Olá, <span data-name>Parceiro</span>.</h1>
+            <p id="portal-profile-badge" data-profile>Carregando perfil de acesso...</p>
+        </div>
+        <div class="hero-actions">
+            <a class="secondary button" href="/Portal/Traceability">Consultar Lote</a>
+            <a class="primary button" href="/Portal/Requests?new=true">Nova Solicitação</a>
+        </div>
+    </div>
+
+    <!-- Grid de Métricas Reais -->
+    <div class="metric-grid" data-metrics aria-live="polite">
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+        <div class="skeleton"></div>
+    </div>
+
+    <div class="portal-columns">
+        <section class="portal-main-col">
+            <div class="section-heading">
+                <div>
+                    <span class="eyebrow">COMUNICAÇÃO OFICIAL</span>
+                    <h2>Comunicados e Avisos</h2>
+                </div>
+            </div>
+            <div class="stack" data-announcements aria-live="polite">
+                <div class="empty">Carregando seus comunicados…</div>
+            </div>
+
+            <div class="section-heading" style="margin-top: 36px;">
+                <div>
+                    <span class="eyebrow">HISTÓRICO RECENTE</span>
+                    <h2>Atividades Recentes</h2>
+                </div>
+            </div>
+            <div class="stack" data-activities aria-live="polite">
+                <div class="empty">Carregando atividades recentes…</div>
+            </div>
+        </section>
+
+        <aside class="portal-side-col">
+            <div class="card help-card">
+                <span class="eyebrow">ATENDIMENTO DEDICADO</span>
+                <h2>Precisa de Suporte?</h2>
+                <p>Nossa equipe está disponível para atender dúvidas comerciais, solicitações operacionais e documentais.</p>
+                <div class="stack" style="margin-top: 18px;">
+                    <a class="primary button" href="/Portal/Requests?new=true">Abrir Solicitação</a>
+                    <a class="secondary button" href="/Portal/Support">Base de Conhecimento</a>
+                </div>
+            </div>
+
+            <div class="card quick-access-card" style="margin-top: 24px;">
+                <span class="eyebrow">AUTOATENDIMENTO</span>
+                <h3>Atalhos Rápidos</h3>
+                <ul class="quick-links">
+                    <li><a href="/Portal/Traceability">🔍 Rastrear Lote / Certificado</a></li>
+                    <li><a href="/Portal/Marketplace">🌾 Catálogo de Ofertas Disponíveis</a></li>
+                    <li><a href="/Portal/Documents">📄 Meus Documentos e Laudos</a></li>
+                    <li><a href="/Portal/Profile">🔐 Alterar Minha Senha</a></li>
+                </ul>
+            </div>
+        </aside>
+    </div>
+</section>

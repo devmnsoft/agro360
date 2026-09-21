@@ -1,3 +1,126 @@
 @page
-@{Layout="_PortalLayout";ViewData["Title"]="Solicitações";}
-<section id="portal-requests"><div class="portal-hero"><div><span class="eyebrow">CENTRAL DE ATENDIMENTO</span><h1>Solicitações</h1><p>Converse com a organização e acompanhe cada etapa.</p></div><button class="primary" data-open-request>Nova solicitação</button></div><div class="request-list" data-requests><div class="empty">Carregando solicitações…</div></div><dialog id="request-dialog"><form id="request-form" class="portal-form"><button class="dialog-close" type="button" aria-label="Fechar">×</button><h2>Como podemos ajudar?</h2><label>Tipo<select name="type" required><option value="">Selecione</option><option value="COMMERCIAL_QUESTION">Dúvida comercial</option><option value="DOCUMENT">Solicitação de documento</option><option value="CERTIFICATE">Solicitação de certificado</option><option value="DELIVERY_ISSUE">Problema na entrega</option><option value="ORDER_DIVERGENCE">Divergência de pedido</option><option value="REGISTRATION_UPDATE">Atualização cadastral</option><option value="QUOTE">Solicitação de cotação</option><option value="COMPLIANCE">Compliance/documentação</option><option value="OTHER">Outro</option></select></label><label>Assunto<input name="subject" required maxlength="160"></label><label>Descrição<textarea name="description" required minlength="10" maxlength="4000" rows="5"></textarea></label><label>Prioridade<select name="priority" required><option value="LOW">Baixa</option><option value="MEDIUM" selected>Normal</option><option value="HIGH">Alta</option><option value="CRITICAL">Crítica</option></select></label><div class="form-feedback" role="status"></div><button class="primary" type="submit">Enviar solicitação</button></form></dialog></section>
+@{
+    Layout = "_PortalLayout";
+    ViewData["Title"] = "Solicitações e Atendimento";
+}
+
+<section id="portal-requests">
+    <div class="portal-hero">
+        <div>
+            <span class="eyebrow">AUTOATENDIMENTO</span>
+            <h1>Minhas Solicitações</h1>
+            <p>Abra e acompanhe solicitações comerciais, cadastrais, logísticas e de suporte.</p>
+        </div>
+        <button class="primary button" data-open-request type="button">+ Nova Solicitação</button>
+    </div>
+
+    <div class="request-list" data-requests aria-live="polite">
+        <div class="empty">Carregando solicitações…</div>
+    </div>
+
+    <!-- Modal de Nova Solicitação -->
+    <dialog id="request-dialog" class="portal-dialog">
+        <form id="request-form" class="portal-form">
+            <button class="dialog-close" type="button" aria-label="Fechar modal">×</button>
+            <span class="eyebrow">NOVA SOLICITAÇÃO</span>
+            <h2>Como podemos ajudar?</h2>
+            <p>Selecione a categoria e descreva detalhadamente sua necessidade.</p>
+
+            <label>
+                Tipo de Solicitação *
+                <select name="type" required>
+                    <option value="">Selecione o tipo</option>
+                    <option value="SUPPORT">Suporte Técnico / Atendimento</option>
+                    <option value="DOCUMENT">Solicitação de Documento / Laudo</option>
+                    <option value="CERTIFICATE">Solicitação de Certificado</option>
+                    <option value="QUOTE">Solicitação de Cotação Especial</option>
+                    <option value="REGISTRATION_UPDATE">Atualização de Dados Cadastrais</option>
+                    <option value="LOGISTICS_COLLECTION">Logística / Agendamento de Coleta</option>
+                    <option value="AUDIT_CERTIFICATION">Auditoria / Certificação</option>
+                    <option value="MODULE_REQUEST">Solicitar Acesso a Módulo</option>
+                    <option value="COMMERCIAL_QUESTION">Dúvida Comercial / Pedido</option>
+                    <option value="OTHER">Outro Assunto</option>
+                </select>
+            </label>
+
+            <label>
+                Assunto *
+                <input name="subject" required maxlength="160" placeholder="Resumo em poucas palavras">
+            </label>
+
+            <label>
+                Descrição detalhada *
+                <textarea name="description" required minlength="10" maxlength="4000" rows="5" placeholder="Descreva sua dúvida, problema ou necessidade operacional (mínimo 10 caracteres)..."></textarea>
+            </label>
+
+            <label>
+                Prioridade informada *
+                <select name="priority" required>
+                    <option value="LOW">Baixa (Dúvida pontual)</option>
+                    <option value="MEDIUM" selected>Normal (Operação padrão)</option>
+                    <option value="HIGH">Alta (Impacto no envio/coleta)</option>
+                    <option value="CRITICAL">Crítica (Operação paralisada)</option>
+                </select>
+            </label>
+
+            <div class="form-feedback" role="status"></div>
+            <div class="dialog-actions">
+                <button type="button" class="secondary" data-close-dialog>Cancelar</button>
+                <button class="primary" type="submit">Enviar Solicitação</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- Modal de Detalhes da Solicitação -->
+    <dialog id="request-detail-dialog" class="portal-dialog">
+        <div class="portal-form">
+            <button class="dialog-close" type="button" aria-label="Fechar modal">×</button>
+            <span class="eyebrow" id="detail-protocol">SOL-000000</span>
+            <h2 id="detail-subject">Assunto da solicitação</h2>
+
+            <div class="detail-meta-grid">
+                <div>
+                    <span class="detail-label">Status</span>
+                    <span id="detail-status" class="status">Aberta</span>
+                </div>
+                <div>
+                    <span class="detail-label">Tipo</span>
+                    <strong id="detail-type">-</strong>
+                </div>
+                <div>
+                    <span class="detail-label">Prioridade</span>
+                    <span id="detail-priority">-</span>
+                </div>
+                <div>
+                    <span class="detail-label">Abertura</span>
+                    <span id="detail-created">-</span>
+                </div>
+            </div>
+
+            <div class="detail-section">
+                <span class="detail-label">Descrição</span>
+                <p id="detail-description" class="detail-content"></p>
+            </div>
+
+            <div id="detail-resolution-box" class="detail-box success-box" style="display:none;">
+                <span class="detail-label">Resposta / Resolução da Equipe</span>
+                <p id="detail-resolution" class="detail-content"></p>
+            </div>
+
+            <div id="detail-cancellation-box" class="detail-box alert-box" style="display:none;">
+                <span class="detail-label">Motivo de Cancelamento / Rejeição</span>
+                <p id="detail-cancellation" class="detail-content"></p>
+            </div>
+
+            <div class="detail-section">
+                <span class="detail-label">Histórico de Movimentações</span>
+                <div id="detail-timeline" class="portal-timeline"></div>
+            </div>
+
+            <div class="dialog-actions">
+                <button type="button" class="danger button" id="btn-cancel-request" style="display:none;">Cancelar Solicitação</button>
+                <button type="button" class="secondary button" data-close-detail>Fechar</button>
+            </div>
+        </div>
+    </dialog>
+</section>

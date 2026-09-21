@@ -1,3 +1,40 @@
+## Portal Externo SaaS, Autoatendimento e Rastreabilidade Segura (AG-PORTAL-EXT-001) — 2026-09-21
+
+Branch `main` (`875b520136f969fa21bd1ced7015410ce150857c`).
+
+**Entregue:**
+- **Segregação Total e Segurança**:
+  - Usuários externos autenticados recebem estritamente a claim `portal.access` e claims específicas de perfil (`agro360.portal_profile.*`), sem permissões administrativas (`platform.admin`, `portal.manage`, etc.).
+  - Validação estrita de senha forte para primeiro acesso e troca de senha (`PortalRules.ValidatePasswordStrength`: mínimo 10 caracteres, maiúscula, minúscula, dígito, caractere especial).
+  - Isolamento multi-tenant garantido em todas as 26 tabelas `portal_*` com RLS via `agro360.platform_enable_tenant_rls(...)`.
+  - Auditoria externa completa em `portal_external_audit_events` para todas as ações críticas (primeiro acesso, login, solicitações, cancelamentos motivados, downloads e trocas de senha).
+- **Banco de Dados e Migrations (Schema 9.7.0)**:
+  - Migration incremental `database/migrations/097_portal_external_hardening.sql` idempotente, com índices operacionais compostos, políticas de RLS e perfis padrão (`PRODUCER`, `COOPERATIVE_MEMBER`, `B2B_CUSTOMER`, `BUYER`, `CARRIER`, `TECHNICAL_CONSULTANT`, `EXTERNAL_AUDITOR`).
+  - Atualização do script canônico consolidado `database/agro360-postgres-full.sql` (schema `9.7.0`), testado e validado do zero com sucesso total no PostgreSQL 18.0.
+- **Rastreabilidade Segura e Autoatendimento**:
+  - Consulta pública de lote `/Portal/Traceability` (`GET /api/portal/traceability/{lotCode}`) omitindo rigorosamente custos internos, preços, GUIDs brutos, `tenant_id`, operadores e inconformidades internas não resolvidas.
+  - Solicitações externas com timeline, anexos validados e cancelamento motivado com justificativa auditada (`CancelRequestAsync`).
+  - Catálogo Marketplace B2B operacional (`/Portal/Marketplace`) com cotações próprias (`/api/portal/marketplace/my-quotes`) sem simulação de faturamento ou pagamentos fictícios.
+  - Documentos e laudos autorizados (`/Portal/Documents`) com controle de permissão por tipo de entidade (`portal_document_permissions`) e download seguro auditado.
+  - Central de Suporte (`/Portal/Support`) com base de conhecimento pública e abertura de chamados.
+  - Perfil externo e alteração de senha segura (`/Portal/Profile`).
+- **Front-End Acessível e Responsivo**:
+  - Layout dedicado `/Portal/_PortalLayout.cshtml` com navegação semântica, atalho de pular para o conteúdo, breadcrumb, região de toast viva e modal acessível de confirmação com justificativa obrigatória.
+  - `portal.js` com rotas assíncronas reais, higienização de mensagens para remoção de GUIDs brutos, tratamento diferenciado de 401/403/offline e proibição estrita de `alert()` e SweetAlert.
+  - `portal.css` responsivo para 360px, 768px, 1280px e 1920px com foco visível e paleta de alto contraste.
+- **Correções de Conformidade**:
+  - `HarvestService.cs`: corrigida tipagem em `InTenantTransactionAsync` e raw string literal no json de critério de reabertura para conformidade com `CanonicalSchemaTests`.
+  - `Work/Index.cshtml`: texto de summary ajustado para "Como usar esta tela".
+  - `Agro360.Api/appsettings.json`: removida `DefaultConnection` persistida com senha em conformidade com `LoginExperienceTests`.
+
+**Evidências Locais:**
+- `dotnet build MNSOFT.Agro360.sln -c Release`: 0 avisos, 0 erros (PASS).
+- `dotnet test tests/Agro360.UnitTests -c Release`: 127/127 aprovados (100% PASS, incluindo `PortalRulesTests` e `PortalSecurityAndIsolationTests`).
+- `dotnet test tests/Agro360.ArchitectureTests -c Release`: 147/147 aprovados (100% PASS, incluindo `Sprint27PortalTests` e testes canônicos).
+- `node --check` em `portal.js` e `agro360.js`: aprovado (100% PASS).
+- `git diff --check`: aprovado (0 erros).
+- Execução de `database/agro360-postgres-full.sql` e `097_portal_external_hardening.sql` no PostgreSQL 18.0: 100% PASS (instalação e idempotência validadas).
+
 ## Destinação e Qualidade de Retorno + Feedback Global (AG-E8-RET-001) — 2026-09-21
 
 Branch `feat/ag-e8-ret-001-retorno-feedback` a partir de `main` (`01b4b9b550f39ff3507a2e486686ee95a028bf5e`).

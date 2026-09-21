@@ -1,3 +1,93 @@
 @page
-@{Layout="_PortalLayout";ViewData["Title"]="Marketplace";}
-<section id="portal-marketplace"><div class="portal-hero"><div><span class="eyebrow">MARKETPLACE AGRO360</span><h1>Origem confiável. Negócios transparentes.</h1><p>Consulte somente lotes com disponibilidade real e solicite uma condição comercial.</p></div></div><form class="filters" id="marketplace-filter"><label>Produto ou cultura<input name="search" type="search" maxlength="100" placeholder="Buscar no catálogo"></label><label>Região<input name="region" maxlength="120"></label><label>Preço máximo<input name="maximumPrice" type="number" min="0.01" step="0.01"></label><button class="secondary" type="submit">Aplicar filtros</button></form><div class="listing-grid" data-listings><div class="empty">Carregando ofertas disponíveis…</div></div><dialog id="quote-dialog"><form id="quote-form" class="portal-form"><button class="dialog-close" type="button" aria-label="Fechar">×</button><span class="eyebrow">SOLICITAR COTAÇÃO</span><h2 data-quote-title>Condição comercial</h2><input name="listingId" type="hidden"><label>Quantidade<input name="quantity" type="number" min="0.0001" step="0.0001" required></label><label>Seu nome<input name="contactName" required maxlength="160"></label><label>E-mail<input name="contactEmail" type="email" required maxlength="254"></label><label>Observações<textarea name="notes" maxlength="1000"></textarea></label><div class="form-feedback" role="status"></div><button class="primary" type="submit">Enviar solicitação</button></form></dialog></section>
+@{
+    Layout = "_PortalLayout";
+    ViewData["Title"] = "Marketplace e Cotações";
+}
+
+<section id="portal-marketplace">
+    <div class="portal-hero">
+        <div>
+            <span class="eyebrow">MARKETPLACE AGRO360</span>
+            <h1>Origem Confiável. Negócios Transparentes.</h1>
+            <p>Consulte somente lotes com disponibilidade e qualidade aprovada. Cotações comerciais sem simulação fictícia.</p>
+        </div>
+        <div class="hero-actions">
+            <button class="secondary button" type="button" id="btn-toggle-my-quotes">Ver Minhas Cotações</button>
+        </div>
+    </div>
+
+    <!-- Seção de Minhas Cotações (Alternável) -->
+    <div id="portal-my-quotes-region" style="display:none; margin-bottom: 36px;">
+        <div class="section-heading">
+            <div>
+                <span class="eyebrow">HISTÓRICO COMERCIAL</span>
+                <h2>Minhas Cotações Solicitadas</h2>
+            </div>
+            <button type="button" class="secondary button" id="btn-back-to-catalog">← Voltar ao Catálogo</button>
+        </div>
+        <div class="stack" id="my-quotes-list" aria-live="polite">
+            <div class="empty">Carregando suas cotações…</div>
+        </div>
+    </div>
+
+    <!-- Catálogo de Ofertas Disponíveis -->
+    <div id="portal-catalog-region">
+        <form class="filters" id="marketplace-filter">
+            <label>
+                Produto ou cultura
+                <input name="search" type="search" maxlength="100" placeholder="Buscar no catálogo...">
+            </label>
+            <label>
+                Região
+                <input name="region" maxlength="120" placeholder="Ex.: Cerrado, Sul...">
+            </label>
+            <label>
+                Preço máximo (R$)
+                <input name="maximumPrice" type="number" min="0.01" step="0.01" placeholder="Ex.: 150.00">
+            </label>
+            <button class="secondary button" type="submit">Filtrar</button>
+        </form>
+
+        <div class="listing-grid" data-listings aria-live="polite">
+            <div class="empty">Carregando ofertas disponíveis…</div>
+        </div>
+    </div>
+
+    <!-- Diálogo para Solicitar Cotação -->
+    <dialog id="quote-dialog" class="portal-dialog">
+        <form id="quote-form" class="portal-form">
+            <button class="dialog-close" type="button" aria-label="Fechar modal">×</button>
+            <span class="eyebrow">SOLICITAR COTAÇÃO COMERCIAL</span>
+            <h2 data-quote-title>Condição comercial</h2>
+            <p>A cotação será analisada pela equipe comercial da organização responsável.</p>
+
+            <input name="listingId" type="hidden">
+
+            <label>
+                Quantidade solicitada *
+                <input name="quantity" type="number" min="0.0001" step="0.0001" required placeholder="Quantidade desejada">
+            </label>
+
+            <label>
+                Nome para contato *
+                <input name="contactName" required maxlength="160" placeholder="Seu nome completo">
+            </label>
+
+            <label>
+                E-mail para resposta *
+                <input name="contactEmail" type="email" required maxlength="254" placeholder="voce@empresa.com.br">
+            </label>
+
+            <label>
+                Observações operacionais ou logística
+                <textarea name="notes" maxlength="1000" rows="3" placeholder="Informações de entrega, localidade ou condição de pagamento desejada..."></textarea>
+            </label>
+
+            <div class="form-feedback" role="status"></div>
+            <div class="dialog-actions">
+                <button type="button" class="secondary" data-close-quote>Cancelar</button>
+                <button class="primary" type="submit">Enviar Cotação</button>
+            </div>
+        </form>
+    </dialog>
+</section>

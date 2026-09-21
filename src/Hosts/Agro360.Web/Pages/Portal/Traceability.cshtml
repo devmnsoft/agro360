@@ -1,0 +1,30 @@
+@page
+@{
+    Layout = "_PortalLayout";
+    ViewData["Title"] = "Consulta de Rastreabilidade";
+}
+
+<section id="portal-traceability">
+    <div class="portal-hero">
+        <div>
+            <span class="eyebrow">TRANSPARÊNCIA DO CAMPO À EXPEDIÇÃO</span>
+            <h1>Consulta de Rastreabilidade</h1>
+            <p>Verifique a autenticidade, qualidade, origem e certificações públicas de lotes rastreados.</p>
+        </div>
+    </div>
+
+    <form id="traceability-search-form" class="filters" style="grid-template-columns: 1fr auto;">
+        <label>
+            Código do Lote ou Código Público de Rastreabilidade *
+            <input name="publicCode" id="traceability-input" required maxlength="64" placeholder="Ex.: AGRO-2026-SOJA-L01 ou código do QR Code">
+        </label>
+        <button class="primary button" type="submit">Consultar Rastreabilidade</button>
+    </form>
+
+    <div id="traceability-result-region" aria-live="polite">
+        <div class="empty">
+            <strong>Nenhum lote consultado no momento.</strong>
+            <span>Digite o código público ou lote acima para auditar a genealogia comercial e certificações.</span>
+        </div>
+    </div>
+</section>

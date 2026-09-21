@@ -1,0 +1,20 @@
+@page
+@{
+    Layout = "_PortalLayout";
+    ViewData["Title"] = "Documentos e Certificados";
+}
+
+<section id="portal-documents">
+    <div class="portal-hero">
+        <div>
+            <span class="eyebrow">REPOSITÓRIO SEGURO</span>
+            <h1>Documentos e Certificados</h1>
+            <p>Acesse com segurança os laudos técnicos, certificados de conformidade e comprovantes liberados para sua organização.</p>
+        </div>
+        <a class="primary button" href="/Portal/Requests?new=true">+ Solicitar Documento</a>
+    </div>
+
+    <div class="document-list" id="portal-documents-list" aria-live="polite">
+        <div class="empty">Carregando seus documentos liberados…</div>
+    </div>
+</section>

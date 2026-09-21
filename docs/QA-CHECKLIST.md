@@ -345,3 +345,39 @@ Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo pers
 - [ ] Não passar a opção VSTest `--logger "console;verbosity=minimal"` ao runner Microsoft Testing Platform.
 - [ ] Configurar `AGRO360_TEST_CONNECTION_STRING` por segredo e confirmar que nenhum teste PostgreSQL foi ignorado.
 - [ ] Se um host estiver ativo e bloquear `bin/Debug`, não encerrá-lo sem confirmar o proprietário; validar em `Release` ou parar a instância de forma coordenada.
+
+## Homologação Portal Externo SaaS (AG-PORTAL-EXT-001)
+
+- [ ] **Segregação de Segurança e Claims**:
+  - [ ] Usuário do portal autenticado possui somente `portal.access` e claims `agro360.portal_profile.*`.
+  - [ ] Usuário externo que tenta acessar endpoints administrativos (`/api/admin/*`, `/api/users`, `/api/tenants`, `/api/roles`) recebe HTTP 403 Forbidden.
+  - [ ] Sessão expirada exibe aviso amigável no toast sem quebrar a interface ou expor GUIDs brutos.
+- [ ] **Convite e Primeiro Acesso**:
+  - [ ] Convite gera hash SHA-256 e evento de outbox com status `PENDING_NOT_CONFIGURED` quando não há provedor de e-mail ativo.
+  - [ ] Primeiro acesso `/Portal/Accept` exige aceite de termos e validação de senha forte (mínimo 10 caracteres, maiúscula, minúscula, número e símbolo especial).
+  - [ ] Tentativa de reusar ou acessar com convite expirado/revogado é sumariamente rejeitada.
+- [ ] **Rastreabilidade Segura `/Portal/Traceability`**:
+  - [ ] Consulta pública de lote exibe cultura, variedade, safra, fazenda, talhão, datas de colheita e selos de qualidade.
+  - [ ] Dados confidenciais estritamente omitidos: custos operacionais, insumos, margens, operadores internos, `tenant_id` e GUIDs brutos.
+- [ ] **Central de Solicitações e Cancelamento Motivado `/Portal/Requests`**:
+  - [ ] Abertura de solicitação com anexos válidos (PDF/PNG/JPG) registra evento com hash e data/hora UTC.
+  - [ ] Cancelamento de solicitação exige obrigatoriamente justificativa no modal nativo (`requireReason: true`).
+- [ ] **Marketplace B2B Operacional `/Portal/Marketplace`**:
+  - [ ] Consulta do catálogo filtrável e emissão de cotação com itens e quantidades reais.
+  - [ ] "Minhas Cotações" exibe somente as cotações do usuário autenticado.
+  - [ ] Cotações permanecem em estado `REQUESTED`, sem gerar pedidos faturados ou lançamentos financeiros fictícios.
+- [ ] **Documentos Autorizados `/Portal/Documents`**:
+  - [ ] Apenas laudos/certificados autorizados via `portal_document_permissions` são listados.
+  - [ ] Download seguro gera registro de auditoria em `portal_external_audit_events`.
+- [ ] **Central de Suporte `/Portal/Support`**:
+  - [ ] Artigos públicos da base de conhecimento consultáveis sem necessidade de login.
+  - [ ] Formulário de chamado integrado à Central de Solicitações.
+- [ ] **Perfil e Troca de Senha `/Portal/Profile`**:
+  - [ ] Consulta de dados cadastrais e alteração de senha segura validando a senha atual.
+- [ ] **Acessibilidade e Responsividade**:
+  - [ ] Interface funcional e sem overflow horizontal em 360px, 768px, 1280px e 1920px.
+  - [ ] Navegação por teclado com foco visível e skip-link para conteúdo principal.
+  - [ ] Ausência total de `alert()` e SweetAlert; feedback padronizado via toasts e modais acessíveis.
+- [ ] **Banco de Dados e RLS**:
+  - [ ] RLS ativo em todas as 26 tabelas `portal_*`.
+  - [ ] Schema `9.7.0` registrado em `platform_schema_versions`.

@@ -6480,4 +6480,61 @@ insert into agro360.platform_schema_versions(version, description, installed_at)
 values('9.6.0', 'Rastreabilidade pública segura e pendências operacionais (AG-E6-GEN-002)', now())
 on conflict(version) do nothing;
 
+-- AG-PORTAL-EXT-001: Portal Externo SaaS, Autoatendimento e Rastreabilidade Segura
+create table if not exists agro360.portal_document_permissions (
+    id uuid primary key,
+    tenant_id uuid not null references agro360.tenancy_tenants(id),
+    document_id uuid not null,
+    profile_code varchar(40),
+    external_user_id uuid,
+    entity_type varchar(40),
+    entity_id uuid,
+    can_download boolean not null default true,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    created_by uuid,
+    updated_by uuid,
+    deleted_at timestamptz,
+    unique(tenant_id, id)
+);
+create index if not exists ix_portal_doc_perms_tenant_entity on agro360.portal_document_permissions(tenant_id, entity_type, entity_id) where deleted_at is null;
+
+select agro360.platform_enable_tenant_rls('agro360.portal_profiles');
+select agro360.platform_enable_tenant_rls('agro360.portal_permissions');
+select agro360.platform_enable_tenant_rls('agro360.portal_external_users');
+select agro360.platform_enable_tenant_rls('agro360.portal_external_user_links');
+select agro360.platform_enable_tenant_rls('agro360.portal_invitations');
+select agro360.platform_enable_tenant_rls('agro360.portal_terms');
+select agro360.platform_enable_tenant_rls('agro360.portal_terms_acceptances');
+select agro360.platform_enable_tenant_rls('agro360.portal_dashboard_cards');
+select agro360.platform_enable_tenant_rls('agro360.portal_announcements');
+select agro360.platform_enable_tenant_rls('agro360.portal_announcement_reads');
+select agro360.platform_enable_tenant_rls('agro360.portal_requests');
+select agro360.platform_enable_tenant_rls('agro360.portal_request_events');
+select agro360.platform_enable_tenant_rls('agro360.portal_messages');
+select agro360.platform_enable_tenant_rls('agro360.portal_marketplace_catalogs');
+select agro360.platform_enable_tenant_rls('agro360.portal_marketplace_catalog_items');
+select agro360.platform_enable_tenant_rls('agro360.portal_marketplace_listings');
+select agro360.platform_enable_tenant_rls('agro360.portal_marketplace_listing_certificates');
+select agro360.platform_enable_tenant_rls('agro360.portal_marketplace_quote_requests');
+select agro360.platform_enable_tenant_rls('agro360.portal_marketplace_quote_request_items');
+select agro360.platform_enable_tenant_rls('agro360.portal_marketplace_quote_events');
+select agro360.platform_enable_tenant_rls('agro360.portal_supplier_prequalifications');
+select agro360.platform_enable_tenant_rls('agro360.portal_supplier_document_requirements');
+select agro360.platform_enable_tenant_rls('agro360.portal_transporter_delivery_updates');
+select agro360.platform_enable_tenant_rls('agro360.portal_external_document_submissions');
+select agro360.platform_enable_tenant_rls('agro360.portal_external_audit_events');
+select agro360.platform_enable_tenant_rls('agro360.portal_document_permissions');
+
+do $$
+begin
+    if exists (select 1 from pg_roles where rolname = 'agro360_app') then
+        execute 'grant select, insert, update, delete on all tables in schema agro360 to agro360_app';
+    end if;
+end $$;
+
+insert into agro360.platform_schema_versions(version, description, installed_at)
+values('9.7.0', 'Portal Externo SaaS, Autoatendimento e Rastreabilidade Segura (AG-PORTAL-EXT-001)', now())
+on conflict(version) do update set description=excluded.description;
+
 commit;
