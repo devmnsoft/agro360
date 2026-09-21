@@ -10,3 +10,7 @@ Planos governam módulos e limites de usuários, propriedades, integrações, we
 ## Sprint 47 — CRM e ciclo do cliente
 
 A plataforma integra CRM, pipeline, propostas com total no backend, contratos SaaS, implantação assistida, suporte/SLA, saúde explicável, conhecimento e portal isolado. As novas rotas exigem permissões específicas, as tabelas usam auditoria/RLS por tenant e toda comunicação sem provedor permanece pendente na outbox. A experiência responsiva usa funil, timeline, badges e o componente recolhível **Como usar esta tela**. Consulte `docs/CRM-COMMERCIAL.md`, `docs/CUSTOMER-SUCCESS.md`, `docs/SUPPORT.md` e a migração `047_crm_customer_lifecycle.sql`.
+
+## AG-SaaS-COM-001 — incremento de administração comercial (2026-09-21)
+
+Auditoria estática confirmou mecanismos SaaS canônicos existentes; o incremento 097 normaliza catálogo/dependências/entitlements de módulos, detalha cobrança gerencial e enriquece onboarding sem criar um segundo financeiro. O catálogo de planos deixou de ser público e regras unitárias cobrem valores decimais, evidência de baixa/cancelamento, progresso real, dependências e CSV seguro. Consulte `SAAS-COMMERCIAL-ADMIN.md`, `PLANS-MODULES-BILLING.md` e `ONBOARDING-ASSISTIDO.md`. SDK .NET e PostgreSQL não estão instalados neste ambiente, logo build, testes .NET, migration, RLS/E2E e validação visual permanecem pendentes; este registro não declara homologação.

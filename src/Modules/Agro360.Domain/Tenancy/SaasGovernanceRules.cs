@@ -148,6 +148,29 @@ public static partial class SaasGovernanceRules
             throw new InvalidOperationException("Conclua todas as etapas obrigatorias do onboarding.");
     }
 
+    public static decimal CalculateOnboardingProgress(IEnumerable<OnboardingStepState> steps)
+    {
+        var applicable = steps.Where(step => step.Required).ToArray();
+        if (applicable.Length == 0) return 0m;
+        return decimal.Round(applicable.Count(step => step.Completed) * 100m / applicable.Length, 2, MidpointRounding.ToEven);
+    }
+
+    public static void EnsureModuleCanBeEnabled(string moduleCode, IEnumerable<string> contractedModules, IEnumerable<string> dependencies, string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(moduleCode)) throw new ArgumentException("Informe o módulo.", nameof(moduleCode));
+        if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length < 5) throw new ArgumentException("A liberação exige motivo com ao menos cinco caracteres.", nameof(reason));
+        var contracted = contractedModules.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var missing = dependencies.Where(dependency => !contracted.Contains(dependency)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (missing.Length > 0) throw new InvalidOperationException($"Dependências não contratadas: {string.Join(", ", missing)}.");
+    }
+
+    public static string ProtectCsvCell(string? value)
+    {
+        var text = value ?? string.Empty;
+        if (text.Length > 0 && text[0] is '=' or '+' or '-' or '@' or '\t' or '\r') text = "'" + text;
+        return $"\"{text.Replace("\"", "\"\"")}\"";
+    }
+
     public static void EnsureBranding(string primaryColor, string secondaryColor, string accentColor, string? fileName, long? fileSize)
     {
         if (!HexColor().IsMatch(primaryColor) || !HexColor().IsMatch(secondaryColor) || !HexColor().IsMatch(accentColor))
