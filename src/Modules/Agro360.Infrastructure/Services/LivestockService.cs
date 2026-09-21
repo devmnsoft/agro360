@@ -26,11 +26,11 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
             await connection.ExecuteAsync(new CommandDefinition(
                 """
                 insert into agro360.livestock_animals
-                    (id, tenant_id, farm_id, herd_id, tag, rfid, species, breed, sex,
+                    (id, tenant_id, farm_id, herd_id, tag, internal_identifier, rfid, species, breed, sex,
                      birth_date, mother_id, father_id, category, birth_date_estimated, origin, notes,
                      status, created_at, created_by, version)
                 values
-                    (@Id, @TenantId, @FarmId, @HerdId, @Tag, @Rfid, @Species, @Breed, @Sex,
+                    (@Id, @TenantId, @FarmId, @HerdId, @Tag, @InternalIdentifier, @Rfid, @Species, @Breed, @Sex,
                      @BirthDate, @MotherId, @FatherId, @Category, @BirthDateEstimated, @Origin, @Notes,
                      1, now(), @CreatedBy, 1);
 
@@ -47,6 +47,7 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
                     animal.FarmId,
                     command.HerdId,
                     animal.Tag,
+                    InternalIdentifier = animal.Tag,
                     command.Rfid,
                     animal.Species,
                     Breed = Guard.Required(command.Breed, nameof(command.Breed), 80),
