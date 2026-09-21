@@ -87,10 +87,13 @@ public sealed record MaterialRequestItemDto(Guid Id, Guid ProductId, string Prod
     decimal Reserved, decimal Delivered, decimal Consumed, decimal Returned, string Unit,
     IReadOnlyCollection<MaterialAvailabilityDto> Availability);
 public sealed record MaterialRequestEventDto(string Type, string Status, string Actor, string? Reason, DateTimeOffset OccurredAt);
+public sealed record MaterialRequestDeliveryDto(Guid Id, Guid ItemId, decimal Quantity, string Unit,
+    string Receiver, bool DirectConsumption, DateTimeOffset DeliveredAt);
 public sealed record MaterialRequestDetailDto(Guid Id, string Number, Guid FarmId, string Farm,
     Guid? WarehouseId, string Requester, Guid? CostCenterId, string Purpose, string? RelatedType,
     Guid? RelatedId, DateOnly NeededOn, string Priority, string? Notes, string Status, long Version,
-    IReadOnlyCollection<MaterialRequestItemDto> Items, IReadOnlyCollection<MaterialRequestEventDto> History);
+    IReadOnlyCollection<MaterialRequestItemDto> Items, IReadOnlyCollection<MaterialRequestDeliveryDto> Deliveries,
+    IReadOnlyCollection<MaterialRequestEventDto> History);
 
 public interface IMaterialRequestService
 {
