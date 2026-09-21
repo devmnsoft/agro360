@@ -11,8 +11,7 @@ declare
     ];
 begin
     if not exists (select 1 from pg_roles where rolname = 'agro360_app') then
-        raise notice 'Role agro360_app is not installed; grants skipped for this environment.';
-        return;
+        create role agro360_app nologin;
     end if;
 
     execute format('grant connect on database %I to agro360_app', current_database());

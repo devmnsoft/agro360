@@ -1,3 +1,17 @@
+-- A role de grupo da aplicacao precisa existir antes de qualquer GRANT ou policy
+-- que a referencie. NOLOGIN evita incluir credenciais no instalador.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_roles
+        WHERE rolname = 'agro360_app'
+    ) THEN
+        CREATE ROLE agro360_app NOLOGIN;
+    END IF;
+END
+$$;
+
 create extension if not exists pgcrypto;
 create extension if not exists pg_trgm;
 create extension if not exists unaccent;

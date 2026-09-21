@@ -8,6 +8,33 @@ public sealed class DatabaseFoundationTests
     private static string? ConnectionString => Environment.GetEnvironmentVariable("AGRO360_TEST_CONNECTION_STRING");
 
     [Fact]
+    public async Task InstallerCreatesApplicationRoleAndKeepsCriticalPoliciesEnabled()
+    {
+        await using var connection = new NpgsqlConnection(GetRequiredConnectionString());
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+
+        var roleCanLogin = await connection.ExecuteScalarAsync<bool?>(
+            "select rolcanlogin from pg_roles where rolname = 'agro360_app';");
+        var protectedTables = (await connection.QueryAsync<string>(
+            """
+            select c.relname
+            from pg_class c
+            join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = 'agro360'
+              and c.relname = any(array['saas_tenant_modules','saas_tenant_module_events','sales_contract_versions'])
+              and c.relrowsecurity
+              and c.relforcerowsecurity
+              and exists (select 1 from pg_policy p where p.polrelid = c.oid)
+            order by c.relname;
+            """)).ToArray();
+
+        Assert.Equal(false, roleCanLogin);
+        Assert.Equal(
+            ["saas_tenant_module_events", "saas_tenant_modules", "sales_contract_versions"],
+            protectedTables);
+    }
+
+    [Fact]
     public async Task RequiredExtensionsAndMigrationsAreInstalled()
     {
         await using var connection = new NpgsqlConnection(GetRequiredConnectionString());

@@ -1,3 +1,16 @@
+-- Role de grupo sem credencial; o login real continua sendo provisionado por ambiente.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_roles
+        WHERE rolname = 'agro360_app'
+    ) THEN
+        CREATE ROLE agro360_app NOLOGIN;
+    END IF;
+END
+$$;
+
 begin;
 
 -- 9.8.0 / AG-COM-OPS-001: contratos comerciais são agregados próprios; não reservam,
