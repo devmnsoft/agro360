@@ -6,12 +6,14 @@ namespace Agro360.UnitTests;
 public sealed class NotFoundExceptionTests
 {
     [Fact]
-    public void SupportsBusinessStringIdentifiers()
+    public void KeepsGuidIdentifierContract()
     {
-        var exception = new NotFoundException("Lote", "LT-2026-001");
+        var constructors = typeof(NotFoundException).GetConstructors();
 
-        Assert.Equal("resource_not_found", exception.Code);
-        Assert.Contains("LT-2026-001", exception.Message, StringComparison.Ordinal);
+        var constructor = Assert.Single(constructors);
+        Assert.Equal(
+            [typeof(string), typeof(Guid)],
+            constructor.GetParameters().Select(parameter => parameter.ParameterType).ToArray());
     }
 
     [Fact]
