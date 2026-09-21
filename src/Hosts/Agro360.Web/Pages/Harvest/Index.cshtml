@@ -1,13 +1,58 @@
 @page "/Harvest"
 @model Agro360.Web.Pages.Harvest.IndexModel
-@{ ViewData["Title"] = "Colheita e Recebimento"; }
+@{
+    ViewData["Title"] = "Colheita e Genealogia";
+    ViewData["Breadcrumb"] = "Agricultura / Colheita e Genealogia";
+}
 @section Styles { <link rel="stylesheet" href="~/css/harvest.css" asp-append-version="true" /> }
 <section class="page-content harvest-page">
  <header class="page-heading"><div><span class="eyebrow">Safra · produção primária</span><h1>Colheita e <span>recebimento</span></h1><p>Da estimativa ao lote liberado, sem antecipar produção ou disponibilidade.</p></div><button class="secondary-button" id="refresh-harvest" type="button">Atualizar dados</button></header>
- <details class="screen-help" open><summary>Como usar</summary><div class="help-grid"><p><strong>Pré-requisitos:</strong> propriedade, safra aberta, talhão, produto, depósito e especificação de qualidade ativos.</p><p><strong>Fluxo:</strong> planeje, aponte a realidade, receba total ou parcialmente, classifique e só então destine a quantidade.</p><p><strong>Correções:</strong> não apague registros. Use ajustes/reversões auditáveis; conflitos pedem atualização da tela.</p><p><strong>Permissões:</strong> Agricultura grava plano/apontamento; Produção recebe; Qualidade decide; Liberação destina.</p></div></details>
+ <div id="genealogy-warning-banner" class="alert-banner warning-banner" role="alert" hidden><strong>Atenção:</strong> Foram identificados lotes expedidos desta safra sem origem de talhão de colheita vinculada. <a href="#genealogy-panel">Verificar painel de Origem e Destino</a></div>
+ <details class="screen-help contextual-help" open><summary>Como usar esta tela</summary><div class="help-grid"><p><strong>Finalidade:</strong> gerenciar planos, apontamentos de campo, recebimentos físicos, inspeções e a genealogia completa da safra até a expedição.</p><p><strong>Pré-requisitos:</strong> propriedade, safra aberta, talhão, produto, depósito e especificação de qualidade ativos.</p><p><strong>Sequência operacional:</strong> planeje a colheita → aponte a colheita realizada → receba e confira no armazém → realize a classificação de qualidade → destine o material aprovado.</p><p><strong>Origem e destino (Genealogia):</strong> rastreia a cadeia contínua da safra e talhão até o lote de estoque, ordem industrial e remessa comercial. Elos quebrados são sinalizados como 'Não vinculado' sem inventar dados.</p><p><strong>Fechamento gerencial:</strong> congela indicadores em snapshot auditável. Estoque atual e receita reconhecida só são calculados com elos fechados e unidades homogêneas; caso contrário permanecem 'Não disponível' com justificativa explícita.</p></div></details>
  <section class="panel closing-panel" aria-labelledby="closing-title"><header class="panel-header"><div><span class="eyebrow">Conferência rastreável</span><h2 id="closing-title">Fechamento gerencial da safra</h2><p>Visão operacional; não constitui fechamento fiscal, contábil ou laudo técnico.</p></div><strong id="closing-state" class="closing-state">Preparação</strong></header>
   <section aria-labelledby="closing-scope-title"><h3 id="closing-scope-title">Escopo</h3><div class="closing-scope"><label>Safra *<span class="lookup-wrap"><input id="closing-season-search" class="lookup" data-lookup="crop-seasons" data-target="closing-season-id" autocomplete="off" placeholder="Pesquise a safra" required /><input id="closing-season-id" type="hidden" /></span><small>A propriedade e a unidade física são obtidas da safra no contexto autorizado.</small></label><label>Data de corte *<input id="closing-cutoff" type="date" required /><small>Usa a data operacional; geração e registros usam instante auditável.</small></label><div class="closing-actions"><button id="consult-closing" class="secondary-button" type="button">Consultar dados</button><button id="run-closing" class="secondary-button" type="button">Executar conferência</button><button id="create-closing" class="primary-button" type="button">Gerar versão</button><button id="export-closing" class="secondary-button" type="button">Exportar CSV</button></div></div></section>
   <p id="closing-message" role="status" aria-live="polite">Selecione a safra e a data de corte para consultar.</p><div id="closing-summary" class="closing-summary" hidden><section aria-labelledby="closing-summary-title"><h3 id="closing-summary-title">Resumo</h3><p id="closing-scope-text"></p></section><section aria-labelledby="closing-indicators-title"><h3 id="closing-indicators-title">Indicadores</h3><div id="closing-indicators" class="closing-indicators"></div></section><div class="closing-columns"><section><h3>Pendências</h3><div id="closing-issues"></div></section><section><h3>Histórico</h3><div id="closing-versions"></div></section></div></div>
+ </section>
+ <section class="panel genealogy-panel" id="genealogy-panel" aria-labelledby="genealogy-title">
+  <header class="panel-header">
+   <div><span class="eyebrow">Rastreabilidade integral</span><h2 id="genealogy-title">Origem e destino · Genealogia</h2><p>Cadeia auditável da safra ao talhão, lote, beneficiamento, expedição e entrega.</p></div>
+   <div class="genealogy-controls">
+    <label>Safra
+     <span class="lookup-wrap">
+      <input id="genealogy-season-search" class="lookup" data-lookup="crop-seasons" data-target="genealogy-season-id" autocomplete="off" placeholder="Selecione a safra" />
+      <input id="genealogy-season-id" type="hidden" />
+     </span>
+    </label>
+    <label>Lote
+     <input id="genealogy-lot-search" type="text" placeholder="ex.: LT-2026-001" autocomplete="off" />
+    </label>
+    <button id="search-genealogy" class="secondary-button" type="button">Rastrear</button>
+   </div>
+  </header>
+  <div id="genealogy-summary" class="genealogy-summary-cards" hidden>
+   <article><small>Referência</small><strong id="genealogy-target-label">—</strong></article>
+   <article><small>Cadeia</small><strong id="genealogy-chain-status">—</strong></article>
+   <article><small>Estoque rastreado</small><strong id="genealogy-stock-label">—</strong></article>
+   <article><small>Receita reconhecida</small><strong id="genealogy-revenue-label">—</strong></article>
+  </div>
+  <p id="genealogy-status-message" role="status" aria-live="polite">Selecione uma safra ou informe um lote para rastrear a genealogia.</p>
+  <div class="table-scroll" id="genealogy-table-wrap" hidden>
+   <table class="genealogy-table" aria-label="Elos da genealogia operacional">
+    <thead>
+     <tr>
+      <th>Estágio</th>
+      <th>Origem</th>
+      <th>Destino</th>
+      <th>Status</th>
+      <th>Quantidade</th>
+      <th>Lote</th>
+      <th>Data</th>
+      <th>Detalhes</th>
+     </tr>
+    </thead>
+    <tbody id="genealogy-list"></tbody>
+   </table>
+  </div>
  </section>
  <section class="harvest-kpis" id="harvest-kpis" aria-label="Indicadores"><article><small>Planejado</small><strong>—</strong></article><article><small>Colhido</small><strong>—</strong></article><article><small>A receber</small><strong>—</strong></article><article><small>Aguardando qualidade</small><strong>—</strong></article><article><small>Aprovado</small><strong>—</strong></article><article><small>Perdas físicas</small><strong>—</strong></article></section>
  <nav class="workflow-tabs" id="harvest-tabs" aria-label="Etapas da jornada"><button class="active" data-step="plan">1. Planejar</button><button data-step="record">2. Apontar</button><button data-step="receipt">3. Receber</button><button data-step="inspection">4. Classificar</button><button data-step="allocation">5. Destinar</button></nav>

@@ -58,6 +58,24 @@ public sealed record CreateSeasonClosingCommand(Guid SeasonId, DateOnly CutoffDa
 public sealed record ChangeSeasonClosingStateCommand(long Version, string? Notes);
 public sealed record ReopenSeasonClosingCommand(long Version, string Reason, string IdempotencyKey);
 
+public sealed record GenealogyNodeDto(string Stage, string OriginLabel, string DestinationLabel,
+    string Status, decimal? Quantity, string? Unit, string? LotNumber, bool HasGap, string? GapReason,
+    DateTimeOffset? OccurredAt, string? Details);
+
+public sealed record SeasonGenealogyDto(Guid SeasonId, string SeasonName, string FarmName, string Crop,
+    IReadOnlyCollection<GenealogyNodeDto> Nodes, bool HasMissingFieldOrigin, bool HasUnlinkedShipments,
+    decimal TotalReceivedQuantity, decimal TotalAllocatedQuantity, decimal? CurrentStockQuantity,
+    string? CurrentStockUnit, string CurrentStockStatus, string? CurrentStockExplanation,
+    decimal? RecognizedRevenue, string RevenueCurrency, string RevenueStatus, string? RevenueExplanation);
+
+public sealed record LotGenealogyDto(string LotNumber, string ProductName, Guid? SeasonId,
+    string? SeasonName, string? FarmName, string? FieldName, string Status,
+    IReadOnlyCollection<GenealogyNodeDto> Nodes, bool HasGap, string? GapReason);
+
+public sealed record RecordGenealogyLinkCommand(string Kind, string OriginType, Guid OriginId,
+    string DestinationType, Guid DestinationId, Guid? SeasonId, Guid? FieldId, string? LotNumber,
+    decimal? Quantity, string? Unit, string? Metadata, string IdempotencyKey);
+
 public interface IHarvestService
 {
     Task<HarvestOperationDto> CreatePlanAsync(CreateHarvestPlanCommand command, CancellationToken cancellationToken);
@@ -73,4 +91,7 @@ public interface IHarvestService
     Task<SeasonClosingVersionDto> CreateClosingAsync(CreateSeasonClosingCommand command, CancellationToken cancellationToken);
     Task<SeasonClosingVersionDto> CloseAsync(Guid closingId, ChangeSeasonClosingStateCommand command, CancellationToken cancellationToken);
     Task<SeasonClosingVersionDto> ReopenAsync(Guid closingId, ReopenSeasonClosingCommand command, CancellationToken cancellationToken);
+    Task<SeasonGenealogyDto> GetSeasonGenealogyAsync(Guid seasonId, CancellationToken cancellationToken);
+    Task<LotGenealogyDto> GetLotGenealogyAsync(string lotNumber, CancellationToken cancellationToken);
+    Task<Guid> RecordGenealogyLinkAsync(RecordGenealogyLinkCommand command, CancellationToken cancellationToken);
 }
