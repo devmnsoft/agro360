@@ -158,3 +158,11 @@ Implementação vertical disponível na migration 075, API `/api/v1/harvest` e p
 ## AG-SaaS-COM-001 — incremento de administração comercial (2026-09-21)
 
 Auditoria estática confirmou mecanismos SaaS canônicos existentes; o incremento 097 normaliza catálogo/dependências/entitlements de módulos, detalha cobrança gerencial e enriquece onboarding sem criar um segundo financeiro. O catálogo de planos deixou de ser público e regras unitárias cobrem valores decimais, evidência de baixa/cancelamento, progresso real, dependências e CSV seguro. Consulte `SAAS-COMMERCIAL-ADMIN.md`, `PLANS-MODULES-BILLING.md` e `ONBOARDING-ASSISTIDO.md`. SDK .NET e PostgreSQL não estão instalados neste ambiente, logo build, testes .NET, migration, RLS/E2E e validação visual permanecem pendentes; este registro não declara homologação.
+
+## AG-COM-OPS-001 — sequência de homologação
+
+1. Aplicar e reexecutar a migration `098_commercial_contract_operations.sql` em PostgreSQL descartável.
+2. Validar contrato interno/exportação, bloqueio de cliente, idempotência, concorrência e isolamento A/B.
+3. Homologar pedido → reserva → expedição única → entrega parcial → retorno aguardando qualidade → RELEASE/BLOCK/DISPOSE.
+4. Homologar recebível somente após entrega aceita e ajustes auditados, sem emissão fiscal/gateway.
+5. Executar testes responsivos em 360, 768, 1280 e 1920 px. Até isso ocorrer, o recorte permanece parcial.

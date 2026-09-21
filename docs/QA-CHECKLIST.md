@@ -381,3 +381,12 @@ Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo pers
 - [ ] **Banco de Dados e RLS**:
   - [ ] RLS ativo em todas as 26 tabelas `portal_*`.
   - [ ] Schema `9.7.0` registrado em `platform_schema_versions`.
+
+## AG-COM-OPS-001
+
+- [ ] Reexecutar migration 098 sem mudança de resultado em banco descartável.
+- [ ] Confirmar 409/422 em transição inválida, exportação sem Incoterm e aprovação para cliente bloqueado.
+- [ ] Confirmar retry da mesma chave sem segundo contrato e isolamento entre tenants.
+- [ ] Confirmar que criação/aprovação não altera estoque e não cria pedido/recebível.
+- [ ] Validar jornada logística/retorno/qualidade e financeiro com PostgreSQL real.
+- [ ] Validar UI comercial a 360/768/1280/1920 px, teclado, foco, 401/403/rede e ausência de GUID.
