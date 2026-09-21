@@ -76,3 +76,7 @@ Validação backend continua sendo a fonte da verdade; a interface oferece resum
 ## Genealogia e pendências operacionais
 
 Timeline/tabela de genealogia deve sinalizar lacuna com texto, motivo e contraste, nunca apenas cor. Cards de pendência apresentam título, status, origem, impacto, ação recomendada, permissão e link ao módulo dono. Loading, vazio e erro ocupam a mesma região com `aria-live`; em 360 px os cards e ações formam uma única coluna.
+
+## AG-SaaS-COM-001 — incremento de administração comercial (2026-09-21)
+
+Auditoria estática confirmou mecanismos SaaS canônicos existentes; o incremento 097 normaliza catálogo/dependências/entitlements de módulos, detalha cobrança gerencial e enriquece onboarding sem criar um segundo financeiro. O catálogo de planos deixou de ser público e regras unitárias cobrem valores decimais, evidência de baixa/cancelamento, progresso real, dependências e CSV seguro. Consulte `SAAS-COMMERCIAL-ADMIN.md`, `PLANS-MODULES-BILLING.md` e `ONBOARDING-ASSISTIDO.md`. SDK .NET e PostgreSQL não estão instalados neste ambiente, logo build, testes .NET, migration, RLS/E2E e validação visual permanecem pendentes; este registro não declara homologação.

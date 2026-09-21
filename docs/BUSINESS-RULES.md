@@ -150,3 +150,7 @@ canônico. Não enfraquecem as seções anteriores.
 - Somente lote com qualidade `APPROVED` e origem comprovada pode ser publicado como liberado; bloqueio ou quarentena nunca são mascarados.
 - Publicação exige `traceability.publish`; revogação preserva histórico, exige motivo e torna o código indisponível publicamente.
 - Unidades heterogêneas não são consolidadas sem conversão explícita; vínculo manual exige justificativa e revisão.
+
+## AG-SaaS-COM-001 — incremento de administração comercial (2026-09-21)
+
+Auditoria estática confirmou mecanismos SaaS canônicos existentes; o incremento 097 normaliza catálogo/dependências/entitlements de módulos, detalha cobrança gerencial e enriquece onboarding sem criar um segundo financeiro. O catálogo de planos deixou de ser público e regras unitárias cobrem valores decimais, evidência de baixa/cancelamento, progresso real, dependências e CSV seguro. Consulte `SAAS-COMMERCIAL-ADMIN.md`, `PLANS-MODULES-BILLING.md` e `ONBOARDING-ASSISTIDO.md`. SDK .NET e PostgreSQL não estão instalados neste ambiente, logo build, testes .NET, migration, RLS/E2E e validação visual permanecem pendentes; este registro não declara homologação.

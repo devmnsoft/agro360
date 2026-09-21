@@ -608,3 +608,7 @@ Diagnóstico do ambiente desta execução: branch `work`, árvore inicialmente l
 - Foi criada a migration incremental `096_public_traceability.sql`, espelhada no instalador integral, para código público opaco, snapshot seguro, estado/revogação, auditoria, índices, RLS e permissão `traceability.publish`.
 - `/Harvest` passa a carregar genealogia por safra/lote sem inferência e pendências reais de qualidade, lote bloqueado, retorno, entrega e vínculo manual, sempre direcionando ao módulo dono.
 - Testes unitários cobrem bloqueio por qualidade/origem, motivo de revogação e ausência de identificadores/finanças no contrato público. PostgreSQL, integração multi-tenant, execução visual e breakpoints permanecem gates por limitação do ambiente.
+
+## AG-SaaS-COM-001 — incremento de administração comercial (2026-09-21)
+
+Auditoria estática confirmou mecanismos SaaS canônicos existentes; o incremento 097 normaliza catálogo/dependências/entitlements de módulos, detalha cobrança gerencial e enriquece onboarding sem criar um segundo financeiro. O catálogo de planos deixou de ser público e regras unitárias cobrem valores decimais, evidência de baixa/cancelamento, progresso real, dependências e CSV seguro. Consulte `SAAS-COMMERCIAL-ADMIN.md`, `PLANS-MODULES-BILLING.md` e `ONBOARDING-ASSISTIDO.md`. SDK .NET e PostgreSQL não estão instalados neste ambiente, logo build, testes .NET, migration, RLS/E2E e validação visual permanecem pendentes; este registro não declara homologação.
