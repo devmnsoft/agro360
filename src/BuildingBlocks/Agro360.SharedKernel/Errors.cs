@@ -85,17 +85,9 @@ public sealed class ValidationException : DomainException
     public IReadOnlyDictionary<string, string[]> Errors { get; }
 }
 
-public sealed class NotFoundException : DomainException
+public sealed class NotFoundException(string resource, Guid id)
+    : DomainException($"{resource} '{id}' não foi encontrado.", "resource_not_found")
 {
-    public NotFoundException(string resource, Guid id)
-        : this(resource, id.ToString())
-    {
-    }
-
-    public NotFoundException(string resource, string id)
-        : base($"{resource} '{id}' não foi encontrado.", "resource_not_found")
-    {
-    }
 }
 
 public sealed class ConflictException(string message, string code = "concurrency_conflict")

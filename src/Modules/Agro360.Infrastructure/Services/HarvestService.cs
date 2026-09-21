@@ -697,7 +697,7 @@ public sealed class HarvestService(
             var hasMissingFieldOrigin = false;
             foreach (var s in shipments)
             {
-                var hasOrigin = harvestRecords.Any();
+                var hasOrigin = harvestRecords.Length != 0;
                 if (!hasOrigin) hasMissingFieldOrigin = true;
 
                 nodes.Add(new GenealogyNodeDto(
@@ -868,7 +868,9 @@ public sealed class HarvestService(
                 """, new { tenant.TenantId, LotNumber = trimmedLot }, tx, cancellationToken: cancellationToken));
 
             if (receipt is null && stockLot is null && batch is null)
-                throw new NotFoundException("Lote", trimmedLot);
+                throw new DomainException(
+                    $"Lote '{trimmedLot}' não foi encontrado.",
+                    "genealogy.lot_not_found");
 
             HarvestRecordGenealogyRow? record = null;
             SeasonInfoRow? season = null;
