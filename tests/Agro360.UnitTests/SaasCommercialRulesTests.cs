@@ -1,0 +1,43 @@
+using Agro360.Domain.Tenancy;
+
+namespace Agro360.UnitTests;
+
+public sealed class SaasCommercialRulesTests
+{
+    [Fact]
+    public void BillingTotalUsesDecimalAndRejectsDiscountAboveCharge()
+    {
+        Assert.Equal(112.35m, SaasGovernanceRules.CalculateChargeTotal(100.10m, 20.25m, 8m));
+        Assert.Throws<ArgumentException>(() => SaasGovernanceRules.CalculateChargeTotal(10m, 0m, 10.01m));
+    }
+
+    [Fact]
+    public void ManualPaymentAndCancellationRequireEvidence()
+    {
+        Assert.Throws<InvalidOperationException>(() => SaasGovernanceRules.EnsureChargeCanChange("PAID", 50m, null, "recebido"));
+        Assert.Throws<InvalidOperationException>(() => SaasGovernanceRules.EnsureChargeCanChange("CANCELLED", 50m, null, " "));
+    }
+
+    [Fact]
+    public void OnboardingProgressComesOnlyFromRequiredRealSteps()
+    {
+        var steps = new[] { new OnboardingStepState(true, true), new OnboardingStepState(true, false), new OnboardingStepState(false, true) };
+        Assert.Equal(50m, SaasGovernanceRules.CalculateOnboardingProgress(steps));
+        Assert.Throws<InvalidOperationException>(() => SaasGovernanceRules.EnsureOnboardingCanComplete(steps));
+    }
+
+    [Fact]
+    public void ModuleDependenciesAreValidatedByBackendRule()
+    {
+        Assert.Throws<InvalidOperationException>(() => SaasGovernanceRules.EnsureModuleCanBeEnabled("finance", ["platform-base"], ["properties"], "Contrato aprovado"));
+        SaasGovernanceRules.EnsureModuleCanBeEnabled("finance", ["platform-base", "properties"], ["properties"], "Contrato aprovado");
+    }
+
+    [Theory]
+    [InlineData("=1+1", "\"'=1+1\"")]
+    [InlineData("+cmd", "\"'+cmd\"")]
+    [InlineData("normal", "\"normal\"")]
+    [InlineData("a\"b", "\"a\"\"b\"")]
+    public void CsvCellsCannotStartFormulas(string input, string expected) =>
+        Assert.Equal(expected, SaasGovernanceRules.ProtectCsvCell(input));
+}

@@ -154,3 +154,7 @@ Implementação vertical disponível na migration 075, API `/api/v1/harvest` e p
 - **Entregue em código:** genealogia por safra/lote consolidada na UI, painel de pendências, snapshot público seguro, permissão específica, revogação motivada, migration 096 e testes unitários das regras/contrato.
 - **Gate pendente:** o ambiente de 2026-09-21 não possui `dotnet` nem PostgreSQL; build/test/migration/E2E multi-tenant continuam obrigatórios e o recorte não está homologado.
 - **Próximo recorte:** homologar em banco descartável e navegador nos quatro breakpoints; depois adicionar certificações publicáveis provenientes do cadastro canônico, sem texto simulado.
+
+## AG-SaaS-COM-001 — incremento de administração comercial (2026-09-21)
+
+Auditoria estática confirmou mecanismos SaaS canônicos existentes; o incremento 097 normaliza catálogo/dependências/entitlements de módulos, detalha cobrança gerencial e enriquece onboarding sem criar um segundo financeiro. O catálogo de planos deixou de ser público e regras unitárias cobrem valores decimais, evidência de baixa/cancelamento, progresso real, dependências e CSV seguro. Consulte `SAAS-COMMERCIAL-ADMIN.md`, `PLANS-MODULES-BILLING.md` e `ONBOARDING-ASSISTIDO.md`. SDK .NET e PostgreSQL não estão instalados neste ambiente, logo build, testes .NET, migration, RLS/E2E e validação visual permanecem pendentes; este registro não declara homologação.
