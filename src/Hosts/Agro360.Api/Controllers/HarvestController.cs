@@ -29,4 +29,5 @@ public sealed class HarvestController(IHarvestService harvest) : ControllerBase
     [HttpGet("genealogy/seasons/{seasonId:guid}"), Authorize(Policy = Permissions.AgricultureRead)] public Task<SeasonGenealogyDto> SeasonGenealogy(Guid seasonId, CancellationToken ct) => harvest.GetSeasonGenealogyAsync(seasonId, ct);
     [HttpGet("genealogy/lots/{lotNumber}"), Authorize(Policy = Permissions.AgricultureRead)] public Task<LotGenealogyDto> LotGenealogy(string lotNumber, CancellationToken ct) => harvest.GetLotGenealogyAsync(lotNumber, ct);
     [HttpPost("genealogy/links"), Authorize(Policy = Permissions.AgricultureWrite)] public async Task<IActionResult> RecordGenealogyLink(RecordGenealogyLinkCommand command, CancellationToken ct) { var id = await harvest.RecordGenealogyLinkAsync(command, ct); return Created($"/api/v1/harvest/genealogy/links/{id}", new { id }); }
+    [HttpGet("operational-pendings"), Authorize(Policy = Permissions.AgricultureRead)] public Task<IReadOnlyCollection<OperationalPendingDto>> OperationalPendings(CancellationToken ct) => harvest.GetOperationalPendingsAsync(ct);
 }

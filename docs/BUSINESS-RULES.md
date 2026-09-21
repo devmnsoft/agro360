@@ -144,3 +144,9 @@ canônico. Não enfraquecem as seções anteriores.
 - Menu deriva de permissões do backend; ocultar item no shell não autoriza.
 - SuperAdmin em dados de cliente exige contexto selecionado, faixa visual permanente e auditoria do ator real.
 - Ajuda contextual não altera regra; a validação do servidor permanece a fonte da verdade.
+
+## Rastreabilidade pública AG-E6-GEN-002
+
+- Somente lote com qualidade `APPROVED` e origem comprovada pode ser publicado como liberado; bloqueio ou quarentena nunca são mascarados.
+- Publicação exige `traceability.publish`; revogação preserva histórico, exige motivo e torna o código indisponível publicamente.
+- Unidades heterogêneas não são consolidadas sem conversão explícita; vínculo manual exige justificativa e revisão.

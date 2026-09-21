@@ -66,6 +66,7 @@ public static class Permissions
     public const string AfterSalesApprove = "after-sales.approve";
     public const string TraceabilityRead = "traceability.read";
     public const string TraceabilityWrite = "traceability.write";
+    public const string TraceabilityPublish = "traceability.publish";
     public const string LedgerValidate = "ledger.validate";
     public const string RegionalLogisticsRead = "regional-logistics.read";
     public const string RegionalLogisticsWrite = "regional-logistics.write";
@@ -168,7 +169,7 @@ public static class Permissions
         ProductionRead, ProductionWrite, ProductionRelease, ProductionOperate, ProductionQuality, ProductionCancel, ProductionExport,
         FleetRead, FleetWrite, FleetMeterOverride, MaintenanceRead, MaintenanceWrite,
         DashboardRead, StorageRead, StorageWrite, LogisticsRead, LogisticsWrite, AfterSalesRead, AfterSalesWrite, AfterSalesApprove,
-        TraceabilityRead, TraceabilityWrite, LedgerValidate, RegionalLogisticsRead,
+        TraceabilityRead, TraceabilityWrite, TraceabilityPublish, LedgerValidate, RegionalLogisticsRead,
         RegionalLogisticsWrite, SalesNetworkRead, SalesNetworkWrite, SalesNetworkApprove,
         IntelligenceRead, IntelligenceWrite, IntelligenceStrategic, IntelligenceExport, ComplianceRead, ComplianceWrite, ComplianceApprove, ComplianceInspectionModelsWrite, ComplianceInspectionModelsPublish, ComplianceInspectionsExecute, EsgRead, EsgWrite,
         SustainabilityRead, SustainabilityWrite, SustainabilityApprove, SustainabilityReports,

@@ -7,6 +7,15 @@ namespace Agro360.UnitTests;
 public sealed class GenealogyRulesTests
 {
     [Fact]
+    public void ManualLinkContractCarriesAuditJustificationMetadata()
+    {
+        var command = new Agro360.Application.Contracts.RecordGenealogyLinkCommand("MANUAL", "RECEIPT",
+            Guid.NewGuid(), "STOCK_LOT", Guid.NewGuid(), null, null, "LT-1", 1m, "kg",
+            "{\"justification\":\"Conferência documental\"}", "key-1");
+        Assert.Contains("justification", command.Metadata, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ValidateLinkAcceptsACompleteTraceabilityLink()
     {
         var exception = Record.Exception(() => GenealogyRules.ValidateLink(

@@ -76,6 +76,26 @@ public sealed record RecordGenealogyLinkCommand(string Kind, string OriginType, 
     string DestinationType, Guid DestinationId, Guid? SeasonId, Guid? FieldId, string? LotNumber,
     decimal? Quantity, string? Unit, string? Metadata, string IdempotencyKey);
 
+public sealed record OperationalPendingDto(string Code, string Title, string Impact, string Origin,
+    string RecommendedAction, string SourceUrl, string RequiredPermission, string Status,
+    DateTimeOffset? OccurredAt, string? Responsible);
+
+public sealed record PublishPublicTraceCommand(string LotNumber, bool PublishFarm, string IdempotencyKey);
+public sealed record RevokePublicTraceCommand(string Reason);
+public sealed record PublicTraceEventDto(string Stage, string Status, DateTimeOffset? OccurredAt);
+public sealed record PublicTraceDto(string PublicCode, string Product, string Lot, string GeneralOrigin,
+    string? Farm, string? Season, string? Crop, IReadOnlyCollection<string> PublicCertifications,
+    IReadOnlyCollection<PublicTraceEventDto> Events, string FinalStatus, DateTimeOffset UpdatedAt);
+public sealed record PublicTracePublicationDto(string PublicCode, string Status, DateTimeOffset PublishedAt,
+    DateTimeOffset? RevokedAt);
+
+public interface IPublicTraceabilityService
+{
+    Task<PublicTracePublicationDto> PublishAsync(PublishPublicTraceCommand command, CancellationToken cancellationToken);
+    Task RevokeAsync(string publicCode, RevokePublicTraceCommand command, CancellationToken cancellationToken);
+    Task<PublicTraceDto?> GetAsync(string publicCode, CancellationToken cancellationToken);
+}
+
 public interface IHarvestService
 {
     Task<HarvestOperationDto> CreatePlanAsync(CreateHarvestPlanCommand command, CancellationToken cancellationToken);
@@ -94,4 +114,5 @@ public interface IHarvestService
     Task<SeasonGenealogyDto> GetSeasonGenealogyAsync(Guid seasonId, CancellationToken cancellationToken);
     Task<LotGenealogyDto> GetLotGenealogyAsync(string lotNumber, CancellationToken cancellationToken);
     Task<Guid> RecordGenealogyLinkAsync(RecordGenealogyLinkCommand command, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<OperationalPendingDto>> GetOperationalPendingsAsync(CancellationToken cancellationToken);
 }
