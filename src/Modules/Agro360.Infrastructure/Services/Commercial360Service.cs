@@ -82,6 +82,16 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         if (customer == default) throw new KeyNotFoundException("Cliente não encontrado.");
         CommercialRules.CustomerCanOrder(customer.Status, false);
 
+        if (command.ContractId is { } contractId)
+        {
+            var contract = await c.QuerySingleOrDefaultAsync<(string Status, decimal ContractedQuantity, decimal FulfilledQuantity)>(
+                "select s.status,s.contracted_quantity ContractedQuantity,greatest(s.delivered_quantity,coalesce((select sum(i.quantity) from agro360.sales_orders o join agro360.sales_order_items i on i.tenant_id=o.tenant_id and i.order_id=o.id where o.tenant_id=s.tenant_id and o.contract_id=s.id and o.status not in('CANCELLED','RETURNED') and o.deleted_at is null),0)) FulfilledQuantity from agro360.sales_contracts s where s.id=@ContractId and s.customer_id=@CustomerId and s.tenant_id=@TenantId and s.deleted_at is null for update",
+                new { ContractId = contractId, command.CustomerId, tenant.TenantId }, t);
+            if (contract == default) throw new KeyNotFoundException("Contrato não encontrado para o cliente informado.");
+            CommercialRules.EnsureContractAcceptsOrders(contract.Status);
+            CommercialRules.ValidateContractBalance(contract.ContractedQuantity, contract.FulfilledQuantity, command.Items.Sum(x => x.Quantity));
+        }
+
         var policyRows = (await c.QueryAsync<SalesPricePolicyLookup>(
             "select p.id PriceTableId,i.product_id ProductId,i.unit,i.base_price BasePrice,i.maximum_discount MaximumDiscount,p.is_default IsDefault,p.valid_from ValidFrom,p.updated_at UpdatedAt from agro360.sales_price_tables p join agro360.sales_price_table_items i on i.tenant_id=p.tenant_id and i.price_table_id=p.id where p.tenant_id=@TenantId and p.segment_id=@SegmentId and p.status='ACTIVE' and p.deleted_at is null and current_date between p.valid_from and p.valid_to and i.product_id=any(@ProductIds) order by p.is_default desc,p.valid_from desc,p.updated_at desc,p.id",
             new { tenant.TenantId, customer.SegmentId, ProductIds = command.Items.Select(x => x.ProductId).Distinct().ToArray() }, t)).ToArray();
@@ -130,7 +140,17 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             await c.ExecuteAsync("update agro360.sales_commissions set status='CANCELLED',updated_at=now() where tenant_id=@TenantId and order_id=@Id and status not in('PAID','REVERSED'); update agro360.sales_split_entries set status='CANCELLED',updated_at=now() where tenant_id=@TenantId and order_id=@Id and status='EXPECTED'", new { tenant.TenantId, Id = id }, t);
     }, ct);
 
-    public Task<Guid> CalculateCommissionAsync(CommissionCommand command, CancellationToken ct) { var amount = CommercialRules.Commission(command.Basis, command.Percentage, command.FixedValue); return db.InTenantTransactionAsync(async (c, t) => { if (await c.ExecuteScalarAsync<string?>("select status from agro360.sales_orders where id=@OrderId and tenant_id=@TenantId", new { tenant.TenantId, command.OrderId }, t) != "APPROVED") throw new ArgumentException("A comissão só pode ser calculada para pedido aprovado."); var id = Guid.CreateVersion7(); await c.ExecuteAsync("insert into agro360.sales_commissions(id,tenant_id,order_id,rule_id,representative_id,basis,percentage,fixed_value,amount,status,created_by,updated_by) values(@Id,@TenantId,@OrderId,@RuleId,@RepresentativeId,@Basis,@Percentage,@FixedValue,@Amount,'EXPECTED',@UserId,@UserId)", new { Id = id, tenant.TenantId, command.OrderId, command.RuleId, command.RepresentativeId, command.Basis, command.Percentage, command.FixedValue, Amount = amount, tenant.UserId }, t); return id; }, ct); }
+    public Task<Guid> CalculateCommissionAsync(CommissionCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        var status = await c.ExecuteScalarAsync<string?>("select status from agro360.sales_orders where id=@OrderId and tenant_id=@TenantId and deleted_at is null", new { tenant.TenantId, command.OrderId }, t);
+        if (status is null) throw new KeyNotFoundException("Pedido não encontrado.");
+        if (!CommercialRules.IsCommissionEligible(status))
+            throw new DomainException("O status do pedido não é elegível para comissão.", "sales.commission_status_ineligible");
+        var amount = CommercialRules.Commission(command.Basis, command.Percentage, command.FixedValue);
+        var id = Guid.CreateVersion7();
+        await c.ExecuteAsync("insert into agro360.sales_commissions(id,tenant_id,order_id,rule_id,representative_id,basis,percentage,fixed_value,amount,status,created_by,updated_by) values(@Id,@TenantId,@OrderId,@RuleId,@RepresentativeId,@Basis,@Percentage,@FixedValue,@Amount,'EXPECTED',@UserId,@UserId)", new { Id = id, tenant.TenantId, command.OrderId, command.RuleId, command.RepresentativeId, command.Basis, command.Percentage, command.FixedValue, Amount = amount, tenant.UserId }, t);
+        return id;
+    }, ct);
     public Task ChangeCommissionStatusAsync(Guid id, StatusCommand command, CancellationToken ct) => ChangeStatus("agro360.sales_commissions", id, command, true, ct);
     public Task<Guid> SaveSplitAsync(SplitAgreementCommand command, CancellationToken ct) { CommercialRules.ValidateSplit(command.Participants.Select(p => (p.ParticipantId, p.Percentage, p.FixedValue))); return db.InTenantTransactionAsync(async (c, t) => { var id = Guid.CreateVersion7(); await c.ExecuteAsync("insert into agro360.sales_split_agreements(id,tenant_id,order_id,contract_id,name,status,release_rule,created_by,updated_by) values(@Id,@TenantId,@OrderId,@ContractId,@Name,'DRAFT',@ReleaseRule,@UserId,@UserId)", new { Id = id, tenant.TenantId, command.OrderId, command.ContractId, command.Name, command.ReleaseRule, tenant.UserId }, t); foreach (var p in command.Participants) await c.ExecuteAsync("insert into agro360.sales_split_participants(id,tenant_id,agreement_id,participant_id,participant_type,percentage,fixed_value,priority) values(gen_random_uuid(),@TenantId,@AgreementId,@ParticipantId,@ParticipantType,@Percentage,@FixedValue,@Priority)", new { tenant.TenantId, AgreementId = id, p.ParticipantId, p.ParticipantType, p.Percentage, p.FixedValue, p.Priority }, t); return id; }, ct); }
     public Task ChangeSplitStatusAsync(Guid id, StatusCommand command, CancellationToken ct) => ChangeStatus("agro360.sales_split_agreements", id, command, false, ct);

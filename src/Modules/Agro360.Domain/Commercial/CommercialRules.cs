@@ -4,22 +4,25 @@ namespace Agro360.Domain.Commercial;
 
 public static class CommercialRules
 {
-    private static readonly IReadOnlyDictionary<string, string[]> ContractTransitions = new Dictionary<string, string[]>
+    private static readonly Dictionary<string, string[]> ContractTransitions = new(StringComparer.OrdinalIgnoreCase)
     {
         ["DRAFT"] = ["UNDER_REVIEW", "CANCELLED"],
         ["UNDER_REVIEW"] = ["DRAFT", "APPROVED", "CANCELLED"],
         ["APPROVED"] = ["ACTIVE", "SUSPENDED", "CANCELLED"],
-        ["ACTIVE"] = ["SUSPENDED", "FULFILLED", "CLOSED", "CANCELLED"],
+        ["ACTIVE"] = ["SUSPENDED", "PARTIALLY_FULFILLED", "FULFILLED", "CLOSED", "CANCELLED"],
         ["SUSPENDED"] = ["ACTIVE", "CANCELLED", "CLOSED"],
+        ["PARTIALLY_FULFILLED"] = ["FULFILLED", "CANCELLED", "CLOSED"],
         ["FULFILLED"] = ["CLOSED"]
     };
-    private static readonly IReadOnlyDictionary<string, string[]> OrderTransitions = new Dictionary<string, string[]>
+    private static readonly Dictionary<string, string[]> OrderTransitions = new(StringComparer.OrdinalIgnoreCase)
     {
         ["DRAFT"] = ["UNDER_REVIEW", "CANCELLED"],
         ["UNDER_REVIEW"] = ["DRAFT", "APPROVED", "CANCELLED"],
-        ["APPROVED"] = ["FULFILLMENT", "CANCELLED"],
-        ["FULFILLMENT"] = ["INVOICED", "CANCELLED"],
-        ["INVOICED"] = ["DELIVERED"]
+        ["APPROVED"] = ["RESERVED", "FULFILLMENT", "CANCELLED"],
+        ["RESERVED"] = ["FULFILLMENT", "CANCELLED"],
+        ["FULFILLMENT"] = ["INVOICED", "DELIVERED", "CANCELLED"],
+        ["INVOICED"] = ["DELIVERED", "RETURNED"],
+        ["DELIVERED"] = ["INVOICED", "RETURNED"]
     };
 
     public static string NormalizeOrderStatus(string? status)
@@ -74,8 +77,10 @@ public static class CommercialRules
 
     public static void CustomerCanOrder(string status, bool mayOverrideBlock)
     {
-        if (status == "INACTIVE") throw new DomainException("Reative o cliente antes de criar um pedido.", "sales.customer_inactive");
-        if (status == "BLOCKED" && !mayOverrideBlock) throw new DomainException("Cliente bloqueado exige autorização superior.", "sales.customer_blocked");
+        var normalized = status.Trim().ToUpperInvariant();
+        if (normalized == "INACTIVE") throw new DomainException("Reative o cliente antes de criar um pedido.", "sales.customer_inactive");
+        if (normalized is ("BLOCKED" or "DELINQUENT") && !mayOverrideBlock)
+            throw new DomainException("Cliente bloqueado ou inadimplente exige autorização superior.", "sales.customer_blocked");
     }
 
     public static void ValidateOpportunity(string stage, decimal value, string? lossReason)
@@ -109,6 +114,71 @@ public static class CommercialRules
     {
         if (freight < 0) throw new DomainException("Frete não pode ser negativo.", "sales.freight_invalid");
         return decimal.Round(lines.Sum(x => x.LineTotal) + freight, 2, MidpointRounding.AwayFromZero);
+    }
+
+    public static CommercialPriceCalculation CalculatePrice(
+        decimal quantity,
+        decimal baseUnitPrice,
+        decimal percentageDiscount,
+        decimal absoluteDiscount,
+        decimal additions,
+        decimal freight,
+        decimal informativeTaxes,
+        decimal standardDiscountLimit,
+        string? specialDiscountReason)
+    {
+        if (quantity <= 0 || baseUnitPrice <= 0)
+            throw new DomainException("Quantidade e preço base devem ser positivos.", "sales.price_values_invalid");
+        if (percentageDiscount is < 0 or > 100 || standardDiscountLimit is < 0 or > 100
+            || absoluteDiscount < 0 || additions < 0 || freight < 0 || informativeTaxes < 0)
+            throw new DomainException("Os componentes do preço são inválidos.", "sales.price_components_invalid");
+
+        var gross = decimal.Round(quantity * baseUnitPrice, 2, MidpointRounding.AwayFromZero);
+        var percentageValue = decimal.Round(gross * percentageDiscount / 100, 2, MidpointRounding.AwayFromZero);
+        var net = decimal.Round(gross - percentageValue - absoluteDiscount + additions + freight + informativeTaxes, 2, MidpointRounding.AwayFromZero);
+        if (net < 0) throw new DomainException("O total líquido não pode ser negativo.", "sales.negative_net_total");
+
+        var effectiveDiscount = gross == 0 ? 0 : decimal.Round((percentageValue + absoluteDiscount) / gross * 100, 4);
+        var requiresApproval = effectiveDiscount > standardDiscountLimit;
+        if (requiresApproval && string.IsNullOrWhiteSpace(specialDiscountReason))
+            throw new DomainException("Desconto especial exige justificativa.", "sales.special_discount_reason_required");
+
+        return new(gross, percentageValue, absoluteDiscount, additions, freight, informativeTaxes, net, effectiveDiscount, requiresApproval);
+    }
+
+    public static void ValidateContractBalance(decimal contractedQuantity, decimal fulfilledQuantity, decimal requestedQuantity)
+    {
+        if (contractedQuantity <= 0 || fulfilledQuantity < 0 || requestedQuantity <= 0 || fulfilledQuantity + requestedQuantity > contractedQuantity)
+            throw new DomainException("Saldo contratual insuficiente para o pedido.", "sales.contract_balance_insufficient");
+    }
+
+    public static void EnsureContractAcceptsOrders(string status)
+    {
+        if (status.Trim().ToUpperInvariant() is not ("ACTIVE" or "PARTIALLY_FULFILLED"))
+            throw new DomainException("O contrato não está disponível para novos pedidos.", "sales.contract_not_orderable");
+    }
+
+    public static bool IsCommissionEligible(string orderStatus)
+        => orderStatus.Trim().ToUpperInvariant() is "APPROVED" or "INVOICED";
+
+    public static decimal CommissionForOrder(string orderStatus, decimal netTotal, decimal percentage)
+    {
+        if (!IsCommissionEligible(orderStatus))
+            throw new DomainException("O status do pedido não é elegível para comissão.", "sales.commission_status_ineligible");
+        return Commission(netTotal, percentage, null);
+    }
+
+    public static CommercialComplianceRequirements ComplianceFor(string productName, bool regionalProduct = false)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(productName);
+        var normalized = productName.Trim().ToUpperInvariant();
+        var reinforced = regionalProduct || normalized.Contains("AÇAÍ", StringComparison.Ordinal)
+            || normalized.Contains("ACAI", StringComparison.Ordinal)
+            || normalized.Contains("CACAU", StringComparison.Ordinal)
+            || normalized.Contains("TUCUPI", StringComparison.Ordinal);
+        return reinforced
+            ? new(true, true, true, true, false, true)
+            : new(false, false, false, false, false, false);
     }
 
     public static decimal Commission(decimal basis, decimal? percentage, decimal? fixedValue)
@@ -158,3 +228,5 @@ public static class CommercialRules
 }
 
 public sealed record CommercialOrderLineCalculation(decimal Quantity, decimal UnitPrice, decimal Discount, decimal BasePrice, decimal MaximumDiscount, decimal LineTotal, decimal EffectiveDiscount);
+public sealed record CommercialPriceCalculation(decimal GrossTotal, decimal PercentageDiscountValue, decimal AbsoluteDiscount, decimal Additions, decimal Freight, decimal InformativeTaxes, decimal NetTotal, decimal EffectiveDiscountPercentage, bool RequiresApproval);
+public sealed record CommercialComplianceRequirements(bool RequiresEnvironmentalDocuments, bool RequiresTrackedOrigin, bool RequiresPhotoOrGpsEvidence, bool RequiresQualityReport, bool RequiresExportCompliance, bool ReinforcedTraceability);
