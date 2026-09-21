@@ -856,9 +856,14 @@ public sealed class HarvestService(
 
             var batch = await db.QuerySingleOrDefaultAsync<IndustrialGenealogyRow>(new CommandDefinition("""
                 select pb.id BatchId, pb.batch_number BatchNumber, pb.quantity BatchQuantity, pb.unit BatchUnit,
-                       pb.quality_status BatchQualityStatus, po.order_number OrderNumber, po.id OrderId
+                       pb.quality_status BatchQualityStatus, po.order_number OrderNumber, po.id OrderId,
+                       pp.name ProductName,
+                       exists(select 1 from agro360.production_batch_traceability pbt
+                              where pbt.tenant_id = pb.tenant_id and pbt.batch_id = pb.id
+                                and pbt.source_entity = 'production_receipts') HasAgriculturalOrigin
                 from agro360.production_batches pb
                 join agro360.production_orders po on po.tenant_id = pb.tenant_id and po.id = pb.order_id
+                join agro360.production_products pp on pp.tenant_id = pb.tenant_id and pp.id = pb.product_id
                 where pb.tenant_id = @TenantId and pb.batch_number = @LotNumber and pb.deleted_at is null
                 """, new { tenant.TenantId, LotNumber = trimmedLot }, tx, cancellationToken: cancellationToken));
 
@@ -950,6 +955,12 @@ public sealed class HarvestService(
                     GapReason: record is null ? "Recebimento sem apontamento de colheita de origem" : null,
                     OccurredAt: receipt.ReceivedAt,
                     Details: $"Recebido em {receipt.WarehouseName}"));
+
+                if (record is null)
+                {
+                    hasGap = true;
+                    gapReason ??= "Recebimento sem apontamento de colheita ou safra de origem associada.";
+                }
             }
 
             if (stockLot is not null)
@@ -966,6 +977,29 @@ public sealed class HarvestService(
                     GapReason: null,
                     OccurredAt: null,
                     Details: $"Saldo atual em estoque: {stockLot.Quantity:N2} {stockLot.Unit}"));
+            }
+
+            if (batch is not null)
+            {
+                var hasBatchOrigin = batch.HasAgriculturalOrigin;
+                nodes.Add(new GenealogyNodeDto(
+                    Stage: "Beneficiamento Industrial",
+                    OriginLabel: hasBatchOrigin ? $"Lote {trimmedLot}" : "Origem agrícola não vinculada",
+                    DestinationLabel: $"Ordem {batch.OrderNumber} (Lote Ind. {batch.BatchNumber})",
+                    Status: TranslateQualityStatus(batch.BatchQualityStatus ?? "PENDING"),
+                    Quantity: batch.BatchQuantity,
+                    Unit: batch.BatchUnit,
+                    LotNumber: batch.BatchNumber,
+                    HasGap: !hasBatchOrigin,
+                    GapReason: !hasBatchOrigin ? "Lote industrial sem recebimento ou lote de estoque agrícola vinculado." : null,
+                    OccurredAt: null,
+                    Details: $"Lote produzido pela ordem industrial {batch.OrderNumber}"));
+
+                if (!hasBatchOrigin)
+                {
+                    hasGap = true;
+                    gapReason ??= "Lote industrial sem origem agrícola vinculada.";
+                }
             }
 
             foreach (var s in shipments)
@@ -1000,7 +1034,7 @@ public sealed class HarvestService(
                 }
             }
 
-            var productName = receipt?.ProductName ?? stockLot?.ProductName ?? "Produto Agrícola";
+            var productName = receipt?.ProductName ?? stockLot?.ProductName ?? batch?.ProductName ?? "Produto Agrícola";
             var status = stockLot?.QualityStatus ?? receipt?.QualityStatus ?? batch?.BatchQualityStatus ?? "REGISTRADO";
 
             return new LotGenealogyDto(
@@ -1231,6 +1265,8 @@ public sealed class HarvestService(
         public decimal? BatchQuantity { get; set; }
         public string? BatchUnit { get; set; }
         public string? BatchQualityStatus { get; set; }
+        public string? ProductName { get; set; }
+        public bool HasAgriculturalOrigin { get; set; }
     }
 
     private sealed class ShipmentGenealogyRow
