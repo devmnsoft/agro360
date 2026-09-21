@@ -1,3 +1,36 @@
+## Destinação e Qualidade de Retorno + Feedback Global (AG-E8-RET-001) — 2026-09-21
+
+Branch `feat/ag-e8-ret-001-retorno-feedback` a partir de `main` (`01b4b9b550f39ff3507a2e486686ee95a028bf5e`).
+
+**Entregue:**
+- **Destinação e Qualidade de Retorno**:
+  - `ReceiveReturnAsync` deixa o retorno físico em `AWAITING_QUALITY` e aciona o intent operacional de qualidade pós-commit (`IOperationalInspectionTrigger`).
+  - Destinação via `DecideReturnAsync` é obrigatória com decisões permitidas `RELEASE`, `BLOCK` ou `DISPOSE`.
+  - Regra de qualidade pura em `StorageRules`: laudo `CONFORMING` não libera o lote sozinho; inspeções `NON_CONFORMING`, `INCONCLUSIVE`, `PENDING_MODEL`, `AMBIGUOUS` ou incompletas bloqueiam `RELEASE` com `DomainException`.
+  - Descartes físicos (`DISPOSE`) registram perda com quantidade, unidade (`unit`) e motivo obrigatório; custo (`cost`) opcional sem gerar títulos a receber/pagar duplicados e sem inferir emissão de NF-e.
+  - Idempotência com chave e hash (`ReturnDecisionExistingRow`) e concorrência otimista (OCC via `ExpectedVersion`).
+  - DDL incremental `094_fulfillment_return_disposition.sql` (schema `9.4.0`) preservando imutabilidade de 071, 092 e 093, e consolidado em `database/agro360-postgres-full.sql`.
+  - Endpoints de consulta: `GET /api/logistics/trips/fulfillment/returns` e `GET /api/logistics/trips/fulfillment/returns/{id:guid}` com DTOs Dapper (`get`/`set`).
+- **Contrato Global de Feedback (`window.agro360Feedback`)**:
+  - Implementado em `agro360.js`, reutilizando estritamente `#toast-region`, `showToast` e `<dialog id="action-confirmation">`.
+  - Proibido `alert()` e SweetAlert em todo o ecossistema.
+  - Tratamento estrito de erros diferenciando `401 ≠ 403 ≠ rede/conectividade`, com higienização de mensagens para remoção de GUIDs brutos.
+  - Requisito de motivo obrigatório em diálogos de confirmação (`requireReason: true`).
+  - Refatoradas as jornadas de `/Logistics`, `/Inspections` e `/Harvest` para consumo estrito do contrato `window.agro360Feedback`.
+  - Banner informativo + toast quando houver `PENDING_MODEL` ou inspeções não resolvidas.
+  - UI `/Logistics`: Breadcrumb `Logística / Retornos`, ScreenHelp atualizado, estados de loading, lista vazia, erro 401/403/rede e modal para destinação de devoluções físicas.
+
+**Evidências Locais:**
+- `dotnet build MNSOFT.Agro360.sln -c Release`: 0 avisos, 0 erros (PASS).
+- `dotnet test tests/Agro360.UnitTests -c Release`: 61/61 aprovados (100% PASS, incluindo novas suítes de regras em `ReturnDispositionRulesTests`).
+- `node --check` em `agro360.js`, `logistics.js`, `inspections.js` e `harvest.js`: aprovado (100% PASS).
+- `git diff --check`: aprovado (sem erros de espaço em branco ou newline).
+
+**Pendência:**
+- **Execução DB**: Ausência de cluster PostgreSQL local com o padrão nominal `test` ou `teste`. Conforme diretriz de governança, a execução das migrações físicas em ambiente de banco de dados não efêmero/não identificado para testes permanece declarada como pendente e não simulada.
+
+**Próximo Recorte:** `AG-E6-GEN-001` (Genealogia completa da safra até produção e expedição).
+
 ## Homologação E2E do Ciclo 092+093 (AG-Q-092-E2E) — 2026-09-19 / 2026-09-20
 
 Branch `feat/ag-q-092-e2e-homologacao` a partir de `main` (`63985d9533073b0e6e48fec343d9be3532533dc4`). Homologação concluída com sucesso em cluster efêmero PostgreSQL descartável (portas e diretórios de teste isolados).
