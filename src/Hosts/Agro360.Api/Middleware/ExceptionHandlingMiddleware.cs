@@ -27,6 +27,8 @@ public sealed partial class ExceptionHandlingMiddleware(RequestDelegate next, IL
             ConflictException => (StatusCodes.Status409Conflict, "business_conflict", "Conflito de negócio"),
             ForbiddenException => (StatusCodes.Status403Forbidden, "forbidden", "Acesso negado"),
             DomainException => (StatusCodes.Status422UnprocessableEntity, "business_rule", "Regra de negócio não atendida"),
+            InvalidOperationException => (StatusCodes.Status422UnprocessableEntity, "business_rule", "Operação inválida para o estado atual"),
+            ArgumentException => (StatusCodes.Status400BadRequest, "invalid_argument", "Argumento inválido"),
             DatabaseAuthenticationException => (StatusCodes.Status503ServiceUnavailable, "database_authentication_failed", "Dependência indisponível"),
             DatabaseTimeoutException => (StatusCodes.Status503ServiceUnavailable, "database_timeout", "Dependência temporariamente indisponível"),
             DatabaseUnavailableException => (StatusCodes.Status503ServiceUnavailable, "database_unavailable", "Dependência temporariamente indisponível"),

@@ -230,20 +230,21 @@ public sealed class InspectionService(DatabaseExecutor db, ITenantContext tenant
             Guid? reviewResponsibleId = null;
             if (sourceId is Guid src)
             {
-                var header = await c.QuerySingleOrDefaultAsync<(string? Instructions, Guid? ReviewResponsibleId)>(new CommandDefinition("""
-                    select instructions, review_responsible_id from agro360.quality_inspection_model_versions
+                var header = await c.QuerySingleOrDefaultAsync<VersionCopyHeaderRow>(new CommandDefinition("""
+                    select id, instructions, review_responsible_id ReviewResponsibleId from agro360.quality_inspection_model_versions
                     where tenant_id=@TenantId and id=@Id and model_id=@ModelId
                     """, new { tenant.TenantId, Id = src, ModelId = modelId }, t, cancellationToken: ct));
-                if (header == default) throw new NotFoundException("Versão de modelo", src);
+                if (header is null) throw new NotFoundException("Versão de modelo", src);
                 instructions = header.Instructions;
                 reviewResponsibleId = header.ReviewResponsibleId;
             }
             else
             {
-                var modelHeader = await c.QuerySingleAsync<(string? Instructions, Guid? ReviewResponsibleId)>(new CommandDefinition("""
-                    select instructions, review_responsible_id from agro360.quality_inspection_models
+                var modelHeader = await c.QuerySingleOrDefaultAsync<VersionCopyHeaderRow>(new CommandDefinition("""
+                    select id, instructions, review_responsible_id ReviewResponsibleId from agro360.quality_inspection_models
                     where tenant_id=@TenantId and id=@ModelId
                     """, new { tenant.TenantId, ModelId = modelId }, t, cancellationToken: ct));
+                if (modelHeader is null) throw new NotFoundException("Modelo de inspeção", modelId);
                 instructions = modelHeader.Instructions;
                 reviewResponsibleId = modelHeader.ReviewResponsibleId;
             }
@@ -315,8 +316,8 @@ public sealed class InspectionService(DatabaseExecutor db, ITenantContext tenant
                 tenant.TenantId,
                 VersionId = versionId,
                 command.ChangeReason,
-                command.ValidFrom,
-                command.ValidUntil,
+                ValidFrom = command.ValidFrom?.ToDateTime(TimeOnly.MinValue),
+                ValidUntil = command.ValidUntil?.ToDateTime(TimeOnly.MinValue),
                 ContentHash = contentHash,
                 command.ExpectedRowVersion,
                 UserId = tenant.UserId
@@ -1584,8 +1585,10 @@ public sealed class InspectionService(DatabaseExecutor db, ITenantContext tenant
             run.WeightedScorePercent, run.ModelId, run.ModelVersionId, run.ModelName, run.ModelVersionNumber,
             run.OriginType, run.OriginId, run.ProductId, run.ProductName, run.LotId, run.LotName,
             run.UnitId, run.UnitName, run.InspectorId, run.InspectorName, run.SelectionMode,
-            run.ParentRunId, run.ReinspectionReason, run.RowVersion, run.StartedAt, run.LastSavedAt,
-            run.CompletedAt,
+            run.ParentRunId, run.ReinspectionReason, run.RowVersion,
+            new DateTimeOffset(DateTime.SpecifyKind(run.StartedAt, DateTimeKind.Utc)),
+            new DateTimeOffset(DateTime.SpecifyKind(run.LastSavedAt, DateTimeKind.Utc)),
+            run.CompletedAt.HasValue ? new DateTimeOffset(DateTime.SpecifyKind(run.CompletedAt.Value, DateTimeKind.Utc)) : null,
             new InspectionRunProgress(total, answered, requiredPending, criticalNc, percent),
             sectionDtos);
     }
@@ -2153,18 +2156,58 @@ public sealed class InspectionService(DatabaseExecutor db, ITenantContext tenant
         Guid ModelId, string ModelStatus, bool AllowManual, Guid VersionId, int VersionNumber,
         string VersionStatus, DateOnly ValidFrom, DateOnly? ValidUntil);
 
-    private sealed record RunLockRow(
-        Guid Id, string Number, Guid ModelId, Guid ModelVersionId, int ModelVersionNumber, string ProcessCode,
-        string Status, string? OverallResult, decimal? WeightedScorePercent, string OriginType, Guid? OriginId,
-        Guid? ProductId, Guid? LotId, Guid? UnitId, Guid InspectorId, string SelectionMode, long RowVersion);
+    private sealed class RunLockRow
+    {
+        public Guid Id { get; init; }
+        public string Number { get; init; } = "";
+        public Guid ModelId { get; init; }
+        public Guid ModelVersionId { get; init; }
+        public int ModelVersionNumber { get; init; }
+        public string ProcessCode { get; init; } = "";
+        public string Status { get; init; } = "";
+        public string? OverallResult { get; init; }
+        public decimal? WeightedScorePercent { get; init; }
+        public string OriginType { get; init; } = "";
+        public Guid? OriginId { get; init; }
+        public Guid? ProductId { get; init; }
+        public Guid? LotId { get; init; }
+        public Guid? UnitId { get; init; }
+        public Guid InspectorId { get; init; }
+        public string SelectionMode { get; init; } = "";
+        public long RowVersion { get; init; }
+    }
 
-    private sealed record RunDetailRow(
-        Guid Id, string Number, string ProcessCode, string Status, string? OverallResult, string? DeterminingJson,
-        decimal? WeightedScorePercent, Guid ModelId, Guid ModelVersionId, string ModelName, int ModelVersionNumber,
-        string? OriginType, Guid? OriginId, Guid? ProductId, string? ProductName, Guid? LotId, string? LotName,
-        Guid? UnitId, string? UnitName, Guid InspectorId, string InspectorName, string SelectionMode,
-        Guid? ParentRunId, string? ReinspectionReason, long RowVersion, DateTimeOffset StartedAt,
-        DateTimeOffset LastSavedAt, DateTimeOffset? CompletedAt);
+    private sealed class RunDetailRow
+    {
+        public Guid Id { get; init; }
+        public string Number { get; init; } = "";
+        public string ProcessCode { get; init; } = "";
+        public string Status { get; init; } = "";
+        public string? OverallResult { get; init; }
+        public string? DeterminingJson { get; init; }
+        public decimal? WeightedScorePercent { get; init; }
+        public Guid ModelId { get; init; }
+        public Guid ModelVersionId { get; init; }
+        public string ModelName { get; init; } = "";
+        public int ModelVersionNumber { get; init; }
+        public string? OriginType { get; init; }
+        public Guid? OriginId { get; init; }
+        public Guid? ProductId { get; init; }
+        public string? ProductName { get; init; }
+        public Guid? LotId { get; init; }
+        public string? LotName { get; init; }
+        public Guid? UnitId { get; init; }
+        public string? UnitName { get; init; }
+        public Guid InspectorId { get; init; }
+        public string InspectorName { get; init; } = "";
+        public string SelectionMode { get; init; } = "";
+        public Guid? ParentRunId { get; init; }
+        public string? ReinspectionReason { get; init; }
+        public long RowVersion { get; init; }
+        public DateTime StartedAt { get; init; }
+        public DateTime LastSavedAt { get; init; }
+        public DateTime? CompletedAt { get; init; }
+    }
 
     private sealed class SectionDbRow
     {
@@ -2223,4 +2266,6 @@ public sealed class InspectionService(DatabaseExecutor db, ITenantContext tenant
 
     private sealed record CompareSide(
         string StableKey, string CriterionType, string Name, string? Outcome, string? ValueSummary);
+
+    private sealed record VersionCopyHeaderRow(Guid Id, string? Instructions, Guid? ReviewResponsibleId);
 }

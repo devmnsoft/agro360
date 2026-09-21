@@ -15,6 +15,7 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        Dapper.SqlMapper.AddTypeHandler(new DateOnlyTypeHandler());
         var postgres = PostgreSqlConnectionConfiguration.Resolve(configuration);
         services.AddSingleton(postgres);
         services.AddSingleton<IDbConnectionFactory, NpgsqlConnectionFactory>();
@@ -94,4 +95,21 @@ public static class DependencyInjection
         services.AddScoped<IFiscalEmissionService, FiscalEmissionService>();
         return services;
     }
+}
+
+public sealed class DateOnlyTypeHandler : Dapper.SqlMapper.TypeHandler<DateOnly>
+{
+    public override void SetValue(System.Data.IDbDataParameter parameter, DateOnly value)
+    {
+        parameter.DbType = System.Data.DbType.Date;
+        parameter.Value = value.ToDateTime(TimeOnly.MinValue);
+    }
+
+    public override DateOnly Parse(object value) => value switch
+    {
+        DateOnly date => date,
+        DateTime dt => DateOnly.FromDateTime(dt),
+        string s when DateOnly.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, out var date) => date,
+        _ => DateOnly.FromDateTime(Convert.ToDateTime(value, System.Globalization.CultureInfo.InvariantCulture))
+    };
 }

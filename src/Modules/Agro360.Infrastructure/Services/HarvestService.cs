@@ -93,7 +93,7 @@ public sealed class HarvestService(
             var qty = Guard.Positive(command.ReceivedQuantity, nameof(command.ReceivedQuantity));
             var unit = Required(command.Unit, nameof(command.Unit), 16).ToLowerInvariant();
             var source = await db.QuerySingleOrDefaultAsync<ReceiptSource>(new CommandDefinition("""
-                select r.harvested_quantity Quantity, r.unit, p.product_id ProductId, p.destination_warehouse_id WarehouseId, r.operational_at,
+                select r.harvested_quantity Quantity, r.unit, p.product_id ProductId, p.destination_warehouse_id WarehouseId, r.operational_at OperationalAt,
                 coalesce((select sum(x.received_quantity) from agro360.production_receipts x where x.tenant_id=r.tenant_id and x.harvest_record_id=r.id),0) Received
                 from agro360.harvest_records r join agro360.harvest_plans p on p.tenant_id=r.tenant_id and p.id=r.plan_id
                 where r.tenant_id=@TenantId and r.id=@Id and r.status<>'CANCELLED' for update of r;
@@ -353,5 +353,26 @@ public sealed class HarvestService(
     private sealed record ClosingRunRow(Guid Id,DateTimeOffset GeneratedAt,string CriteriaVersion,string Issues);
     private sealed record ClosingVersionRow(Guid Id,Guid SeasonId,int Version,string State,DateOnly CutoffDate,DateTimeOffset GeneratedAt,Guid ResponsibleId,Guid? SupersedesId,string? Reason,string? Notes,string Indicators,string Issues);
     private sealed record PreviousClosing(Guid Id,int Version);
-    private sealed record PlanReferences(Guid FarmId,short SeasonStatus,Guid FieldFarmId,decimal FieldArea,string ProductUnit,Guid WarehouseFarmId);private sealed record PlanRow(decimal Quantity,string Unit,string Status,decimal Area);private sealed record ReceiptSource(decimal Quantity,string Unit,Guid ProductId,Guid WarehouseId,decimal Received);private sealed record ReceiptRow(decimal Quantity,string Unit,string Status,Guid ProductId,string Reference);private sealed record SpecRow(int Version,Guid ProductId,string Status);private sealed record ParameterRow(Guid Id,bool Required,bool EvidenceRequired,decimal? Minimum,decimal? Maximum,string Name);private sealed record AllocationSource(decimal Quantity,decimal Accepted,string Unit,string Status,Guid ProductId,Guid WarehouseId,string Reference,decimal Allocated,decimal AvailableAllocated);private sealed record BalanceRow(Guid Id,decimal Available,decimal AverageCost,long Version);private sealed record DashboardRow(decimal Planned,decimal Harvested,decimal Received,decimal AwaitingQuality,decimal Approved,decimal Loss,decimal Costs,decimal Area,string? Unit,int UnitCount);private sealed record TraceRow(Guid ReceiptId,string LotNumber,string QualityStatus,Guid FarmId,Guid SeasonId,Guid FieldId,Guid HarvestRecordId,decimal ReceivedQuantity,decimal AllocatedQuantity,string Unit);private sealed record ReplayRow(Guid Id,string Hash,DateTimeOffset At);private sealed record InspectionReplay(Guid Id,string Hash,DateTimeOffset At);
+    private sealed class ReceiptSource
+    {
+        public decimal Quantity { get; set; }
+        public string Unit { get; set; } = string.Empty;
+        public Guid ProductId { get; set; }
+        public Guid WarehouseId { get; set; }
+        public DateTime OperationalAt { get; set; }
+        public decimal Received { get; set; }
+    }
+    private sealed record PlanReferences(Guid FarmId,short SeasonStatus,Guid FieldFarmId,decimal FieldArea,string ProductUnit,Guid WarehouseFarmId);private sealed record PlanRow(decimal Quantity,string Unit,string Status,decimal Area);private sealed record ReceiptRow(decimal Quantity,string Unit,string Status,Guid ProductId,string Reference);private sealed record SpecRow(int Version,Guid ProductId,string Status);private sealed record ParameterRow(Guid Id,bool Required,bool EvidenceRequired,decimal? Minimum,decimal? Maximum,string Name);private sealed record AllocationSource(decimal Quantity,decimal Accepted,string Unit,string Status,Guid ProductId,Guid WarehouseId,string Reference,decimal Allocated,decimal AvailableAllocated);private sealed record BalanceRow(Guid Id,decimal Available,decimal AverageCost,long Version);private sealed record DashboardRow(decimal Planned,decimal Harvested,decimal Received,decimal AwaitingQuality,decimal Approved,decimal Loss,decimal Costs,decimal Area,string? Unit,int UnitCount);private sealed record TraceRow(Guid ReceiptId,string LotNumber,string QualityStatus,Guid FarmId,Guid SeasonId,Guid FieldId,Guid HarvestRecordId,decimal ReceivedQuantity,decimal AllocatedQuantity,string Unit);
+    private sealed class ReplayRow
+    {
+        public Guid Id { get; set; }
+        public string Hash { get; set; } = string.Empty;
+        public DateTime At { get; set; }
+    }
+    private sealed class InspectionReplay
+    {
+        public Guid Id { get; set; }
+        public string Hash { get; set; } = string.Empty;
+        public DateTime At { get; set; }
+    }
 }

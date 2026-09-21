@@ -1,6 +1,23 @@
 # Plano de execução Agro360
 
-## Recorte ativo — Gatilhos operacionais de inspeção por eventos AG-Q-EVT-001 (2026-09-18)
+## Recorte concluído — Homologação E2E de Inspeções e Gatilhos AG-Q-092-E2E (2026-09-19 / 2026-09-20)
+
+1. **Homologado com PASS (15/15 cenários em cluster efêmero PostgreSQL descartável):**
+   - Instalação limpa Full SQL e upgrade incremental 9.2.0 → 9.3.0 sem perda de dados e com RLS forçado.
+   - Criação de modelos, versionamento, critérios críticos e imutabilidade de versões publicadas (PUT rejeitado).
+   - Gatilhos de colheita (`HARVEST_RECEIPT`) e devolução (`RETURN`) com retenção em inspeção (`AWAITING_INSPECTION` / `AWAITING_QUALITY`), criação de runs automáticas e sem destinação indevida de lotes.
+   - Tratamento estrito de ausência de obrigatórios (HTTP 422), reprovação crítica com veredito `NON_CONFORMING`, restrição e caso na Central CAPA.
+   - Reinspeção vinculada à run pai, ambiguidade de modelos (`AMBIGUOUS`), ausência de modelos (`PENDING_MODEL`).
+   - Idempotência de replay operacional e de agendas periódicas (`schedule_generation_key`).
+   - Governança e autorização multi-tenant (403 para usuários sem permissão; 404 e lista vazia para outros tenants).
+   - Acessibilidade e responsividade da UI `/Inspections`: skip-link com foco CSS, Breadcrumb humano, ScreenHelp expansível e aba "Gatilhos por Evento" com status em português.
+2. **Evidências:** documentadas integralmente em `docs/execucao/AG-Q-092-E2E-EVIDENCE.md`.
+3. **Próximo recorte ativo pós-merge (estrito):**
+   - 1º `AG-E8-RET-001` (Recebimento, conferência e qualidade definitiva de devolução/retorno)
+   - 2º `AG-E6-GEN-001` (Genealogia completa da safra até produção e expedição)
+   - 3º `AG-E1-002` (MFA real, elevação SuperAdmin e suporte assistido auditado)
+
+## Recorte entregue — Gatilhos operacionais de inspeção por eventos AG-Q-EVT-001 (2026-09-18)
 
 1. **Concluído no código:** contrato e serviço `IOperationalInspectionTrigger`, migration incremental `093_quality_inspection_event_intents.sql` + consolidado (092 imutável), ganchos pós-commit em `HarvestService.ReceiveAsync` (HARVEST_RECEIPT), `LogisticsService.ReceiveReturnAsync` (RETURN), `ProcurementService.ReceiveAsync` (PURCHASE_RECEIPT) e `IndustrialProductionService.RegisterOutputAsync` (PRODUCTION); endpoint `GET /api/inspections/event-intents`; UI `/Inspections` com breadcrumb, `@section ScreenHelp`, aba de gatilhos por evento com status em português; ADR-Q-EVT-01 e documentações.
 2. **Ordem de continuidade pós-merge (estrita):**

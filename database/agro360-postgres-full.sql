@@ -5369,7 +5369,7 @@ create table if not exists agro360.inventory_material_approval_rules(
 create index if not exists ix_material_requests_queue on agro360.inventory_material_requests(tenant_id,status,needed_on,number);
 create index if not exists ix_material_events_request on agro360.inventory_material_request_events(tenant_id,request_id,occurred_at);
 do $$ declare t text; begin foreach t in array array['inventory_material_requests','inventory_material_request_items','inventory_material_reservations','inventory_material_deliveries','inventory_material_delivery_lots','inventory_material_consumptions','inventory_material_returns','inventory_material_request_events','inventory_material_approval_rules'] loop execute format('alter table agro360.%I enable row level security',t); execute format('alter table agro360.%I force row level security',t); execute format('create policy %I on agro360.%I using (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid) with check (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid)',t||'_tenant',t); end loop; end $$;
-insert into platform.schema_versions(version,description,installed_at) values('0.81.0','Requisições internas, reservas, entrega, consumo e devolução',now()) on conflict(version) do nothing;
+insert into agro360.platform_schema_versions(version,description,installed_at) values('0.81.0','Requisições internas, reservas, entrega, consumo e devolução',now()) on conflict(version) do nothing;
 commit;
 begin;
 

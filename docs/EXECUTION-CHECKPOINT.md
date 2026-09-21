@@ -1,3 +1,33 @@
+## Homologação E2E do Ciclo 092+093 (AG-Q-092-E2E) — 2026-09-19 / 2026-09-20
+
+Branch `feat/ag-q-092-e2e-homologacao` a partir de `main` (`63985d9533073b0e6e48fec343d9be3532533dc4`). Homologação concluída com sucesso em cluster efêmero PostgreSQL descartável (portas e diretórios de teste isolados).
+
+**Entregue e Validado (15/15 Cenários PASS):**
+- **Cenário 1 (Instalação Full SQL):** PASS. `agro360-postgres-full.sql` instala com schemas `9.2.0` e `9.3.0`, RLS forçado em `quality_inspection_models` e `quality_inspection_event_intents`.
+- **Cenário 2 (Upgrade 9.2.0 → 9.3.0):** PASS. Migration `093_quality_inspection_event_intents.sql` aplicada sem perda de modelos da 092.
+- **Cenário 3 (Modelo e Imutabilidade):** PASS. Criação de modelo `HARVEST_RECEIPT`, draft, publicação e recusa de alteração em versão publicada (HTTP 400).
+- **Cenário 4 (Gatilho de Colheita):** PASS. `ReceiveAsync` gera receipt em `AWAITING_INSPECTION`, intent com `STARTED` e run `IN_PROGRESS`.
+- **Cenário 5 (Conclusão sem Obrigatório):** PASS. Recusada com HTTP 422 UnprocessableEntity; receipt segue retido em `AWAITING_INSPECTION`.
+- **Cenário 6 (Reprovação em Critério Crítico):** PASS. Resultado global `NON_CONFORMING`, restrição/NC gerada na Central CAPA e lote não liberado para `AVAILABLE`.
+- **Cenário 7 (Reinspeção):** PASS. Nova run aberta vinculada ao pai (`parent_run_id`), run original mantida em `COMPLETED`.
+- **Cenário 8 (Empate / Ambiguidade):** PASS. Modelos com mesma precedência geram intent `AMBIGUOUS` sem criação arbitrária de run.
+- **Cenário 9 (Ausência de Modelo):** PASS. Intent `PENDING_MODEL` sem liberação indevida do recebimento.
+- **Cenário 10 (Gatilho de Devolução):** PASS. `ReceiveReturnAsync` gera intent `RETURN`, devolução em `AWAITING_QUALITY`, sem destinação precipitada de lote.
+- **Cenário 11 (Idempotência / Replay):** PASS. Reenvio da mesma colheita recupera mesmo receipt e mesmo `run_id` no intent.
+- **Cenário 12 (Agenda Periódica Idempotente):** PASS. Execução na mesma janela não duplica runs abertas (`schedule_generation_key`).
+- **Cenário 13 (Permissões e Governança):** PASS. Leitor sem permissão recebe HTTP 403 ao tentar completar run ou liberar restrição de lote.
+- **Cenário 14 (Isolamento Multi-Tenant):** PASS. Tenant B recebe lista vazia de intents e HTTP 404 ao consultar run do Tenant A.
+- **Cenário 15 (Acessibilidade, Responsividade e UI):** PASS. Skip-link acessível via teclado com foco CSS visível, Breadcrumb humano, ScreenHelp operacional expansível, aba "Gatilhos por Evento" com status em português (`Iniciada`, `Sem modelo`, `Ambiguidade`) e sem scroll horizontal em 360x640.
+
+**Evidências Locais:**
+- Relatório de evidências: `docs/execucao/AG-Q-092-E2E-EVIDENCE.md`.
+- `dotnet build -c Release`: 0 avisos, 0 erros.
+- `dotnet test tests/Agro360.UnitTests`: 27/27 aprovados (100% PASS).
+- `node --check src/Hosts/Agro360.Web/wwwroot/js/inspections.js`: aprovado.
+- `git diff --check`: aprovado.
+
+**Próximo Recorte:** `AG-E8-RET-001` (Recebimento, conferência e qualidade definitiva de devolução/retorno).
+
 ## Gatilhos operacionais de inspeção por eventos (AG-Q-EVT-001) — 2026-09-18
 
 Branch `feat/ag-q-evt-001-inspection-hooks` a partir de `main` (`dfea21291d9e1c7c924777b2c913e007511f3ef7`). Alterações locais em segredos e configurações do usuário preservadas e fora do commit.

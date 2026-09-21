@@ -161,12 +161,13 @@ public sealed class LogisticsService(
             if(old.Id!=Guid.Empty){if(old.RequestHash!=hash)throw new ConflictException("Chave de idempotência reutilizada com conteúdo diferente.");return old.Id;}
             var item=await c.QuerySingleOrDefaultAsync<(decimal Authorized,decimal Received,long Version,string Unit,Guid ShipmentItemId,Guid? ProductId,Guid? LotId)>(new CommandDefinition("""
                 select r.quantity authorized, r.received_quantity received, r.version, i.unit, i.id shipmentitemid,
-                       res.product_id productid, i.stock_lot_id lotid
+                       coalesce(soi.product_id, lot.product_id) productid, i.stock_lot_id lotid
                 from agro360.fulfillment_returns r
                 join agro360.fulfillment_shipment_items i on i.tenant_id=r.tenant_id and i.id=r.shipment_item_id
-                left join agro360.fulfillment_reservations res on res.tenant_id=i.tenant_id and res.id=i.reservation_id
+                left join agro360.sales_order_items soi on soi.tenant_id=i.tenant_id and soi.id=i.order_item_id
+                left join agro360.inventory_stock_lots lot on lot.tenant_id=i.tenant_id and lot.id=i.stock_lot_id
                 where r.tenant_id=@TenantId and r.id=@Id and r.status in('AWAITING_RECEIPT','PARTIALLY_RECEIVED','AWAITING_QUALITY')
-                for update
+                for update of r
                 """,new{tenant.TenantId,Id=id},t,cancellationToken:ct));
             if(item==default)throw new ConflictException("Retorno inexistente ou não disponível para recebimento.");
             if(item.Version!=command.ExpectedVersion)throw new ConflictException("O retorno foi alterado. Recarregue antes de confirmar.");
@@ -174,7 +175,7 @@ public sealed class LogisticsService(
             if(item.Received+command.Quantity>item.Authorized)throw new ConflictException("Quantidade supera o saldo autorizado do retorno.");
             if(!await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.inventory_warehouses where tenant_id=@TenantId and id=@WarehouseId and deleted_at is null)",new{tenant.TenantId,command.WarehouseId},t,cancellationToken:ct)))throw new DomainException("Local de recebimento indisponível.");
             var receipt=Guid.CreateVersion7();
-            await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_return_receipts(id,tenant_id,return_id,quantity,unit,condition,warehouse_id,lot_number,evidence_document_id,notes,idempotency_key,request_hash,created_by) values(@Receipt,@TenantId,@Id,@Quantity,@Unit,@Condition,@WarehouseId,@LotNumber,@Evidence,@Notes,@Key,@Hash,@UserId); update agro360.fulfillment_returns set received_quantity=received_quantity+@Quantity,status=case when received_quantity+@Quantity<quantity then 'PARTIALLY_RECEIVED' else 'AWAITING_QUALITY' end,received_at=coalesce(received_at,now()),version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id; update agro360.fulfillment_shipment_items set returned_quantity=returned_quantity+@Quantity,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@ShipmentItem",new{Receipt=receipt,tenant.TenantId,Id=id,command.Quantity,Unit=command.Unit.ToLowerInvariant(),Condition=condition,command.WarehouseId,command.LotNumber,Evidence=command.EvidenceDocumentId,command.Notes,Key=command.IdempotencyKey,Hash=hash,tenant.UserId,item.ShipmentItemId},t,cancellationToken:ct));
+            await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_return_receipts(id,tenant_id,return_id,quantity,unit,condition,warehouse_id,lot_number,evidence_document_id,notes,idempotency_key,request_hash,created_by) values(@Receipt,@TenantId,@Id,@Quantity,@Unit,@Condition,@WarehouseId,@LotNumber,@Evidence,@Notes,@Key,@Hash,@UserId); update agro360.fulfillment_returns set received_quantity=received_quantity+@Quantity,status=case when received_quantity+@Quantity<quantity then 'PARTIALLY_RECEIVED' else 'AWAITING_QUALITY' end,received_at=coalesce(received_at,now()),version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id; update agro360.fulfillment_shipment_items set returned_quantity=returned_quantity+@Quantity,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@ShipmentItemId",new{Receipt=receipt,tenant.TenantId,Id=id,command.Quantity,Unit=command.Unit.ToLowerInvariant(),Condition=condition,command.WarehouseId,command.LotNumber,Evidence=command.EvidenceDocumentId,command.Notes,Key=command.IdempotencyKey,Hash=hash,tenant.UserId,item.ShipmentItemId},t,cancellationToken:ct));
             await Audit(c,t,"return.receive",id,command,ct);
             receiptId = receipt;
             isNewReceipt = true;

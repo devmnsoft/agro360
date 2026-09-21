@@ -197,10 +197,10 @@ public sealed class OperationalInspectionTrigger(
         string? status,
         int? limit,
         CancellationToken ct) =>
-        db.InTenantTransactionAsync(async (c, t) =>
+        db.InTenantTransactionAsync<IReadOnlyList<InspectionEventIntentListItem>>(async (c, t) =>
         {
             var max = Math.Clamp(limit ?? 50, 1, 200);
-            var rows = await c.QueryAsync<InspectionEventIntentListItem>(new CommandDefinition("""
+            var rows = await c.QueryAsync<EventIntentListRow>(new CommandDefinition("""
                 select i.id, i.process_code ProcessCode, i.origin_type OriginType, i.origin_id OriginId,
                        i.status, i.run_id RunId, r.number RunNumber, i.notes,
                        i.created_at CreatedAt, i.updated_at UpdatedAt
@@ -218,7 +218,18 @@ public sealed class OperationalInspectionTrigger(
                 Status = NullIfEmpty(status),
                 Limit = max
             }, t, cancellationToken: ct));
-            return (IReadOnlyList<InspectionEventIntentListItem>)rows.ToArray();
+            return rows.Select(r => new InspectionEventIntentListItem(
+                r.Id,
+                r.ProcessCode,
+                r.OriginType,
+                r.OriginId,
+                r.Status,
+                r.RunId,
+                r.RunNumber,
+                r.Notes,
+                new DateTimeOffset(DateTime.SpecifyKind(r.CreatedAt, DateTimeKind.Utc)),
+                new DateTimeOffset(DateTime.SpecifyKind(r.UpdatedAt, DateTimeKind.Utc))
+            )).ToArray();
         }, ct);
 
     private Task UpdateIntentStatusAsync(Guid id, string status, Guid? runId, string? notes, CancellationToken ct) =>
@@ -252,6 +263,20 @@ public sealed class OperationalInspectionTrigger(
 
     private static string? NullIfEmpty(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private sealed class EventIntentListRow
+    {
+        public Guid Id { get; set; }
+        public string ProcessCode { get; set; } = string.Empty;
+        public string OriginType { get; set; } = string.Empty;
+        public Guid OriginId { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public Guid? RunId { get; set; }
+        public string? RunNumber { get; set; }
+        public string? Notes { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
+    }
 
     private sealed record IntentRow(
         Guid Id,

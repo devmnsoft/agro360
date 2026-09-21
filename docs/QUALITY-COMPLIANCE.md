@@ -147,4 +147,8 @@ O fechamento volta a calcular no servidor causa, evidência/justificativa, açõ
 - **API e UI**:
   - `GET /api/inspections/event-intents`.
   - `/Inspections`: breadcrumb `Qualidade / Modelos e inspeções`, `@section ScreenHelp`, aba de gatilhos por evento com status em português.
-- **Pendência**: E2E dos 15 cenários de inspeção permanece sob o pacote `AG-Q-092-E2E`.
+- **Homologação E2E (AG-Q-092-E2E — 2026-09-19 / 2026-09-20)**:
+  - Suíte dos 15 cenários operacionais de modelos e gatilhos de inspeção homologada com **100% PASS** em cluster PostgreSQL efêmero descartável.
+  - Validados: instalação limpa e upgrade incremental (9.2.0 e 9.3.0 com RLS), imutabilidade de versões publicadas, gatilhos de colheita e devolução, obrigatoriedade de critérios críticos (HTTP 422), reprovação crítica gerando restrição/NC, reinspeção com pai, ambiguidade, ausência de modelo, idempotência de replay e de agenda periódica, governança multi-tenant e responsividade mobile.
+  - Relatório de evidências: `docs/execucao/AG-Q-092-E2E-EVIDENCE.md`.
+  - Próximo recorte: `AG-E8-RET-001`.
