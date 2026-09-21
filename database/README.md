@@ -14,7 +14,12 @@ O arquivo `agro360-postgres-full.sql` é o instalador canônico, único e autoco
 
 - PostgreSQL 15 ou superior;
 - extensões `pgcrypto`, `pg_trgm` e `unaccent` disponíveis;
-- uma conta com autorização para `CREATE EXTENSION` e `CREATE SCHEMA` na primeira instalação.
+- uma conta com autorização para `CREATE EXTENSION`, `CREATE SCHEMA` e `CREATE ROLE` na primeira instalação.
+
+O instalador cria idempotentemente `agro360_app` como role de grupo `NOLOGIN`
+antes do primeiro `GRANT`. Ele não define senha nem cria um usuário de login; a
+identidade usada pela aplicação continua sendo provisionada por ambiente. Se a
+role já existir (por exemplo, porque ela é o usuário conectado), ela é preservada.
 
 ## Executar em um banco limpo
 
@@ -63,6 +68,17 @@ tenants, revoga sessões, exige troca das senhas e audita apenas metadados.
 ## Validações depois da restauração
 
 ```sql
+-- Deve retornar agro360_app e false: o instalador não embute credencial.
+select rolname, rolcanlogin from pg_roles where rolname = 'agro360_app';
+
+-- Inventaria policies e confirma RLS sem desativar o isolamento multi-tenant.
+select schemaname, tablename, policyname
+from pg_policies where schemaname = 'agro360'
+order by tablename, policyname;
+select tablename, rowsecurity
+from pg_tables where schemaname = 'agro360'
+order by tablename;
+
 -- Deve listar somente agro360 entre schemas da aplicação.
 select schema_name from information_schema.schemata
 where schema_name in ('identity','finance','audit','workflow','inventory','platform','tenancy');
