@@ -16,6 +16,24 @@ public sealed class CanonicalSchemaTests
         Assert.Contains("AWAITING_INSPECTION", migration);
         Assert.DoesNotContain("material_stock_balances", migration);
     }
+
+    [Fact]
+    public void InternalMaterialDeliveryHonorsQualityLotsReturnsAndVisibleDeliveryIds()
+    {
+        var root = Root();
+        var service = File.ReadAllText(Path.Combine(root, "src", "Modules", "Agro360.Infrastructure", "Services", "MaterialRequestService.cs"));
+        var contracts = File.ReadAllText(Path.Combine(root, "src", "Modules", "Agro360.Application", "Contracts", "InventoryContracts.cs"));
+        var client = File.ReadAllText(Path.Combine(root, "src", "Hosts", "Agro360.Web", "wwwroot", "js", "material-requests.js"));
+
+        Assert.Contains("quality_status='APPROVED'", service);
+        Assert.Contains("GroupBy(x=>x.LotNumber", service);
+        Assert.Contains("quantity>=@Q", service);
+        Assert.Contains("inventory_stock_lots(id,tenant_id,warehouse_id,product_id,lot_number,quantity,quality_status)", service);
+        Assert.Contains("r.Status==\"PARTIALLY_DELIVERED\"?r.Status:\"RESERVED\"", service);
+        Assert.Contains("MaterialRequestDeliveryDto", contracts);
+        Assert.Contains("current.deliveries", client);
+        Assert.Contains("<select name=\"deliveryId\"", client);
+    }
     private static string Sql => File.ReadAllText(Path.Combine(Root(), "database", "agro360-postgres-full.sql"));
 
     [Fact]
