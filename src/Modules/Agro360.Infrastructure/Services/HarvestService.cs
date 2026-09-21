@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Agro360.Application.Contracts;
+using Agro360.Domain.Agriculture;
 using Agro360.Infrastructure.Persistence;
 using Agro360.Multitenancy;
 using Agro360.SharedKernel;
@@ -297,8 +298,112 @@ public sealed class HarvestService(
         coalesce((select sum(amount) from agro360.cost_entries where tenant_id=@TenantId and season_id=@SeasonId and occurred_on<=@Cutoff),0) Costs,
         coalesce((select count(distinct lower(unit)) from plans),0) UnitCount
         """,new{tenant.TenantId,SeasonId=seasonId,Cutoff=cutoff},tx,cancellationToken:ct));
+
+        var stockLots = (await db.QueryAsync<StockLotClosingRow>(new CommandDefinition("""
+            select coalesce(l.quantity, 0) Quantity, lower(l.unit) Unit
+            from agro360.inventory_stock_lots l
+            where l.tenant_id = @TenantId
+              and l.lot_number in (
+                select distinct q.lot_number
+                from agro360.production_receipts q
+                join agro360.harvest_records r on r.tenant_id = q.tenant_id and r.id = q.harvest_record_id
+                join agro360.harvest_plans p on p.tenant_id = r.tenant_id and p.id = r.plan_id
+                where p.tenant_id = @TenantId and p.season_id = @SeasonId and q.received_at::date <= @Cutoff
+              )
+            """, new { tenant.TenantId, SeasonId = seasonId, Cutoff = cutoff }, tx, cancellationToken: ct))).ToArray();
+
+        decimal? currentStock = null;
+        string stockAvailability = "UNAVAILABLE";
+        string? stockExplanation = null;
+
+        if (x.UnitCount > 1)
+        {
+            stockExplanation = "Há unidades físicas incompatíveis no escopo da safra; consolidação de estoque recusada.";
+        }
+        else if (stockLots.Length == 0 && x.MadeAvailable == 0)
+        {
+            currentStock = 0m;
+            stockAvailability = "AVAILABLE";
+            stockExplanation = "Nenhum lote com saldo remanescente em estoque.";
+        }
+        else if (stockLots.Length > 0)
+        {
+            var units = stockLots.Select(s => s.Unit).Where(u => !string.IsNullOrWhiteSpace(u)).Distinct().ToArray();
+            if (units.Length > 1)
+            {
+                stockExplanation = "Unidades físicas heterogêneas nos lotes de estoque relacionados; consolidação recusada por integridade.";
+            }
+            else
+            {
+                currentStock = stockLots.Sum(s => s.Quantity);
+                stockAvailability = "AVAILABLE";
+                stockExplanation = "Saldo atual dos lotes rastreados originados dos recebimentos físicos desta safra.";
+            }
+        }
+        else
+        {
+            stockExplanation = "Não há atribuição exata de todos os saldos atuais à safra.";
+        }
+
+        var revenueData = await db.QuerySingleOrDefaultAsync<RevenueClosingRow>(new CommandDefinition("""
+            with season_receipts as (
+                select distinct q.lot_number
+                from agro360.production_receipts q
+                join agro360.harvest_records r on r.tenant_id = q.tenant_id and r.id = q.harvest_record_id
+                join agro360.harvest_plans p on p.tenant_id = r.tenant_id and p.id = r.plan_id
+                where p.tenant_id = @TenantId and p.season_id = @SeasonId and q.received_at::date <= @Cutoff
+            ),
+            season_lots as (
+                select l.id LotId
+                from agro360.inventory_stock_lots l
+                where l.tenant_id = @TenantId and l.lot_number in (select lot_number from season_receipts)
+            ),
+            shipment_data as (
+                select si.id,
+                       coalesce(sum(dai.accepted_quantity), 0) AcceptedQty,
+                       coalesce((select sum(ret.quantity) from agro360.fulfillment_returns ret where ret.tenant_id = si.tenant_id and ret.shipment_item_id = si.id and ret.status in ('RELEASED','BLOCKED','DISPOSED')), 0) ReturnedQty,
+                       oi.unit_price UnitPrice,
+                       s.status ShipmentStatus
+                from agro360.fulfillment_shipment_items si
+                join agro360.fulfillment_shipments s on s.tenant_id = si.tenant_id and s.id = si.shipment_id and s.deleted_at is null
+                join agro360.sales_order_items oi on oi.tenant_id = si.tenant_id and oi.id = si.order_item_id
+                left join agro360.fulfillment_delivery_attempt_items dai on dai.tenant_id = si.tenant_id and dai.shipment_item_id = si.id
+                left join agro360.fulfillment_delivery_attempts da on da.tenant_id = dai.tenant_id and da.id = dai.attempt_id and da.occurred_at::date <= @Cutoff
+                where si.tenant_id = @TenantId
+                  and si.stock_lot_id in (select LotId from season_lots)
+                group by si.id, oi.unit_price, s.status
+            )
+            select coalesce(sum(greatest(0, AcceptedQty - ReturnedQty) * UnitPrice), 0) RecognizedRevenue,
+                   count(*) TotalShipmentItems,
+                   count(*) filter (where ShipmentStatus not in ('RECONCILED','CANCELLED') and AcceptedQty = 0) PendingShipmentItems
+            from shipment_data;
+            """, new { tenant.TenantId, SeasonId = seasonId, Cutoff = cutoff }, tx, cancellationToken: ct));
+
+        decimal? recognizedRevenue = null;
+        string revenueAvailability = "UNAVAILABLE";
+        string? revenueExplanation = null;
+
+        if (revenueData is null || revenueData.TotalShipmentItems == 0)
+        {
+            recognizedRevenue = 0m;
+            revenueAvailability = "AVAILABLE";
+            revenueExplanation = "Nenhuma remessa comercial expedida para os lotes desta safra até a data de corte.";
+        }
+        else if (revenueData.PendingShipmentItems > 0)
+        {
+            recognizedRevenue = null;
+            revenueAvailability = "UNAVAILABLE";
+            revenueExplanation = "Há remessas com entrega pendente de confirmação; receita reconhecida exige elos de entrega aceita concluídos.";
+        }
+        else
+        {
+            recognizedRevenue = revenueData.RecognizedRevenue;
+            revenueAvailability = "AVAILABLE";
+            revenueExplanation = "Receita reconhecida a partir de entregas formalmente aceitas dos lotes da safra, deduzidos retornos destinados.";
+        }
+
         var unavailable=x.UnitCount>1;string availability=unavailable?"UNAVAILABLE":"AVAILABLE";string? explanation=unavailable?"Há unidades físicas incompatíveis no escopo; selecione/corrija a origem antes de consolidar.":null;SeasonClosingIndicatorDto Q(string code,string label,decimal value,string definition,string source)=>new(code,label,unavailable?null:value,unit,availability,definition,source,explanation);
-        return [new SeasonClosingIndicatorDto(Code:"registered-area",Label:"Área cadastrada",Value:x.RegisteredArea,Unit:"ha",Availability:"AVAILABLE",Definition:"Soma da área planejada ativa da safra; exclui planos cancelados e não representa área executada.",SourceUrl:"/Harvest?kind=PLAN",Explanation:null),new SeasonClosingIndicatorDto(Code:"harvested-area",Label:"Área colhida",Value:x.HarvestedArea,Unit:"ha",Availability:"AVAILABLE",Definition:"Soma das áreas efetivamente informadas em apontamentos não cancelados cuja data operacional não ultrapassa o corte.",SourceUrl:"/Harvest?kind=HARVEST",Explanation:null),Q("harvested","Produção apontada",x.Harvested,"Apontamentos não cancelados por data operacional até o corte.","/Harvest?kind=HARVEST"),Q("received","Produção recebida",x.Received,"Recebimentos físicos por data operacional até o corte.","/Harvest?kind=RECEIPT"),Q("awaiting-quality","Aguardando inspeção",x.AwaitingQuality,"Recebido sem decisão de qualidade; é pendência operacional.","/Harvest?kind=RECEIPT"),Q("approved","Quantidade aprovada",x.Approved,"Quantidade aceita pela decisão de qualidade vigente.","/Harvest?kind=RECEIPT"),Q("allocated","Quantidade destinada",x.Allocated,"Destinações registradas até o corte, sem assumir equivalência com produto transformado.","/Harvest?kind=RECEIPT"),Q("made-available","Entrada disponibilizada",x.MadeAvailable,"Destinações AVAILABLE que criaram movimento; não é o estoque atual.","/Inventory"),Q("processing","Em processamento",x.InProcessing,"Saldo legitimamente destinado a reprocessamento ou reclassificação.","/Production"),Q("loss","Perdas",x.Loss,"Destinações físicas de perda ou descarte.","/Harvest?kind=RECEIPT"),new("appropriated-cost","Custos apropriados",x.Costs,"BRL","AVAILABLE","Lançamentos de custo vinculados diretamente à safra até o corte; compra e pagamento não são somados.","/Finance",null),new("unit-cost","Custo por unidade aprovada",x.Approved>0?decimal.Round(x.Costs/x.Approved,6,MidpointRounding.AwayFromZero):null,"BRL/"+unit,x.Approved>0?"PROVISIONAL":"UNAVAILABLE","Custos apropriados ÷ quantidade aprovada; arredondamento AwayFromZero em 6 casas.","/Finance",x.Approved>0?"Não inclui componentes sem vínculo confiável com a safra.":"Quantidade aprovada zero; divisão não calculada."),new("current-stock","Estoque atual relacionado",null,unit,"UNAVAILABLE","Saldo atual exige genealogia completa por lote de origem; produção acumulada não é usada como estoque.","/Inventory","Não há atribuição exata de todos os saldos atuais à safra."),new("recognized-revenue","Receita reconhecida",null,"BRL","UNAVAILABLE","Receita exige política de reconhecimento e vínculo inequívoco com a produção desta safra.","/Commercial","Pedidos, faturamento e recebimentos permanecem distintos; vínculo exato indisponível.")];
+        return [new SeasonClosingIndicatorDto(Code:"registered-area",Label:"Área cadastrada",Value:x.RegisteredArea,Unit:"ha",Availability:"AVAILABLE",Definition:"Soma da área planejada ativa da safra; exclui planos cancelados e não representa área executada.",SourceUrl:"/Harvest?kind=PLAN",Explanation:null),new SeasonClosingIndicatorDto(Code:"harvested-area",Label:"Área colhida",Value:x.HarvestedArea,Unit:"ha",Availability:"AVAILABLE",Definition:"Soma das áreas efetivamente informadas em apontamentos não cancelados cuja data operacional não ultrapassa o corte.",SourceUrl:"/Harvest?kind=HARVEST",Explanation:null),Q("harvested","Produção apontada",x.Harvested,"Apontamentos não cancelados por data operacional até o corte.","/Harvest?kind=HARVEST"),Q("received","Produção recebida",x.Received,"Recebimentos físicos por data operacional até o corte.","/Harvest?kind=RECEIPT"),Q("awaiting-quality","Aguardando inspeção",x.AwaitingQuality,"Recebido sem decisão de qualidade; é pendência operacional.","/Harvest?kind=RECEIPT"),Q("approved","Quantidade aprovada",x.Approved,"Quantidade aceita pela decisão de qualidade vigente.","/Harvest?kind=RECEIPT"),Q("allocated","Quantidade destinada",x.Allocated,"Destinações registradas até o corte, sem assumir equivalência com produto transformado.","/Harvest?kind=RECEIPT"),Q("made-available","Entrada disponibilizada",x.MadeAvailable,"Destinações AVAILABLE que criaram movimento; não é o estoque atual.","/Inventory"),Q("processing","Em processamento",x.InProcessing,"Saldo legitimamente destinado a reprocessamento ou reclassificação.","/Production"),Q("loss","Perdas",x.Loss,"Destinações físicas de perda ou descarte.","/Harvest?kind=RECEIPT"),new("appropriated-cost","Custos apropriados",x.Costs,"BRL","AVAILABLE","Lançamentos de custo vinculados diretamente à safra até o corte; compra e pagamento não são somados.","/Finance",null),new("unit-cost","Custo por unidade aprovada",x.Approved>0?decimal.Round(x.Costs/x.Approved,6,MidpointRounding.AwayFromZero):null,"BRL/"+unit,x.Approved>0?"PROVISIONAL":"UNAVAILABLE","Custos apropriados ÷ quantidade aprovada; arredondamento AwayFromZero em 6 casas.","/Finance",x.Approved>0?"Não inclui componentes sem vínculo confiável com a safra.":"Quantidade aprovada zero; divisão não calculada."),new("current-stock","Estoque atual relacionado",currentStock,unit,stockAvailability,"Saldo atual exige genealogia completa por lote de origem; produção acumulada não é usada como estoque.","/Inventory",stockExplanation),new("recognized-revenue","Receita reconhecida",recognizedRevenue,"BRL",revenueAvailability,"Receita exige política de reconhecimento e vínculo inequívoco com a produção desta safra.","/Commercial",revenueExplanation)];
     }
     private static List<SeasonClosingIssueDto> BuildIssues(IReadOnlyCollection<SeasonClosingIndicatorDto> indicators)
     {
@@ -374,5 +479,796 @@ public sealed class HarvestService(
         public Guid Id { get; set; }
         public string Hash { get; set; } = string.Empty;
         public DateTime At { get; set; }
+    }
+    public Task<SeasonGenealogyDto> GetSeasonGenealogyAsync(Guid seasonId, CancellationToken cancellationToken) =>
+        database.InTenantTransactionAsync(async (db, tx) =>
+        {
+            var season = await db.QuerySingleOrDefaultAsync<SeasonInfoRow>(new CommandDefinition("""
+                select s.id SeasonId, s.name SeasonName, f.name FarmName, s.crop Crop
+                from agro360.agriculture_seasons s
+                join agro360.geo_farms f on f.tenant_id = s.tenant_id and f.id = s.farm_id
+                where s.tenant_id = @TenantId and s.id = @SeasonId and s.deleted_at is null
+                """, new { tenant.TenantId, SeasonId = seasonId }, tx, cancellationToken: cancellationToken))
+                ?? throw new NotFoundException("Safra", seasonId);
+
+            var harvestRecords = (await db.QueryAsync<HarvestRecordGenealogyRow>(new CommandDefinition("""
+                select r.id HarvestRecordId, r.commercial_reference CommercialReference, r.operational_at OperationalAt,
+                       r.harvested_quantity HarvestedQuantity, r.unit HarvestUnit, f.name FieldName, p.id PlanId
+                from agro360.harvest_plans p
+                join agro360.geo_fields f on f.tenant_id = p.tenant_id and f.id = p.field_id
+                join agro360.harvest_records r on r.tenant_id = p.tenant_id and r.plan_id = p.id
+                where p.tenant_id = @TenantId and p.season_id = @SeasonId and p.status <> 'CANCELLED' and r.status <> 'CANCELLED'
+                order by r.operational_at
+                """, new { tenant.TenantId, SeasonId = seasonId }, tx, cancellationToken: cancellationToken))).ToArray();
+
+            var recordIds = harvestRecords.Select(r => r.HarvestRecordId).Distinct().ToArray();
+
+            var receipts = recordIds.Length == 0 ? [] : (await db.QueryAsync<ReceiptGenealogyRow>(new CommandDefinition("""
+                select q.id ReceiptId, q.harvest_record_id HarvestRecordId, q.lot_number LotNumber, q.received_at ReceivedAt,
+                       q.received_quantity ReceivedQuantity, q.accepted_quantity AcceptedQuantity, q.unit Unit,
+                       q.quality_status QualityStatus, w.name WarehouseName, pr.name ProductName
+                from agro360.production_receipts q
+                join agro360.inventory_warehouses w on w.tenant_id = q.tenant_id and w.id = q.warehouse_id
+                join agro360.inventory_products pr on pr.tenant_id = q.tenant_id and pr.id = q.product_id
+                where q.tenant_id = @TenantId and q.harvest_record_id = any(@RecordIds)
+                order by q.received_at
+                """, new { tenant.TenantId, RecordIds = recordIds }, tx, cancellationToken: cancellationToken))).ToArray();
+
+            var receiptIds = receipts.Select(q => q.ReceiptId).Distinct().ToArray();
+            var lotNumbers = receipts.Select(q => q.LotNumber).Distinct().ToArray();
+
+            var intents = receiptIds.Length == 0 ? [] : (await db.QueryAsync<QualityIntentGenealogyRow>(new CommandDefinition("""
+                select i.id IntentId, i.origin_id ReceiptId, i.status IntentStatus, i.error_code ErrorCode, i.created_at CreatedAt,
+                       ins.id InspectionId, ins.status InspectionStatus, ins.result InspectionResult, ins.inspected_at InspectedAt
+                from agro360.quality_inspection_event_intents i
+                left join agro360.quality_inspections ins on ins.tenant_id = i.tenant_id and ins.production_receipt_id = i.origin_id and ins.deleted_at is null
+                where i.tenant_id = @TenantId and i.process = 'HARVEST_RECEIPT' and i.origin_id = any(@ReceiptIds)
+                order by i.created_at
+                """, new { tenant.TenantId, ReceiptIds = receiptIds }, tx, cancellationToken: cancellationToken))).ToArray();
+
+            var allocations = receiptIds.Length == 0 ? [] : (await db.QueryAsync<AllocationGenealogyRow>(new CommandDefinition("""
+                select a.id AllocationId, a.receipt_id ReceiptId, a.destination Destination, a.quantity Quantity,
+                       a.reason Reason, a.created_at CreatedAt, a.stock_movement_id StockMovementId
+                from agro360.harvest_material_allocations a
+                where a.tenant_id = @TenantId and a.receipt_id = any(@ReceiptIds)
+                order by a.created_at
+                """, new { tenant.TenantId, ReceiptIds = receiptIds }, tx, cancellationToken: cancellationToken))).ToArray();
+
+            var stockLots = lotNumbers.Length == 0 ? [] : (await db.QueryAsync<StockLotGenealogyRow>(new CommandDefinition("""
+                select l.id LotId, l.lot_number LotNumber, l.warehouse_id WarehouseId, l.product_id ProductId,
+                       l.quantity Quantity, l.quality_status QualityStatus, l.unit Unit, w.name WarehouseName, pr.name ProductName
+                from agro360.inventory_stock_lots l
+                join agro360.inventory_warehouses w on w.tenant_id = l.tenant_id and w.id = l.warehouse_id
+                join agro360.inventory_products pr on pr.tenant_id = l.tenant_id and pr.id = l.product_id
+                where l.tenant_id = @TenantId and l.lot_number = any(@LotNumbers)
+                """, new { tenant.TenantId, LotNumbers = lotNumbers }, tx, cancellationToken: cancellationToken))).ToArray();
+
+            var stockLotIds = stockLots.Select(l => l.LotId).Distinct().ToArray();
+
+            var industrialReservations = receiptIds.Length == 0 ? [] : (await db.QueryAsync<IndustrialGenealogyRow>(new CommandDefinition("""
+                select pmr.id ReservationId, pmr.receipt_id ReceiptId, pmr.order_id OrderId, pmr.quantity ReservedQuantity,
+                       pmr.consumed_quantity ConsumedQuantity, pmr.unit Unit, pmr.status Status,
+                       po.order_number OrderNumber,
+                       pb.id BatchId, pb.batch_number BatchNumber, pb.quantity BatchQuantity, pb.unit BatchUnit, pb.quality_status BatchQualityStatus
+                from agro360.production_material_reservations pmr
+                join agro360.production_orders po on po.tenant_id = pmr.tenant_id and po.id = pmr.order_id
+                left join agro360.production_batches pb on pb.tenant_id = po.tenant_id and pb.order_id = po.id and pb.deleted_at is null
+                where pmr.tenant_id = @TenantId and pmr.receipt_id = any(@ReceiptIds)
+                """, new { tenant.TenantId, ReceiptIds = receiptIds }, tx, cancellationToken: cancellationToken))).ToArray();
+
+            var shipments = stockLotIds.Length == 0 ? [] : (await db.QueryAsync<ShipmentGenealogyRow>(new CommandDefinition("""
+                select si.id ShipmentItemId, si.shipment_id ShipmentId, si.stock_lot_id StockLotId, l.lot_number LotNumber,
+                       si.checked_quantity CheckedQuantity, si.accepted_quantity AcceptedQuantity, si.returned_quantity ReturnedQuantity,
+                       si.lost_quantity LostQuantity, si.unit Unit, s.number ShipmentNumber, s.status ShipmentStatus, s.dispatched_at DispatchedAt,
+                       c.name CustomerName, oi.unit_price UnitPrice,
+                       da.status DeliveryStatus, da.occurred_at DeliveryOccurredAt,
+                       ret.status ReturnStatus, ret.quantity ReturnQuantity
+                from agro360.fulfillment_shipment_items si
+                join agro360.inventory_stock_lots l on l.tenant_id = si.tenant_id and l.id = si.stock_lot_id
+                join agro360.fulfillment_shipments s on s.tenant_id = si.tenant_id and s.id = si.shipment_id and s.deleted_at is null
+                join agro360.crm_customers c on c.tenant_id = s.tenant_id and c.id = s.customer_id
+                join agro360.sales_order_items oi on oi.tenant_id = si.tenant_id and oi.id = si.order_item_id
+                left join agro360.fulfillment_delivery_attempt_items dai on dai.tenant_id = si.tenant_id and dai.shipment_item_id = si.id
+                left join agro360.fulfillment_delivery_attempts da on da.tenant_id = dai.tenant_id and da.id = dai.attempt_id
+                left join agro360.fulfillment_returns ret on ret.tenant_id = si.tenant_id and ret.shipment_item_id = si.id
+                where si.tenant_id = @TenantId and si.stock_lot_id = any(@StockLotIds)
+                """, new { tenant.TenantId, StockLotIds = stockLotIds }, tx, cancellationToken: cancellationToken))).ToArray();
+
+            var manualLinks = (await db.QueryAsync<ManualGenealogyLinkRow>(new CommandDefinition("""
+                select id Id, kind Kind, origin_type OriginType, origin_id OriginId, destination_type DestinationType,
+                       destination_id DestinationId, season_id SeasonId, field_id FieldId, lot_number LotNumber,
+                       quantity Quantity, unit Unit, status Status, created_at CreatedAt
+                from agro360.operational_genealogy_links
+                where tenant_id = @TenantId and (season_id = @SeasonId or lot_number = any(@LotNumbers))
+                """, new { tenant.TenantId, SeasonId = seasonId, LotNumbers = lotNumbers }, tx, cancellationToken: cancellationToken))).ToArray();
+
+            var nodes = new List<GenealogyNodeDto>();
+
+            foreach (var r in harvestRecords)
+            {
+                nodes.Add(new GenealogyNodeDto(
+                    Stage: "Colheita e Talhão",
+                    OriginLabel: $"Safra {season.SeasonName} · Talhão {r.FieldName}",
+                    DestinationLabel: $"Apontamento {r.CommercialReference}",
+                    Status: "Colhido",
+                    Quantity: r.HarvestedQuantity,
+                    Unit: r.HarvestUnit,
+                    LotNumber: null,
+                    HasGap: false,
+                    GapReason: null,
+                    OccurredAt: r.OperationalAt,
+                    Details: $"Apontamento {r.CommercialReference}"));
+            }
+
+            foreach (var q in receipts)
+            {
+                var relatedRecord = harvestRecords.FirstOrDefault(r => r.HarvestRecordId == q.HarvestRecordId);
+                var origin = relatedRecord is not null ? $"Apontamento {relatedRecord.CommercialReference}" : "Apontamento não identificado";
+                nodes.Add(new GenealogyNodeDto(
+                    Stage: "Recebimento Físico",
+                    OriginLabel: origin,
+                    DestinationLabel: $"Depósito {q.WarehouseName} (Lote {q.LotNumber})",
+                    Status: TranslateQualityStatus(q.QualityStatus),
+                    Quantity: q.ReceivedQuantity,
+                    Unit: q.Unit,
+                    LotNumber: q.LotNumber,
+                    HasGap: relatedRecord is null,
+                    GapReason: relatedRecord is null ? "Recebimento sem apontamento de colheita vinculado" : null,
+                    OccurredAt: q.ReceivedAt,
+                    Details: $"Recebido em {q.WarehouseName} · Aprovado: {q.AcceptedQuantity:N2} {q.Unit}"));
+            }
+
+            foreach (var i in intents)
+            {
+                var q = receipts.FirstOrDefault(r => r.ReceiptId == i.ReceiptId);
+                var lot = q?.LotNumber ?? "Lote não identificado";
+                var isPendingModel = string.Equals(i.IntentStatus, "PENDING_MODEL", StringComparison.OrdinalIgnoreCase);
+                var isAmbiguous = string.Equals(i.IntentStatus, "AMBIGUOUS", StringComparison.OrdinalIgnoreCase);
+                var hasGap = isPendingModel || isAmbiguous;
+                var gapReason = isPendingModel ? "Sem modelo de inspeção publicado para o evento de colheita"
+                              : isAmbiguous ? "Ambiguidade entre múltiplos modelos de inspeção" : null;
+
+                nodes.Add(new GenealogyNodeDto(
+                    Stage: "Qualidade",
+                    OriginLabel: $"Lote {lot}",
+                    DestinationLabel: i.InspectionId.HasValue ? "Laudo de Inspeção" : "Intent de Qualidade",
+                    Status: TranslateIntentOrInspection(i.IntentStatus, i.InspectionResult),
+                    Quantity: q?.ReceivedQuantity,
+                    Unit: q?.Unit,
+                    LotNumber: lot,
+                    HasGap: hasGap,
+                    GapReason: gapReason,
+                    OccurredAt: i.InspectedAt ?? i.CreatedAt,
+                    Details: i.InspectionId.HasValue ? $"Inspeção concluída com resultado {i.InspectionResult}" : $"Gatilho operacional {i.IntentStatus}"));
+            }
+
+            foreach (var a in allocations)
+            {
+                var q = receipts.FirstOrDefault(r => r.ReceiptId == a.ReceiptId);
+                var lot = q?.LotNumber ?? "Lote não identificado";
+                nodes.Add(new GenealogyNodeDto(
+                    Stage: "Destinação Agrícola",
+                    OriginLabel: $"Lote {lot}",
+                    DestinationLabel: TranslateDestination(a.Destination),
+                    Status: a.Destination == "AVAILABLE" ? "Disponibilizado" : "Destinado",
+                    Quantity: a.Quantity,
+                    Unit: q?.Unit,
+                    LotNumber: lot,
+                    HasGap: false,
+                    GapReason: null,
+                    OccurredAt: a.CreatedAt,
+                    Details: $"Destinação {a.Destination}: {a.Reason}"));
+            }
+
+            foreach (var sl in stockLots)
+            {
+                nodes.Add(new GenealogyNodeDto(
+                    Stage: "Estoque Físico",
+                    OriginLabel: $"Lote {sl.LotNumber} em {sl.WarehouseName}",
+                    DestinationLabel: "Saldo em Depósito",
+                    Status: sl.QualityStatus == "APPROVED" ? "Liberado" : "Bloqueado",
+                    Quantity: sl.Quantity,
+                    Unit: sl.Unit,
+                    LotNumber: sl.LotNumber,
+                    HasGap: false,
+                    GapReason: null,
+                    OccurredAt: null,
+                    Details: $"Produto: {sl.ProductName} · Depósito: {sl.WarehouseName}"));
+            }
+
+            foreach (var ind in industrialReservations)
+            {
+                var q = receipts.FirstOrDefault(r => r.ReceiptId == ind.ReceiptId);
+                var lot = q?.LotNumber ?? "Lote não identificado";
+                nodes.Add(new GenealogyNodeDto(
+                    Stage: "Beneficiamento Industrial",
+                    OriginLabel: $"Reserva do Lote {lot}",
+                    DestinationLabel: $"Ordem {ind.OrderNumber}" + (ind.BatchNumber != null ? $" (Lote Ind. {ind.BatchNumber})" : ""),
+                    Status: ind.Status == "CONSUMED" ? "Consumido" : "Reservado",
+                    Quantity: ind.ConsumedQuantity > 0 ? ind.ConsumedQuantity : ind.ReservedQuantity,
+                    Unit: ind.Unit,
+                    LotNumber: ind.BatchNumber ?? lot,
+                    HasGap: false,
+                    GapReason: null,
+                    OccurredAt: null,
+                    Details: $"Ordem industrial {ind.OrderNumber}"));
+            }
+
+            var hasMissingFieldOrigin = false;
+            foreach (var s in shipments)
+            {
+                var hasOrigin = harvestRecords.Any();
+                if (!hasOrigin) hasMissingFieldOrigin = true;
+
+                nodes.Add(new GenealogyNodeDto(
+                    Stage: "Expedição",
+                    OriginLabel: $"Lote {s.LotNumber}",
+                    DestinationLabel: $"Remessa {s.ShipmentNumber} · Cliente {s.CustomerName}",
+                    Status: TranslateShipmentStatus(s.ShipmentStatus),
+                    Quantity: s.CheckedQuantity,
+                    Unit: s.Unit,
+                    LotNumber: s.LotNumber,
+                    HasGap: !hasOrigin,
+                    GapReason: !hasOrigin ? "Lote expedido sem talhão de colheita de origem" : null,
+                    OccurredAt: s.DispatchedAt,
+                    Details: $"Remessa {s.ShipmentNumber} para {s.CustomerName}"));
+
+                if (s.AcceptedQuantity > 0 || s.ReturnedQuantity > 0)
+                {
+                    nodes.Add(new GenealogyNodeDto(
+                        Stage: "Entrega Comercial",
+                        OriginLabel: $"Remessa {s.ShipmentNumber}",
+                        DestinationLabel: $"Cliente {s.CustomerName}",
+                        Status: s.DeliveryStatus == "ACCEPTED" ? "Entregue e Aceito" : "Entrega Registrada",
+                        Quantity: s.AcceptedQuantity,
+                        Unit: s.Unit,
+                        LotNumber: s.LotNumber,
+                        HasGap: s.ReturnedQuantity > 0 && s.ReturnStatus == "AWAITING_QUALITY",
+                        GapReason: s.ReturnedQuantity > 0 && s.ReturnStatus == "AWAITING_QUALITY" ? "Devolução física pendente de destinação de qualidade" : null,
+                        OccurredAt: s.DeliveryOccurredAt,
+                        Details: $"Aceito: {s.AcceptedQuantity:N2} {s.Unit} · Retornado: {s.ReturnedQuantity:N2} {s.Unit}"));
+                }
+            }
+
+            foreach (var m in manualLinks)
+            {
+                nodes.Add(new GenealogyNodeDto(
+                    Stage: "Vínculo Rastreado",
+                    OriginLabel: $"{m.OriginType}",
+                    DestinationLabel: $"{m.DestinationType}",
+                    Status: m.Status == "ACTIVE" ? "Ativo" : m.Status,
+                    Quantity: m.Quantity,
+                    Unit: m.Unit,
+                    LotNumber: m.LotNumber,
+                    HasGap: false,
+                    GapReason: null,
+                    OccurredAt: m.CreatedAt,
+                    Details: $"Vínculo {m.Kind}"));
+            }
+
+            var totalReceived = receipts.Sum(q => q.ReceivedQuantity);
+            var totalAllocated = allocations.Sum(a => a.Quantity);
+
+            decimal? currentStockQty = null;
+            string? currentStockUnit = null;
+            string currentStockStatus = "UNAVAILABLE";
+            string? currentStockExplanation = null;
+
+            if (stockLots.Length == 0)
+            {
+                currentStockQty = 0m;
+                currentStockStatus = "AVAILABLE";
+                currentStockExplanation = "Nenhum lote com saldo remanescente em estoque.";
+            }
+            else
+            {
+                var units = stockLots.Select(sl => sl.Unit).Where(u => !string.IsNullOrWhiteSpace(u)).Distinct().ToArray();
+                if (units.Length > 1)
+                {
+                    currentStockExplanation = "Unidades físicas heterogêneas nos lotes de estoque relacionados; consolidação recusada por integridade.";
+                }
+                else
+                {
+                    currentStockUnit = units.FirstOrDefault();
+                    currentStockQty = stockLots.Sum(sl => sl.Quantity);
+                    currentStockStatus = "AVAILABLE";
+                    currentStockExplanation = "Saldo atual dos lotes rastreados originados desta safra.";
+                }
+            }
+
+            decimal? recognizedRevenue = null;
+            string revenueStatus = "UNAVAILABLE";
+            string? revenueExplanation = null;
+
+            if (shipments.Length == 0)
+            {
+                recognizedRevenue = 0m;
+                revenueStatus = "AVAILABLE";
+                revenueExplanation = "Nenhuma remessa comercial expedida para os lotes desta safra.";
+            }
+            else
+            {
+                var pendingShipments = shipments.Any(s => s.ShipmentStatus is not ("RECONCILED" or "CANCELLED") && s.AcceptedQuantity == 0);
+                if (pendingShipments)
+                {
+                    revenueExplanation = "Há remessas com entrega pendente de confirmação; receita reconhecida exige elos de entrega aceita concluídos.";
+                }
+                else
+                {
+                    decimal totalRev = 0m;
+                    foreach (var s in shipments)
+                    {
+                        var netDelivered = GenealogyRules.CalculateNetDeliveredQuantity(s.AcceptedQuantity, s.ReturnedQuantity);
+                        totalRev += netDelivered * s.UnitPrice;
+                    }
+                    recognizedRevenue = totalRev;
+                    revenueStatus = "AVAILABLE";
+                    revenueExplanation = "Receita reconhecida a partir de entregas formalmente aceitas dos lotes da safra, deduzidos retornos destinados.";
+                }
+            }
+
+            return new SeasonGenealogyDto(
+                SeasonId: season.SeasonId,
+                SeasonName: season.SeasonName,
+                FarmName: season.FarmName,
+                Crop: season.Crop,
+                Nodes: nodes,
+                HasMissingFieldOrigin: hasMissingFieldOrigin,
+                HasUnlinkedShipments: false,
+                TotalReceivedQuantity: totalReceived,
+                TotalAllocatedQuantity: totalAllocated,
+                CurrentStockQuantity: currentStockQty,
+                CurrentStockUnit: currentStockUnit,
+                CurrentStockStatus: currentStockStatus,
+                CurrentStockExplanation: currentStockExplanation,
+                RecognizedRevenue: recognizedRevenue,
+                RevenueCurrency: "BRL",
+                RevenueStatus: revenueStatus,
+                RevenueExplanation: revenueExplanation);
+        }, cancellationToken);
+
+    public Task<LotGenealogyDto> GetLotGenealogyAsync(string lotNumber, CancellationToken cancellationToken) =>
+        database.InTenantTransactionAsync(async (db, tx) =>
+        {
+            if (string.IsNullOrWhiteSpace(lotNumber))
+                throw new DomainException("O número do lote é obrigatório.", "genealogy.lot_required");
+
+            var trimmedLot = lotNumber.Trim();
+
+            var receipt = await db.QuerySingleOrDefaultAsync<ReceiptGenealogyRow>(new CommandDefinition("""
+                select q.id ReceiptId, q.harvest_record_id HarvestRecordId, q.lot_number LotNumber, q.received_at ReceivedAt,
+                       q.received_quantity ReceivedQuantity, q.accepted_quantity AcceptedQuantity, q.unit Unit,
+                       q.quality_status QualityStatus, w.name WarehouseName, pr.name ProductName
+                from agro360.production_receipts q
+                join agro360.inventory_warehouses w on w.tenant_id = q.tenant_id and w.id = q.warehouse_id
+                join agro360.inventory_products pr on pr.tenant_id = q.tenant_id and pr.id = q.product_id
+                where q.tenant_id = @TenantId and q.lot_number = @LotNumber
+                """, new { tenant.TenantId, LotNumber = trimmedLot }, tx, cancellationToken: cancellationToken));
+
+            var stockLot = await db.QuerySingleOrDefaultAsync<StockLotGenealogyRow>(new CommandDefinition("""
+                select l.id LotId, l.lot_number LotNumber, l.warehouse_id WarehouseId, l.product_id ProductId,
+                       l.quantity Quantity, l.quality_status QualityStatus, l.unit Unit, w.name WarehouseName, pr.name ProductName
+                from agro360.inventory_stock_lots l
+                join agro360.inventory_warehouses w on w.tenant_id = l.tenant_id and w.id = l.warehouse_id
+                join agro360.inventory_products pr on pr.tenant_id = l.tenant_id and pr.id = l.product_id
+                where l.tenant_id = @TenantId and l.lot_number = @LotNumber
+                """, new { tenant.TenantId, LotNumber = trimmedLot }, tx, cancellationToken: cancellationToken));
+
+            var batch = await db.QuerySingleOrDefaultAsync<IndustrialGenealogyRow>(new CommandDefinition("""
+                select pb.id BatchId, pb.batch_number BatchNumber, pb.quantity BatchQuantity, pb.unit BatchUnit,
+                       pb.quality_status BatchQualityStatus, po.order_number OrderNumber, po.id OrderId
+                from agro360.production_batches pb
+                join agro360.production_orders po on po.tenant_id = pb.tenant_id and po.id = pb.order_id
+                where pb.tenant_id = @TenantId and pb.batch_number = @LotNumber and pb.deleted_at is null
+                """, new { tenant.TenantId, LotNumber = trimmedLot }, tx, cancellationToken: cancellationToken));
+
+            if (receipt is null && stockLot is null && batch is null)
+                throw new NotFoundException("Lote", trimmedLot);
+
+            HarvestRecordGenealogyRow? record = null;
+            SeasonInfoRow? season = null;
+
+            if (receipt is not null)
+            {
+                record = await db.QuerySingleOrDefaultAsync<HarvestRecordGenealogyRow>(new CommandDefinition("""
+                    select r.id HarvestRecordId, r.commercial_reference CommercialReference, r.operational_at OperationalAt,
+                           r.harvested_quantity HarvestedQuantity, r.unit HarvestUnit, f.name FieldName, p.id PlanId,
+                           s.id SeasonId, s.name SeasonName, fa.name FarmName, s.crop Crop
+                    from agro360.harvest_records r
+                    join agro360.harvest_plans p on p.tenant_id = r.tenant_id and p.id = r.plan_id
+                    join agro360.geo_fields f on f.tenant_id = p.tenant_id and f.id = p.field_id
+                    join agro360.agriculture_seasons s on s.tenant_id = p.tenant_id and s.id = p.season_id
+                    join agro360.geo_farms fa on fa.tenant_id = s.tenant_id and fa.id = s.farm_id
+                    where r.tenant_id = @TenantId and r.id = @RecordId
+                    """, new { tenant.TenantId, RecordId = receipt.HarvestRecordId }, tx, cancellationToken: cancellationToken));
+
+                if (record is not null)
+                {
+                    season = await db.QuerySingleOrDefaultAsync<SeasonInfoRow>(new CommandDefinition("""
+                        select s.id SeasonId, s.name SeasonName, f.name FarmName, s.crop Crop
+                        from agro360.harvest_plans p
+                        join agro360.agriculture_seasons s on s.tenant_id = p.tenant_id and s.id = p.season_id
+                        join agro360.geo_farms f on f.tenant_id = s.tenant_id and f.id = s.farm_id
+                        where p.tenant_id = @TenantId and p.id = @PlanId
+                        """, new { tenant.TenantId, record.PlanId }, tx, cancellationToken: cancellationToken));
+                }
+            }
+
+            var shipments = stockLot is null ? [] : (await db.QueryAsync<ShipmentGenealogyRow>(new CommandDefinition("""
+                select si.id ShipmentItemId, si.shipment_id ShipmentId, si.stock_lot_id StockLotId, @LotNumber LotNumber,
+                       si.checked_quantity CheckedQuantity, si.accepted_quantity AcceptedQuantity, si.returned_quantity ReturnedQuantity,
+                       si.lost_quantity LostQuantity, si.unit Unit, s.number ShipmentNumber, s.status ShipmentStatus, s.dispatched_at DispatchedAt,
+                       c.name CustomerName, oi.unit_price UnitPrice,
+                       da.status DeliveryStatus, da.occurred_at DeliveryOccurredAt,
+                       ret.status ReturnStatus, ret.quantity ReturnQuantity
+                from agro360.fulfillment_shipment_items si
+                join agro360.fulfillment_shipments s on s.tenant_id = si.tenant_id and s.id = si.shipment_id and s.deleted_at is null
+                join agro360.crm_customers c on c.tenant_id = s.tenant_id and c.id = s.customer_id
+                join agro360.sales_order_items oi on oi.tenant_id = si.tenant_id and oi.id = si.order_item_id
+                left join agro360.fulfillment_delivery_attempt_items dai on dai.tenant_id = si.tenant_id and dai.shipment_item_id = si.id
+                left join agro360.fulfillment_delivery_attempts da on da.tenant_id = dai.tenant_id and da.id = dai.attempt_id
+                left join agro360.fulfillment_returns ret on ret.tenant_id = si.tenant_id and ret.shipment_item_id = si.id
+                where si.tenant_id = @TenantId and si.stock_lot_id = @StockLotId
+                """, new { tenant.TenantId, LotNumber = trimmedLot, StockLotId = stockLot.LotId }, tx, cancellationToken: cancellationToken))).ToArray();
+
+            var nodes = new List<GenealogyNodeDto>();
+            var hasGap = false;
+            string? gapReason = null;
+
+            if (record is not null && season is not null)
+            {
+                nodes.Add(new GenealogyNodeDto(
+                    Stage: "Colheita e Talhão",
+                    OriginLabel: $"Safra {season.SeasonName} · Talhão {record.FieldName}",
+                    DestinationLabel: $"Apontamento {record.CommercialReference}",
+                    Status: "Colhido",
+                    Quantity: record.HarvestedQuantity,
+                    Unit: record.HarvestUnit,
+                    LotNumber: trimmedLot,
+                    HasGap: false,
+                    GapReason: null,
+                    OccurredAt: record.OperationalAt,
+                    Details: $"Apontamento {record.CommercialReference}"));
+            }
+            else if (shipments.Length > 0)
+            {
+                hasGap = true;
+                gapReason = "Lote expedido sem talhão de colheita ou safra de origem associada.";
+            }
+
+            if (receipt is not null)
+            {
+                nodes.Add(new GenealogyNodeDto(
+                    Stage: "Recebimento Físico",
+                    OriginLabel: record is not null ? $"Apontamento {record.CommercialReference}" : "Não vinculado",
+                    DestinationLabel: $"Depósito {receipt.WarehouseName} (Lote {receipt.LotNumber})",
+                    Status: TranslateQualityStatus(receipt.QualityStatus),
+                    Quantity: receipt.ReceivedQuantity,
+                    Unit: receipt.Unit,
+                    LotNumber: receipt.LotNumber,
+                    HasGap: record is null,
+                    GapReason: record is null ? "Recebimento sem apontamento de colheita de origem" : null,
+                    OccurredAt: receipt.ReceivedAt,
+                    Details: $"Recebido em {receipt.WarehouseName}"));
+            }
+
+            if (stockLot is not null)
+            {
+                nodes.Add(new GenealogyNodeDto(
+                    Stage: "Estoque Físico",
+                    OriginLabel: $"Lote {stockLot.LotNumber}",
+                    DestinationLabel: $"Depósito {stockLot.WarehouseName}",
+                    Status: stockLot.QualityStatus == "APPROVED" ? "Liberado" : "Bloqueado",
+                    Quantity: stockLot.Quantity,
+                    Unit: stockLot.Unit,
+                    LotNumber: stockLot.LotNumber,
+                    HasGap: false,
+                    GapReason: null,
+                    OccurredAt: null,
+                    Details: $"Saldo atual em estoque: {stockLot.Quantity:N2} {stockLot.Unit}"));
+            }
+
+            foreach (var s in shipments)
+            {
+                nodes.Add(new GenealogyNodeDto(
+                    Stage: "Expedição",
+                    OriginLabel: $"Lote {trimmedLot}",
+                    DestinationLabel: $"Remessa {s.ShipmentNumber} · Cliente {s.CustomerName}",
+                    Status: TranslateShipmentStatus(s.ShipmentStatus),
+                    Quantity: s.CheckedQuantity,
+                    Unit: s.Unit,
+                    LotNumber: trimmedLot,
+                    HasGap: hasGap,
+                    GapReason: gapReason,
+                    OccurredAt: s.DispatchedAt,
+                    Details: $"Expedição para {s.CustomerName}"));
+
+                if (s.AcceptedQuantity > 0)
+                {
+                    nodes.Add(new GenealogyNodeDto(
+                        Stage: "Entrega Comercial",
+                        OriginLabel: $"Remessa {s.ShipmentNumber}",
+                        DestinationLabel: $"Cliente {s.CustomerName}",
+                        Status: s.DeliveryStatus == "ACCEPTED" ? "Entregue e Aceito" : "Entrega Registrada",
+                        Quantity: s.AcceptedQuantity,
+                        Unit: s.Unit,
+                        LotNumber: trimmedLot,
+                        HasGap: false,
+                        GapReason: null,
+                        OccurredAt: s.DeliveryOccurredAt,
+                        Details: $"Quantidade aceita: {s.AcceptedQuantity:N2} {s.Unit}"));
+                }
+            }
+
+            var productName = receipt?.ProductName ?? stockLot?.ProductName ?? "Produto Agrícola";
+            var status = stockLot?.QualityStatus ?? receipt?.QualityStatus ?? batch?.BatchQualityStatus ?? "REGISTRADO";
+
+            return new LotGenealogyDto(
+                LotNumber: trimmedLot,
+                ProductName: productName,
+                SeasonId: season?.SeasonId,
+                SeasonName: season?.SeasonName,
+                FarmName: season?.FarmName,
+                FieldName: record?.FieldName,
+                Status: TranslateQualityStatus(status),
+                Nodes: nodes,
+                HasGap: hasGap,
+                GapReason: gapReason);
+        }, cancellationToken);
+
+    public Task<Guid> RecordGenealogyLinkAsync(RecordGenealogyLinkCommand command, CancellationToken cancellationToken) =>
+        database.InTenantTransactionAsync(async (db, tx) =>
+        {
+            var key = Required(command.IdempotencyKey, nameof(command.IdempotencyKey));
+            GenealogyRules.ValidateLink(
+                command.Kind,
+                command.OriginType,
+                command.OriginId,
+                command.DestinationType,
+                command.DestinationId,
+                command.Quantity,
+                command.Unit,
+                key);
+
+            var prior = await db.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition(
+                "select id from agro360.operational_genealogy_links where tenant_id = @TenantId and idempotency_key = @Key",
+                new { tenant.TenantId, Key = key }, tx, cancellationToken: cancellationToken));
+            if (prior.HasValue) return prior.Value;
+
+            var id = Guid.CreateVersion7();
+            await db.ExecuteAsync(new CommandDefinition("""
+                insert into agro360.operational_genealogy_links(
+                    id, tenant_id, kind, origin_type, origin_id, destination_type, destination_id,
+                    season_id, field_id, lot_number, quantity, unit, status, metadata, idempotency_key, created_by
+                ) values (
+                    @Id, @TenantId, @Kind, @OriginType, @OriginId, @DestinationType, @DestinationId,
+                    @SeasonId, @FieldId, @LotNumber, @Quantity, @Unit, 'ACTIVE', cast(@Metadata as jsonb), @Key, @UserId
+                )
+                on conflict (tenant_id, kind, origin_id, destination_id) do update set
+                    quantity = excluded.quantity,
+                    unit = excluded.unit,
+                    lot_number = coalesce(excluded.lot_number, agro360.operational_genealogy_links.lot_number),
+                    metadata = coalesce(excluded.metadata, agro360.operational_genealogy_links.metadata);
+                """, new
+            {
+                Id = id,
+                tenant.TenantId,
+                command.Kind,
+                command.OriginType,
+                command.OriginId,
+                command.DestinationType,
+                command.DestinationId,
+                command.SeasonId,
+                command.FieldId,
+                command.LotNumber,
+                command.Quantity,
+                command.Unit,
+                Metadata = string.IsNullOrWhiteSpace(command.Metadata) ? "{}" : command.Metadata,
+                Key = key,
+                UserId = tenant.UserId
+            }, tx, cancellationToken: cancellationToken));
+
+            await Audit(db, tx, "record_link", "OperationalGenealogyLink", id, cancellationToken);
+            return id;
+        }, cancellationToken);
+
+    private static string TranslateQualityStatus(string status) => status switch
+    {
+        "AWAITING_INSPECTION" => "Aguardando Inspeção",
+        "APPROVED" => "Aprovado",
+        "BLOCKED" => "Bloqueado",
+        "QUARANTINE" => "Quarentena",
+        "REJECTED" => "Reprovado",
+        "PARTIALLY_ALLOCATED" => "Parcialmente Destinado",
+        "ALLOCATED" => "Destinado",
+        _ => status
+    };
+
+    private static string TranslateIntentOrInspection(string intentStatus, string? result)
+    {
+        if (!string.IsNullOrWhiteSpace(result))
+        {
+            return result switch
+            {
+                "CONFORMING" => "Conforme",
+                "NON_CONFORMING" => "Não Conforme",
+                "INCONCLUSIVE" => "Inconclusivo",
+                _ => result
+            };
+        }
+
+        return intentStatus switch
+        {
+            "STARTED" => "Em Inspeção",
+            "PENDING_MODEL" => "Sem Modelo Aplicável",
+            "AMBIGUOUS" => "Ambiguidade de Critério",
+            "SKIPPED_NO_ACTOR" => "Pendente de Inspetor",
+            "PENDING" => "Gatilho Pendente",
+            _ => intentStatus
+        };
+    }
+
+    private static string TranslateDestination(string destination) => destination switch
+    {
+        "AVAILABLE" => "Estoque Disponível",
+        "QUARANTINE" => "Quarentena",
+        "RECLASSIFICATION" => "Reclassificação",
+        "REPROCESSING" => "Reprocessamento",
+        "RETURN_TO_ORIGIN" => "Devolução à Origem",
+        "LOSS" => "Perda Física",
+        "DISPOSAL" => "Descarte",
+        _ => destination
+    };
+
+    private static string TranslateShipmentStatus(string status) => status switch
+    {
+        "PREPARING" => "Em Preparação",
+        "CHECKED" => "Conferido",
+        "DISPATCHED" => "Despachado",
+        "IN_DELIVERY" => "Em Transporte",
+        "PARTIAL" => "Entrega Parcial",
+        "RETURN_PENDING" => "Retorno Pendente",
+        "RECONCILED" => "Reconciliado",
+        "CANCELLED" => "Cancelado",
+        _ => status
+    };
+
+    private sealed class StockLotClosingRow
+    {
+        public decimal Quantity { get; set; }
+        public string? Unit { get; set; }
+    }
+
+    private sealed class RevenueClosingRow
+    {
+        public decimal RecognizedRevenue { get; set; }
+        public int TotalShipmentItems { get; set; }
+        public int PendingShipmentItems { get; set; }
+    }
+
+    private sealed class SeasonInfoRow
+    {
+        public Guid SeasonId { get; set; }
+        public string SeasonName { get; set; } = string.Empty;
+        public string FarmName { get; set; } = string.Empty;
+        public string Crop { get; set; } = string.Empty;
+    }
+
+    private sealed class HarvestRecordGenealogyRow
+    {
+        public Guid HarvestRecordId { get; set; }
+        public string CommercialReference { get; set; } = string.Empty;
+        public DateTimeOffset OperationalAt { get; set; }
+        public decimal HarvestedQuantity { get; set; }
+        public string HarvestUnit { get; set; } = string.Empty;
+        public string FieldName { get; set; } = string.Empty;
+        public Guid PlanId { get; set; }
+    }
+
+    private sealed class ReceiptGenealogyRow
+    {
+        public Guid ReceiptId { get; set; }
+        public Guid HarvestRecordId { get; set; }
+        public string LotNumber { get; set; } = string.Empty;
+        public DateTimeOffset ReceivedAt { get; set; }
+        public decimal ReceivedQuantity { get; set; }
+        public decimal AcceptedQuantity { get; set; }
+        public string Unit { get; set; } = string.Empty;
+        public string QualityStatus { get; set; } = string.Empty;
+        public string WarehouseName { get; set; } = string.Empty;
+        public string ProductName { get; set; } = string.Empty;
+    }
+
+    private sealed class QualityIntentGenealogyRow
+    {
+        public Guid IntentId { get; set; }
+        public Guid ReceiptId { get; set; }
+        public string IntentStatus { get; set; } = string.Empty;
+        public string? ErrorCode { get; set; }
+        public DateTimeOffset CreatedAt { get; set; }
+        public Guid? InspectionId { get; set; }
+        public string? InspectionStatus { get; set; }
+        public string? InspectionResult { get; set; }
+        public DateTimeOffset? InspectedAt { get; set; }
+    }
+
+    private sealed class AllocationGenealogyRow
+    {
+        public Guid AllocationId { get; set; }
+        public Guid ReceiptId { get; set; }
+        public string Destination { get; set; } = string.Empty;
+        public decimal Quantity { get; set; }
+        public string Reason { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; }
+        public Guid? StockMovementId { get; set; }
+    }
+
+    private sealed class StockLotGenealogyRow
+    {
+        public Guid LotId { get; set; }
+        public string LotNumber { get; set; } = string.Empty;
+        public Guid WarehouseId { get; set; }
+        public Guid ProductId { get; set; }
+        public decimal Quantity { get; set; }
+        public string QualityStatus { get; set; } = string.Empty;
+        public string? Unit { get; set; }
+        public string WarehouseName { get; set; } = string.Empty;
+        public string ProductName { get; set; } = string.Empty;
+    }
+
+    private sealed class IndustrialGenealogyRow
+    {
+        public Guid ReservationId { get; set; }
+        public Guid ReceiptId { get; set; }
+        public Guid OrderId { get; set; }
+        public decimal ReservedQuantity { get; set; }
+        public decimal ConsumedQuantity { get; set; }
+        public string Unit { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string OrderNumber { get; set; } = string.Empty;
+        public Guid? BatchId { get; set; }
+        public string? BatchNumber { get; set; }
+        public decimal? BatchQuantity { get; set; }
+        public string? BatchUnit { get; set; }
+        public string? BatchQualityStatus { get; set; }
+    }
+
+    private sealed class ShipmentGenealogyRow
+    {
+        public Guid ShipmentItemId { get; set; }
+        public Guid ShipmentId { get; set; }
+        public Guid StockLotId { get; set; }
+        public string LotNumber { get; set; } = string.Empty;
+        public decimal CheckedQuantity { get; set; }
+        public decimal AcceptedQuantity { get; set; }
+        public decimal ReturnedQuantity { get; set; }
+        public decimal LostQuantity { get; set; }
+        public string Unit { get; set; } = string.Empty;
+        public string ShipmentNumber { get; set; } = string.Empty;
+        public string ShipmentStatus { get; set; } = string.Empty;
+        public DateTimeOffset? DispatchedAt { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public decimal UnitPrice { get; set; }
+        public string? DeliveryStatus { get; set; }
+        public DateTimeOffset? DeliveryOccurredAt { get; set; }
+        public string? ReturnStatus { get; set; }
+        public decimal? ReturnQuantity { get; set; }
+    }
+
+    private sealed class ManualGenealogyLinkRow
+    {
+        public Guid Id { get; set; }
+        public string Kind { get; set; } = string.Empty;
+        public string OriginType { get; set; } = string.Empty;
+        public Guid OriginId { get; set; }
+        public string DestinationType { get; set; } = string.Empty;
+        public Guid DestinationId { get; set; }
+        public Guid? SeasonId { get; set; }
+        public Guid? FieldId { get; set; }
+        public string? LotNumber { get; set; }
+        public decimal? Quantity { get; set; }
+        public string? Unit { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; }
     }
 }

@@ -74,6 +74,25 @@ public sealed class WorkManagementService(DatabaseExecutor database, ITenantCont
           union all
           select 'PAYABLE:'||f.id,f.id,'PAYABLE','Obrigação financeira: '||f.supplier_name,'FINANCE',t.name,null,null,f.due_on::timestamptz,'CONTRACTUAL','Vencimento do título',case when f.due_on<current_date then 'CRITICAL' else 'HIGH' end,case when f.due_on<current_date then 'Título vencido com saldo em aberto.' else 'Título próximo do vencimento.' end,'Abrir financeiro','/Finance?payableId='||f.id,coalesce(f.updated_at,f.created_at)
           from agro360.finance_payables f join agro360.tenancy_tenants t on t.id=f.tenant_id where f.tenant_id=@TenantId and f.status in('OPEN','PARTIAL') and f.balance>0 and f.due_on<=current_date+7 and exists(select 1 from user_permissions where code='finance.read')
+          union all
+          select 'GENEALOGY_BREAK:'||si.id,si.id,'GENEALOGY_BREAK','Lote expedido sem origem de talhão: '||l.lot_number,'AGRICULTURE',t.name,null,null,s.dispatched_at,'OPERATIONAL','Data de despacho da remessa','HIGH','Há lote expedido sem vínculo inequívoco de safra/talhão na genealogia.','Verificar genealogia','/Harvest?tab=genealogy&lot='||l.lot_number,si.created_at
+          from agro360.fulfillment_shipment_items si
+          join agro360.fulfillment_shipments s on s.tenant_id=si.tenant_id and s.id=si.shipment_id and s.deleted_at is null
+          join agro360.inventory_stock_lots l on l.tenant_id=si.tenant_id and l.id=si.stock_lot_id
+          join agro360.tenancy_tenants t on t.id=si.tenant_id
+          where si.tenant_id=@TenantId
+            and s.status not in ('CANCELLED')
+            and not exists(
+              select 1 from agro360.production_receipts q
+              join agro360.harvest_records r on r.tenant_id=q.tenant_id and r.id=q.harvest_record_id
+              join agro360.harvest_plans p on p.tenant_id=r.tenant_id and p.id=r.plan_id
+              where q.tenant_id=si.tenant_id and q.lot_number=l.lot_number
+            )
+            and not exists(
+              select 1 from agro360.operational_genealogy_links g
+              where g.tenant_id=si.tenant_id and g.lot_number=l.lot_number and g.field_id is not null
+            )
+            and exists(select 1 from user_permissions where code='agriculture.read')
         ), visible as (
           select o.*,s.assigned_to responsible_id,coalesce(assigned.name,o.source_responsible_name) responsible_name,coalesce(s.assignment_version,0) assignment_version,'PENDING'::text origin_status,(r.user_id is not null) viewed_by_me,case when s.assigned_to is not null then 'ASSIGNED' when r.user_id is not null then 'VIEWED' else 'NEW' end interaction_status
           from occurrences o left join agro360.operation_occurrence_states s on s.tenant_id=@TenantId and s.occurrence_key=o.key left join agro360.operation_occurrence_reads r on r.tenant_id=@TenantId and r.occurrence_key=o.key and r.user_id=@UserId left join agro360.identity_users assigned on assigned.tenant_id=@TenantId and assigned.id=s.assigned_to
@@ -113,6 +132,6 @@ public sealed class WorkManagementService(DatabaseExecutor database, ITenantCont
         var eventType=command.ResponsibleId is null?"UNASSIGNED":previous is null?"ASSIGNED":"TRANSFERRED"; await c.ExecuteAsync(new CommandDefinition("insert into agro360.operation_occurrence_events(tenant_id,occurrence_key,event_type,actor_id,responsible_id,reason) values(@TenantId,@Key,@EventType,@UserId,@ResponsibleId,@Reason)",new{tenant.TenantId,Key=key,EventType=eventType,tenant.UserId,command.ResponsibleId,Reason=command.Reason?.Trim()},t,cancellationToken:ct));
     },ct);
     private static (string Type,Guid Id) ParseOccurrenceKey(string key) { if(string.IsNullOrWhiteSpace(key)||key.Length>180){throw new DomainException("Identificador da pendência inválido.","operation.occurrence_key_invalid");} var parts=key.Split(':',2); if(parts.Length!=2||!Guid.TryParseExact(parts[1],"D",out var id)||PermissionsFor(parts[0]).Length==0) throw new DomainException("Identificador da pendência inválido.","operation.occurrence_key_invalid"); return(parts[0],id); }
-    private static string[] PermissionsFor(string type)=>type switch { "APPROVAL"=>["work.approve"], "PURCHASE_APPROVAL"=>["purchasing.approve"], "PURCHASE" or "RECEIPT_DIVERGENCE"=>["purchasing.read"], "QUALITY"=>["inventory.read","production.quality"], "SHIPMENT"=>["logistics.read","logistics.fulfillment.read"], "MAINTENANCE"=>["maintenance.read","fleet.read"], "PAYABLE" or "COST_PENDING"=>["finance.read"], "TASK"=>["work.read"], "SEASON_CLOSING"=>["agriculture.read"], _=>[] };
+    private static string[] PermissionsFor(string type)=>type switch { "APPROVAL"=>["work.approve"], "PURCHASE_APPROVAL"=>["purchasing.approve"], "PURCHASE" or "RECEIPT_DIVERGENCE"=>["purchasing.read"], "QUALITY"=>["inventory.read","production.quality"], "SHIPMENT"=>["logistics.read","logistics.fulfillment.read"], "MAINTENANCE"=>["maintenance.read","fleet.read"], "PAYABLE" or "COST_PENDING"=>["finance.read"], "TASK"=>["work.read"], "SEASON_CLOSING" or "GENEALOGY_BREAK"=>["agriculture.read"], _=>[] };
 
 }
