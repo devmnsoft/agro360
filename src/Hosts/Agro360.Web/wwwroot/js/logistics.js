@@ -1,13 +1,451 @@
 (() => {
- const api = document.querySelector('meta[name="api-base"]')?.content?.replace(/\/$/, '') || '';
- const token = () => sessionStorage.getItem('agro360.accessToken');
- const content = document.querySelector('#logistics-content'); const indicators = document.querySelector('#logistics-indicators');
- const request = async path => { const response = await fetch(`${api}${path}`, { headers: { Authorization: `Bearer ${token()}` }, cache: 'no-store' }); if (!response.ok) throw new Error(`Operação não concluída (${response.status}). Confira acesso, módulo e contexto do cliente.`); return response.json(); };
- const value = (x, ...names) => names.map(n => x[n] ?? x[n[0].toUpperCase() + n.slice(1)]).find(v => v !== undefined);
- async function loadIndicators() { const x = await request('/api/logistics/trips/fulfillment/indicators'); const cards = [['awaitingPicking','Pedidos aguardando separação','queue'],['ready','Expedições prontas','shipments'],['tripsInProgress','Viagens em andamento','trips'],['late','Entregas atrasadas','deliveries'],['partial','Entregas parciais','deliveries'],['refusals','Recusas','deliveries'],['returnsAwaitingQuality','Retornos em conferência','returns'],['untreatedDivergences','Divergências sem tratamento','picking']]; indicators.innerHTML = cards.map(([key,label,view]) => `<button class="indicator" data-view="${view}"><strong>${value(x,key) ?? 0}</strong>${label}</button>`).join(''); }
- async function loadQueue(form) { content.innerHTML='<p class="empty-state">Carregando pedidos aptos…</p>'; const q = new URLSearchParams(new FormData(form || document.querySelector('#queue-filters'))); [...q].forEach(([k,v])=>{if(!v)q.delete(k);}); const rows=await request(`/api/logistics/trips/fulfillment/queue?${q}`); content.innerHTML = rows.length ? `<table class="logistics-table"><thead><tr><th>Pedido</th><th>Cliente</th><th>Prazo</th><th>Situação</th><th>Saldo autorizado</th></tr></thead><tbody>${rows.map(x=>`<tr><td><strong>${value(x,'order_number','orderNumber')}</strong></td><td>${value(x,'customer')}</td><td>${value(x,'expected_delivery','expectedDelivery') ?? 'Pendente'}</td><td><span class="status-pill">${value(x,'status')}</span></td><td>${value(x,'quantity_pending','quantityPending')}</td></tr>`).join('')}</tbody></table>` : '<p class="empty-state">Nenhum pedido apto para os filtros. Pedidos sem vínculo ou saldo permanecem como pendência.</p>'; }
- async function refresh() { try { await Promise.all([loadIndicators(), loadQueue()]); } catch(e) { content.innerHTML=`<p class="form-message" role="alert">${e.message}</p>`; } }
- document.querySelector('#queue-filters')?.addEventListener('submit', e => { e.preventDefault(); loadQueue(e.currentTarget).catch(err => content.innerHTML=`<p class="form-message" role="alert">${err.message}</p>`); });
- document.querySelector('#refresh-logistics')?.addEventListener('click', refresh); document.querySelectorAll('.journey-nav button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.journey-nav button').forEach(x=>x.classList.toggle('active',x===b)); if(b.dataset.view==='queue') loadQueue(); else content.innerHTML=`<p class="empty-state">Use os indicadores e a rastreabilidade da expedição. A área “${b.textContent}” mostra somente vínculos persistidos; integrações ausentes permanecem pendentes.</p>`;}));
- refresh();
+    const api = document.querySelector('meta[name="api-base"]')?.content?.replace(/\/$/, '') || '';
+    const token = () => sessionStorage.getItem('agro360.accessToken');
+    const content = document.querySelector('#logistics-content');
+    const indicators = document.querySelector('#logistics-indicators');
+    const dispositionDialog = document.querySelector('#return-disposition-dialog');
+    const dispositionForm = document.querySelector('#return-disposition-form');
+    const decisionSelect = document.querySelector('#disposition-decision');
+    const quantityInput = document.querySelector('#disposition-quantity');
+    const unitInput = document.querySelector('#disposition-unit');
+    const costInput = document.querySelector('#disposition-cost');
+    const lossFields = document.querySelector('#disposition-loss-fields');
+    const itemInfo = document.querySelector('#disposition-item-info');
+
+    let currentReturnForDisposition = null;
+    let activeView = 'overview';
+
+    const request = async (path, options = {}) => {
+        const headers = {
+            Authorization: `Bearer ${token()}`,
+            ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+            ...options.headers
+        };
+        try {
+            const response = await fetch(`${api}${path}`, {
+                ...options,
+                headers,
+                cache: 'no-store'
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => null);
+                const message = errData?.detail || errData?.message || `Operação não concluída (HTTP ${response.status}).`;
+                const err = new Error(message);
+                err.status = response.status;
+                err.code = errData?.code;
+                throw err;
+            }
+
+            if (response.status === 204) return null;
+            return response.json();
+        } catch (error) {
+            if (error.status === undefined) {
+                // Erro de rede ou TypeError do fetch
+                error.isNetwork = true;
+            }
+            throw error;
+        }
+    };
+
+    const value = (x, ...names) => names.map(n => x[n] ?? x[n[0].toUpperCase() + n.slice(1)]).find(v => v !== undefined);
+
+    function updateBreadcrumb(tabName) {
+        const bc = document.querySelector('#page-breadcrumb span');
+        if (!bc) return;
+        if (tabName === 'returns') {
+            bc.textContent = 'Logística / Retornos';
+        } else {
+            bc.textContent = 'Expedição e Entrega';
+        }
+    }
+
+    async function loadIndicators() {
+        try {
+            const x = await request('/api/logistics/trips/fulfillment/indicators');
+            const cards = [
+                ['awaitingPicking', 'Pedidos aguardando separação', 'queue'],
+                ['ready', 'Expedições prontas', 'shipments'],
+                ['tripsInProgress', 'Viagens em andamento', 'trips'],
+                ['late', 'Entregas atrasadas', 'deliveries'],
+                ['partial', 'Entregas parciais', 'deliveries'],
+                ['refusals', 'Recusas', 'deliveries'],
+                ['returnsAwaitingQuality', 'Retornos em conferência', 'returns'],
+                ['untreatedDivergences', 'Divergências sem tratamento', 'picking']
+            ];
+            indicators.innerHTML = cards.map(([key, label, view]) =>
+                `<button class="indicator" data-view="${view}"><strong>${value(x, key) ?? 0}</strong>${label}</button>`
+            ).join('');
+
+            indicators.querySelectorAll('.indicator').forEach(b => {
+                b.addEventListener('click', () => {
+                    const targetView = b.dataset.view;
+                    switchView(targetView);
+                });
+            });
+        } catch (err) {
+            indicators.innerHTML = '<p class="form-message" role="alert">Indicadores temporariamente indisponíveis.</p>';
+            window.agro360Feedback?.handleError(err, 'Falha ao carregar indicadores');
+        }
+    }
+
+    async function loadQueue(form) {
+        content.innerHTML = '<p class="empty-state">Carregando pedidos aptos…</p>';
+        try {
+            const q = new URLSearchParams(new FormData(form || document.querySelector('#queue-filters')));
+            [...q].forEach(([k, v]) => { if (!v) q.delete(k); });
+            const rows = await request(`/api/logistics/trips/fulfillment/queue?${q}`);
+            content.innerHTML = rows.length ? `
+                <table class="logistics-table">
+                    <thead>
+                        <tr>
+                            <th>Pedido</th>
+                            <th>Cliente</th>
+                            <th>Prazo</th>
+                            <th>Situação</th>
+                            <th>Saldo autorizado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map(x => `
+                            <tr>
+                                <td><strong>${escapeHtml(value(x, 'order_number', 'orderNumber'))}</strong></td>
+                                <td>${escapeHtml(value(x, 'customer'))}</td>
+                                <td>${escapeHtml(value(x, 'expected_delivery', 'expectedDelivery') ?? 'Pendente')}</td>
+                                <td><span class="status-pill">${escapeHtml(value(x, 'status'))}</span></td>
+                                <td>${escapeHtml(value(x, 'quantity_pending', 'quantityPending'))}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>` : '<p class="empty-state">Nenhum pedido apto para os filtros. Pedidos sem vínculo ou saldo permanecem como pendência.</p>';
+        } catch (err) {
+            renderErrorState(err, 'Fila de pedidos');
+        }
+    }
+
+    function renderErrorState(err, contextTitle) {
+        if (err.status === 401) {
+            content.innerHTML = '<div class="empty-state" role="alert"><h3>Sessão expirada (401)</h3><p>Faça login novamente para consultar os registros de logística.</p></div>';
+        } else if (err.status === 403) {
+            content.innerHTML = '<div class="empty-state" role="alert"><h3>Acesso não autorizado (403)</h3><p>Seu perfil não possui permissão para visualizar este módulo logístico.</p></div>';
+        } else if (err.isNetwork) {
+            content.innerHTML = '<div class="empty-state" role="alert"><h3>Falha de rede</h3><p>Não foi possível comunicar com o servidor. Verifique sua conexão e tente novamente.</p></div>';
+        } else {
+            const cleanMsg = (err.message || 'Erro inesperado').replace(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g, '').trim();
+            content.innerHTML = `<div class="empty-state" role="alert"><h3>Falha operacional</h3><p>${escapeHtml(cleanMsg)}</p></div>`;
+        }
+        window.agro360Feedback?.handleError(err, contextTitle);
+    }
+
+    async function loadReturns() {
+        content.innerHTML = '<p class="empty-state">Carregando retornos físicos…</p>';
+        try {
+            const rows = await request('/api/logistics/trips/fulfillment/returns');
+            if (!rows || rows.length === 0) {
+                content.innerHTML = '<p class="empty-state">Nenhum retorno ou devolução física registrada até o momento.</p>';
+                return;
+            }
+
+            const hasPendingModel = rows.some(r => {
+                const intent = value(r, 'intentStatus', 'intent_status');
+                const quality = value(r, 'qualityResult', 'quality_result');
+                return intent === 'PENDING_MODEL' || quality === 'PENDING_MODEL';
+            });
+
+            if (hasPendingModel) {
+                window.agro360Feedback?.toast(
+                    'warning',
+                    'Modelo de qualidade pendente',
+                    'Há devoluções aguardando configuração de modelo de inspeção. A liberação (RELEASE) permanece bloqueada.',
+                    'pending-model-toast'
+                );
+            }
+
+            const bannerHtml = hasPendingModel ? `
+                <div class="banner warning-banner" style="background: rgba(234, 179, 8, 0.15); border: 1px solid #eab308; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;" role="alert">
+                    <strong style="color: #ca8a04;">Atenção:</strong> Existem retornos com inspeção aguardando parametrização de modelo de qualidade. Liberações (RELEASE) estão bloqueadas até a aprovação da conformidade.
+                </div>
+            ` : '';
+
+            const tableHtml = `
+                ${bannerHtml}
+                <table class="logistics-table">
+                    <thead>
+                        <tr>
+                            <th>Expedição</th>
+                            <th>Pedido</th>
+                            <th>Cliente</th>
+                            <th>Produto</th>
+                            <th>Qtd Devolvida</th>
+                            <th>Qtd Recebida</th>
+                            <th>Qualidade</th>
+                            <th>Situação</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map(r => {
+                            const id = value(r, 'id', 'Id');
+                            const shipment = value(r, 'shipmentNumber', 'shipment_number') || 'Expedição';
+                            const order = value(r, 'orderNumber', 'order_number') || 'Pedido';
+                            const customer = value(r, 'customerName', 'customer_name') || 'Cliente';
+                            const product = value(r, 'productName', 'product_name') || value(r, 'productCode', 'product_code') || 'Produto';
+                            const unit = value(r, 'unit') || '';
+                            const quantity = Number(value(r, 'quantity') || 0);
+                            const received = Number(value(r, 'receivedQuantity', 'received_quantity') || 0);
+                            const status = value(r, 'status') || 'PENDING';
+                            const intentStatus = value(r, 'intentStatus', 'intent_status');
+                            const qualityResult = value(r, 'qualityResult', 'quality_result');
+                            const version = Number(value(r, 'version') || 1);
+
+                            let qualityBadge = '<span class="status-pill info">Sem inspeção</span>';
+                            if (qualityResult === 'CONFORMING') {
+                                qualityBadge = '<span class="status-pill success" style="background: #15803d; color: #fff;">Conforme</span>';
+                            } else if (qualityResult === 'NON_CONFORMING') {
+                                qualityBadge = '<span class="status-pill danger" style="background: #b91c1c; color: #fff;">Não Conforme</span>';
+                            } else if (qualityResult === 'INCONCLUSIVE') {
+                                qualityBadge = '<span class="status-pill warning" style="background: #b45309; color: #fff;">Inconclusivo</span>';
+                            } else if (intentStatus === 'PENDING_MODEL' || qualityResult === 'PENDING_MODEL') {
+                                qualityBadge = '<span class="status-pill warning" style="background: #eab308; color: #000;">Sem Modelo</span>';
+                            } else if (intentStatus === 'AMBIGUOUS' || qualityResult === 'AMBIGUOUS') {
+                                qualityBadge = '<span class="status-pill warning" style="background: #eab308; color: #000;">Ambíguo</span>';
+                            } else if (intentStatus === 'STARTED' || intentStatus === 'PENDING') {
+                                qualityBadge = '<span class="status-pill info">Em Inspeção</span>';
+                            }
+
+                            const canDecide = ['AWAITING_QUALITY', 'BLOCKED', 'PARTIALLY_RECEIVED'].includes(status) && received > 0;
+                            const isConforming = qualityResult === 'CONFORMING';
+                            const isQualityBlocked = ['NON_CONFORMING', 'INCONCLUSIVE', 'PENDING_MODEL', 'AMBIGUOUS'].includes(qualityResult) || ['PENDING_MODEL', 'AMBIGUOUS'].includes(intentStatus) || !isConforming;
+
+                            const itemJson = JSON.stringify({
+                                id,
+                                shipment,
+                                order,
+                                customer,
+                                product,
+                                unit,
+                                quantity,
+                                received,
+                                status,
+                                version,
+                                qualityResult,
+                                intentStatus,
+                                isQualityBlocked,
+                                isConforming
+                            }).replace(/"/g, '&quot;');
+
+                            return `
+                                <tr>
+                                    <td><strong>${escapeHtml(shipment)}</strong></td>
+                                    <td>${escapeHtml(order)}</td>
+                                    <td>${escapeHtml(customer)}</td>
+                                    <td>${escapeHtml(product)}</td>
+                                    <td>${quantity.toLocaleString('pt-BR')} ${escapeHtml(unit)}</td>
+                                    <td>${received.toLocaleString('pt-BR')} ${escapeHtml(unit)}</td>
+                                    <td>${qualityBadge}</td>
+                                    <td><span class="status-pill">${escapeHtml(status)}</span></td>
+                                    <td>
+                                        ${canDecide ? `
+                                            <button type="button" class="secondary-button btn-decide-return" data-return="${itemJson}">
+                                                Destinar
+                                            </button>
+                                        ` : '—'}
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            content.innerHTML = tableHtml;
+
+            content.querySelectorAll('.btn-decide-return').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const raw = btn.getAttribute('data-return');
+                    if (!raw) return;
+                    const item = JSON.parse(raw);
+                    openDispositionModal(item);
+                });
+            });
+
+        } catch (err) {
+            renderErrorState(err, 'Retornos físicos');
+        }
+    }
+
+    function openDispositionModal(item) {
+        currentReturnForDisposition = item;
+        if (!dispositionDialog) return;
+
+        const maxQty = item.received;
+        itemInfo.innerHTML = `<strong>${escapeHtml(item.product)}</strong> do pedido <strong>${escapeHtml(item.order)}</strong> (${escapeHtml(item.customer)}). Saldo recebido: <strong>${maxQty.toLocaleString('pt-BR')} ${escapeHtml(item.unit)}</strong>.`;
+
+        quantityInput.value = maxQty;
+        quantityInput.max = maxQty;
+        unitInput.value = item.unit || '';
+        costInput.value = '';
+
+        // Se a qualidade bloqueia RELEASE, avisa no seletor
+        const releaseOption = decisionSelect.querySelector('option[value="RELEASE"]');
+        if (releaseOption) {
+            if (item.isQualityBlocked) {
+                releaseOption.textContent = 'Liberar para estoque (RELEASE - BLOQUEADO POR QUALIDADE)';
+            } else {
+                releaseOption.textContent = 'Liberar para estoque (RELEASE)';
+            }
+        }
+
+        decisionSelect.value = item.isQualityBlocked ? 'BLOCK' : 'RELEASE';
+        lossFields.hidden = decisionSelect.value !== 'DISPOSE';
+
+        decisionSelect.onchange = () => {
+            lossFields.hidden = decisionSelect.value !== 'DISPOSE';
+            if (decisionSelect.value === 'RELEASE' && item.isQualityBlocked) {
+                window.agro360Feedback?.toast(
+                    'warning',
+                    'Bloqueio de Qualidade',
+                    'O laudo de inspeção não autoriza liberação para estoque. Destinações permitidas: BLOCK (manter bloqueado) ou DISPOSE (perda/descarte).'
+                );
+            }
+        };
+
+        dispositionDialog.showModal();
+    }
+
+    dispositionDialog?.querySelectorAll('[data-close]').forEach(btn => {
+        btn.addEventListener('click', () => dispositionDialog.close());
+    });
+
+    dispositionForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!currentReturnForDisposition) return;
+
+        const item = currentReturnForDisposition;
+        const decision = decisionSelect.value;
+        const quantity = Number(quantityInput.value);
+        const unit = unitInput.value.trim();
+        const cost = costInput.value ? Number(costInput.value) : null;
+
+        if (decision === 'RELEASE' && item.isQualityBlocked) {
+            window.agro360Feedback?.toast(
+                'error',
+                'Operação bloqueada',
+                'A liberação (RELEASE) não é permitida sem conformidade comprovada de qualidade.'
+            );
+            return;
+        }
+
+        if (quantity <= 0 || quantity > item.received) {
+            window.agro360Feedback?.toast('warning', 'Quantidade inválida', `Informe uma quantidade positiva até o limite recebido de ${item.received}.`);
+            return;
+        }
+
+        if (decision === 'DISPOSE' && !unit) {
+            window.agro360Feedback?.toast('warning', 'Unidade obrigatória', 'Informe a unidade de medida para o registro de perda.');
+            unitInput.focus();
+            return;
+        }
+
+        dispositionDialog.close();
+
+        // Destinação → dialog nativo + motivo obrigatório
+        const consequences = {
+            RELEASE: 'O saldo do lote será integrado ao estoque disponível.',
+            BLOCK: 'O material permanecerá isolado em quarentena sem disponibilidade para venda.',
+            DISPOSE: `Será registrada perda definitiva de ${quantity} ${unit || item.unit} sem emissão de duplicatas fiscais.`
+        };
+
+        const result = await window.agro360Feedback?.confirm({
+            title: `Confirmar Destinação: ${decision}`,
+            message: `${consequences[decision]} É obrigatório informar o motivo detalhado desta destinação.`,
+            confirmText: 'Confirmar Destinação',
+            cancelText: 'Cancelar',
+            requireReason: true,
+            reasonPlaceholder: 'Descreva a motivação da destinação para fins de auditoria…',
+            minReasonLength: 3
+        });
+
+        if (!result || !result.confirmed || !result.reason) {
+            return;
+        }
+
+        const idempotencyKey = crypto.randomUUID();
+        const payload = {
+            decision,
+            quantity,
+            reason: result.reason,
+            expectedVersion: item.version,
+            idempotencyKey,
+            unit: decision === 'DISPOSE' ? unit : (unit || null),
+            cost: decision === 'DISPOSE' ? cost : null
+        };
+
+        try {
+            await request(`/api/logistics/trips/fulfillment/returns/${item.id}/decisions`, {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+
+            window.agro360Feedback?.toast('success', 'Destinação concluída', `Retorno destinado com sucesso (${decision}).`);
+            await refresh();
+        } catch (err) {
+            window.agro360Feedback?.handleError(err, 'Falha ao registrar destinação');
+        }
+    });
+
+    function switchView(view) {
+        activeView = view;
+        document.querySelectorAll('.journey-nav button').forEach(x => {
+            x.classList.toggle('active', x.dataset.view === view);
+        });
+        updateBreadcrumb(view);
+
+        const filters = document.querySelector('#queue-filters');
+        if (filters) filters.hidden = view !== 'queue';
+
+        if (view === 'queue') {
+            loadQueue();
+        } else if (view === 'returns') {
+            loadReturns();
+        } else {
+            content.innerHTML = `<p class="empty-state">Use os indicadores e a rastreabilidade da expedição. A área “${view}” mostra somente vínculos persistidos; integrações ausentes permanecem pendentes.</p>`;
+        }
+    }
+
+    async function refresh() {
+        try {
+            await loadIndicators();
+            if (activeView === 'returns') {
+                await loadReturns();
+            } else if (activeView === 'queue') {
+                await loadQueue();
+            }
+        } catch (e) {
+            renderErrorState(e, 'Atualização de Logística');
+        }
+    }
+
+    function escapeHtml(value) {
+        const span = document.createElement('span');
+        span.textContent = String(value ?? '');
+        return span.innerHTML;
+    }
+
+    document.querySelector('#queue-filters')?.addEventListener('submit', e => {
+        e.preventDefault();
+        loadQueue(e.currentTarget);
+    });
+
+    document.querySelector('#refresh-logistics')?.addEventListener('click', refresh);
+
+    document.querySelectorAll('.journey-nav button').forEach(b => {
+        b.addEventListener('click', () => switchView(b.dataset.view));
+    });
+
+    // Iniciar na aba de retornos caso o breadcrumb ou URL aponte para retornos
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialView = urlParams.get('tab') || 'returns';
+    switchView(initialView);
+    refresh();
 })();

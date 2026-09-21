@@ -1,5 +1,19 @@
 # Decisões de execução
 
+## ADR-E8-RET-01 — Conferência, destinação e governança de qualidade em devoluções físicas e contrato global de feedback (2026-09-21)
+
+- **Contexto**: A entrega AG-E8-RET-001 estabelece o ciclo definitivo de retorno físico na logística, amarrando conferência de devoluções com a governança do motor de qualidade (092/093), além de padronizar o contrato de feedback do frontend web (`window.agro360Feedback`).
+- **Decisão**:
+  - `ReceiveReturnAsync` registra o recebimento físico do retorno, transiciona o status para `AWAITING_QUALITY` e dispara o gatilho operacional assíncrono pós-commit `IOperationalInspectionTrigger` com processo `RETURN`. O gancho jamais destina, jamais libera lote para disponível e não gera aprovação presumida.
+  - A destinação final via `DecideReturnAsync` (`RELEASE`, `BLOCK`, `DISPOSE`) é **estritamente obrigatória** e exige justificativa.
+  - Laudo `CONFORMING` não libera o lote sozinho: exige ação explícita de destinação.
+  - Qualquer laudo ou estado de inspeção vinculado que esteja como `NON_CONFORMING`, `INCONCLUSIVE`, `PENDING_MODEL`, `AMBIGUOUS` ou inspeção não concluída **bloqueia sumariamente a decisão `RELEASE`**, retornando violação de domínio (`DomainException`).
+  - Descartes físicos (`DISPOSE`) registram a perda com quantidade, unidade e motivo obrigatório; o custo unitário/total é opcional e não gera título a receber ou a pagar duplicado, nem infere emissão de NF-e.
+  - Idempotência é garantida com base em `ReturnDecisionExistingRow` e chave `IdempotencyKey`. Concorrência otimista (OCC) é verificada contra a versão esperada do retorno.
+  - Contrato de feedback unificado exposto em `window.agro360Feedback` (`toast`, `confirm`, `handleError`), reutilizando estritamente `#toast-region`, `showToast` e `<dialog id="action-confirmation">`. É terminantemente proibido o uso de `alert()` e SweetAlert em todo o frontend.
+  - Distinção clara e amigável de erros: HTTP 401 (não autenticado/sessão expirada) ≠ HTTP 403 (permissão negada) ≠ erro de conectividade/rede. Mensagens de erro são higienizadas para não exibir identificadores GUID brutos ao usuário final.
+  - Preservação da imutabilidade das migrations 071, 092 e 093; DDL incremental concentrado na migration `094_fulfillment_return_disposition.sql` (schema `9.4.0`) e espelhado em `database/agro360-postgres-full.sql`.
+
 ## ADR-Q-EVT-01 — Gatilhos operacionais de qualidade disparam por evento pós-commit com idempotência e retenção explícita (2026-09-18)
 
 - **Contexto**: A entrega AG-Q-EVT-001 liga eventos operacionais de recebimento (compra, colheita, devoluções) e apontamento industrial ao motor de inspeção (092).

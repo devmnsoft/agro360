@@ -1,5 +1,19 @@
 # Plano de execução Agro360
 
+## Recorte concluído — Destinação e Qualidade de Retorno + Feedback Global AG-E8-RET-001 (2026-09-21)
+
+1. **Concluído no código:**
+   - Conferência de retorno físico (`ReceiveReturnAsync`) retendo o recebimento em `AWAITING_QUALITY` e disparando evento operacional pós-commit (`IOperationalInspectionTrigger`) sem auto-aprovação de lote.
+   - Destinação final estritamente obrigatória (`DecideReturnAsync`) com validação de regras de qualidade em `StorageRules`: laudo `CONFORMING` não libera o lote de forma presumida; estados `NON_CONFORMING`, `INCONCLUSIVE`, `PENDING_MODEL`, `AMBIGUOUS` ou inspeções em andamento bloqueiam sumariamente `RELEASE`.
+   - Perda física (`DISPOSE`) com quantidade, unidade e motivo obrigatório; custo opcional e desacoplado de inferências fiscais ou títulos financeiros duplicados.
+   - Idempotência (`IdempotencyKey` + `ReturnDecisionExistingRow`) e controle de concorrência otimista (OCC).
+   - DDL incremental `094_fulfillment_return_disposition.sql` (schema 9.4.0) e consolidação no full SQL, preservando 071, 092 e 093 imutáveis.
+   - Contrato padronizado `window.agro360Feedback` exposto em `agro360.js`, com proibição estrita de `alert()` e SweetAlert, distinção `401 ≠ 403 ≠ rede`, expurgo de GUIDs em erros de tela, e integração nas jornadas de `/Logistics`, `/Inspections` e `/Harvest`.
+2. **Evidências:** `dotnet build -c Release` PASS (0 erros/avisos), `dotnet test -c Release` 61/61 PASS, `node --check` PASS e `git diff --check` PASS.
+3. **Próximo recorte ativo pós-merge (estrito):**
+   - 1º `AG-E6-GEN-001` (Genealogia completa da safra até produção e expedição)
+   - 2º `AG-E1-002` (MFA real, elevação SuperAdmin e suporte assistido auditado)
+
 ## Recorte concluído — Homologação E2E de Inspeções e Gatilhos AG-Q-092-E2E (2026-09-19 / 2026-09-20)
 
 1. **Homologado com PASS (15/15 cenários em cluster efêmero PostgreSQL descartável):**

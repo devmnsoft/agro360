@@ -20,7 +20,7 @@ public sealed record DeliveryAttemptItemCommand(Guid ShipmentItemId, decimal Acc
 public sealed record DeliveryAttemptCommand(DateTimeOffset OccurredAt, string Destination, Guid ResponsibleId, string Status, string? Reason, Guid? EvidenceDocumentId, bool EvidencePending, string? PendingNotes, string IdempotencyKey, IReadOnlyList<DeliveryAttemptItemCommand> Items);
 public sealed record ReturnCommand(Guid ShipmentItemId, decimal Quantity, string Reason, string IdempotencyKey);
 public sealed record ReceiveReturnCommand(decimal Quantity, string Unit, string Condition, Guid WarehouseId, string? LotNumber, Guid? EvidenceDocumentId, string? Notes, long ExpectedVersion, string IdempotencyKey);
-public sealed record DecideReturnCommand(string Decision, decimal Quantity, string Reason, long ExpectedVersion, string IdempotencyKey);
+public sealed record DecideReturnCommand(string Decision, decimal Quantity, string Reason, long ExpectedVersion, string IdempotencyKey, string? Unit = null, decimal? Cost = null);
 public sealed record FulfillmentIndicators(long AwaitingPicking, long Ready, long TripsInProgress, long Late, long Partial, long Refusals, long ReturnsAwaitingQuality, long UntreatedDivergences);
 public sealed record DeliveryContractCommand(string Number, string Customer, Guid ProductId, decimal ContractedQuantity, decimal ContractedPrice, string Unit, DateOnly DeliveryDeadline, string PaymentTerms, string Status, string? CancellationReason, bool AllowOverdelivery = false);
 public sealed record StorageDashboard(
@@ -69,6 +69,8 @@ public interface ILogisticsService
     Task<Guid> RegisterReturnAsync(ReturnCommand command, CancellationToken ct);
     Task<Guid> ReceiveReturnAsync(Guid id, ReceiveReturnCommand command, CancellationToken ct);
     Task<Guid> DecideReturnAsync(Guid id, DecideReturnCommand command, CancellationToken ct);
+    Task<IReadOnlyList<dynamic>> ListReturnsAsync(CancellationToken ct);
+    Task<dynamic?> ReturnDetailAsync(Guid id, CancellationToken ct);
     Task<AfterSalesPage> OccurrencesAsync(AfterSalesQuery query, CancellationToken ct);
     Task<dynamic?> OccurrenceAsync(Guid id, CancellationToken ct);
     Task<Guid> CreateOccurrenceAsync(CreateOccurrenceCommand command, CancellationToken ct);

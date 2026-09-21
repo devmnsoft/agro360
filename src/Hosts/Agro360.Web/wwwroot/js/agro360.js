@@ -529,16 +529,147 @@
     const toast = (title, detail, error = false) => error ? toastError(title, detail) : toastSuccess(title, detail);
 
     function confirmDialog(title, message, confirmText = "Confirmar", cancelText = "Cancelar") {
-        const dialog = element("action-confirmation");
-        element("confirmation-title").textContent = title;
-        element("confirmation-consequence").textContent = message;
-        element("confirmation-submit").textContent = confirmText;
-        dialog.querySelector('[value="cancel"]').textContent = cancelText;
-        dialog.showModal();
-        return new Promise(resolve => dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true }));
+        return agro360Feedback.confirm({ title, message, confirmText, cancelText }).then(res => Boolean(res?.confirmed ?? res));
     }
 
-    Object.assign(window, { toastSuccess, toastWarning, toastError, toastInfo, confirmDialog, agro360Api: api, retrySessionRefresh });
+    const agro360Feedback = {
+        toast: (severity, title, detail, incidentKey = "") => {
+            const validSeverities = ["success", "warning", "error", "info"];
+            let s = severity;
+            let t = title;
+            let d = detail;
+            if (!validSeverities.includes(s)) {
+                d = t;
+                t = s;
+                s = "info";
+            }
+            showToast(s, t, d || "", incidentKey);
+        },
+        success: (title, detail) => showToast("success", title, detail || ""),
+        warning: (title, detail) => showToast("warning", title, detail || ""),
+        error: (title, detail) => showToast("error", title, detail || ""),
+        info: (title, detail) => showToast("info", title, detail || ""),
+        confirm: (options, ...args) => {
+            let title = "Confirme a operação";
+            let message = "";
+            let confirmText = "Confirmar ação";
+            let cancelText = "Voltar sem alterar";
+            let requireReason = false;
+            let reasonPlaceholder = "";
+            let minReasonLength = 3;
+
+            if (typeof options === "string") {
+                title = options;
+                message = args[0] || "";
+                confirmText = args[1] || confirmText;
+                cancelText = args[2] || cancelText;
+            } else if (options && typeof options === "object") {
+                title = options.title || title;
+                message = options.message || options.consequence || "";
+                confirmText = options.confirmText || confirmText;
+                cancelText = options.cancelText || cancelText;
+                requireReason = Boolean(options.requireReason);
+                reasonPlaceholder = options.reasonPlaceholder || "";
+                minReasonLength = options.minReasonLength || 3;
+            }
+
+            const dialog = element("action-confirmation");
+            if (!dialog) return Promise.resolve(typeof options === "object" ? { confirmed: false } : false);
+
+            const form = element("confirmation-form");
+            const titleEl = element("confirmation-title");
+            const msgEl = element("confirmation-consequence");
+            const reasonField = element("confirmation-reason-field");
+            const reasonInput = element("confirmation-reason");
+            const reasonError = element("confirmation-reason-error");
+            const submitBtn = element("confirmation-submit");
+            const cancelBtn = dialog.querySelector(".secondary-button");
+
+            if (titleEl) titleEl.textContent = title;
+            if (msgEl) msgEl.textContent = message;
+            if (submitBtn) submitBtn.textContent = confirmText;
+            if (cancelBtn) cancelBtn.textContent = cancelText;
+
+            if (reasonField) {
+                reasonField.hidden = !requireReason;
+            }
+            if (reasonInput) {
+                reasonInput.value = "";
+                if (reasonPlaceholder) reasonInput.placeholder = reasonPlaceholder;
+            }
+            if (reasonError) reasonError.textContent = "";
+
+            return new Promise(resolve => {
+                const cleanup = () => {
+                    form?.removeEventListener("submit", onSubmit);
+                    dialog?.removeEventListener("close", onClose);
+                };
+
+                const onSubmit = e => {
+                    if (e.submitter && e.submitter.value === "cancel") {
+                        cleanup();
+                        dialog.close();
+                        resolve(typeof options === "object" ? { confirmed: false } : false);
+                        return;
+                    }
+                    if (requireReason) {
+                        const val = reasonInput ? reasonInput.value.trim() : "";
+                        if (val.length < minReasonLength) {
+                            e.preventDefault();
+                            if (reasonError) reasonError.textContent = `Informe uma justificativa com pelo menos ${minReasonLength} caracteres.`;
+                            reasonInput?.focus();
+                            return;
+                        }
+                        cleanup();
+                        dialog.close();
+                        resolve(typeof options === "object" ? { confirmed: true, reason: val } : true);
+                        return;
+                    }
+                    cleanup();
+                    dialog.close();
+                    resolve(typeof options === "object" ? { confirmed: true } : true);
+                };
+
+                const onClose = () => {
+                    cleanup();
+                    resolve(typeof options === "object" ? { confirmed: false } : false);
+                };
+
+                form?.addEventListener("submit", onSubmit);
+                dialog?.addEventListener("close", onClose, { once: true });
+                dialog.showModal();
+            });
+        },
+        handleError: (err, fallbackTitle = "Operação não concluída") => {
+            let title = fallbackTitle;
+            let detail = err?.message || "Ocorreu um erro inesperado.";
+            const status = err?.status;
+
+            if (status === 401 || err?.code === "authentication_required" || detail.includes("401") || detail.toLowerCase().includes("não autenticado") || detail.toLowerCase().includes("unauthorized")) {
+                title = "Sessão expirada";
+                detail = "Sua sessão expirou ou não está autenticada. Faça login novamente para prosseguir.";
+                showToast("warning", title, detail, "auth-401");
+                return;
+            }
+            if (status === 403 || err?.code === "forbidden" || detail.includes("403") || detail.toLowerCase().includes("não autorizado") || detail.toLowerCase().includes("permissão") || detail.toLowerCase().includes("forbidden")) {
+                title = "Acesso não autorizado";
+                detail = "Seu perfil não possui permissão para executar esta operação.";
+                showToast("error", title, detail, "auth-403");
+                return;
+            }
+            if (err instanceof TypeError || detail.includes("Failed to fetch") || detail.toLowerCase().includes("network") || detail.toLowerCase().includes("rede") || detail.toLowerCase().includes("conexão")) {
+                title = "Falha de conexão";
+                detail = "Não foi possível comunicar com o servidor. Verifique sua conexão de rede.";
+                showToast("error", title, detail, "network-error");
+                return;
+            }
+
+            const cleanDetail = detail.replace(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g, "").trim();
+            showToast("error", title, cleanDetail || detail);
+        }
+    };
+
+    Object.assign(window, { toastSuccess, toastWarning, toastError, toastInfo, confirmDialog, agro360Feedback, agro360Api: api, retrySessionRefresh });
 
     function setText(id, value) {
         const target = element(id);

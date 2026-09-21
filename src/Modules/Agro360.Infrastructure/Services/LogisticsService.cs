@@ -200,9 +200,251 @@ public sealed class LogisticsService(
     }
     public Task<Guid> DecideReturnAsync(Guid id, DecideReturnCommand command, CancellationToken ct)
     {
-        var decision=command.Decision.Trim().ToUpperInvariant(); if(decision is not ("RELEASE" or "BLOCK" or "DISPOSE")||command.Quantity<=0||string.IsNullOrWhiteSpace(command.Reason)||string.IsNullOrWhiteSpace(command.IdempotencyKey))throw new DomainException("Decisão, quantidade, motivo e chave são obrigatórios.");var hash=Hash(command);
-        return Tx(async(c,t)=>{var old=await c.QuerySingleOrDefaultAsync<(Guid Id,string RequestHash)>(new CommandDefinition("select id,request_hash requesthash from agro360.fulfillment_return_decisions where tenant_id=@TenantId and idempotency_key=@Key",new{tenant.TenantId,Key=command.IdempotencyKey},t,cancellationToken:ct));if(old.Id!=Guid.Empty){if(old.RequestHash!=hash)throw new ConflictException("Chave de idempotência reutilizada com conteúdo diferente.");return old.Id;}var state=await c.QuerySingleOrDefaultAsync<(decimal Received,decimal Decided,long Version)>(new CommandDefinition("select r.received_quantity received,coalesce((select sum(d.quantity) from agro360.fulfillment_return_decisions d where d.tenant_id=r.tenant_id and d.return_id=r.id),0) decided,r.version from agro360.fulfillment_returns r where r.tenant_id=@TenantId and r.id=@Id and r.status in('AWAITING_QUALITY','BLOCKED') for update",new{tenant.TenantId,Id=id},t,cancellationToken:ct));if(state==default||state.Version!=command.ExpectedVersion)throw new ConflictException("Retorno alterado ou indisponível. Recarregue os dados.");if(state.Decided+command.Quantity>state.Received)throw new ConflictException("A destinação supera a quantidade fisicamente recebida.");var decisionId=Guid.CreateVersion7();await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_return_decisions(id,tenant_id,return_id,decision,quantity,reason,idempotency_key,request_hash,created_by) values(@DecisionId,@TenantId,@Id,@Decision,@Quantity,@Reason,@Key,@Hash,@UserId); update agro360.fulfillment_returns set status=case when @Decision='RELEASE' and @Quantity+@Decided=received_quantity then 'RELEASED' when @Decision='DISPOSE' and @Quantity+@Decided=received_quantity then 'DISPOSED' else 'BLOCKED' end,quality_decision_at=now(),version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id",new{DecisionId=decisionId,tenant.TenantId,Id=id,Decision=decision,command.Quantity,command.Reason,Key=command.IdempotencyKey,Hash=hash,tenant.UserId,state.Decided},t,cancellationToken:ct));await Audit(c,t,"return.decide",id,command,ct);return decisionId;});
+        var decision = (command.Decision ?? string.Empty).Trim().ToUpperInvariant();
+        StorageRules.ValidateReturnDecision(decision, command.Quantity, command.Reason, command.IdempotencyKey, command.Unit, command.Cost);
+
+        var hash = Hash(command);
+        return Tx(async (c, t) =>
+        {
+            var old = await c.QuerySingleOrDefaultAsync<ReturnDecisionExistingRow>(new CommandDefinition(
+                "select id Id, request_hash RequestHash from agro360.fulfillment_return_decisions where tenant_id=@TenantId and idempotency_key=@Key",
+                new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
+            if (old is not null && old.Id != Guid.Empty)
+            {
+                if (old.RequestHash != hash)
+                    throw new ConflictException("Chave de idempotência reutilizada com conteúdo diferente.", "return.idempotency_conflict");
+                return old.Id;
+            }
+
+            var state = await c.QuerySingleOrDefaultAsync<ReturnStateRow>(new CommandDefinition("""
+                select r.received_quantity Received,
+                       coalesce((select sum(d.quantity) from agro360.fulfillment_return_decisions d where d.tenant_id=r.tenant_id and d.return_id=r.id),0) Decided,
+                       r.version Version,
+                       r.status Status
+                from agro360.fulfillment_returns r
+                where r.tenant_id=@TenantId and r.id=@Id and r.status in ('AWAITING_QUALITY','BLOCKED')
+                for update
+                """, new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
+
+            if (state is null)
+                throw new ConflictException("Retorno não encontrado ou indisponível para destinação.", "return.not_found_or_closed");
+            if (state.Version != command.ExpectedVersion)
+                throw new ConflictException("Retorno alterado concorrentemente. Recarregue os dados antes de destinar.", "return.concurrency_conflict");
+            if (state.Decided + command.Quantity > state.Received)
+                throw new ConflictException("A destinação supera a quantidade fisicamente recebida.", "return.quantity_exceeded");
+
+            var qualityRecords = (await c.QueryAsync<ReturnQualityEvaluationRow>(new CommandDefinition("""
+                select
+                    rc.unit as ReceiptUnit,
+                    coalesce(i.status, 'NO_INTENT') as IntentStatus,
+                    r.status as RunStatus,
+                    r.overall_result as RunResult
+                from agro360.fulfillment_return_receipts rc
+                left join agro360.quality_inspection_event_intents i
+                    on i.tenant_id = rc.tenant_id
+                    and i.origin_type = 'fulfillment_return_receipts'
+                    and i.origin_id = rc.id
+                    and i.deleted_at is null
+                left join agro360.quality_inspection_runs r
+                    on r.tenant_id = i.tenant_id
+                    and r.id = i.run_id
+                    and r.deleted_at is null
+                where rc.tenant_id = @TenantId and rc.return_id = @Id
+                """, new { tenant.TenantId, Id = id }, t, cancellationToken: ct))).AsList();
+
+            var fallbackUnit = qualityRecords.Select(q => q.ReceiptUnit).FirstOrDefault(u => !string.IsNullOrWhiteSpace(u));
+            var finalUnit = string.IsNullOrWhiteSpace(command.Unit) ? fallbackUnit : command.Unit.Trim().ToLowerInvariant();
+
+            StorageRules.ValidateReturnDecision(decision, command.Quantity, command.Reason, command.IdempotencyKey, finalUnit, command.Cost);
+
+            if (decision == "RELEASE")
+            {
+                var tuples = qualityRecords.Select(q => ((string?)q.IntentStatus, (string?)q.RunStatus, (string?)q.RunResult)).ToList();
+                StorageRules.ValidateReturnQualityForRelease(tuples);
+            }
+
+            var decisionId = Guid.CreateVersion7();
+            await c.ExecuteAsync(new CommandDefinition("""
+                insert into agro360.fulfillment_return_decisions(
+                    id, tenant_id, return_id, decision, quantity, unit, cost, reason,
+                    idempotency_key, request_hash, created_by)
+                values(
+                    @DecisionId, @TenantId, @Id, @Decision, @Quantity, @Unit, @Cost, @Reason,
+                    @Key, @Hash, @UserId);
+
+                update agro360.fulfillment_returns set
+                    status = case
+                        when @Decision = 'RELEASE' and @Quantity + @Decided >= received_quantity then 'RELEASED'
+                        when @Decision = 'DISPOSE' and @Quantity + @Decided >= received_quantity then 'DISPOSED'
+                        else 'BLOCKED'
+                    end,
+                    quality_decision_at = now(),
+                    version = version + 1,
+                    updated_at = now(),
+                    updated_by = @UserId
+                where tenant_id = @TenantId and id = @Id;
+                """, new
+            {
+                DecisionId = decisionId,
+                tenant.TenantId,
+                Id = id,
+                Decision = decision,
+                command.Quantity,
+                Unit = finalUnit,
+                command.Cost,
+                command.Reason,
+                Key = command.IdempotencyKey,
+                Hash = hash,
+                tenant.UserId,
+                state.Decided
+            }, t, cancellationToken: ct));
+
+            await Audit(c, t, "return.decide", id, command, ct);
+            return decisionId;
+        });
     }
+
+    public Task<IReadOnlyList<dynamic>> ListReturnsAsync(CancellationToken ct) => Tx<IReadOnlyList<dynamic>>(async (c, t) =>
+    {
+        const string sql = """
+            select
+                r.id as Id,
+                r.status as Status,
+                r.quantity as Quantity,
+                r.received_quantity as ReceivedQuantity,
+                r.version as Version,
+                r.reason as Reason,
+                r.created_at as CreatedAt,
+                r.quality_decision_at as QualityDecisionAt,
+                s.number as ShipmentNumber,
+                so.order_number as OrderNumber,
+                c.name as CustomerName,
+                p.name as ProductName,
+                p.code as ProductCode,
+                coalesce(si.unit, '') as Unit,
+                latest_intent.status as IntentStatus,
+                latest_run.overall_result as QualityResult,
+                latest_run.status as RunStatus,
+                latest_run.number as RunNumber
+            from agro360.fulfillment_returns r
+            join agro360.fulfillment_shipment_items si on si.tenant_id = r.tenant_id and si.id = r.shipment_item_id
+            join agro360.fulfillment_shipments s on s.tenant_id = r.tenant_id and s.id = si.shipment_id
+            join agro360.sales_orders so on so.tenant_id = r.tenant_id and so.id = s.order_id
+            join agro360.crm_customers c on c.tenant_id = r.tenant_id and c.id = so.customer_id
+            left join agro360.stock_lots sl on sl.tenant_id = r.tenant_id and sl.id = si.stock_lot_id
+            left join agro360.catalog_products p on p.tenant_id = r.tenant_id and p.id = sl.product_id
+            left join lateral (
+                select rc.id, i.status, i.run_id
+                from agro360.fulfillment_return_receipts rc
+                left join agro360.quality_inspection_event_intents i
+                    on i.tenant_id = rc.tenant_id and i.origin_type = 'fulfillment_return_receipts' and i.origin_id = rc.id and i.deleted_at is null
+                where rc.tenant_id = r.tenant_id and rc.return_id = r.id
+                order by rc.received_at desc
+                limit 1
+            ) latest_intent on true
+            left join agro360.quality_inspection_runs latest_run
+                on latest_run.tenant_id = r.tenant_id and latest_run.id = latest_intent.run_id and latest_run.deleted_at is null
+            where r.tenant_id = @TenantId
+            order by r.created_at desc
+            """;
+
+        var rows = (await c.QueryAsync<FulfillmentReturnDtoRow>(new CommandDefinition(sql, new { tenant.TenantId }, t, cancellationToken: ct))).AsList();
+        return rows;
+    });
+
+    public Task<dynamic?> ReturnDetailAsync(Guid id, CancellationToken ct) => Tx<dynamic?>(async (c, t) =>
+    {
+        const string headerSql = """
+            select
+                r.id as Id,
+                r.status as Status,
+                r.quantity as Quantity,
+                r.received_quantity as ReceivedQuantity,
+                r.version as Version,
+                r.reason as Reason,
+                r.created_at as CreatedAt,
+                r.quality_decision_at as QualityDecisionAt,
+                s.number as ShipmentNumber,
+                so.order_number as OrderNumber,
+                c.name as CustomerName,
+                p.name as ProductName,
+                p.code as ProductCode,
+                coalesce(si.unit, '') as Unit,
+                latest_intent.status as IntentStatus,
+                latest_run.overall_result as QualityResult,
+                latest_run.status as RunStatus,
+                latest_run.number as RunNumber
+            from agro360.fulfillment_returns r
+            join agro360.fulfillment_shipment_items si on si.tenant_id = r.tenant_id and si.id = r.shipment_item_id
+            join agro360.fulfillment_shipments s on s.tenant_id = r.tenant_id and s.id = si.shipment_id
+            join agro360.sales_orders so on so.tenant_id = r.tenant_id and so.id = s.order_id
+            join agro360.crm_customers c on c.tenant_id = r.tenant_id and c.id = so.customer_id
+            left join agro360.stock_lots sl on sl.tenant_id = r.tenant_id and sl.id = si.stock_lot_id
+            left join agro360.catalog_products p on p.tenant_id = r.tenant_id and p.id = sl.product_id
+            left join lateral (
+                select rc.id, i.status, i.run_id
+                from agro360.fulfillment_return_receipts rc
+                left join agro360.quality_inspection_event_intents i
+                    on i.tenant_id = rc.tenant_id and i.origin_type = 'fulfillment_return_receipts' and i.origin_id = rc.id and i.deleted_at is null
+                where rc.tenant_id = r.tenant_id and rc.return_id = r.id
+                order by rc.received_at desc
+                limit 1
+            ) latest_intent on true
+            left join agro360.quality_inspection_runs latest_run
+                on latest_run.tenant_id = r.tenant_id and latest_run.id = latest_intent.run_id and latest_run.deleted_at is null
+            where r.tenant_id = @TenantId and r.id = @Id
+            """;
+
+        var header = await c.QuerySingleOrDefaultAsync<FulfillmentReturnDtoRow>(new CommandDefinition(headerSql, new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
+        if (header is null) return null;
+
+        const string receiptsSql = """
+            select
+                rc.id as Id,
+                rc.quantity as Quantity,
+                rc.unit as Unit,
+                rc.condition as Condition,
+                w.name as WarehouseName,
+                rc.lot_number as LotNumber,
+                rc.notes as Notes,
+                rc.received_at as ReceivedAt,
+                i.status as IntentStatus,
+                qrun.overall_result as QualityResult
+            from agro360.fulfillment_return_receipts rc
+            left join agro360.inventory_warehouses w on w.tenant_id = rc.tenant_id and w.id = rc.warehouse_id
+            left join agro360.quality_inspection_event_intents i
+                on i.tenant_id = rc.tenant_id and i.origin_type = 'fulfillment_return_receipts' and i.origin_id = rc.id and i.deleted_at is null
+            left join agro360.quality_inspection_runs qrun
+                on qrun.tenant_id = i.tenant_id and qrun.id = i.run_id and qrun.deleted_at is null
+            where rc.tenant_id = @TenantId and rc.return_id = @Id
+            order by rc.received_at desc
+            """;
+        var receipts = (await c.QueryAsync<ReturnReceiptDtoRow>(new CommandDefinition(receiptsSql, new { tenant.TenantId, Id = id }, t, cancellationToken: ct))).AsList();
+
+        const string decisionsSql = """
+            select
+                d.id as Id,
+                d.decision as Decision,
+                d.quantity as Quantity,
+                d.unit as Unit,
+                d.cost as Cost,
+                d.reason as Reason,
+                d.decided_at as DecidedAt,
+                coalesce(u.name, u.email) as DecidedBy
+            from agro360.fulfillment_return_decisions d
+            left join agro360.identity_users u on u.tenant_id = d.tenant_id and u.id = d.created_by
+            where d.tenant_id = @TenantId and d.return_id = @Id
+            order by d.decided_at desc
+            """;
+        var decisions = (await c.QueryAsync<ReturnDecisionDtoRow>(new CommandDefinition(decisionsSql, new { tenant.TenantId, Id = id }, t, cancellationToken: ct))).AsList();
+
+        return new
+        {
+            Return = header,
+            Receipts = receipts,
+            Decisions = decisions
+        };
+    });
     public Task<AfterSalesPage> OccurrencesAsync(AfterSalesQuery query, CancellationToken ct) => Tx(async (c, t) =>
     {
         var page = Math.Max(1, query.Page); var pageSize = Math.Clamp(query.PageSize, 1, 100);
@@ -265,4 +507,74 @@ public sealed class DeliveryContractService(DatabaseExecutor db, ITenantContext 
     public Task<IReadOnlyList<dynamic>> ListAsync(CancellationToken ct) => Tx<IReadOnlyList<dynamic>>(async (c, t) => (await c.QueryAsync(new CommandDefinition("select *,contracted_quantity-delivered_quantity balance_to_deliver from agro360.commercial_delivery_contracts where tenant_id=@TenantId order by delivery_deadline", new { tenant.TenantId }, t, cancellationToken: ct))).AsList());
     public Task<Guid> SaveAsync(Guid? id, DeliveryContractCommand command, CancellationToken ct) { if (command.ContractedQuantity <= 0 || command.ContractedPrice < 0) throw new DomainException("Quantidade e preço contratados são inválidos."); if (command.Status == "CANCELLED" && string.IsNullOrWhiteSpace(command.CancellationReason)) throw new DomainException("Cancelamento exige motivo."); return Tx(async (c, t) => { var key = id ?? Guid.CreateVersion7(); var p = new DynamicParameters(command); p.Add("Id", key); p.Add("TenantId", tenant.TenantId); p.Add("UserId", tenant.UserId); var sql = id is null ? "insert into agro360.commercial_delivery_contracts(id,tenant_id,number,customer,product_id,contracted_quantity,contracted_price,unit,delivery_deadline,payment_terms,status,cancellation_reason,allow_overdelivery,created_by) values(@Id,@TenantId,@Number,@Customer,@ProductId,@ContractedQuantity,@ContractedPrice,@Unit,@DeliveryDeadline,@PaymentTerms,@Status,@CancellationReason,@AllowOverdelivery,@UserId)" : "update agro360.commercial_delivery_contracts set number=@Number,customer=@Customer,product_id=@ProductId,contracted_quantity=@ContractedQuantity,contracted_price=@ContractedPrice,unit=@Unit,delivery_deadline=@DeliveryDeadline,payment_terms=@PaymentTerms,status=@Status,cancellation_reason=@CancellationReason,allow_overdelivery=@AllowOverdelivery,updated_at=now() where tenant_id=@TenantId and id=@Id"; if (await c.ExecuteAsync(new CommandDefinition(sql, p, t, cancellationToken: ct)) == 0) throw new NotFoundException("Contrato", key); await c.WriteAuditAsync(t, tenant, id is null ? "create" : "update", "DeliveryContract", key, null, command, ct); return key; }); }
     private async Task<T> Tx<T>(Func<NpgsqlConnection, NpgsqlTransaction, Task<T>> f) { try { return await db.InTenantTransactionAsync(f, CancellationToken.None); } catch (Exception ex) { InfrastructureLogMessages.OperationalContractFailed(logger, tenant.TenantId, ex); throw; } }
+}
+
+public sealed class ReturnDecisionExistingRow
+{
+    public Guid Id { get; set; }
+    public string RequestHash { get; set; } = string.Empty;
+}
+
+public sealed class ReturnStateRow
+{
+    public decimal Received { get; set; }
+    public decimal Decided { get; set; }
+    public long Version { get; set; }
+    public string Status { get; set; } = string.Empty;
+}
+
+public sealed class ReturnQualityEvaluationRow
+{
+    public string? ReceiptUnit { get; set; }
+    public string IntentStatus { get; set; } = string.Empty;
+    public string? RunStatus { get; set; }
+    public string? RunResult { get; set; }
+}
+
+public sealed class FulfillmentReturnDtoRow
+{
+    public Guid Id { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public decimal Quantity { get; set; }
+    public decimal ReceivedQuantity { get; set; }
+    public long Version { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? QualityDecisionAt { get; set; }
+    public string? ShipmentNumber { get; set; }
+    public string? OrderNumber { get; set; }
+    public string? CustomerName { get; set; }
+    public string? ProductName { get; set; }
+    public string? ProductCode { get; set; }
+    public string? Unit { get; set; }
+    public string? IntentStatus { get; set; }
+    public string? QualityResult { get; set; }
+    public string? RunStatus { get; set; }
+    public string? RunNumber { get; set; }
+}
+
+public sealed class ReturnReceiptDtoRow
+{
+    public Guid Id { get; set; }
+    public decimal Quantity { get; set; }
+    public string Unit { get; set; } = string.Empty;
+    public string Condition { get; set; } = string.Empty;
+    public string? WarehouseName { get; set; }
+    public string? LotNumber { get; set; }
+    public string? Notes { get; set; }
+    public DateTimeOffset ReceivedAt { get; set; }
+    public string? IntentStatus { get; set; }
+    public string? QualityResult { get; set; }
+}
+
+public sealed class ReturnDecisionDtoRow
+{
+    public Guid Id { get; set; }
+    public string Decision { get; set; } = string.Empty;
+    public decimal Quantity { get; set; }
+    public string? Unit { get; set; }
+    public decimal? Cost { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public DateTimeOffset DecidedAt { get; set; }
+    public string? DecidedBy { get; set; }
 }

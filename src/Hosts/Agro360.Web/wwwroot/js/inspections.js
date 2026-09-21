@@ -12,6 +12,22 @@
   const statusSel = document.querySelector('#insp-status');
   const searchInput = document.querySelector('#insp-search');
 
+  async function askConfirm(msg, title = 'Confirme a operação') {
+    if (window.agro360Feedback?.confirm) {
+      const res = await window.agro360Feedback.confirm({ title, message: msg, confirmText: 'Confirmar', cancelText: 'Cancelar' });
+      return Boolean(res?.confirmed ?? res);
+    }
+    return window.confirm(msg);
+  }
+
+  function notifyError(msg, title = 'Inspeção de Qualidade') {
+    if (window.agro360Feedback?.toast) {
+      window.agro360Feedback.toast('error', title, msg);
+    } else if (window.toastError) {
+      window.toastError(title, msg);
+    }
+  }
+
   const PROCESS_OPTS = [
     ['PURCHASE_RECEIPT', 'Recebimento de compra'],
     ['HARVEST_RECEIPT', 'Recebimento de colheita'],
@@ -265,7 +281,7 @@
   }
 
   async function createDraft(modelId) {
-    if (!confirm('Criar novo rascunho a partir da versão publicada mais recente (se houver)?')) return;
+    if (!await askConfirm('Criar novo rascunho a partir da versão publicada mais recente (se houver)?')) return;
     try {
       setStatus('Criando rascunho…');
       const from = (currentModel?.versions || []).find(v => String(v.status).toUpperCase() === 'PUBLISHED');
@@ -488,7 +504,7 @@
     };
     root.querySelectorAll('[data-remove-section]').forEach(btn => btn.onclick = () => {
       readDraftFromDom();
-      if (currentVersion.sections.length <= 1) { alert('Mantenha ao menos uma seção.'); return; }
+      if (currentVersion.sections.length <= 1) { notifyError('Mantenha ao menos uma seção.'); return; }
       const si = Number(btn.closest('[data-section-index]').dataset.sectionIndex);
       currentVersion.sections.splice(si, 1);
       mobileSection = Math.min(mobileSection, currentVersion.sections.length - 1);
@@ -506,7 +522,7 @@
       const card = btn.closest('[data-crit-ci]');
       const si = Number(card.dataset.critSi);
       const ci = Number(card.dataset.critCi);
-      if (currentVersion.sections[si].criteria.length <= 1) { alert('Cada seção precisa de ao menos um critério.'); return; }
+      if (currentVersion.sections[si].criteria.length <= 1) { notifyError('Cada seção precisa de ao menos um critério.'); return; }
       currentVersion.sections[si].criteria.splice(ci, 1);
       renderDraftEditor();
     });
@@ -597,7 +613,7 @@
       currentVersion = await request(`/api/inspections/versions/${currentVersion.id}`);
       content.querySelector('[data-draft-saved]').textContent = `Salvo em ${fmt(new Date().toISOString())}`;
       if (thenSubmit) {
-        if (!confirm('Enviar este rascunho para revisão? Após o envio a edição fica bloqueada até retorno ou publicação.')) {
+        if (!await askConfirm('Enviar este rascunho para revisão? Após o envio a edição fica bloqueada até retorno ou publicação.')) {
           finishLoading(); btn.disabled = false; if (submitBtn) submitBtn.disabled = false; return;
         }
         await request(`/api/inspections/versions/${currentVersion.id}/submit-review`, {
@@ -613,7 +629,7 @@
       finishLoading('Rascunho salvo.');
     } catch (e) {
       finishLoading(e.message);
-      alert(e.message);
+      notifyError(e.message);
     } finally {
       busy = false;
       btn && (btn.disabled = false);
@@ -622,13 +638,13 @@
   }
 
   async function submitReview(versionId, rowVersion) {
-    if (!confirm('Enviar versão para revisão?')) return;
+    if (!await askConfirm('Enviar versão para revisão?')) return;
     try {
       await request(`/api/inspections/versions/${versionId}/submit-review`, {
         method: 'POST', body: JSON.stringify({ expectedRowVersion: rowVersion })
       });
       await openModel(currentModel.id);
-    } catch (e) { finishLoading(e.message); alert(e.message); }
+    } catch (e) { finishLoading(e.message); notifyError(e.message); }
   }
 
   function publishVersion(versionId, rowVersion) {
@@ -979,7 +995,7 @@
       finishLoading();
     } catch (e) {
       if (e.status === 409) {
-        alert('Conflito de versão (409): outro salvamento ocorreu. A inspeção será recarregada.');
+        notifyError('Conflito de versão (409): outro salvamento ocorreu. A inspeção será recarregada.');
         try {
           currentRun = await request(`/api/inspections/runs/${currentRun.id}`);
           renderExecution();
@@ -996,7 +1012,7 @@
   }
 
   async function completeRun() {
-    if (!confirm('Concluir a inspeção? O resultado geral e os critérios determinantes serão calculados e preservados.')) return;
+    if (!await askConfirm('Concluir a inspeção? O resultado geral e os critérios determinantes serão calculados e preservados.')) return;
     const btn = content.querySelector('[data-complete-run]');
     if (btn) btn.disabled = true;
     busy = true;
@@ -1011,7 +1027,7 @@
       setView('result');
     } catch (e) {
       finishLoading(e.message);
-      alert(e.message);
+      notifyError(e.message);
       if (btn) btn.disabled = false;
       busy = false;
     }
@@ -1184,7 +1200,7 @@
     busy = true;
     try {
       if (mode === 'create-model') {
-        if (!confirm('Criar este modelo?')) { busy = false; btn.disabled = false; return; }
+        if (!await askConfirm('Criar este modelo?')) { busy = false; btn.disabled = false; return; }
         const body = {
           code: raw.code, name: raw.name, description: emptyToNull(raw.description), processCode: raw.processCode,
           precedence: Number(raw.precedence), allowManualSelection: raw.allowManualSelection === 'true',
@@ -1206,7 +1222,7 @@
         dialog.close();
         await openModel(id);
       } else if (mode === 'publish') {
-        if (!confirm('Publicar esta versão? O conteúdo publicado torna-se imutável.')) { busy = false; btn.disabled = false; return; }
+        if (!await askConfirm('Publicar esta versão? O conteúdo publicado torna-se imutável.')) { busy = false; btn.disabled = false; return; }
         await request(`/api/inspections/versions/${id}/publish`, {
           method: 'POST',
           body: JSON.stringify({
@@ -1219,13 +1235,13 @@
         dialog.close();
         await openModel(currentModel.id);
       } else if (mode === 'inactivate-model') {
-        if (!confirm('Inativar o modelo?')) { busy = false; btn.disabled = false; return; }
+        if (!await askConfirm('Inativar o modelo?')) { busy = false; btn.disabled = false; return; }
         await request(`/api/inspections/models/${id}/inactivate`, { method: 'POST', body: JSON.stringify({ reason: raw.reason }) });
         dialog.close();
         currentModel = null;
         await load();
       } else if (mode === 'inactivate-version') {
-        if (!confirm('Inativar a versão?')) { busy = false; btn.disabled = false; return; }
+        if (!await askConfirm('Inativar a versão?')) { busy = false; btn.disabled = false; return; }
         await request(`/api/inspections/versions/${id}/inactivate`, { method: 'POST', body: JSON.stringify({ reason: raw.reason }) });
         dialog.close();
         await openModel(currentModel.id);
@@ -1242,7 +1258,7 @@
         body.inspectorId = raw.inspectorId || body.inspectorId;
         await startRun(body, raw.chosenVersionId, form.dataset.selectionMode || 'MANUAL');
       } else if (mode === 'cancel-run') {
-        if (!confirm('Cancelar esta inspeção?')) { busy = false; btn.disabled = false; return; }
+        if (!await askConfirm('Cancelar esta inspeção?')) { busy = false; btn.disabled = false; return; }
         await request(`/api/inspections/runs/${id}/cancel`, {
           method: 'POST',
           body: JSON.stringify({ reason: raw.reason, expectedRowVersion: currentRun.rowVersion })
@@ -1251,7 +1267,7 @@
         currentRun = await request(`/api/inspections/runs/${id}`);
         setView('result');
       } else if (mode === 'reinspect') {
-        if (!confirm('Criar reinspeção a partir desta execução?')) { busy = false; btn.disabled = false; return; }
+        if (!await askConfirm('Criar reinspeção a partir desta execução?')) { busy = false; btn.disabled = false; return; }
         const res = await request(`/api/inspections/runs/${id}/reinspections`, {
           method: 'POST',
           body: JSON.stringify({
@@ -1287,7 +1303,7 @@
         dialog.close();
         await load();
       } else if (mode === 'inactivate-schedule') {
-        if (!confirm('Inativar esta programação?')) { busy = false; btn.disabled = false; return; }
+        if (!await askConfirm('Inativar esta programação?')) { busy = false; btn.disabled = false; return; }
         await request(`/api/inspections/schedules/${id}/inactivate`, { method: 'POST', body: JSON.stringify({ reason: raw.reason }) });
         dialog.close();
         await load();
@@ -1319,8 +1335,25 @@
     }
     intents = Array.isArray(data) ? data : (data?.items || []);
     const filtered = intents.filter(qMatch);
+
+    const hasPendingModel = filtered.some(it => it.status === 'PENDING_MODEL');
+    if (hasPendingModel) {
+      window.agro360Feedback?.toast(
+        'warning',
+        'Modelo de qualidade pendente',
+        'Existem eventos operacionais aguardando parametrização de modelo de inspeção.',
+        'pending-model-intent'
+      );
+    }
+
+    const bannerHtml = hasPendingModel ? `
+      <div class="banner warning-banner" style="background: rgba(234, 179, 8, 0.15); border: 1px solid #eab308; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;" role="alert">
+        <strong style="color: #ca8a04;">Atenção:</strong> Há eventos operacionais com status <em>Sem Modelo (PENDING_MODEL)</em>. Cadastre e publique o modelo de inspeção correspondente para liberar os processos associados.
+      </div>
+    ` : '';
+
     content.innerHTML = filtered.length
-      ? `<div class="insp-list">${filtered.map(it => `
+      ? `${bannerHtml}<div class="insp-list">${filtered.map(it => `
           <article class="data-card" tabindex="0">
             <div>
               <strong>${esc(processLabel(it.processCode))}</strong>
@@ -1333,7 +1366,7 @@
               ${it.inspectionRunId ? `<button type="button" class="ghost-button" data-view-run="${esc(it.inspectionRunId)}">Ver inspeção</button>` : ''}
             </div>
           </article>`).join('')}</div>`
-      : `<div class="empty-state"><h2>Nenhum gatilho de evento</h2><p>Recebimentos de compra, colheita, devoluções e apontamentos de produção registram intenções automáticas de inspeção.</p></div>`;
+      : `${bannerHtml}<div class="empty-state"><h2>Nenhum gatilho de evento</h2><p>Recebimentos de compra, colheita, devoluções e apontamentos de produção registram intenções automáticas de inspeção.</p></div>`;
 
     content.querySelectorAll('[data-view-run]').forEach(b => {
       b.onclick = async () => {
@@ -1344,7 +1377,7 @@
           const st = String(currentRun.status || '').toUpperCase();
           setView(st === 'COMPLETED' || st === 'CANCELLED' ? 'result' : 'execution');
         } catch (e) {
-          alert('Não foi possível carregar a inspeção: ' + e.message);
+          notifyError('Não foi possível carregar a inspeção: ' + e.message);
         } finally {
           finishLoading();
         }
