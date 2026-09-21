@@ -649,3 +649,7 @@ Diagnóstico do ambiente desta execução: branch `work`, árvore inicialmente l
 ## AG-SaaS-COM-001 — incremento de administração comercial (2026-09-21)
 
 Auditoria estática confirmou mecanismos SaaS canônicos existentes; o incremento 097 normaliza catálogo/dependências/entitlements de módulos, detalha cobrança gerencial e enriquece onboarding sem criar um segundo financeiro. O catálogo de planos deixou de ser público e regras unitárias cobrem valores decimais, evidência de baixa/cancelamento, progresso real, dependências e CSV seguro. Consulte `SAAS-COMMERCIAL-ADMIN.md`, `PLANS-MODULES-BILLING.md` e `ONBOARDING-ASSISTIDO.md`. SDK .NET e PostgreSQL não estão instalados neste ambiente, logo build, testes .NET, migration, RLS/E2E e validação visual permanecem pendentes; este registro não declara homologação.
+
+## AG-COM-OPS-001 — checkpoint parcial (2026-09-21)
+
+A auditoria estática encontrou CRM, pedidos com preço recalculado, reservas/expedições/entregas, devolução com qualidade/destinação, pós-venda, financeiro, portal, marketplace, exportação e fiscal gerencial já modelados, porém sem homologação runtime neste ambiente. Foi consolidado o agregado de contrato comercial com número legível, tipos operacionais, moeda/unidade/preço, condições, Incoterm, idempotência, versão otimista, histórico e transições auditadas. Build, testes e PostgreSQL permanecem gates não executáveis porque o contêiner não oferece `dotnet`, `psql` ou servidor PostgreSQL. Não declarar homologação até executar as suítes e cenários transacionais em banco descartável.

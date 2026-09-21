@@ -10,6 +10,7 @@ public sealed record OpportunityCommand([Required] Guid CustomerId, [Required, M
 public sealed record ActivityCommand([Required] Guid CustomerId, [Required] string Type, [Required] DateTimeOffset ScheduledAt, [Required] string Status, Guid? RepresentativeId, string? Channel, string? Result, string? NextAction, string? Notes, string? CancellationReason);
 public sealed record OrderItemCommand([Required] Guid ProductId, Guid? LotId, [Range(0.000001, double.MaxValue)] decimal Quantity, [Required] string Unit, [Range(0.000001, double.MaxValue)] decimal UnitPrice, [Range(0, 100)] decimal DiscountPercentage);
 public sealed record SalesOrderCommand([Required] Guid CustomerId, Guid? RepresentativeId, Guid? PropertyId, Guid? ContractId, [Required, MinLength(1)] IReadOnlyList<OrderItemCommand> Items, string? PaymentTerms, DateOnly? ExpectedDelivery, [Range(0, double.MaxValue)] decimal Freight, string? Notes);
+public sealed record CommercialContractCommand([Required] Guid CustomerId, [Required] Guid ProductId, Guid? RepresentativeId, [Required] string Type, [Range(0.000001, double.MaxValue)] decimal Quantity, [Required, MaxLength(20)] string Unit, [Range(0, double.MaxValue)] decimal UnitPrice, [Required, RegularExpression("^[A-Za-z]{3}$")] string Currency, DateOnly ValidFrom, DateOnly ValidTo, [Required, MaxLength(2000)] string CommercialTerms, [MaxLength(20)] string? Incoterm, [MaxLength(2000)] string? Notes, [Required, MaxLength(120)] string IdempotencyKey);
 public sealed record CommissionCommand([Required] Guid OrderId, [Required] Guid RuleId, [Required] Guid RepresentativeId, [Range(0, double.MaxValue)] decimal Basis, [Range(0, 100)] decimal? Percentage, [Range(0, double.MaxValue)] decimal? FixedValue);
 public sealed record SplitParticipantCommand([Required] Guid ParticipantId, [Required] string ParticipantType, [Range(0, 100)] decimal? Percentage, [Range(0, double.MaxValue)] decimal? FixedValue, [Range(0, int.MaxValue)] int Priority);
 public sealed record SplitAgreementCommand([Required, MaxLength(180)] string Name, Guid? OrderId, Guid? ContractId, [Required, MinLength(1)] IReadOnlyList<SplitParticipantCommand> Participants, string? ReleaseRule);
@@ -24,6 +25,8 @@ public interface ICommercial360Service
     Task<Guid> SaveOpportunityAsync(Guid? id, OpportunityCommand command, CancellationToken ct);
     Task<Guid> SaveActivityAsync(Guid? id, ActivityCommand command, CancellationToken ct);
     Task<Guid> CreateOrderAsync(SalesOrderCommand command, CancellationToken ct);
+    Task<Guid> CreateContractAsync(CommercialContractCommand command, CancellationToken ct);
+    Task ChangeContractStatusAsync(Guid id, StatusCommand command, CancellationToken ct);
     Task ChangeOrderStatusAsync(Guid id, StatusCommand command, bool mayOverrideBlock, CancellationToken ct);
     Task<Guid> CalculateCommissionAsync(CommissionCommand command, CancellationToken ct);
     Task ChangeCommissionStatusAsync(Guid id, StatusCommand command, CancellationToken ct);

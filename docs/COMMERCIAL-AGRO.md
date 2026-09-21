@@ -19,3 +19,22 @@ A nomenclatura histórica canônica permanece `crm_customers`, `sales_opportunit
 ## Pendências de integração
 
 A reserva transacional de estoque e a criação automática de parcelas por condição de pagamento ainda dependem de um contrato de integração entre Comercial, Estoque e Financeiro. Até ele existir, o sistema não simula reserva, liquidação, pagamento de comissão nem comprovante local. Evidências usam URL/documento. As propostas rurais precisam de agregado próprio para não se confundirem com propostas de assinatura SaaS.
+
+## Auditoria AG-COM-OPS-001 (2026-09-21)
+
+| Capacidade | Estado observado | Evidência/limite |
+|---|---|---|
+| Clientes/compradores | implementado sem validação runtime | CRM tenant-scoped, bloqueio no backend |
+| Contratos | parcial | criação e transições consolidadas nesta entrega; edição versionada pela UI ainda futura |
+| Pedidos/itens | implementado sem validação runtime | preço e total calculados no backend; vínculo opcional ao contrato |
+| Reserva/lotes | implementado sem validação runtime | fulfillment e integridade na migration 088; exige PostgreSQL E2E |
+| Expedição/entrega | implementado sem validação runtime | despacho idempotente, tentativas e entrega parcial existentes |
+| Devolução/qualidade/destinação | implementado sem validação runtime | retorno indisponível, gatilho de inspeção e RELEASE/BLOCK/DISPOSE existentes |
+| Financeiro gerencial | parcial | títulos e ajustes existem; jornada completa pós-entrega não homologada nesta máquina |
+| Comissão/split | implementado sem validação runtime | regras e permissões próprias |
+| Rastreabilidade | implementado sem validação runtime | eventos, genealogia e consulta pública filtrada existentes |
+| Portal/marketplace | implementado sem validação runtime | cotação não simula venda ou pagamento |
+| Exportação/trading | parcial | contrato exportação validado; provider fiscal/logístico real permanece externo |
+| Fiscal gerencial | parcial | metadados/workflow sem prometer emissão homologada |
+
+“Implementado sem validação runtime” significa presença coerente de controller, serviço e SQL após inspeção estática; não equivale a homologação.

@@ -160,3 +160,11 @@ canônico. Não enfraquecem as seções anteriores.
 5. **Marketplace Sem Faturamento Fictício**: O catálogo externo opera por cotação (`REQUESTED`); cotações não geram títulos a receber nem baixas no estoque até homologação interna.
 6. **Download Seguro de Documentos**: O download de laudos e certificados verifica autorização por entidade vinculada (`portal_document_permissions`) e é auditado com registro de data/hora UTC e IP.
 7. **Idempotência e RLS**: Todas as 26 tabelas `portal_*` possuem RLS habilitado com `platform_enable_tenant_rls(...)` e índices compostos por `(tenant_id, ...)`.
+
+## Contratos comerciais (AG-COM-OPS-001)
+
+- Contrato, pedido, reserva, saída, entrega, retorno, inspeção, destinação e conciliação são fatos distintos.
+- Contrato nasce em rascunho e só muda pelas transições permitidas; cancelamento exige motivo e cliente bloqueado impede aprovação/ativação.
+- Exportação exige moeda, condições comerciais e Incoterm. Quantidade, preço e vigência são validados no backend.
+- Criar/aprovar contrato não reserva ou baixa estoque, não cria pedido e não gera recebível/fiscal.
+- Número e chave idempotente são únicos por tenant; escrita crítica usa lock e versão, e eventos preservam ator/contexto.

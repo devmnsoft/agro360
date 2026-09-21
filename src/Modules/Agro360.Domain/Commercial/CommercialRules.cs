@@ -4,6 +4,15 @@ namespace Agro360.Domain.Commercial;
 
 public static class CommercialRules
 {
+    private static readonly IReadOnlyDictionary<string, string[]> ContractTransitions = new Dictionary<string, string[]>
+    {
+        ["DRAFT"] = ["UNDER_REVIEW", "CANCELLED"],
+        ["UNDER_REVIEW"] = ["DRAFT", "APPROVED", "CANCELLED"],
+        ["APPROVED"] = ["ACTIVE", "SUSPENDED", "CANCELLED"],
+        ["ACTIVE"] = ["SUSPENDED", "FULFILLED", "CLOSED", "CANCELLED"],
+        ["SUSPENDED"] = ["ACTIVE", "CANCELLED", "CLOSED"],
+        ["FULFILLED"] = ["CLOSED"]
+    };
     private static readonly IReadOnlyDictionary<string, string[]> OrderTransitions = new Dictionary<string, string[]>
     {
         ["DRAFT"] = ["UNDER_REVIEW", "CANCELLED"],
@@ -19,6 +28,32 @@ public static class CommercialRules
         if (string.IsNullOrEmpty(normalized) || !OrderTransitions.Values.SelectMany(x => x).Append("DRAFT").Contains(normalized))
             throw new DomainException("Status do pedido inválido.", "sales.order_status_invalid");
         return normalized;
+    }
+
+    public static string NormalizeContractType(string? type)
+    {
+        var value = type?.Trim().ToUpperInvariant();
+        if (value is not ("INTERNAL_SALE" or "COOPERATIVE" or "EXPORT" or "RECURRING_SUPPLY" or "TRADING"))
+            throw new DomainException("Tipo de contrato inválido.", "sales.contract_type_invalid");
+        return value;
+    }
+
+    public static void ValidateContract(string type, decimal quantity, decimal unitPrice, DateOnly validFrom, DateOnly validTo, string? terms, string? currency, string? incoterm)
+    {
+        var normalized = NormalizeContractType(type);
+        if (quantity <= 0 || unitPrice < 0) throw new DomainException("Quantidade e preço do contrato são inválidos.", "sales.contract_values_invalid");
+        if (validTo < validFrom) throw new DomainException("A vigência final deve ser igual ou posterior à inicial.", "sales.contract_period_invalid");
+        if (string.IsNullOrWhiteSpace(terms)) throw new DomainException("Informe as condições comerciais.", "sales.contract_terms_required");
+        if (normalized == "EXPORT" && (string.IsNullOrWhiteSpace(currency) || string.IsNullOrWhiteSpace(incoterm)))
+            throw new DomainException("Contrato de exportação exige moeda e Incoterm.", "sales.contract_export_terms_required");
+    }
+
+    public static void ValidateContractTransition(string current, string next, string? reason)
+    {
+        if (!ContractTransitions.TryGetValue(current, out var allowed) || !allowed.Contains(next))
+            throw new DomainException($"Transição de contrato de {current} para {next} não é permitida.", "sales.contract_transition_invalid");
+        if (next == "CANCELLED" && string.IsNullOrWhiteSpace(reason))
+            throw new DomainException("Cancelamento do contrato exige motivo.", "sales.contract_cancel_reason_required");
     }
 
     public static void ValidateOrderTransition(string current, string next, string? reason)
