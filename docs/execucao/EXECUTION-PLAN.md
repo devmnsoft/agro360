@@ -127,3 +127,9 @@ Implementação vertical disponível na migration 075, API `/api/v1/harvest` e p
 - **Auditoria e autorização:** endpoints mantêm as políticas `agriculture.read/write`; autoria vem de `ITenantContext`; revisões guardam antes/depois, motivo e impacto nas ordens. As tabelas usam chave composta de tenant, RLS e exclusão lógica onde o registro pode ser desativado.
 - **Conferência/fechamento:** esta visão não cria fechamento paralelo. O fechamento versionado existente em Colheita permanece canônico; pendências operacionais apontam para o registro de origem e são recalculadas em cada consulta.
 - **Próxima etapa fundamentada:** homologar a migration 086 em banco descartável limpo e incremental, executar o fluxo autenticado com dois tenants e então acrescentar, no mesmo agregado, UI assistida para cadastrar/reprogramar operações e autorizar exceções de dependência conforme política delegável.
+
+## AG-E6-GEN-002 — genealogia comercial e publicação pública
+
+- **Entregue em código:** genealogia por safra/lote consolidada na UI, painel de pendências, snapshot público seguro, permissão específica, revogação motivada, migration 096 e testes unitários das regras/contrato.
+- **Gate pendente:** o ambiente de 2026-09-21 não possui `dotnet` nem PostgreSQL; build/test/migration/E2E multi-tenant continuam obrigatórios e o recorte não está homologado.
+- **Próximo recorte:** homologar em banco descartável e navegador nos quatro breakpoints; depois adicionar certificações publicáveis provenientes do cadastro canônico, sem texto simulado.

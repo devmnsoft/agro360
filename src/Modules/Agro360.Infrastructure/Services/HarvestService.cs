@@ -1065,6 +1065,8 @@ public sealed class HarvestService(
                 command.Quantity,
                 command.Unit,
                 key);
+            if (string.IsNullOrWhiteSpace(command.Metadata))
+                throw new DomainException("Vínculo manual exige justificativa auditável.", "genealogy.justification_required");
 
             var prior = await db.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition(
                 "select id from agro360.operational_genealogy_links where tenant_id = @TenantId and idempotency_key = @Key",
@@ -1072,19 +1074,20 @@ public sealed class HarvestService(
             if (prior.HasValue) return prior.Value;
 
             var id = Guid.CreateVersion7();
-            await db.ExecuteAsync(new CommandDefinition("""
+            var persistedId = await db.QuerySingleAsync<Guid>(new CommandDefinition("""
                 insert into agro360.operational_genealogy_links(
                     id, tenant_id, kind, origin_type, origin_id, destination_type, destination_id,
                     season_id, field_id, lot_number, quantity, unit, status, metadata, idempotency_key, created_by
                 ) values (
                     @Id, @TenantId, @Kind, @OriginType, @OriginId, @DestinationType, @DestinationId,
-                    @SeasonId, @FieldId, @LotNumber, @Quantity, @Unit, 'ACTIVE', cast(@Metadata as jsonb), @Key, @UserId
+                    @SeasonId, @FieldId, @LotNumber, @Quantity, @Unit, 'PENDING_REVIEW', cast(@Metadata as jsonb), @Key, @UserId
                 )
                 on conflict (tenant_id, kind, origin_id, destination_id) do update set
                     quantity = excluded.quantity,
                     unit = excluded.unit,
                     lot_number = coalesce(excluded.lot_number, agro360.operational_genealogy_links.lot_number),
-                    metadata = coalesce(excluded.metadata, agro360.operational_genealogy_links.metadata);
+                    metadata = coalesce(excluded.metadata, agro360.operational_genealogy_links.metadata)
+                returning id;
                 """, new
             {
                 Id = id,
@@ -1099,13 +1102,13 @@ public sealed class HarvestService(
                 command.LotNumber,
                 command.Quantity,
                 command.Unit,
-                Metadata = string.IsNullOrWhiteSpace(command.Metadata) ? "{}" : command.Metadata,
+                command.Metadata,
                 Key = key,
                 UserId = tenant.UserId
             }, tx, cancellationToken: cancellationToken));
 
-            await Audit(db, tx, "record_link", "OperationalGenealogyLink", id, cancellationToken);
-            return id;
+            await Audit(db, tx, "record_link", "OperationalGenealogyLink", persistedId, cancellationToken);
+            return persistedId;
         }, cancellationToken);
 
     private static string TranslateQualityStatus(string status) => status switch
@@ -1156,6 +1159,58 @@ public sealed class HarvestService(
         _ => destination
     };
 
+    public Task<IReadOnlyCollection<OperationalPendingDto>> GetOperationalPendingsAsync(CancellationToken cancellationToken) =>
+        database.InTenantTransactionAsync(async (db, tx) =>
+        {
+            var rows = (await db.QueryAsync<OperationalPendingRow>(new CommandDefinition("""
+                select 'QUALITY_PENDING' Code, 'Recebimento aguardando qualidade' Title,
+                       'O lote não pode ser liberado nem publicado.' Impact, 'Lote '||r.lot_number Origin,
+                       'Concluir a inspeção na Qualidade.' RecommendedAction, '/Quality' SourceUrl,
+                       'production.quality' RequiredPermission, r.quality_status Status, r.received_at OccurredAt,
+                       null::text Responsible
+                from agro360.production_receipts r
+                where r.tenant_id=@TenantId and r.quality_status='AWAITING_INSPECTION'
+                union all
+                select 'LOT_BLOCKED', 'Lote bloqueado pela qualidade',
+                       'Estoque indisponível para operação comercial.', 'Lote '||l.lot_number,
+                       'Abrir o estoque e tratar a decisão de qualidade.', '/Inventory',
+                       'inventory.read', l.quality_status,
+                       (select max(m.occurred_at) from agro360.inventory_stock_movements m
+                        where m.tenant_id=l.tenant_id and m.lot_number=l.lot_number) OccurredAt, null::text
+                from agro360.inventory_stock_lots l
+                where l.tenant_id=@TenantId and l.quality_status<>'APPROVED'
+                union all
+                select 'RETURN_QUALITY', 'Retorno aguardando qualidade',
+                       'O retorno ainda não possui destinação final.', 'Retorno de remessa '||s.number,
+                       'Inspecionar e destinar o retorno no módulo de logística.', '/Logistics',
+                       'logistics.write', ret.status, ret.created_at, null::text
+                from agro360.fulfillment_returns ret
+                join agro360.fulfillment_shipment_items si on si.tenant_id=ret.tenant_id and si.id=ret.shipment_item_id
+                join agro360.fulfillment_shipments s on s.tenant_id=si.tenant_id and s.id=si.shipment_id
+                where ret.tenant_id=@TenantId and ret.status='AWAITING_QUALITY'
+                union all
+                select 'SHIPMENT_DELIVERY', 'Remessa sem entrega aceita',
+                       'A receita não pode ser reconhecida enquanto a entrega não for aceita.', 'Remessa '||s.number,
+                       'Registrar a tentativa e o aceite no módulo de logística.', '/Logistics',
+                       'logistics.write', s.status, coalesce(s.dispatched_at,s.created_at), null::text
+                from agro360.fulfillment_shipments s
+                where s.tenant_id=@TenantId and s.status in ('DISPATCHED','IN_DELIVERY','PARTIAL','RETURN_PENDING')
+                  and not exists(select 1 from agro360.fulfillment_delivery_attempts da
+                                 where da.tenant_id=s.tenant_id and da.shipment_id=s.id and da.status='ACCEPTED')
+                union all
+                select 'MANUAL_LINK_REVIEW', 'Vínculo manual aguardando revisão',
+                       'A cadeia depende de uma associação manual que deve ser conferida.', coalesce('Lote '||g.lot_number,g.kind),
+                       'Revisar a justificativa e a origem no painel de genealogia.', '/Harvest#genealogy-panel',
+                       'traceability.write', g.status, g.created_at, null::text
+                from agro360.operational_genealogy_links g
+                where g.tenant_id=@TenantId and g.status in ('ACTIVE','PENDING_REVIEW')
+                order by OccurredAt desc
+                limit 100
+                """, new { tenant.TenantId }, tx, cancellationToken: cancellationToken))).ToArray();
+            return rows.Select(x => new OperationalPendingDto(x.Code, x.Title, x.Impact, x.Origin,
+                x.RecommendedAction, x.SourceUrl, x.RequiredPermission, x.Status, x.OccurredAt, x.Responsible)).ToArray();
+        }, cancellationToken);
+
     private static string TranslateShipmentStatus(string status) => status switch
     {
         "PREPARING" => "Em Preparação",
@@ -1173,6 +1228,20 @@ public sealed class HarvestService(
     {
         public decimal Quantity { get; set; }
         public string? Unit { get; set; }
+    }
+
+    private sealed class OperationalPendingRow
+    {
+        public string Code { get; set; } = string.Empty;
+        public string Title { get; set; } = string.Empty;
+        public string Impact { get; set; } = string.Empty;
+        public string Origin { get; set; } = string.Empty;
+        public string RecommendedAction { get; set; } = string.Empty;
+        public string SourceUrl { get; set; } = string.Empty;
+        public string RequiredPermission { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public DateTimeOffset? OccurredAt { get; set; }
+        public string? Responsible { get; set; }
     }
 
     private sealed class RevenueClosingRow

@@ -54,6 +54,11 @@
    </table>
   </div>
  </section>
+ <section class="panel pending-panel" aria-labelledby="pending-title">
+  <header class="panel-header"><div><span class="eyebrow">Central de direcionamento</span><h2 id="pending-title">Pendências operacionais</h2><p>Aponta o impacto e direciona ao módulo responsável; nenhuma etapa é resolvida fora de sua origem.</p></div><button id="refresh-pendings" class="secondary-button" type="button">Atualizar pendências</button></header>
+  <p id="pending-status" role="status" aria-live="polite">Carregando pendências reais…</p>
+  <div id="pending-list" class="pending-grid" aria-busy="true"></div>
+ </section>
  <section class="harvest-kpis" id="harvest-kpis" aria-label="Indicadores"><article><small>Planejado</small><strong>—</strong></article><article><small>Colhido</small><strong>—</strong></article><article><small>A receber</small><strong>—</strong></article><article><small>Aguardando qualidade</small><strong>—</strong></article><article><small>Aprovado</small><strong>—</strong></article><article><small>Perdas físicas</small><strong>—</strong></article></section>
  <nav class="workflow-tabs" id="harvest-tabs" aria-label="Etapas da jornada"><button class="active" data-step="plan">1. Planejar</button><button data-step="record">2. Apontar</button><button data-step="receipt">3. Receber</button><button data-step="inspection">4. Classificar</button><button data-step="allocation">5. Destinar</button></nav>
  <section class="panel operation-panel"><header class="panel-header"><div><span class="eyebrow">Próxima ação</span><h2 id="harvest-form-title">Planejar colheita</h2></div><span class="status-pill">Dados auditados no servidor</span></header><div id="harvest-error" class="validation-summary" role="alert" tabindex="-1" hidden></div>

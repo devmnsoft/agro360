@@ -72,3 +72,7 @@ A central usa navegação por abas, badges de prioridade/prazo, timeline auditá
 ## Sprint 50 — formulários e ajuda contextual
 
 Validação backend continua sendo a fonte da verdade; a interface oferece resumo e erros por campo, loading, confirmação com consequência real e motivo nas ações definidas pela regra. Ajuda curta é recolhível e localizada em pt-BR, en-US e es-ES. Configurações e eventos de UX usam as tabelas `agro360.ui_*`, com auditoria e RLS por tenant. Detalhes: `docs/UX-FORMS-VALIDATION.md` e `docs/CONTEXTUAL-HELP.md`.
+
+## Genealogia e pendências operacionais
+
+Timeline/tabela de genealogia deve sinalizar lacuna com texto, motivo e contraste, nunca apenas cor. Cards de pendência apresentam título, status, origem, impacto, ação recomendada, permissão e link ao módulo dono. Loading, vazio e erro ocupam a mesma região com `aria-live`; em 360 px os cards e ações formam uma única coluna.
