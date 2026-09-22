@@ -1073,6 +1073,60 @@ public sealed class HarvestService(
                 new { tenant.TenantId, Key = key }, tx, cancellationToken: cancellationToken));
             if (prior.HasValue) return prior.Value;
 
+            // Serialize changes to a tenant genealogy. The database trigger is the final
+            // protection against cycles, while this check provides a domain-friendly error.
+            await db.ExecuteAsync(new CommandDefinition(
+                "select pg_advisory_xact_lock(hashtextextended(@TenantId::text, 36095))",
+                new { tenant.TenantId }, tx, cancellationToken: cancellationToken));
+
+            // A concurrent request may have committed while this transaction waited.
+            prior = await db.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition(
+                "select id from agro360.operational_genealogy_links where tenant_id = @TenantId and idempotency_key = @Key",
+                new { tenant.TenantId, Key = key }, tx, cancellationToken: cancellationToken));
+            if (prior.HasValue) return prior.Value;
+
+            var createsCycle = await db.QuerySingleAsync<bool>(new CommandDefinition("""
+                with recursive descendants(entity_type, entity_id) as (
+                    select upper(destination_type), destination_id
+                    from agro360.operational_genealogy_links
+                    where tenant_id = @TenantId
+                      and status <> 'REVERSED'
+                      and upper(origin_type) = upper(@DestinationType)
+                      and origin_id = @DestinationId
+                    union
+                    select upper(g.destination_type), g.destination_id
+                    from agro360.operational_genealogy_links g
+                    join descendants d
+                      on upper(g.origin_type) = d.entity_type and g.origin_id = d.entity_id
+                    where g.tenant_id = @TenantId and g.status <> 'REVERSED'
+                )
+                select exists (
+                    select 1 from descendants
+                    where entity_type = upper(@OriginType) and entity_id = @OriginId
+                );
+                """, new
+            {
+                tenant.TenantId,
+                command.OriginType,
+                command.OriginId,
+                command.DestinationType,
+                command.DestinationId
+            }, tx, cancellationToken: cancellationToken));
+            if (createsCycle)
+                throw new DomainException("O vínculo criaria um ciclo na genealogia do lote.", "genealogy.cycle_detected");
+
+            var existingRelationship = await db.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition("""
+                select id
+                from agro360.operational_genealogy_links
+                where tenant_id = @TenantId and kind = @Kind
+                  and origin_id = @OriginId and destination_id = @DestinationId
+                """, new { tenant.TenantId, command.Kind, command.OriginId, command.DestinationId }, tx,
+                cancellationToken: cancellationToken));
+            if (existingRelationship.HasValue)
+                throw new ConflictException(
+                    "O vínculo já existe com outra chave de idempotência e não pode ser sobrescrito; registre uma retificação.",
+                    "genealogy.relationship_immutable");
+
             var id = Guid.CreateVersion7();
             var persistedId = await db.QuerySingleAsync<Guid>(new CommandDefinition("""
                 insert into agro360.operational_genealogy_links(
@@ -1082,11 +1136,7 @@ public sealed class HarvestService(
                     @Id, @TenantId, @Kind, @OriginType, @OriginId, @DestinationType, @DestinationId,
                     @SeasonId, @FieldId, @LotNumber, @Quantity, @Unit, 'PENDING_REVIEW', cast(@Metadata as jsonb), @Key, @UserId
                 )
-                on conflict (tenant_id, kind, origin_id, destination_id) do update set
-                    quantity = excluded.quantity,
-                    unit = excluded.unit,
-                    lot_number = coalesce(excluded.lot_number, agro360.operational_genealogy_links.lot_number),
-                    metadata = coalesce(excluded.metadata, agro360.operational_genealogy_links.metadata)
+                on conflict (tenant_id, idempotency_key) do nothing
                 returning id;
                 """, new
             {
