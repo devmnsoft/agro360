@@ -8,6 +8,12 @@ Release, analyzers/nullable, execução da suíte, instalação limpa, reaplica�
 upgrade, RLS efetiva ou isolamento entre sessões. A regra de parada solicitada foi
 aplicada antes de qualquer alteração funcional.
 
+A auditoria encontrou, porém, dois seeds publicados ainda apontando para os
+namespaces legados (`tenancy`, `identity`, `inventory` e `deployment`). Eles
+falhariam depois da instalação do schema canônico único. A correção de baseline
+foi feita antes de qualquer evolução da jornada: ambos agora usam `agro360`, e o
+seed comercial reutiliza o tenant/usuário sem credencial que o instalador cria.
+
 O inventário abaixo é uma auditoria estática: a presença de arquivo, endpoint,
 tabela, regra ou teste é evidência de implementação parcial, nunca homologação do
 fluxo completo.
@@ -52,7 +58,11 @@ garantias dinâmicas permanecem **não verificadas**. O gate de toolchain é
 
 - O consolidado cria defensivamente `agro360_app NOLOGIN` antes dos grants.
 - O validador estático confirma que o consolidado é autônomo, não contém
-  `ROLLBACK` explícito, termina em `COMMIT` e mantém marcadores de RLS.
+  `ROLLBACK` explícito, termina em `COMMIT`, mantém `ENABLE/FORCE RLS` e policy
+  tenant-aware, e rejeita qualquer tentativa de desabilitar RLS.
+- O gate de assets também verifica as migrations contra arquivos vazios e
+  `ROLLBACK`, além de verificar todos os seis seeds distribuídos e rejeitar neles
+  escrita ou leitura em namespaces legados.
 - Existem `ENABLE/FORCE ROW LEVEL SECURITY`, policies tenant-aware e teste de
   integração que consulta tabelas tenant-aware, role e catálogo PostgreSQL.
 - O Migrator declara lock, checksums e histórico; migrations e seeds usam padrões
@@ -78,7 +88,7 @@ garantias dinâmicas permanecem **não verificadas**. O gate de toolchain é
 | `dotnet build -c Release` | **Bloqueada (exit 127)** | Sem o SDK fixado pelo repositório, compilador e analyzers não executam. |
 | `dotnet test` | **Bloqueada (exit 127)** | Sem SDK, nenhuma suíte pode executar. |
 | PostgreSQL limpo/reaplicação/upgrade | **Bloqueada** | `psql` e `pg_isready` não estão instalados; não há servidor verificável. |
-| Validação estática do consolidado | **Passou** | `scripts/validate-full-sql.sh database/agro360-postgres-full.sql`. |
+| Validação estática de banco e seeds | **Passou** | `./scripts/validate-database-assets.sh`. |
 
 Consequentemente, CA1859/CA1860/CA1861/CA1862/CA1716, erros C# citados,
 materialização Dapper, nullable e compatibilidade binária permanecem **não
@@ -87,9 +97,17 @@ desativação de RLS nem alteração de schema.
 
 ## Alterações realizadas
 
-Somente este relatório foi atualizado para registrar a auditoria, a matriz completa
-e a decisão de gate. Não houve mudança em código, banco, migrations, seeds, telas,
-contratos ou regras de negócio; portanto não há screenshot funcional aplicável.
+- `database/seed-demo.sql`: migração das referências legadas para o schema
+  canônico, correção do segmento inválido `MIXED` e reutilização da fixture demo;
+- `database/seeds/sprint10-amazon-products.sql`: referências canônicas para tenant,
+  usuário e produto;
+- `scripts/validate-full-sql.sh`: regressões estáticas para RLS e `COMMIT` final;
+- `scripts/validate-database-assets.sh`: gate único para consolidado e todos os
+  seeds publicados.
+
+Não houve avanço em código funcional, migrations, telas, contratos ou regras de
+negócio porque o build e a instalação PostgreSQL continuam sem comprovação. Não
+há mudança visual e, portanto, screenshot não é aplicável.
 
 ## Pendências para liberar o gate
 

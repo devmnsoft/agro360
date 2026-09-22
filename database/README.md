@@ -101,7 +101,9 @@ join agro360.tenancy_tenants t on t.id=u.tenant_id
 where u.email='superadmin@mnsoft.com.br';
 ```
 
-Antes de publicar, execute também `./scripts/validate-full-sql.sh`, `dotnet restore`, `dotnet build --no-restore` e `dotnet test --no-build`.
+Antes de publicar, execute também `./scripts/validate-database-assets.sh`, que valida
+o consolidado e impede que seeds voltem a referenciar namespaces legados. Depois,
+execute `dotnet restore`, `dotnet build --no-restore` e `dotnet test --no-build`.
 
 ## Cliente de homologação incluído
 
