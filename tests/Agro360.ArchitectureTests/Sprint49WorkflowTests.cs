@@ -17,7 +17,7 @@ public sealed class Sprint49WorkflowTests
     [Fact]
     public void ProcessCentralHasContextualHelpAndRealApi()
     {
-        Assert.Contains("Como usar esta tela", File.ReadAllText(Find("src/Hosts/Agro360.Web/Pages/Work/Index.cshtml")));
+        Assert.Contains("Como funciona esta tela", File.ReadAllText(Find("src/Hosts/Agro360.Web/Pages/Work/Index.cshtml")));
         Assert.Contains("/api/tasks", File.ReadAllText(Find("src/Hosts/Agro360.Web/wwwroot/js/work.js")));
         Assert.Contains("\"api/workflows\"", File.ReadAllText(Find("src/Hosts/Agro360.Api/Controllers/WorkManagementController.cs")));
     }

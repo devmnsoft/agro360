@@ -173,7 +173,7 @@
     function validateLoginForm(form) {
         const messages = {
             tenantSlug: "Informe o identificador da sua organização.",
-            email: "Informe um e-mail ou CPF válido.",
+            email: "Informe um e-mail, CPF ou CNPJ válido.",
             password: "A senha deve ter pelo menos 12 caracteres."
         };
         let valid = true;

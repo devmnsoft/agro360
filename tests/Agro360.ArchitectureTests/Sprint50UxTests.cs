@@ -27,7 +27,7 @@ public sealed class Sprint50UxTests
         var controller = Read("src/Hosts/Agro360.Api/Controllers/FleetController.cs");
         Assert.Contains("data-tab=\"plans\"", page, StringComparison.Ordinal);
         Assert.Contains("data-tab=\"orders\"", page, StringComparison.Ordinal);
-        Assert.Contains("Como usar esta tela", page, StringComparison.Ordinal);
+        Assert.Contains("Como funciona esta tela", page, StringComparison.Ordinal);
         Assert.Contains("/refuelings/operational", js, StringComparison.Ordinal);
         Assert.Contains("fleet_meter_readings", migration, StringComparison.Ordinal);
         Assert.Contains("fleet_operational_blocks", migration, StringComparison.Ordinal);
