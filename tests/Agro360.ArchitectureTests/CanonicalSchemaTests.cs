@@ -74,6 +74,24 @@ public sealed class CanonicalSchemaTests
         Assert.Contains("if(/^[=+\\-@]/.test(x))", client);
     }
 
+    [Fact]
+    public void InventoryMovementGateProtectsCountsReservationsLotsAndTenants()
+    {
+        var migration = File.ReadAllText(Path.Combine(Root(), "database/migrations/106_inventory_movement_integrity.sql"));
+        var installer = Sql;
+
+        Assert.Contains("create or replace function agro360.inventory_apply_stock_movement", migration, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("tenant_id = p_tenant", migration, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("status in ('COUNTING', 'RECONCILING', 'AWAITING_APPROVAL')", migration);
+        Assert.Contains("newbalance < b.reserved", migration);
+        Assert.Contains("lotbalance + p_quantity < 0", migration);
+        Assert.Contains("pg_advisory_xact_lock", migration);
+        Assert.Contains("inventory_stock_movement_count_guard", migration);
+        Assert.Contains("new.reference_type is distinct from 'PHYSICAL_COUNT_ADJUSTMENT'", migration);
+        Assert.Contains("10.6.0", installer);
+        Assert.EndsWith("commit;", installer.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string Root()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
