@@ -111,6 +111,20 @@ public static class LivestockRules
             throw new DomainException($"{field} deve ser positivo.", "livestock.quantity_invalid");
     }
 
+    public static void EnsureIndividualization(int submittedCount, int distinctCount)
+    {
+        EnsurePositiveQuantity(distinctCount, "Animais identificados");
+        if (submittedCount != distinctCount)
+            throw new DomainException("A individualização não aceita o mesmo animal mais de uma vez.", "livestock.individualization_duplicate");
+    }
+
+    public static void EnsureIndividualizationFits(int collectiveQuantity, int identifiedQuantity)
+    {
+        EnsurePositiveQuantity(identifiedQuantity, "Animais identificados");
+        if (identifiedQuantity > collectiveQuantity)
+            throw new ConflictException("A quantidade individualizada excede a população coletiva disponível.", "livestock.individualization_exceeds_collective");
+    }
+
     public static void EnsureCsvSafe(ref string value)
     {
         if (value.Length == 0) return;
