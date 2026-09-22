@@ -41,18 +41,23 @@ public sealed class CommercialContractRulesTests
     public void ContractAcceptsValidTransitions(string current, string next)
         => CommercialRules.ValidateContractTransition(current, next, null);
 
-    [Theory]
-    [InlineData("BLOCKED")]
-    [InlineData("DELINQUENT")]
-    public void CustomerWithCommercialRestrictionCannotOrder(string status)
+    [Fact]
+    public void BlockedCustomerCannotOrderEvenWithElevatedAuthorization()
     {
-        var error = Assert.Throws<DomainException>(() => CommercialRules.CustomerCanOrder(status, false));
+        var error = Assert.Throws<DomainException>(() => CommercialRules.CustomerCanOrder("BLOCKED", true));
         Assert.Equal("sales.customer_blocked", error.Code);
     }
 
     [Fact]
-    public void AuthorizedProfileMayOverrideCustomerBlock()
-        => CommercialRules.CustomerCanOrder("BLOCKED", true);
+    public void DelinquentCustomerCannotOrderWithoutElevatedAuthorization()
+    {
+        var error = Assert.Throws<DomainException>(() => CommercialRules.CustomerCanOrder("DELINQUENT", false));
+        Assert.Equal("sales.customer_delinquent_authorization_required", error.Code);
+    }
+
+    [Fact]
+    public void AuthorizedProfileMayOverrideCustomerDelinquency()
+        => CommercialRules.CustomerCanOrder("DELINQUENT", true);
 
     [Fact]
     public void SpecialDiscountRequiresReasonAndApproval()
