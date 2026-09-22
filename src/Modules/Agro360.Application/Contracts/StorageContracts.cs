@@ -11,7 +11,7 @@ public sealed record ProcessingOrderCommand(Guid InputLotId, Guid OutputProductI
 public sealed record CompleteProcessingCommand(decimal OutputQuantity, decimal TechnicalLoss, string? Justification);
 public sealed record ShipmentCommand(string Number, Guid? ContractId, string Customer, Guid ProductId, Guid LotId, decimal RequestedQuantity, string Destination, string? Carrier, string? Driver, string? Vehicle, string? Plate);
 public sealed record LoadShipmentCommand(decimal LoadedQuantity, decimal GrossWeight, decimal Tare);
-public sealed record TripCommand(string Number, Guid? ShipmentId, string Origin, string Destination, decimal EstimatedDistance, string? Carrier, string? Driver, string? Vehicle, string FreightType, decimal FreightValue, decimal Tonnes, string Status);
+public sealed record TripCommand(string Number, Guid? ShipmentId, string Origin, string Destination, decimal EstimatedDistance, string? Carrier, string? Driver, string? Vehicle, string FreightType, decimal FreightValue, decimal Tonnes, string Status, string TransportMode = "ROAD");
 public sealed record TripOccurrenceCommand(string Description);
 public sealed record FulfillmentItemCommand(Guid OrderItemId, Guid StockLotId, decimal Quantity, decimal PickedQuantity, decimal CheckedQuantity, string Unit, string? DivergenceReason);
 public sealed record CreateFulfillmentCommand(string Number, Guid OriginWarehouseId, Guid CustomerId, string Destination, string IdempotencyKey, IReadOnlyList<FulfillmentItemCommand> Items);
