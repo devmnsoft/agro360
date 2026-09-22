@@ -19,6 +19,20 @@ public sealed class SaasCommercialRulesTests
         Assert.Throws<InvalidOperationException>(() => SaasGovernanceRules.EnsureChargeCanChange("CANCELLED", 50m, null, " "));
     }
 
+    [Theory]
+    [InlineData(100, 0, 40, 40, 60, 0, "PARTIALLY_PAID")]
+    [InlineData(100, 40, 60, 60, 0, 0, "PAID")]
+    [InlineData(100, 80, 30, 20, 0, 10, "PAID")]
+    public void PaymentAllocationPreservesPartialPaymentsAndTurnsExcessIntoCredit(
+        decimal charge, decimal paid, decimal received, decimal applied, decimal outstanding, decimal credit, string status)
+    {
+        var allocation = SaasGovernanceRules.AllocatePayment(charge, paid, received);
+        Assert.Equal(applied, allocation.AppliedAmount);
+        Assert.Equal(outstanding, allocation.OutstandingAmount);
+        Assert.Equal(credit, allocation.CreditAmount);
+        Assert.Equal(status, allocation.ChargeStatus);
+    }
+
     [Fact]
     public void OnboardingProgressComesOnlyFromRequiredRealSteps()
     {
