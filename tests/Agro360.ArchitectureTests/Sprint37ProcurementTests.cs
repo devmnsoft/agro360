@@ -35,4 +35,18 @@ public sealed class Sprint37ProcurementTests
         Assert.Contains("ux_replenishment_policy_active", migration);
         Assert.Contains("ux_material_need_confirmation", migration);
     }
+
+    [Fact]
+    public void RequisitionLifecycleIsVersionedTenantScopedAndConsumesAuthorizedBalance()
+    {
+        var service = File.ReadAllText(Path.Combine(Root, "src/Modules/Agro360.Infrastructure/Services/ProcurementService.cs"));
+        var migration = File.ReadAllText(Path.Combine(Root, "database/migrations/100_procurement_requisition_lifecycle.sql"));
+        var controller = File.ReadAllText(Path.Combine(Root, "src/Hosts/Agro360.Api/Controllers/ProcurementController.cs"));
+        Assert.Contains("status=@From and version=@Version", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("for update", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("authorized_balance_exceeded", service);
+        Assert.Contains("requisition_item_id", migration);
+        Assert.Contains("platform_enable_tenant_rls('agro360.procurement_requisition_events')", migration);
+        Assert.Contains("Permissions.PurchasingApprove", controller);
+    }
 }
