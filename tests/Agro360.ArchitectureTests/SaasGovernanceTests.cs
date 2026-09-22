@@ -35,5 +35,18 @@ public sealed class SaasGovernanceTests
         Assert.Equal("DISABLED", Agro360.Domain.Tenancy.SaasGovernanceRules.EnsureUserAccessTransition("ACTIVE", false, false, false, "Revisao de acesso"));
         Assert.Equal("ACTIVE", Agro360.Domain.Tenancy.SaasGovernanceRules.EnsureUserAccessTransition("DISABLED", true, false, false, "Retorno ao quadro"));
     }
+    [Fact]
+    public void BillingSupportsIdempotentPartialPaymentsCreditsAndIndependentRestrictions()
+    {
+        var root = FindRoot();
+        var sql = File.ReadAllText(Path.Combine(root, "database/migrations/104_saas_administration_lifecycle.sql"));
+        var service = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Services/SaasService.cs"));
+        Assert.Contains("PARTIALLY_PAID", sql);
+        Assert.Contains("saas_billing_credits", sql);
+        Assert.Contains("unique(tenant_id,idempotency_key)", sql);
+        Assert.Contains("cause in ('ADMINISTRATIVE','FINANCIAL')", sql);
+        Assert.Contains("pg_advisory_xact_lock", service);
+        Assert.Contains("financialRestriction", service);
+    }
     private static string FindRoot() { var d = new DirectoryInfo(AppContext.BaseDirectory); while (d is not null && !File.Exists(Path.Combine(d.FullName, "MNSOFT.Agro360.sln"))) d = d.Parent; return d?.FullName ?? throw new DirectoryNotFoundException(); }
 }

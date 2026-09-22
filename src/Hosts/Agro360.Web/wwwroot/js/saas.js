@@ -110,6 +110,20 @@
         }));
     }
 
+    function billingTable(rows) {
+        if (!rows.length) return '<div class="empty">Nenhuma cobrança encontrada.</div>';
+        return `<div class="saas-card"><table class="saas-table"><thead><tr><th>Cliente</th><th>Competência</th><th>Valor</th><th>Recebido</th><th>Em aberto</th><th>Vencimento</th><th>Status</th><th>Ações</th></tr></thead><tbody>${rows.map(charge => `<tr><td>${escapeHtml(charge.tenantName)}</td><td>${escapeHtml(charge.competence)}</td><td>${escapeHtml(charge.amount)}</td><td>${escapeHtml(charge.paidAmount)}</td><td>${escapeHtml(charge.outstandingAmount)}</td><td>${escapeHtml(charge.dueOn)}</td><td>${escapeHtml(charge.status)}</td><td>${!["PAID", "CANCELLED"].includes(charge.status) ? `<button type="button" class="primary-button" data-charge-payment="${escapeHtml(charge.id)}" data-charge-name="${escapeHtml(charge.tenantName)}" data-charge-outstanding="${escapeHtml(charge.outstandingAmount)}">Registrar pagamento</button>` : "—"}</td></tr>`).join("")}</tbody></table></div>`;
+    }
+
+    function wireBillingActions() {
+        content.querySelectorAll("[data-charge-payment]").forEach(button => button.addEventListener("click", () => {
+            openForm("Registrar pagamento manual", `<p>Cliente: <strong>${escapeHtml(button.dataset.chargeName)}</strong><br>Saldo atual: <strong>${escapeHtml(button.dataset.chargeOutstanding)}</strong></p><p>Este registro não emite boleto, PIX ou documento fiscal. Excedentes serão preservados como crédito.</p><label>Identificação do pagamento <input name="reference" maxlength="160" required></label><label>Valor recebido <input name="amount" type="number" min="0.01" step="0.01" required></label><label>Data do pagamento <input name="paidOn" type="date" required></label><label>Observação <textarea name="observation" minlength="5" maxlength="1000" required></textarea></label>`, async data => {
+                const result = await request(`/api/platform/billing/${encodeURIComponent(button.dataset.chargePayment)}/payments`, { method: "POST", body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), paymentReference: data.get("reference"), amount: Number(data.get("amount")), paidOn: data.get("paidOn"), observation: data.get("observation") }) });
+                return result.creditAmount > 0 ? `Pagamento conciliado. Crédito preservado: ${result.creditAmount}.` : "Pagamento conciliado com sucesso.";
+            });
+        }));
+    }
+
     function openUserStatusDialog(userId, userName, activate) {
         document.querySelector("#dialog-title").textContent = activate ? "Reativar usuário" : "Inativar usuário";
         dialogFields.innerHTML = `<p>${activate ? "O usuário voltará a poder autenticar nesta organização." : "O usuário perderá o acesso e suas sessões atuais serão revogadas."}</p><p><strong>${escapeHtml(userName)}</strong></p><label for="user-status-reason">Justificativa <span aria-hidden="true">*</span><textarea id="user-status-reason" name="reason" minlength="5" maxlength="1000" required aria-describedby="user-status-help"></textarea><small id="user-status-help">Informe entre 5 e 1000 caracteres. A justificativa ficará na auditoria.</small></label>`;
@@ -251,7 +265,8 @@
                 const rows = await get("/api/platform/plans");
                 content.innerHTML = '<button class="primary-button" data-create="plan">Novo plano</button>' + table(rows, [["name", "Plano"], ["monthlyPrice", "Mensal informativo"], ["userLimit", "Usuários"], ["propertyLimit", "Propriedades"], ["deviceLimit", "Dispositivos"], ["active", "Ativo"]]);
             } else if (view === "billing") {
-                content.innerHTML = table(await get("/api/platform/billing"), [["tenantName", "Cliente"], ["planName", "Plano"], ["competence", "Período"], ["amount", "Valor"], ["dueOn", "Vencimento"], ["status", "Status"], ["paidOn", "Baixa manual"]]);
+                content.innerHTML = billingTable(await get("/api/platform/billing"));
+                wireBillingActions();
             } else if (view === "features") {
                 const tenants = await get("/api/platform/tenants");
                 content.innerHTML = '<label class="saas-card">Cliente <select id="feature-tenant"><option value="">Selecione…</option>' + tenants.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("") + '</select></label><div id="feature-list" class="empty">Selecione um cliente para ver as funcionalidades.</div>';

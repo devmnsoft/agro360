@@ -123,6 +123,18 @@ public static partial class SaasGovernanceRules
             throw new InvalidOperationException("O cancelamento exige motivo.");
     }
 
+    public static PaymentAllocation AllocatePayment(decimal chargeAmount, decimal previouslyPaid, decimal paymentAmount)
+    {
+        if (chargeAmount <= 0 || previouslyPaid < 0 || paymentAmount <= 0)
+            throw new ArgumentOutOfRangeException(nameof(paymentAmount), "Cobrança, saldo pago e pagamento devem ser válidos.");
+        var outstanding = decimal.Max(0, decimal.Round(chargeAmount - previouslyPaid, 2, MidpointRounding.ToEven));
+        if (outstanding == 0) throw new InvalidOperationException("A cobrança já está integralmente paga.");
+        var applied = decimal.Min(outstanding, decimal.Round(paymentAmount, 2, MidpointRounding.ToEven));
+        var remaining = decimal.Round(outstanding - applied, 2, MidpointRounding.ToEven);
+        var credit = decimal.Round(paymentAmount - applied, 2, MidpointRounding.ToEven);
+        return new PaymentAllocation(applied, remaining, credit, remaining == 0 ? "PAID" : "PARTIALLY_PAID");
+    }
+
     public static UsageDecision EvaluateUsage(long current, long planLimit, long? overrideLimit = null, DateTimeOffset? overrideExpiresAt = null, DateTimeOffset? now = null)
     {
         if (current < 0 || planLimit <= 0) throw new ArgumentOutOfRangeException(nameof(current), "Consumo e limite devem ser validos.");
@@ -186,3 +198,4 @@ public static partial class SaasGovernanceRules
 
 public readonly record struct UsageDecision(long Current, long EffectiveLimit, decimal Percentage, bool Warning, bool BlockNewRecords);
 public readonly record struct OnboardingStepState(bool Required, bool Completed);
+public readonly record struct PaymentAllocation(decimal AppliedAmount, decimal OutstandingAmount, decimal CreditAmount, string ChargeStatus);
