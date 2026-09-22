@@ -138,3 +138,18 @@ Consulte `docs/COMMERCIAL-AGRO.md` para fluxo, regras implementadas, modelo pers
 ## Verificação da recuperação
 
 Após executar o SQL completo, valide os dois acessos documentados acima e confirme que os respectivos perfis retornam permissões de dashboard e menus. O frontend não contém credenciais nem hashes: autenticação e renovação continuam sendo feitas pela API contra os hashes PBKDF2-SHA512 persistidos no PostgreSQL.
+
+## Acessos de teste solicitados
+
+Em **Development/homologação**, o instalador consolidado já aplica o seed idempotente. Para atualizar somente os acessos em uma base instalada, execute:
+
+```bash
+psql "$AGRO360_CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/seed-test-access.sql
+```
+
+| Perfil | Organização | E-mail | Documento alternativo | Senha |
+|---|---|---|---|---|
+| SuperAdmin | `agro360-platform` | `superadmin@agro360.local` | `00000000000` | `Admin@123456` |
+| Administrador do cliente | `santa-clara` | `admin.cliente@agro360.local` | `11222333000181` | `Cliente@123456` |
+
+A senha em texto acima é somente a credencial conhecida de teste; o PostgreSQL recebe exclusivamente hashes `pbkdf2-sha512$210000$...`, exatamente o formato validado por `PasswordHasher`. O script atualiza hash, status, tenant e perfil em reaplicações, sem duplicar registros. Não aplique este seed em produção.

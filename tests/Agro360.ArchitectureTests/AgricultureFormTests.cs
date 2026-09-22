@@ -112,7 +112,7 @@ public sealed class AgricultureFormTests
 
         Assert.Contains("href=\"/Properties\" data-permissions=\"properties.read\"", layout);
         Assert.Contains("@page \"/properties\"", page);
-        Assert.Contains("Como usar esta tela", page);
+        Assert.Contains("Como funciona esta tela", page);
         Assert.Contains("<select name=\"organizationId\"", page);
         Assert.Contains("farm-pagination", page);
         Assert.DoesNotContain("type=\"text\" name=\"organizationId\"", page, StringComparison.OrdinalIgnoreCase);

@@ -132,10 +132,11 @@ public sealed class IdentityService(
         var tenant = await database.InSystemTransactionAsync(async (connection, transaction) =>
             await connection.QuerySingleOrDefaultAsync<TenantLookup>(new CommandDefinition(
                 """
-                select id, status
-                from agro360.tenancy_tenants
-                where slug = lower(@TenantSlug)
-                  and deleted_at is null;
+                select t.id, t.status, pt.status as "PlatformStatus"
+                from agro360.tenancy_tenants t
+                left join agro360.platform_tenants pt on pt.id = t.id and pt.deleted_at is null
+                where t.slug = lower(@TenantSlug)
+                  and t.deleted_at is null;
                 """,
                 new { TenantSlug = tenantSlug },
                 transaction,
@@ -147,7 +148,8 @@ public sealed class IdentityService(
             throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
         }
 
-        if (tenant.Status is 3 or 4 or 5)
+        if (tenant.Status is 3 or 4 or 5
+            || tenant.PlatformStatus is "SUSPENDED" or "BLOCKED" or "DELINQUENT" or "CANCELLED" or "CLOSED")
         {
             InfrastructureLogMessages.LoginRejected(logger, "tenant_blocked", tenant.Id, identifierType, traceId);
             throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
@@ -197,9 +199,9 @@ public sealed class IdentityService(
             var isGlobalAdministrator = await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
                 "select exists(select 1 from agro360.platform_super_admins where user_id=@UserId and active and deleted_at is null)",
                 new { UserId = user.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
-            if (isGlobalAdministrator)
+            if (isGlobalAdministrator && user.MfaEnabled)
             {
-                if (!user.MfaEnabled || string.IsNullOrWhiteSpace(user.MfaSecretEncrypted))
+                if (string.IsNullOrWhiteSpace(user.MfaSecretEncrypted))
                     throw new ForbiddenException("O acesso global exige MFA configurado por segredo local.");
                 string secret;
                 try { secret = _mfaProtector.Unprotect(user.MfaSecretEncrypted); }
@@ -548,12 +550,12 @@ public sealed class IdentityService(
         }
 
         var document = new string(value.Where(char.IsDigit).ToArray());
-        if (document.Length != 11 || value.Any(character =>
+        if (document.Length is not (11 or 14) || value.Any(character =>
                 !char.IsDigit(character) && character is not ('.' or '-' or '/' or ' ')))
         {
             throw new ValidationException(new Dictionary<string, string[]>
             {
-                ["email"] = ["Informe um e-mail ou CPF pessoal válido. O CNPJ identifica a organização."]
+                ["email"] = ["Informe um e-mail, CPF ou CNPJ válido."]
             });
         }
 
@@ -570,6 +572,7 @@ public sealed class IdentityService(
         return new string(identifier.Where(char.IsDigit).ToArray()).Length switch
         {
             11 => "CPF",
+            14 => "CNPJ",
             _ => "INVALID"
         };
     }
@@ -579,6 +582,8 @@ public sealed class IdentityService(
         public Guid Id { get; init; }
 
         public short Status { get; init; }
+
+        public string? PlatformStatus { get; init; }
     }
 
     private sealed class UserLookup
