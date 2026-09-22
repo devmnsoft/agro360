@@ -1,4 +1,5 @@
 using Agro360.Infrastructure.Security;
+using Xunit;
 
 namespace Agro360.UnitTests;
 
