@@ -218,7 +218,8 @@
                     mfaInput.focus();
                     throw new Error("Informe o código do aplicativo autenticador para concluir o acesso.");
                 }
-                throw new Error(code === "mfa_invalid" ? "Código MFA inválido ou expirado." : "Credenciais inválidas.");
+                const messages = { tenant_blocked: "Tenant bloqueado. Procure o suporte.", user_blocked: "Usuário bloqueado. Procure o administrador." };
+                throw new Error(code === "mfa_invalid" ? "Código MFA inválido ou expirado." : (messages[code] || "Usuário ou senha inválidos."));
             }
             if (response.status === 403) {
                 throw new Error(result.detail || "A conta ou organização não está autorizada para este acesso.");
