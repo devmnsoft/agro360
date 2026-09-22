@@ -1,67 +1,113 @@
 # Auditoria de estabilização — 2026-09-22
 
-## Escopo e gate
+## Decisão do gate
 
-Esta auditoria precede qualquer avanço funcional. O gate não foi liberado porque o SDK .NET 10 e um cliente/servidor PostgreSQL não estão disponíveis no ambiente de execução. Por isso, nenhuma funcionalidade dos blocos B–E foi adicionada.
+**Gate bloqueado. Nenhum avanço funcional foi realizado.** O ambiente não possui o
+SDK .NET nem cliente/servidor PostgreSQL. Assim, não é possível demonstrar build
+Release, analyzers/nullable, execução da suíte, instalação limpa, reaplicação,
+upgrade, RLS efetiva ou isolamento entre sessões. A regra de parada solicitada foi
+aplicada antes de qualquer alteração funcional.
 
-## Estrutura verificada
+O inventário abaixo é uma auditoria estática: a presença de arquivo, endpoint,
+tabela, regra ou teste é evidência de implementação parcial, nunca homologação do
+fluxo completo.
 
-| Camada | Evidência | Situação |
+## Escopo realmente inspecionado
+
+- `README.md`, documentação de arquitetura, negócio e checkpoints em `docs/`;
+- solução e projetos Domain, Application, Infrastructure, API, Web, Worker,
+  Migrator e as três suítes de testes;
+- entidades/regras, contratos, serviços Dapper, controllers e páginas Razor;
+- layout/menu e testes estruturais de formulários sem IDs técnicos;
+- migrations, seeds, releases e `database/agro360-postgres-full.sql`;
+- marcadores de role, transação, RLS/policies e testes de fundação do banco.
+
+## Matriz auditada
+
+| Módulo | Classificação | Evidência estática | O que impede classificar como pronto |
+|---|---|---|---|
+| SaaS/Tenants/SuperAdmin | **Parcial** | `SaasGovernanceRules.cs`, `SaasService.cs`, `SaasControllers.cs`, página `Saas` e `SaasGovernanceTests.cs` cobrem tenants, planos, módulos, auditoria e rotas globais. | Backend, visão global, bloqueio de módulo e isolamento não foram exercitados com identidades e banco reais. |
+| Usuários, perfis e ACL | **Parcial** | `IdentityContracts.cs`, `IdentityService.cs`, `IdentityController.cs`, policies e regressões de autenticação/role SuperAdmin. | Login, MFA, sessão, permissões e separação tenant/global não puderam ser executados. |
+| Produtores, fazendas e talhões | **Parcial** | Domínio `Properties`, `PropertyService.cs`, `PropertiesController.cs`, página `Properties` e migration `051_properties_e2e.sql`. | CRUD, documentos, geolocalização, histórico e soft delete não foram validados ponta a ponta. |
+| Culturas e safras | **Parcial** | `Season.cs`, contratos/serviços de agricultura e acompanhamento de safra, páginas `Agriculture`/`Harvest` e migrations 075–078/086. | Transições, estimativa, colheita excepcional e geração atômica de lote/estoque não foram executadas. |
+| Pecuária | **Parcial** | Domínio `Livestock`, dois serviços operacionais, controller/página e regressões específicas. | Persistência, movimentações e isolamento não foram testados em PostgreSQL. |
+| Insumos e estoque | **Parcial** | `Stock.cs`, `InventoryService.cs`, `StockControlService.cs`, controllers/página e migrations 005/082/087/088. | Saldo negativo, motivo, transferência, consumo e concorrência não foram exercitados. |
+| Custos | **Parcial** | `SeasonCostRules.cs`, `SeasonCostService.cs`, controller/página `Costs` e migration `078_season_cost_allocation.sql`. | Apropriação real por safra/talhão/cultura/lote e dashboards não foram conciliados no banco. |
+| Comercial, contratos e pedidos | **Parcial** | `CommercialRules.cs`, `Commercial360Service.cs`, controllers/página, migrations 098/099 e testes de saldo, total líquido, transições e comissão. | Cliente bloqueado, versionamento, desconto/aprovação e faturamento não foram validados como jornada integrada. |
+| Logística | **Parcial** | `LogisticsService.cs`, `LogisticsController.cs`, página `Logistics` e migrations 008/071/088. | Expedição, entrega, ocorrência e atualização comercial não foram executadas ponta a ponta. |
+| Financeiro | **Parcial** | `FinanceRules.cs`, `FinanceService.cs`, controller/página e migrations 006a/006z/007/036. | Contas, faturamento, cancelamento, margem e inadimplência não foram reconciliados em banco real. |
+| Rastreabilidade | **Parcial** | Regras `GenealogyRules`/`PublicTraceabilityRules`, serviços/controllers público e interno, migrations 009/095/096 e testes contra exposição de `tenantId`. | Cadeia completa fazenda→entrega, imutabilidade e payload público não foram validados com dados persistidos. |
+| Compliance/qualidade | **Parcial** | Domínio `Compliance`, serviços/controllers/páginas, migrations 090–093 e testes de formulários/fundação. | Validade, alertas, produtos configuráveis e bloqueios de lote não foram exercitados integralmente. |
+| Dashboards e relatórios | **Parcial** | `DashboardService.cs`, serviços de inteligência, página inicial/`Reports` e contratos de dashboard. | Não foi demonstrado que todos os cards prioritários usam dados reais e tenant-scoped. |
+| Notificações e auditoria | **Parcial** | Work management expõe notificações/alertas; outbox worker, audit logs, migration 070 e grants append-oriented existem. | Entrega, retries, eventos críticos e trilha das ações solicitadas não foram observados em execução. |
+
+**Resumo:** nenhum módulo é “pronto com evidência” neste ambiente; não foi
+encontrado módulo totalmente ausente, mas a cobertura transversal é parcial e as
+garantias dinâmicas permanecem **não verificadas**. O gate de toolchain é
+**quebrado no ambiente**, não uma conclusão de que o código-fonte esteja quebrado.
+
+## Banco, migrations e segurança
+
+### Evidência estática positiva
+
+- O consolidado cria defensivamente `agro360_app NOLOGIN` antes dos grants.
+- O validador estático confirma que o consolidado é autônomo, não contém
+  `ROLLBACK` explícito, termina em `COMMIT` e mantém marcadores de RLS.
+- Existem `ENABLE/FORCE ROW LEVEL SECURITY`, policies tenant-aware e teste de
+  integração que consulta tabelas tenant-aware, role e catálogo PostgreSQL.
+- O Migrator declara lock, checksums e histórico; migrations e seeds usam padrões
+  idempotentes em vários pontos.
+
+### Limites e riscos
+
+- Texto idempotente não prova reaplicação: somente duas execuções em base limpa e
+  um upgrade representativo podem provar isso.
+- RLS declarada não prova isolamento: proprietário de tabela, `BYPASSRLS`, grants,
+  contexto de sessão e policies precisam de inspeção dinâmica.
+- A criação de role exige privilégio administrativo; `NOLOGIN` evita que a role
+  seja usada diretamente, mas os grants também precisam ser validados no catálogo.
+- Migrations legadas com numeração próxima/duplicada (`006*`, `007*`, `064*`,
+  `068*`, `097*`) exigem validação do ordenamento/checksum pelo Migrator; não devem
+  ser renomeadas sem plano de compatibilidade.
+
+## Bloqueio e causa raiz
+
+| Verificação obrigatória | Resultado | Causa raiz |
 |---|---|---|
-| Domain | `src/Modules/Agro360.Domain` | Presente |
-| Application | `src/Modules/Agro360.Application` | Presente |
-| Infrastructure | `src/Modules/Agro360.Infrastructure` | Presente |
-| Web/API | `src/Hosts/Agro360.Web`, `src/Hosts/Agro360.Api` | Presente |
-| Worker | `src/Hosts/Agro360.Worker` | Presente |
-| Migrator | `src/Hosts/Agro360.Migrator` | Presente |
-| Tests | `tests/Agro360.UnitTests`, `tests/Agro360.IntegrationTests`, `tests/Agro360.ArchitectureTests` | Presente; não executado por falta do SDK |
-| Banco | `database/migrations`, `database/seeds`, `database/agro360-postgres-full.sql` | Presente; execução real não verificada |
+| `dotnet restore` | **Bloqueada (exit 127)** | `dotnet` não está instalado ou não está no `PATH`. |
+| `dotnet build -c Release` | **Bloqueada (exit 127)** | Sem o SDK fixado pelo repositório, compilador e analyzers não executam. |
+| `dotnet test` | **Bloqueada (exit 127)** | Sem SDK, nenhuma suíte pode executar. |
+| PostgreSQL limpo/reaplicação/upgrade | **Bloqueada** | `psql` e `pg_isready` não estão instalados; não há servidor verificável. |
+| Validação estática do consolidado | **Passou** | `scripts/validate-full-sql.sh database/agro360-postgres-full.sql`. |
 
-## Matriz dos módulos
+Consequentemente, CA1859/CA1860/CA1861/CA1862/CA1716, erros C# citados,
+materialização Dapper, nullable e compatibilidade binária permanecem **não
+verificados dinamicamente**. Não houve suppression, remoção de teste/policy,
+desativação de RLS nem alteração de schema.
 
-As classificações abaixo comprovam somente a existência das camadas indicadas; não equivalem à homologação de um fluxo ponta a ponta.
+## Alterações realizadas
 
-| Área | Classificação | Evidência |
-|---|---|---|
-| SaaS/Tenants | Parcial | `SaasService.cs`, `SaasControllers.cs`, páginas `Saas` e testes `SaasGovernanceTests.cs` |
-| Users/Auth/ACL | Parcial | `IdentityService.cs`, `IdentityController.cs` e `AuthenticationAndLivestockRegressionTests.cs` |
-| Producers/Farms/Fields | Parcial | domínios `Properties`/`Agriculture`, serviços correspondentes e páginas `Properties`/`Agriculture` |
-| Crops/Harvests | Parcial | `HarvestService.cs`, páginas `Harvest` e migrations de colheita |
-| Inventory | Parcial | domínio, serviço, controller e páginas `Inventory` |
-| Commercial/Sales/Contracts | Parcial | domínio `Commercial`, `Commercial360Service.cs`, controllers, páginas e testes de regras comerciais |
-| Compliance/Quality | Parcial | domínio, serviço, controllers e páginas `Compliance`/`Inspections` |
-| Logistics | Parcial | `LogisticsService.cs`, controller e páginas `Logistics` |
-| Finance | Parcial | domínio, serviço, controller, páginas e migrations de finanças |
-| Reports/Dashboard | Parcial | `DashboardService.cs`, páginas `Reports` e serviços de inteligência |
-| Audit/Notifications | Parcial | tabelas/eventos no instalador e serviços operacionais; fluxo real não verificado |
-
-Nenhuma área foi marcada como **Pronta com evidência**, pois build, testes, banco limpo, upgrade e fluxos funcionais não puderam ser executados neste ambiente.
-
-## Bugs e riscos verificados estaticamente
-
-- A criação idempotente de `agro360_app NOLOGIN` está no início do instalador consolidado, antes das concessões posteriores.
-- O instalador preserva comandos de RLS e termina em `COMMIT`; não foi encontrado `ROLLBACK` explícito.
-- A migration `098_commercial_contract_operations.sql` também cria a role defensivamente antes dos seus `GRANT`s.
-- Há teste de integração que consulta a role e exige RLS/policies nas tabelas críticas, mas ele depende de `AGRO360_TEST_CONNECTION_STRING` e de uma base previamente instalada.
-- A validação estática agora falha se a primeira menção à role não for sua criação ou se houver `ROLLBACK` explícito. Um teste de arquitetura cobre a mesma regressão e confirma que os marcadores de RLS continuam no instalador.
-- CA1859, CA1860, CS1503, nullable, contratos duplicados e materialização Dapper permanecem **não verificados dinamicamente**, pois o compilador/analyzers não puderam rodar.
-
-## Comandos e resultados
-
-- `dotnet restore && dotnet build -c Release --no-restore && dotnet test -c Release --no-build`: não executado; o shell retornou `dotnet: command not found`.
-- Consultas PostgreSQL solicitadas: não executadas; `psql` e uma instância de banco não estão disponíveis.
-- `scripts/validate-full-sql.sh database/agro360-postgres-full.sql`: validação estática local disponível, sem substituir a instalação em banco limpo.
+Somente este relatório foi atualizado para registrar a auditoria, a matriz completa
+e a decisão de gate. Não houve mudança em código, banco, migrations, seeds, telas,
+contratos ou regras de negócio; portanto não há screenshot funcional aplicável.
 
 ## Pendências para liberar o gate
 
-1. Instalar o SDK fixado por `global.json` (10.0.100) e executar restore, build Release e toda a suíte.
-2. Criar uma base PostgreSQL limpa com um usuário autorizado a criar roles e executar o instalador com `ON_ERROR_STOP=1`.
-3. Executar novamente o instalador para validar idempotência e executar um upgrade representativo via Migrator.
-4. Executar as consultas de role, policies e `rowsecurity`, além dos testes de integração com `AGRO360_TEST_CONNECTION_STRING`.
-5. Só após todos os itens anteriores avançar para implementação funcional e validação visual.
+1. Disponibilizar o SDK exigido por `global.json` e executar restore, build Release
+   e todas as suítes sem ignorar analyzers.
+2. Disponibilizar PostgreSQL/PostGIS e ferramentas cliente; criar banco descartável
+   e aplicar o consolidado com `ON_ERROR_STOP=1` duas vezes.
+3. Executar o Migrator sobre uma base representativa existente para validar
+   ordenamento, checksums, upgrade e preservação de dados.
+4. Consultar `pg_roles`, `pg_class.relrowsecurity/relforcerowsecurity`, `pg_policy`
+   e grants; executar testes concorrentes com SuperAdmin e dois tenants.
+5. Somente após o gate verde, fechar uma jornada vertical por vez (operação e
+   colheita primeiro), sempre com banco, regra, endpoint, tela e teste E2E.
 
-## Riscos técnicos
+## Próximo passo recomendado
 
-- A presença textual de RLS não prova cobertura de todas as tabelas tenant-aware; a consulta dinâmica de integração é a evidência necessária.
-- Testes estáticos não detectam incompatibilidades de construtores Dapper, nullable ou analyzers.
-- Criar roles requer privilégio PostgreSQL apropriado; a conta de instalação deve possuir esse privilégio sem concedê-lo à role de aplicação `NOLOGIN`.
+Preparar uma imagem/runner reproducível com .NET 10, PostgreSQL/PostGIS e `psql`,
+executar o gate E0 documentado no README e anexar os logs. Se o gate passar,
+priorizar a jornada **safra → manejo → colheita → lote → estoque → custo**, pois ela
+forma a base para comercial, logística, rastreabilidade e financeiro sem criar
+estruturas paralelas.
