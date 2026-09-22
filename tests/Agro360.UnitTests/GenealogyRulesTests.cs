@@ -7,6 +7,21 @@ namespace Agro360.UnitTests;
 public sealed class GenealogyRulesTests
 {
     [Fact]
+    public void PersistenceGuardsConfirmedLinksAndCyclesPerTenant()
+    {
+        var root = FindRepositoryRoot();
+        var migration = File.ReadAllText(Path.Combine(root, "database/migrations/102_genealogy_integrity.sql"));
+        var service = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Services/HarvestService.cs"));
+
+        Assert.Contains("before update or delete", migration, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("with recursive descendants", migration, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("tenant_id = new.tenant_id", migration, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("genealogy.cycle_detected", service);
+        Assert.Contains("genealogy.relationship_immutable", service);
+        Assert.DoesNotContain("do update set\n                    quantity = excluded.quantity", service);
+    }
+
+    [Fact]
     public void ManualLinkContractCarriesAuditJustificationMetadata()
     {
         var command = new Agro360.Application.Contracts.RecordGenealogyLinkCommand("MANUAL", "RECEIPT",
@@ -72,5 +87,13 @@ public sealed class GenealogyRulesTests
     public void CalculateNetDeliveredQuantityNeverProducesNegativeBalance()
     {
         Assert.Equal(0m, GenealogyRules.CalculateNetDeliveredQuantity(5m, 8m));
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "MNSOFT.Agro360.sln")))
+            directory = directory.Parent;
+        return directory?.FullName ?? throw new InvalidOperationException("Repository root not found.");
     }
 }
