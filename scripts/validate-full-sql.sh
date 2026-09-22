@@ -2,10 +2,13 @@
 set -euo pipefail
 file="${1:-database/agro360-postgres-full.sql}"
 test -s "$file"
-first_role_reference="$(rg -n -m1 -i '^[[:space:]]*(grant|revoke|create[[:space:]]+policy)[^;]*\bagro360_app\b' "$file" | cut -d: -f1)"
+first_role_reference="$(rg -n -m1 -i '^[[:space:]]*(grant|revoke|create[[:space:]]+policy|alter[[:space:]]+default[[:space:]]+privileges)[^;]*\bagro360_app\b' "$file" | cut -d: -f1)"
 first_role_creation="$(rg -n -m1 -i 'create[[:space:]]+role[[:space:]]+agro360_app[[:space:]]+nologin' "$file" | cut -d: -f1)"
 if [[ -z "$first_role_creation" || -z "$first_role_reference" || "$first_role_creation" -gt "$first_role_reference" ]]; then
   echo "ERRO: agro360_app deve ser criada como NOLOGIN antes da primeira referencia" >&2; exit 1
+fi
+if rg -n -i '^[[:space:]]*rollback[[:space:]]*;' "$file"; then
+  echo "ERRO: instalador consolidado contém ROLLBACK explícito" >&2; exit 1
 fi
 if rg -n '(^[[:space:]]*\\\\(i|include|ir)([[:space:]]|$)|Host=|Password=|/home/|/workspace/|[A-Za-z]:\\\\)' "$file"; then
   echo "ERRO: instalador contém include, conexão, segredo ou caminho local" >&2; exit 1

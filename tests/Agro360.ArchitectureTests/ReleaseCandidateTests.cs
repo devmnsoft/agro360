@@ -16,6 +16,23 @@ public sealed class ReleaseCandidateTests
     }
 
     [Fact]
+    public void FullPostgresInstallerMustBootstrapApplicationRoleBeforeEveryReference()
+    {
+        var sql = File.ReadAllText(Path.Combine(Root, "database", "agro360-postgres-full.sql"));
+        var roleBootstrap = sql.IndexOf("CREATE ROLE agro360_app NOLOGIN", StringComparison.OrdinalIgnoreCase);
+        var firstPrivilegeReference = System.Text.RegularExpressions.Regex.Match(
+            sql,
+            @"(?im)^\s*(?:grant|revoke|create\s+policy|alter\s+default\s+privileges)[^;]*\bagro360_app\b");
+
+        Assert.True(roleBootstrap >= 0, "O instalador deve criar a role agro360_app como NOLOGIN.");
+        Assert.True(firstPrivilegeReference.Success, "O instalador deve conceder privilégios à role agro360_app.");
+        Assert.True(roleBootstrap < firstPrivilegeReference.Index, "A role deve existir antes de qualquer GRANT, policy ou privilégio padrão.");
+        Assert.DoesNotMatch(@"(?im)^\s*rollback\s*;", sql);
+        Assert.Contains("enable row level security", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("force row level security", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void MainNavigationMustUseRealDestinationsInsteadOfFeaturePlaceholders()
     {
         var layout = File.ReadAllText(Path.Combine(Root, "src/Hosts/Agro360.Web/Pages/Shared/_Layout.cshtml"));
