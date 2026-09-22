@@ -13,6 +13,10 @@ public sealed record ShipmentCommand(string Number, Guid? ContractId, string Cus
 public sealed record LoadShipmentCommand(decimal LoadedQuantity, decimal GrossWeight, decimal Tare);
 public sealed record TripCommand(string Number, Guid? ShipmentId, string Origin, string Destination, decimal EstimatedDistance, string? Carrier, string? Driver, string? Vehicle, string FreightType, decimal FreightValue, decimal Tonnes, string Status, string TransportMode = "ROAD");
 public sealed record TripOccurrenceCommand(string Description);
+public sealed record TripStopCommand(int Sequence, string Type, string Name, string? OperationalWindow, DateTimeOffset? PlannedArrival, DateTimeOffset? PlannedDeparture);
+public sealed record TripLegCommand(int Sequence, int OriginStopSequence, int DestinationStopSequence, string Mode, Guid? AssetId, decimal? CapacityTotal, string? CapacityUnit, string? NavigationSource, DateTimeOffset? NavigationValidUntil, Guid? NavigationResponsibleId);
+public sealed record TripAllocationCommand(Guid ShipmentItemId, decimal Quantity, string Unit, int LoadingStopSequence, int UnloadingStopSequence, decimal? Weight, string? WeightUnit, decimal? Volume, string? VolumeUnit);
+public sealed record PlanTripCommand(string Number, string Origin, string Destination, DateTimeOffset PlannedStart, DateTimeOffset PlannedEnd, Guid? ResponsibleId, string? Carrier, string IdempotencyKey, IReadOnlyList<TripStopCommand> Stops, IReadOnlyList<TripLegCommand> Legs, IReadOnlyList<TripAllocationCommand> Allocations);
 public sealed record FulfillmentItemCommand(Guid OrderItemId, Guid StockLotId, decimal Quantity, decimal PickedQuantity, decimal CheckedQuantity, string Unit, string? DivergenceReason);
 public sealed record CreateFulfillmentCommand(string Number, Guid OriginWarehouseId, Guid CustomerId, string Destination, string IdempotencyKey, IReadOnlyList<FulfillmentItemCommand> Items);
 public sealed record DispatchFulfillmentCommand(long Version, string IdempotencyKey);
@@ -77,5 +81,7 @@ public interface ILogisticsService
     Task TransitionOccurrenceAsync(Guid id, TransitionOccurrenceCommand command, CancellationToken ct);
     Task<Guid> ProposeSolutionAsync(Guid id, ProposeSolutionCommand command, CancellationToken ct);
     Task<Guid> RegisterAdjustmentAsync(Guid id, CommercialAdjustmentCommand command, CancellationToken ct);
+    Task<Guid> PlanTripAsync(PlanTripCommand command, CancellationToken ct);
+    Task<dynamic?> TripDetailAsync(Guid id, CancellationToken ct);
 }
 public interface IDeliveryContractService { Task<IReadOnlyList<dynamic>> ListAsync(CancellationToken ct); Task<Guid> SaveAsync(Guid? id, DeliveryContractCommand command, CancellationToken ct); }

@@ -37,4 +37,29 @@ public sealed class LogisticsRulesTests
     [Fact]
     public void InTransitTripCanBeDelivered()
         => LogisticsRules.EnsureCanDeliver("in_transit");
+
+    [Fact]
+    public void MissingCapacityIsPendingInsteadOfAvailable()
+    {
+        var error = Assert.Throws<DomainException>(() => LogisticsRules.ValidateCapacity(null, null, null));
+        Assert.Equal("logistics.capacity_pending", error.Code);
+    }
+
+    [Fact]
+    public void CapacityDoesNotConvertDifferentUnitsImplicitly()
+    {
+        var error = Assert.Throws<DomainException>(() => LogisticsRules.ValidateCapacity(10, 2, null));
+        Assert.Equal("logistics.capacity_unit_required", error.Code);
+    }
+
+    [Fact]
+    public void TripCannotCloseWithUnclassifiedQuantity()
+    {
+        var error = Assert.Throws<DomainException>(() => LogisticsRules.ValidateReconciliation(10, 6, 1, 1, 1));
+        Assert.Equal("logistics.reconciliation_incomplete", error.Code);
+    }
+
+    [Fact]
+    public void ReconciledTripAcceptsEveryExclusiveDestination()
+        => LogisticsRules.ValidateReconciliation(10, 6, 1, 1, 2);
 }

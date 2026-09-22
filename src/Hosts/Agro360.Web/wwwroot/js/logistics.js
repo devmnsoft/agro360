@@ -274,6 +274,22 @@
         }
     }
 
+    async function loadTrips() {
+        content.innerHTML = '<p class="empty-state">Carregando programação multimodal…</p>';
+        try {
+            const rows = await request('/api/logistics/trips');
+            content.innerHTML = rows.length ? `<table class="logistics-table"><thead><tr><th>Viagem</th><th>Origem → destino</th><th>Modal</th><th>Previsão</th><th>Situação</th><th></th></tr></thead><tbody>${rows.map(x => `<tr><td><strong>${escapeHtml(value(x,'number'))}</strong></td><td>${escapeHtml(value(x,'origin'))} → ${escapeHtml(value(x,'destination'))}</td><td>${escapeHtml(value(x,'transport_mode','transportMode') || 'Pendente')}</td><td>${escapeHtml(value(x,'planned_start','plannedStart') || 'Não informada')}</td><td><span class="status-pill">${escapeHtml(value(x,'status'))}</span></td><td><button type="button" class="secondary-button" data-trip-detail="${escapeHtml(value(x,'id'))}">Abrir plano</button></td></tr>`).join('')}</tbody></table>` : '<p class="empty-state">Nenhuma viagem programada. A programação não reserva estoque; cargas são vinculadas às expedições conferidas.</p>';
+            content.querySelectorAll('[data-trip-detail]').forEach(button => button.addEventListener('click', async () => {
+                try {
+                    const plan = await request(`/api/logistics/trips/${button.dataset.tripDetail}/plan`);
+                    const stops = value(plan, 'stops') || [], legs = value(plan, 'legs') || [], allocations = value(plan, 'allocations') || [];
+                    content.innerHTML = `<button type="button" class="secondary-button" id="back-to-trips">← Voltar</button><h2>Plano operacional</h2><p><strong>${stops.length}</strong> paradas · <strong>${legs.length}</strong> trechos · <strong>${allocations.length}</strong> alocações</p><p class="empty-state">Capacidade sem unidade, navegabilidade sem fonte/validade e quantidades sem conciliação permanecem como impedimentos; esta tela não presume conversões nem condições reais.</p>`;
+                    document.querySelector('#back-to-trips')?.addEventListener('click', loadTrips);
+                } catch (err) { renderErrorState(err, 'Detalhe da viagem'); }
+            }));
+        } catch (err) { renderErrorState(err, 'Programação de viagens'); }
+    }
+
     function openDispositionModal(item) {
         currentReturnForDisposition = item;
         if (!dispositionDialog) return;
@@ -406,6 +422,8 @@
 
         if (view === 'queue') {
             loadQueue();
+        } else if (view === 'trips') {
+            loadTrips();
         } else if (view === 'returns') {
             loadReturns();
         } else {
@@ -420,6 +438,8 @@
                 await loadReturns();
             } else if (activeView === 'queue') {
                 await loadQueue();
+            } else if (activeView === 'trips') {
+                await loadTrips();
             }
         } catch (e) {
             renderErrorState(e, 'Atualização de Logística');
