@@ -83,6 +83,18 @@ public sealed class LivestockDashboardContractTests
     }
 
     [Fact]
+    public void IndividualizationConservesPopulationAndRejectsDuplicateSelection()
+    {
+        LivestockRules.EnsureIndividualization(2, 2);
+        LivestockRules.EnsureIndividualizationFits(10, 4);
+
+        var duplicate = Assert.Throws<DomainException>(() => LivestockRules.EnsureIndividualization(2, 1));
+        Assert.Equal("livestock.individualization_duplicate", duplicate.Code);
+        var overflow = Assert.Throws<ConflictException>(() => LivestockRules.EnsureIndividualizationFits(3, 4));
+        Assert.Equal("livestock.individualization_exceeds_collective", overflow.Code);
+    }
+
+    [Fact]
     public void FleetRulesCoverTransitionsAvailabilityAndCsvSafety()
     {
         FleetRules.EnsureWorkOrderTransition("OPEN", "PLANNED");
