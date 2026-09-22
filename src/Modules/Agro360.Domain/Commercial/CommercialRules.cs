@@ -75,12 +75,14 @@ public static class CommercialRules
         if (!valid) throw new DomainException("CPF/CNPJ inválido.", "sales.invalid_tax_document");
     }
 
-    public static void CustomerCanOrder(string status, bool mayOverrideBlock)
+    public static void CustomerCanOrder(string status, bool mayOverrideDelinquency)
     {
         var normalized = status.Trim().ToUpperInvariant();
         if (normalized == "INACTIVE") throw new DomainException("Reative o cliente antes de criar um pedido.", "sales.customer_inactive");
-        if (normalized is ("BLOCKED" or "DELINQUENT") && !mayOverrideBlock)
-            throw new DomainException("Cliente bloqueado ou inadimplente exige autorização superior.", "sales.customer_blocked");
+        if (normalized == "BLOCKED")
+            throw new DomainException("Cliente bloqueado não pode gerar pedido.", "sales.customer_blocked");
+        if (normalized == "DELINQUENT" && !mayOverrideDelinquency)
+            throw new DomainException("Cliente inadimplente exige autorização superior.", "sales.customer_delinquent_authorization_required");
     }
 
     public static void ValidateOpportunity(string stage, decimal value, string? lossReason)
