@@ -145,14 +145,14 @@ public sealed class IdentityService(
         if (tenant is null)
         {
             InfrastructureLogMessages.LoginRejected(logger, "tenant_invalid", null, identifierType, traceId);
-            throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
+            throw new AuthenticationException("Usuário ou senha inválidos.", "invalid_credentials");
         }
 
         if (tenant.Status is 3 or 4 or 5
             || tenant.PlatformStatus is "SUSPENDED" or "BLOCKED" or "DELINQUENT" or "CANCELLED" or "CLOSED")
         {
             InfrastructureLogMessages.LoginRejected(logger, "tenant_blocked", tenant.Id, identifierType, traceId);
-            throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
+            throw new AuthenticationException("Tenant bloqueado. Procure o suporte.", "tenant_blocked");
         }
 
         var result = await database.InTenantTransactionAsync(tenant.Id, async (connection, transaction) =>
@@ -176,7 +176,7 @@ public sealed class IdentityService(
                 // Keep the public contract deliberately opaque, but retain enough
                 // internal information to distinguish lookup failures from a bad hash.
                 InfrastructureLogMessages.LoginRejected(logger, "user_not_found", tenant.Id, identifierType, traceId);
-                throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
+                throw new AuthenticationException("Usuário ou senha inválidos.", "invalid_credentials");
             }
 
             lookupStopwatch.Stop();
@@ -184,7 +184,7 @@ public sealed class IdentityService(
             if (user.DeletedAt is not null || !string.Equals(user.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
             {
                 InfrastructureLogMessages.LoginRejected(logger, "user_inactive_or_blocked", tenant.Id, identifierType, traceId);
-                throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
+                throw new AuthenticationException("Usuário bloqueado. Procure o administrador.", "user_blocked");
             }
 
             var passwordStopwatch = Stopwatch.StartNew();
@@ -192,7 +192,7 @@ public sealed class IdentityService(
             {
                 passwordStopwatch.Stop();
                 InfrastructureLogMessages.LoginRejected(logger, "password_verification_failed", tenant.Id, identifierType, traceId);
-                throw new AuthenticationException("Credenciais inválidas.", "invalid_credentials");
+                throw new AuthenticationException("Usuário ou senha inválidos.", "invalid_credentials");
             }
             passwordStopwatch.Stop();
 
@@ -390,6 +390,12 @@ public sealed class IdentityService(
             new { user.TenantId, UserId = user.Id },
             transaction,
             cancellationToken: cancellationToken)).ConfigureAwait(false)).ToArray();
+
+        if (roles.Length == 0)
+        {
+            InfrastructureLogMessages.LoginRejected(logger, "profile_not_linked", user.TenantId, "PROFILE", Activity.Current?.TraceId.ToString() ?? "unavailable");
+            throw new ForbiddenException("Seu perfil não possui permissão para acessar esta área.");
+        }
 
         var isGlobalAdministrator = roles.Contains("SUPER_ADMIN", StringComparer.OrdinalIgnoreCase)
             && await connection.ExecuteScalarAsync<bool>(new CommandDefinition(

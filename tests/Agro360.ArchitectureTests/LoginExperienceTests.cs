@@ -69,7 +69,9 @@ public sealed class LoginExperienceTests
         Assert.Contains("Documentos podem ser informados com ou sem máscara", layout);
         Assert.DoesNotContain("abra ${apiBase}/swagger", client, StringComparison.Ordinal);
         Assert.Contains("Código MFA inválido ou expirado.", client, StringComparison.Ordinal);
-        Assert.Contains("Credenciais inválidas.", client, StringComparison.Ordinal);
+        Assert.Contains("Usuário ou senha inválidos.", client, StringComparison.Ordinal);
+        Assert.Contains("Tenant bloqueado. Procure o suporte.", client, StringComparison.Ordinal);
+        Assert.Contains("Usuário bloqueado. Procure o administrador.", client, StringComparison.Ordinal);
     }
 
     [Fact]
