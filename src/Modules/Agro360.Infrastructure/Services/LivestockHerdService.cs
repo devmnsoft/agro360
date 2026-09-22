@@ -191,23 +191,32 @@ public sealed class LivestockHerdService(
 
     public Task ReconcileHerdAsync(ReconcileHerdCommand command, CancellationToken ct)
     {
-        LivestockRules.EnsurePositiveQuantity(command.AnimalIds.Count, "Animais identificados");
+        var animalIds = command.AnimalIds.Distinct().ToArray();
+        LivestockRules.EnsureIndividualization(command.AnimalIds.Count, animalIds.Length);
         return Tx(async (c, t) =>
         {
             var herd = await c.QuerySingleOrDefaultAsync<HerdRow>(new CommandDefinition(
-                "select id, control_mode as ControlMode, head_count as HeadCount, farm_id as FarmId from agro360.livestock_herds where tenant_id=@TenantId and id=@Id and deleted_at is null for update",
+                "select id, control_mode as ControlMode, head_count as HeadCount, farm_id as FarmId, version as Version from agro360.livestock_herds where tenant_id=@TenantId and id=@Id and deleted_at is null for update",
                 new { tenant.TenantId, Id = command.HerdId }, t, cancellationToken: ct))
                 ?? throw new NotFoundException("Grupo", command.HerdId);
+            if (!string.IsNullOrWhiteSpace(command.IdempotencyKey))
+            {
+                var replay = await c.ExecuteScalarAsync<bool>(new CommandDefinition(
+                    "select exists(select 1 from agro360.livestock_individualization_reconciliations where tenant_id=@TenantId and idempotency_key=@Key)",
+                    new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
+                if (replay) return;
+            }
             if (!string.Equals(herd.ControlMode, "QUANTITY", StringComparison.OrdinalIgnoreCase))
                 throw new ConflictException("Somente grupo controlado por quantidade pode ser conciliado para indivíduos.", "livestock.reconcile_mode");
-            if (command.AnimalIds.Count != herd.HeadCount)
-                throw new DomainException("A conciliação deve identificar exatamente a quantidade atual do grupo, sem criar cabeças artificiais.", "livestock.reconcile_count");
-            foreach (var animalId in command.AnimalIds.Distinct())
+            if (command.ExpectedVersion is long expected && expected != herd.Version)
+                throw new ConflictException("O grupo foi alterado por outra operação. Atualize os dados antes de tentar novamente.", "livestock.concurrent_herd_change");
+            LivestockRules.EnsureIndividualizationFits(herd.HeadCount, animalIds.Length);
+            foreach (var animalId in animalIds)
             {
                 var animal = await LockAnimalAsync(c, t, animalId, ct);
                 LivestockRules.EnsureOnFarm(animal.Status, "conciliar");
                 if (animal.HerdId == command.HerdId)
-                    continue;
+                    throw new ConflictException("Animal já foi individualizado neste grupo.", "livestock.individualization_already_applied");
                 if (animal.HerdId is not null)
                     throw new ConflictException("Animal já pertence a outro grupo.", "livestock.animal_already_grouped");
                 await c.ExecuteAsync(new CommandDefinition(
@@ -217,13 +226,23 @@ public sealed class LivestockHerdService(
             await c.ExecuteAsync(new CommandDefinition(
                 """
                 update agro360.livestock_herds
-                set control_mode='INDIVIDUAL', head_count=@Count, updated_at=now(), updated_by=@UserId, version=version+1
+                set control_mode=case when head_count=@Count then 'INDIVIDUAL' else 'QUANTITY' end,
+                    head_count=case when head_count=@Count then
+                        (select count(*) from agro360.livestock_animals a
+                         where a.tenant_id=@TenantId and a.herd_id=@Id and a.deleted_at is null)
+                        else head_count-@Count end,
+                    updated_at=now(), updated_by=@UserId, version=version+1
                 where tenant_id=@TenantId and id=@Id;
                 insert into agro360.livestock_herd_movements
                     (id,tenant_id,herd_id,movement_kind,quantity,occurred_on,reason_code,origin_notes,responsible_id,created_by)
-                values (@Movement,@TenantId,@Id,'RECONCILE',@Count,@On,'RECONCILE',@Notes,@UserId,@UserId)
+                values (@Movement,@TenantId,@Id,'RECONCILE',@Count,@On,'RECONCILE',@Notes,@UserId,@UserId);
+                insert into agro360.livestock_individualization_reconciliations
+                    (id,tenant_id,herd_id,collective_quantity,identified_quantity,occurred_at,reason,status,
+                     created_by,confirmed_at,confirmed_by,idempotency_key)
+                values (@Reconciliation,@TenantId,@Id,@PreviousCount,@Count,@OccurredAt,
+                        coalesce(nullif(@Notes,''),'Individualização de rebanho'),'CONFIRMED',@UserId,now(),@UserId,@IdempotencyKey)
                 """,
-                new { Count = command.AnimalIds.Count, tenant.TenantId, tenant.UserId, Id = command.HerdId, Movement = Guid.CreateVersion7(), On = command.OccurredOn, command.Notes },
+                new { Count = animalIds.Length, PreviousCount = herd.HeadCount, tenant.TenantId, tenant.UserId, Id = command.HerdId, Movement = Guid.CreateVersion7(), Reconciliation = Guid.CreateVersion7(), On = command.OccurredOn, OccurredAt = command.OccurredOn.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc), command.Notes, command.IdempotencyKey },
                 t, cancellationToken: ct));
             await Audit(c, t, "reconcile", "Herd", command.HerdId, command, ct);
         }, ct);
@@ -1728,6 +1747,7 @@ public sealed class LivestockHerdService(
         public string ControlMode { get; set; } = "INDIVIDUAL";
         public int HeadCount { get; set; }
         public Guid FarmId { get; set; }
+        public long Version { get; set; }
     }
     private sealed class AnimalLockRow
     {

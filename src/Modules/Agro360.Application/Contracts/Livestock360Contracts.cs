@@ -61,7 +61,13 @@ public interface ILivestock360Service
 public sealed record LivestockCatalogCommand(string Code, string Name, string? SpeciesCode, string? Sex, bool Active = true);
 public sealed record FacilityCommand(Guid FarmId, string Name, string Kind, Guid? PaddockId, int? CapacityHead, string Status, string? Notes);
 public sealed record HandlingLotCommand(Guid FarmId, string Name, string Purpose, string? Notes);
-public sealed record ReconcileHerdCommand(Guid HerdId, IReadOnlyList<Guid> AnimalIds, DateOnly OccurredOn, string? Notes);
+public sealed record ReconcileHerdCommand(
+    Guid HerdId,
+    IReadOnlyList<Guid> AnimalIds,
+    DateOnly OccurredOn,
+    string? Notes,
+    long? ExpectedVersion = null,
+    string? IdempotencyKey = null);
 public sealed record ChangeTagCommand(string NewTag, DateOnly ChangedOn, string? Reason);
 public sealed record InactivateAnimalCommand(DateOnly OccurredOn, string Reason);
 public sealed record HerdMovementCommand(

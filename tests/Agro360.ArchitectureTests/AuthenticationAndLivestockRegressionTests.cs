@@ -216,6 +216,22 @@ public sealed class AuthenticationAndLivestockRegressionTests
     }
 
     [Fact]
+    public void LivestockIndividualizationIsPartialConcurrentAndIdempotent()
+    {
+        var migration = Read("database/migrations/105_livestock_individualization_integrity.sql");
+        var service = Read("src/Modules/Agro360.Infrastructure/Services/LivestockHerdService.cs");
+
+        Assert.Contains("identified_quantity <= collective_quantity", migration, StringComparison.Ordinal);
+        Assert.Contains("ux_livestock_individualization_idempotency", migration, StringComparison.Ordinal);
+        Assert.Contains("where control_mode = 'COLLECTIVE'", migration, StringComparison.Ordinal);
+        Assert.Contains("for update", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ExpectedVersion", service, StringComparison.Ordinal);
+        Assert.Contains("head_count-@Count", service, StringComparison.Ordinal);
+        Assert.Contains("livestock_individualization_reconciliations", service, StringComparison.Ordinal);
+        Assert.Contains("individualization_already_applied", service, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AnimalDetailIsTenantScopedAndCombinesAuditableSources()
     {
         var service = Read("src/Modules/Agro360.Infrastructure/Services/LivestockService.cs");
