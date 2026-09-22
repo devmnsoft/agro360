@@ -76,7 +76,7 @@ begin
  ('agriculture','producers','properties','fields','seasons','inventory','commercial','contracts','orders','logistics','finance','traceability','environment-esg','analytics','platform');
  insert into agro360.platform_tenant_module_entitlements(tenant_id,module_id,status,reason,activated_at)
  select vale_id,id,'ACTIVE','Fixture de isolamento Vale Verde',now()
- from agro360.platform_module_catalog where code in ('agriculture','inventory','commercial','traceability','analytics');
+ from agro360.platform_module_catalog where code in ('agriculture','inventory','commercial','logistics','traceability','analytics');
  insert into agro360.platform_tenant_module_entitlements(tenant_id,module_id,status,reason,activated_at)
  select blocked_id,id,'ACTIVE','Módulos preservados; tenant bloqueado',now()
  from agro360.platform_module_catalog where code in ('agriculture','inventory');
@@ -127,6 +127,9 @@ begin
  insert into agro360.identity_users(id,tenant_id,name,email,password_hash,status,normalized_document,document_type,must_change_password,mfa_enabled) values(user_id,santa_id,'Operador Fazenda Santa Clara','operador.santaclara@agro360.local',operator_hash,'ACTIVE','11122233344','CPF',false,false)
  on conflict(id) do update set name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,status='ACTIVE',normalized_document=excluded.normalized_document,document_type='CPF',must_change_password=false,mfa_enabled=false,deleted_at=null,updated_at=now();
  insert into agro360.identity_user_roles values(santa_id,user_id,role_id) on conflict do nothing;
+ select id into profile_id from agro360.platform_profiles where tenant_id=santa_id and name='Operador';
+ if profile_id is null then profile_id:=gen_random_uuid(); insert into agro360.platform_profiles(id,tenant_id,name,is_template,active) values(profile_id,santa_id,'Operador',false,true); end if;
+ insert into agro360.platform_user_profiles(tenant_id,user_id,profile_id,is_primary) values(santa_id,user_id,profile_id,true) on conflict do nothing;
 
  -- Administradores Vale Verde e tenant bloqueado.
  foreach vale_id in array array[vale_id,blocked_id] loop
@@ -142,6 +145,9 @@ begin
   values(user_id,vale_id,case when vale_id=blocked_id then 'Admin Fazenda Bloqueada' else 'Admin Cooperativa Vale Verde' end,case when vale_id=blocked_id then 'admin.bloqueado@agro360.local' else 'admin.valeverde@agro360.local' end,client_hash,'ACTIVE',case when vale_id=blocked_id then '33444555000172' else '22333444000191' end,'CNPJ',false,false)
   on conflict(id) do update set name=excluded.name,email=excluded.email,password_hash=excluded.password_hash,status='ACTIVE',normalized_document=excluded.normalized_document,document_type='CNPJ',must_change_password=false,mfa_enabled=false,deleted_at=null,updated_at=now();
   insert into agro360.identity_user_roles values(vale_id,user_id,role_id) on conflict do nothing;
+  select id into profile_id from agro360.platform_profiles where tenant_id=vale_id and name='TenantAdmin';
+  if profile_id is null then profile_id:=gen_random_uuid(); insert into agro360.platform_profiles(id,tenant_id,name,is_template,active) values(profile_id,vale_id,'TenantAdmin',false,true); end if;
+  insert into agro360.platform_user_profiles(tenant_id,user_id,profile_id,is_primary) values(vale_id,user_id,profile_id,true) on conflict do nothing;
  end loop;
 end $seed$;
 

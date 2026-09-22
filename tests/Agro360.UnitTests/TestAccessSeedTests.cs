@@ -32,6 +32,30 @@ public sealed class TestAccessSeedTests
             Assert.DoesNotContain(secret, sql, StringComparison.Ordinal);
         Assert.Contains("Tenant de teste bloqueado para validação de acesso", sql, StringComparison.Ordinal);
         Assert.Contains("delete from agro360.platform_tenant_module_entitlements", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("('agriculture','inventory','commercial','logistics','traceability','analytics')", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(3, Count(sql, "insert into agro360.platform_user_profiles"));
         Assert.Contains("profile_not_linked", File.ReadAllText(Path.Combine(Root, "src/Modules/Agro360.Infrastructure/Services/IdentityService.cs")), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void ConsolidatedInstallerContainsTheSameAccessContract()
+    {
+        var seed = File.ReadAllText(Path.Combine(Root, "database/seed-test-access.sql"));
+        var installer = File.ReadAllText(Path.Combine(Root, "database/agro360-postgres-full.sql"));
+
+        foreach (var marker in new[]
+        {
+            "admin.santaclara@agro360.local", "admin.valeverde@agro360.local",
+            "operador.santaclara@agro360.local", "admin.bloqueado@agro360.local",
+            "('agriculture','inventory','commercial','logistics','traceability','analytics')",
+            "name='Operador'", "platform_user_profiles"
+        })
+        {
+            Assert.Contains(marker, seed, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains(marker, installer, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static int Count(string value, string marker) =>
+        value.Split(marker, StringSplitOptions.None).Length - 1;
 }
