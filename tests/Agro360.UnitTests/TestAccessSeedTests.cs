@@ -22,7 +22,7 @@ public sealed class TestAccessSeedTests
         var sql = File.ReadAllText(Path.Combine(Root, "database/seed-test-access.sql"));
 
         Assert.Contains("p.normalized_document='11222333000181'", sql, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("on conflict(user_id) do update", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("on conflict(user_id) do nothing", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("select set_config('app.tenant_id'", sql, StringComparison.OrdinalIgnoreCase);
         foreach (var tenant in new[] { "agro360-platform", "fazenda-santa-clara", "cooperativa-vale-verde", "fazenda-bloqueada-teste" })
             Assert.Contains(tenant, sql, StringComparison.Ordinal);
@@ -31,7 +31,13 @@ public sealed class TestAccessSeedTests
         foreach (var secret in new[] { "Admin@123456", "Cliente@123456", "Operador@123456" })
             Assert.DoesNotContain(secret, sql, StringComparison.Ordinal);
         Assert.Contains("Tenant de teste bloqueado para validação de acesso", sql, StringComparison.Ordinal);
-        Assert.Contains("delete from agro360.platform_tenant_module_entitlements", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("delete from agro360.platform_tenant_module_entitlements", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("on conflict(tenant_id,module_id) do nothing", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("v_user_id uuid", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("values(gen_random_uuid(), v_user_id, true)", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("on conflict(user_id) do nothing", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("into user_id", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("password_hash=excluded.password_hash", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("('agriculture','inventory','commercial','logistics','traceability','analytics')", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(3, Count(sql, "insert into agro360.platform_user_profiles"));
         Assert.Contains("profile_not_linked", File.ReadAllText(Path.Combine(Root, "src/Modules/Agro360.Infrastructure/Services/IdentityService.cs")), StringComparison.Ordinal);

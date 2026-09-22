@@ -1,5 +1,10 @@
 # Auditoria de acesso e tenants — 2026-09-22
 
+**Baseline auditada:** branch `work`, commit `9cb1476` (árvore inicialmente
+limpa). A classificação abaixo resulta da leitura da solução, SQL, migrations,
+serviços de autenticação, telas e testes desta árvore; documentação anterior não
+foi tratada como prova de execução.
+
 ## Diagnóstico anterior à alteração
 
 | Item obrigatório | Estado inicial | Evidência e diagnóstico |
@@ -29,10 +34,17 @@ publicava apenas duas identidades, com login Santa Clara diferente do solicitado
 não criava o tenant secundário/bloqueado nem o operador e não reconciliava módulos.
 
 O seed agora localiza tenants por slug e documento, reaproveita a Santa Clara
-legada (`santa-clara`) pelo CNPJ, reconcilia status/plano/módulos e cria cinco
+legada (`santa-clara`) pelo CNPJ, provisiona plano/módulos ausentes e cria cinco
 identidades persistentes com roles. Os três hashes conhecidos são compatíveis com
 o mesmo `PasswordHasher` da aplicação. O consolidado contém exatamente a mesma
-rotina. Reaplicar não duplica tenants, usuários, roles, vínculos ou módulos.
+rotina. Reaplicar não duplica tenants, usuários, roles, vínculos ou módulos e não
+redefine senha, reativa usuário/tenant/módulo bloqueado nem restaura a elevação de
+SuperAdmin que tenha sido revogada. Reset continua sendo uma operação explícita.
+
+Na revisão de 2026-09-22, a variável PL/pgSQL `user_id` foi identificada como a
+causa da resolução ambígua no alvo `ON CONFLICT(user_id)`. Ela passou a se chamar
+`v_user_id`; colunas permanecem qualificadas por alias e o alvo continua apoiado
+pela restrição `UNIQUE` real de `platform_super_admins.user_id`.
 
 ## Contrato das fixtures
 

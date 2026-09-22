@@ -152,4 +152,4 @@ psql "$AGRO360_CONNECTION_STRING" -v ON_ERROR_STOP=1 -f database/seed-test-acces
 | SuperAdmin | `agro360-platform` | `superadmin@agro360.local` | `00000000000` | `Admin@123456` |
 | Administrador do cliente | `santa-clara` | `admin.cliente@agro360.local` | `11222333000181` | `Cliente@123456` |
 
-A senha em texto acima é somente a credencial conhecida de teste; o PostgreSQL recebe exclusivamente hashes `pbkdf2-sha512$210000$...`, exatamente o formato validado por `PasswordHasher`. O script atualiza hash, status, tenant e perfil em reaplicações, sem duplicar registros. Não aplique este seed em produção.
+A senha em texto acima é somente a credencial conhecida de teste; o PostgreSQL recebe exclusivamente hashes `pbkdf2-sha512$210000$...`, exatamente o formato validado por `PasswordHasher`. A primeira execução provisiona os acessos ausentes. Reaplicações não duplicam registros e preservam senha, bloqueios, módulos suspensos e elevação global revogada; qualquer reset deve ser deliberado e separado. Não aplique este seed em produção.
