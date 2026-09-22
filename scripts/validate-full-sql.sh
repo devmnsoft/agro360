@@ -13,6 +13,12 @@ fi
 if rg -n -i 'alter[[:space:]]+table[^;]*disable[[:space:]]+row[[:space:]]+level[[:space:]]+security' "$file"; then
   echo "ERRO: instalador não pode desabilitar RLS" >&2; exit 1
 fi
+if rg -n -i 'into[[:space:]]+user_id' "$file"; then
+  echo "ERRO: blocos PL/pgSQL devem usar v_user_id para evitar ambiguidade com colunas" >&2; exit 1
+fi
+rg -q -i 'v_user_id[[:space:]]+uuid' "$file" || {
+  echo "ERRO: contrato de bootstrap deve declarar v_user_id explicitamente" >&2; exit 1
+}
 if rg -n '(^[[:space:]]*\\\\(i|include|ir)([[:space:]]|$)|Host=|Password=|/home/|/workspace/|[A-Za-z]:\\\\)' "$file"; then
   echo "ERRO: instalador contém include, conexão, segredo ou caminho local" >&2; exit 1
 fi

@@ -1,5 +1,40 @@
 # Auditoria de estabilização — 2026-09-22
 
+## Revalidação do incremento operacional
+
+A branch `work` foi reavaliada no commit `8cdbefb`. Não há `AGENTS.md` no
+repositório nem em seu diretório pai. O gate obrigatório continua bloqueado:
+`dotnet`, `psql` e `docker` não existem na imagem. Também foi tentada a instalação
+dos clientes e do servidor PostgreSQL/PostGIS pelo gerenciador do sistema, mas o
+proxy respondeu HTTP 403 para os repositórios configurados e o `apt` não encontrou
+os pacotes. Essa limitação é externa ao código e **não** transforma verificações
+estáticas em homologação.
+
+O validador estático passou a incluir explicitamente
+`database/seed-test-access.sql` no conjunto de seeds publicáveis. Além das regras
+comuns, ele agora bloqueia regressões que reintroduzam a variável PL/pgSQL ambígua
+`user_id`, atualizem hash/status em reaplicação, reativem a decisão existente de
+SuperAdmin ou desabilitem RLS. O consolidado também mantém `v_user_id`; a validação
+dinâmica de ambos permanece pendente de PostgreSQL real com `ON_ERROR_STOP=1`.
+
+### Matriz de aceite solicitada
+
+| Cenário | Resultado esperado | Evidência disponível | Estado nesta execução |
+|---|---|---|---|
+| Consumo sem duplicação | Um movimento/custo por comando; rascunho sem saldo; compensação ligada ao original | migrations 078/086/087, serviços e testes versionados | **Não executado: gate bloqueado** |
+| Rateio exato | Destinos positivos; 100%; soma exata; resíduo determinístico; reenvio idempotente | `SeasonCostRules`, `SeasonCostService`, `/Costs` e testes unitários | **Não executado: gate bloqueado** |
+| Perda concorrente com reserva | Nunca exceder elegível, liberar reserva somente por fluxo explícito e impedir saldo negativo | regras de Storage/Inventory/Logistics e migrations 088/094 | **Não executado: gate bloqueado** |
+| Estorno consistente | Compensação rastreável, original preservado e consequências posteriores validadas | serviços de custo/material/retorno e auditoria | **Não executado: gate bloqueado** |
+| Fechamento protegido | Versão fechada imutável; sem estoque/liquidação implícitos | migration 077, `HarvestService` e `/Harvest` | **Não executado: gate bloqueado** |
+| Reabertura auditada | Permissão, justificativa, ator e nova versão | contratos/serviço de colheita e testes versionados | **Não executado: gate bloqueado** |
+| Resultado reconciliado | Receita, custo e etapas comerciais não somadas em duplicidade; moeda e incompletude explícitas | relatórios, custos e documentação de critérios | **Não executado: gate bloqueado** |
+| Acesso cruzado negado | Role da aplicação, contexto por transação/conexão e dois tenants isolados | RLS/policies e fixtures A/B presentes | **Não executado: gate bloqueado** |
+
+Por cumprimento da regra “avance somente após o gate”, nenhuma migration, regra de
+negócio, API ou tela dos blocos B em diante foi alterada nesta execução. As
+jornadas existentes continuam classificadas como parciais até que o procedimento
+dinâmico abaixo possa ser executado; não se declara entrega homologada.
+
 ## Decisão do gate
 
 **Gate bloqueado. Nenhum avanço funcional foi realizado.** O ambiente não possui o
