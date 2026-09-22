@@ -514,6 +514,61 @@ public sealed class LogisticsService(
         var type = command.Type.Trim().ToUpperInvariant(); var allowed = new[] { "DISCOUNT", "CREDIT", "PARTIAL_CANCELLATION", "REFUND", "NONE" }; if (!allowed.Contains(type) || command.Currency.Trim().Length != 3 || command.ProposedAmount < 0 || (type == "NONE" && command.ProposedAmount != 0) || string.IsNullOrWhiteSpace(command.Reason)) throw new DomainException("Decisão comercial inválida."); var hash = Hash(command);
         return Tx(async (c, t) => { var old = await c.QuerySingleOrDefaultAsync<(Guid Id, string RequestHash)>(new CommandDefinition("select id,request_hash requesthash from agro360.after_sales_adjustments where tenant_id=@TenantId and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct)); if (old.Id != Guid.Empty) { if (old.RequestHash != hash) throw new ConflictException("Chave reutilizada com conteúdo diferente."); return old.Id; } var adjustment = Guid.CreateVersion7(); if (await c.ExecuteAsync(new CommandDefinition("insert into agro360.after_sales_adjustments(id,tenant_id,occurrence_id,type,currency,proposed_amount,status,reason,idempotency_key,request_hash,created_by) select @Adjustment,@TenantId,@Id,@Type,@Currency,@Amount,'PROPOSED',@Reason,@Key,@Hash,@UserId where exists(select 1 from agro360.after_sales_occurrences where tenant_id=@TenantId and id=@Id and status not in('RESOLVED','CANCELLED'))", new { Adjustment = adjustment, tenant.TenantId, Id = id, Type = type, Currency = command.Currency.Trim().ToUpperInvariant(), Amount = command.ProposedAmount, command.Reason, Key = command.IdempotencyKey, Hash = hash, tenant.UserId }, t, cancellationToken: ct)) == 0) throw new ConflictException("Caso não aceita ajuste comercial."); await Audit(c, t, "after-sales.adjustment.proposed", id, command, ct); return adjustment; });
     }
+    public Task<Guid> PlanTripAsync(PlanTripCommand command, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(command.IdempotencyKey) || command.PlannedEnd <= command.PlannedStart || command.Stops.Count < 2 || command.Legs.Count == 0 || command.Allocations.Count == 0)
+            throw new DomainException("Planejamento exige chave, período, paradas, trechos e cargas.", "logistics.plan_invalid");
+        if (command.Stops.Select(x => x.Sequence).Distinct().Count() != command.Stops.Count || command.Stops.Any(x => x.Sequence <= 0))
+            throw new DomainException("A sequência das paradas deve ser positiva e única.", "logistics.stop_sequence_invalid");
+        foreach (var leg in command.Legs)
+        {
+            var loads = command.Allocations.Where(a => a.LoadingStopSequence <= leg.OriginStopSequence && a.UnloadingStopSequence >= leg.DestinationStopSequence).ToList();
+            decimal? used = null;
+            if (!string.IsNullOrWhiteSpace(leg.CapacityUnit) && loads.All(a => a.Unit.Equals(leg.CapacityUnit, StringComparison.OrdinalIgnoreCase)))
+                used = loads.Sum(a => a.Quantity);
+            else if (!string.IsNullOrWhiteSpace(leg.CapacityUnit) && loads.All(a => a.Weight is not null && string.Equals(a.WeightUnit, leg.CapacityUnit, StringComparison.OrdinalIgnoreCase)))
+                used = loads.Sum(a => a.Weight!.Value);
+            else if (!string.IsNullOrWhiteSpace(leg.CapacityUnit) && loads.All(a => a.Volume is not null && string.Equals(a.VolumeUnit, leg.CapacityUnit, StringComparison.OrdinalIgnoreCase)))
+                used = loads.Sum(a => a.Volume!.Value);
+            if (used is null)
+                throw new DomainException("Não há medição compatível para comprovar a capacidade do trecho; informe peso, volume ou unidade sem conversão implícita.", "logistics.capacity_measurement_pending");
+            LogisticsRules.ValidateCapacity(leg.CapacityTotal, used, leg.CapacityUnit);
+            if (!LogisticsRules.RouteTypes.Contains(leg.Mode.Trim().ToUpperInvariant()) || leg.OriginStopSequence >= leg.DestinationStopSequence)
+                throw new DomainException("Trecho ou ordem das paradas é inválido.", "logistics.leg_invalid");
+            if (leg.Mode.Equals("RIVER", StringComparison.OrdinalIgnoreCase) &&
+                (string.IsNullOrWhiteSpace(leg.NavigationSource) || leg.NavigationValidUntil is null || leg.NavigationResponsibleId is null))
+                throw new DomainException("Trecho fluvial exige fonte e validade da informação manual de navegabilidade.", "logistics.navigation_evidence_required");
+        }
+        var hash = Hash(command);
+        return Tx(async (c, t) =>
+        {
+            var old = await c.QuerySingleOrDefaultAsync<(Guid Id, string RequestHash)>(new CommandDefinition("select trip_id id,request_hash requesthash from agro360.logistics_trip_plans where tenant_id=@TenantId and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
+            if (old.Id != Guid.Empty) { if (old.RequestHash != hash) throw new ConflictException("Chave de idempotência reutilizada com outro planejamento."); return old.Id; }
+            foreach (var allocation in command.Allocations)
+            {
+                if (allocation.Quantity <= 0 || string.IsNullOrWhiteSpace(allocation.Unit) || allocation.LoadingStopSequence >= allocation.UnloadingStopSequence)
+                    throw new DomainException("Carga, unidade ou paradas da alocação são inválidas.", "logistics.allocation_invalid");
+                await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@Key,0))", new { Key = $"trip-allocation:{tenant.TenantId}:{allocation.ShipmentItemId}" }, t, cancellationToken: ct));
+                var pending = await c.ExecuteScalarAsync<decimal?>(new CommandDefinition("select i.checked_quantity-coalesce((select sum(a.quantity) from agro360.logistics_trip_allocations a where a.tenant_id=i.tenant_id and a.shipment_item_id=i.id and a.status<>'CANCELLED'),0) from agro360.fulfillment_shipment_items i join agro360.fulfillment_shipments s on s.tenant_id=i.tenant_id and s.id=i.shipment_id where i.tenant_id=@TenantId and i.id=@Item and lower(i.unit)=lower(@Unit) and s.status in('CHECKED','DISPATCHED','IN_DELIVERY','PARTIAL','RETURN_PENDING') for update of i", new { tenant.TenantId, Item = allocation.ShipmentItemId, allocation.Unit }, t, cancellationToken: ct));
+                if (pending is null || pending < allocation.Quantity) throw new ConflictException("Alocação excede o saldo pendente ou usa unidade incompatível.");
+            }
+            var id = Guid.CreateVersion7();
+            await c.ExecuteAsync(new CommandDefinition("insert into agro360.logistics_trips(id,tenant_id,number,origin,destination,estimated_distance,carrier,freight_type,transport_mode,freight_value,cost_per_tonne,cost_per_km,status,responsible_id,planned_start,planned_end,created_by) values(@Id,@TenantId,@Number,@Origin,@Destination,0,@Carrier,'PENDING','MIXED',0,0,0,'PLANNED',@ResponsibleId,@PlannedStart,@PlannedEnd,@UserId); insert into agro360.logistics_trip_plans(id,tenant_id,trip_id,idempotency_key,request_hash,version,created_by) values(@Plan,@TenantId,@Id,@Key,@Hash,1,@UserId)", new { Id = id, Plan = Guid.CreateVersion7(), tenant.TenantId, command.Number, command.Origin, command.Destination, command.Carrier, command.ResponsibleId, command.PlannedStart, command.PlannedEnd, Key = command.IdempotencyKey, Hash = hash, tenant.UserId }, t, cancellationToken: ct));
+            foreach (var stop in command.Stops) await c.ExecuteAsync(new CommandDefinition("insert into agro360.logistics_trip_stops(id,tenant_id,trip_id,sequence,type,name,operational_window,planned_arrival,planned_departure,created_by) values(@Id,@TenantId,@Trip,@Sequence,@Type,@Name,@Window,@Arrival,@Departure,@UserId)", new { Id = Guid.CreateVersion7(), tenant.TenantId, Trip = id, stop.Sequence, Type = stop.Type.Trim().ToUpperInvariant(), stop.Name, Window = stop.OperationalWindow, Arrival = stop.PlannedArrival, Departure = stop.PlannedDeparture, tenant.UserId }, t, cancellationToken: ct));
+            foreach (var leg in command.Legs) await c.ExecuteAsync(new CommandDefinition("insert into agro360.logistics_trip_legs(id,tenant_id,trip_id,sequence,origin_stop_sequence,destination_stop_sequence,mode,asset_id,capacity_total,capacity_unit,navigation_source,navigation_valid_until,navigation_responsible_id,created_by) values(@Id,@TenantId,@Trip,@Sequence,@Origin,@Destination,@Mode,@Asset,@Capacity,@Unit,@Source,@ValidUntil,@NavigationResponsibleId,@UserId)", new { Id = Guid.CreateVersion7(), tenant.TenantId, Trip = id, leg.Sequence, Origin = leg.OriginStopSequence, Destination = leg.DestinationStopSequence, Mode = leg.Mode.Trim().ToUpperInvariant(), Asset = leg.AssetId, Capacity = leg.CapacityTotal, Unit = leg.CapacityUnit, Source = leg.NavigationSource, ValidUntil = leg.NavigationValidUntil, leg.NavigationResponsibleId, tenant.UserId }, t, cancellationToken: ct));
+            foreach (var a in command.Allocations) await c.ExecuteAsync(new CommandDefinition("insert into agro360.logistics_trip_allocations(id,tenant_id,trip_id,shipment_item_id,quantity,unit,loading_stop_sequence,unloading_stop_sequence,weight,weight_unit,volume,volume_unit,status,created_by) values(@Id,@TenantId,@Trip,@Item,@Quantity,@Unit,@Loading,@Unloading,@Weight,@WeightUnit,@Volume,@VolumeUnit,'PLANNED',@UserId)", new { Id = Guid.CreateVersion7(), tenant.TenantId, Trip = id, Item = a.ShipmentItemId, a.Quantity, Unit = a.Unit.Trim().ToLowerInvariant(), Loading = a.LoadingStopSequence, Unloading = a.UnloadingStopSequence, a.Weight, a.WeightUnit, a.Volume, a.VolumeUnit, tenant.UserId }, t, cancellationToken: ct));
+            await Audit(c, t, "trip.plan", id, command, ct); return id;
+        });
+    }
+    public Task<dynamic?> TripDetailAsync(Guid id, CancellationToken ct) => Tx<dynamic?>(async (c, t) =>
+    {
+        var trip = await c.QuerySingleOrDefaultAsync(new CommandDefinition("select * from agro360.logistics_trips where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
+        if (trip is null) return null;
+        var stops = (await c.QueryAsync(new CommandDefinition("select * from agro360.logistics_trip_stops where tenant_id=@TenantId and trip_id=@Id order by sequence", new { tenant.TenantId, Id = id }, t, cancellationToken: ct))).AsList();
+        var legs = (await c.QueryAsync(new CommandDefinition("select * from agro360.logistics_trip_legs where tenant_id=@TenantId and trip_id=@Id order by sequence", new { tenant.TenantId, Id = id }, t, cancellationToken: ct))).AsList();
+        var allocations = (await c.QueryAsync(new CommandDefinition("select a.*,i.checked_quantity dispatched_reference from agro360.logistics_trip_allocations a join agro360.fulfillment_shipment_items i on i.tenant_id=a.tenant_id and i.id=a.shipment_item_id where a.tenant_id=@TenantId and a.trip_id=@Id order by a.loading_stop_sequence,a.id", new { tenant.TenantId, Id = id }, t, cancellationToken: ct))).AsList();
+        return new { trip, stops, legs, allocations };
+    });
     private static string Hash<T>(T command) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(command))));
     private Task Audit(NpgsqlConnection c, NpgsqlTransaction t, string action, Guid id, object x, CancellationToken ct) => c.WriteAuditAsync(t, tenant, action, "Trip", id, null, x, ct);
     private async Task<T> Tx<T>(Func<NpgsqlConnection, NpgsqlTransaction, Task<T>> f) { try { return await db.InTenantTransactionAsync(f, CancellationToken.None); } catch (Exception ex) { InfrastructureLogMessages.LogisticsFailed(logger, tenant.TenantId, ex); throw; } }
