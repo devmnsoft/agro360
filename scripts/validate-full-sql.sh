@@ -10,12 +10,22 @@ fi
 if rg -n -i '^[[:space:]]*rollback[[:space:]]*;' "$file"; then
   echo "ERRO: instalador consolidado contém ROLLBACK explícito" >&2; exit 1
 fi
+if rg -n -i 'alter[[:space:]]+table[^;]*disable[[:space:]]+row[[:space:]]+level[[:space:]]+security' "$file"; then
+  echo "ERRO: instalador não pode desabilitar RLS" >&2; exit 1
+fi
 if rg -n '(^[[:space:]]*\\\\(i|include|ir)([[:space:]]|$)|Host=|Password=|/home/|/workspace/|[A-Za-z]:\\\\)' "$file"; then
   echo "ERRO: instalador contém include, conexão, segredo ou caminho local" >&2; exit 1
 fi
 for required in 'create schema if not exists agro360' 'create table' 'create index' 'create or replace view agro360.' 'create or replace function agro360.' 'create trigger' 'agro360.platform_schema_versions' 'agro360.storage_receipts' 'agro360.storage_lots' 'agro360.logistics_trips' 'agro360.traceability_lots' 'agro360.compliance_product_rules' 'agro360.rural_hr_people'; do
   rg -qi "$required" "$file" || { echo "ERRO: item ausente: $required" >&2; exit 1; }
 done
+for security_marker in 'enable row level security' 'force row level security' 'create policy' 'platform_current_tenant_id()'; do
+  rg -qi "$security_marker" "$file" || { echo "ERRO: marcador de isolamento ausente: $security_marker" >&2; exit 1; }
+done
+last_statement="$(sed -E '/^[[:space:]]*(--.*)?$/d' "$file" | tail -n 1 | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+if [[ "$last_statement" != "commit;" ]]; then
+  echo "ERRO: instalador deve terminar em COMMIT" >&2; exit 1
+fi
 if rg -ni '^\s*create schema( if not exists)?\s+(identity|finance|audit|workflow|inventory|platform|tenancy|operations|support|public)\b' "$file"; then
   echo "ERRO: instalador cria namespace legado" >&2; exit 1
 fi
