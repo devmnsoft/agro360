@@ -83,6 +83,24 @@ public sealed class AgricultureFormTests
     }
 
     [Fact]
+    public void FieldExecutionRejectsChangedRetriesImplicitConversionsAndInvalidMeters()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
+        var service = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Services/FieldOperationsService.cs"));
+        var migration = File.ReadAllText(Path.Combine(root, "database/migrations/101_field_execution_integrity.sql"));
+
+        Assert.Contains("WorkLogRow", service);
+        Assert.Contains("agriculture.idempotency_payload_conflict", service);
+        Assert.Contains("agriculture.meter_continuity", service);
+        Assert.Contains("interruptionMinutes > durationMinutes", service);
+        Assert.Contains("lower(p.base_unit)=lower(@Unit)", service);
+        Assert.Contains("Conversões implícitas não são permitidas", service);
+        Assert.Contains("ck_field_work_logs_meter_pair", migration);
+        Assert.Contains("ck_field_work_logs_interruption_duration", migration);
+        Assert.Contains("not valid", migration, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void FieldOrderTransitionsProtectConcurrentChangesAndServerTimestamps()
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));

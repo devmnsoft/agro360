@@ -51,14 +51,45 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
 
     public Task AddWorkLogAsync(Guid orderId, FieldWorkLogCommand command, CancellationToken cancellationToken)
     {
-        if (command.EndsAt <= command.StartsAt || command.PerformedQuantity < 0 || command.PhysicalAreaHa < 0 || command.InitialMeter < 0 || command.FinalMeter < command.InitialMeter || command.InterruptionMinutes < 0 || string.IsNullOrWhiteSpace(command.IdempotencyKey)) throw new DomainException("Revise duração, quantidades, medidor e chave da requisição.", "agriculture.work_log_invalid");
+        var durationMinutes = (command.EndsAt - command.StartsAt).TotalMinutes;
+        if (command.EndsAt <= command.StartsAt || command.PerformedQuantity < 0 || command.PhysicalAreaHa < 0 || command.InitialMeter < 0 || command.FinalMeter < command.InitialMeter ||
+            command.InterruptionMinutes < 0 || command.InterruptionMinutes > durationMinutes ||
+            (command.InterruptionMinutes > 0 && string.IsNullOrWhiteSpace(command.InterruptionReason)) ||
+            (command.InitialMeter is null) != (command.FinalMeter is null) || string.IsNullOrWhiteSpace(command.Stage) ||
+            string.IsNullOrWhiteSpace(command.Unit) || string.IsNullOrWhiteSpace(command.IdempotencyKey))
+            throw new DomainException("Revise duração, quantidades, parada, medidor e chave da requisição.", "agriculture.work_log_invalid");
         return database.InTenantTransactionAsync(async (c, t) =>
         {
             var status = await RequireOrder(c, t, orderId, cancellationToken);
             if (status is not ("IN_PROGRESS" or "PAUSED" or "AWAITING_REVIEW")) throw new ConflictException("A ordem precisa estar em execução ou aguardando conferência.");
+            var normalizedStage = command.Stage.Trim(); var normalizedUnit = command.Unit.Trim().ToLowerInvariant();
+            var repeated = await c.QuerySingleOrDefaultAsync<WorkLogRow>(new CommandDefinition("select work_order_id WorkOrderId,operator_id OperatorId,equipment_id EquipmentId,stage,starts_at StartsAt,ends_at EndsAt,performed_quantity PerformedQuantity,unit,physical_area_ha PhysicalAreaHa,initial_meter InitialMeter,final_meter FinalMeter,interruption_minutes InterruptionMinutes,interruption_reason InterruptionReason,notes,evidence_reference EvidenceReference from agro360.field_work_logs where tenant_id=@TenantId and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: cancellationToken));
+            if (repeated is not null)
+            {
+                if (repeated.WorkOrderId != orderId || repeated.OperatorId != command.OperatorId || repeated.EquipmentId != command.EquipmentId || repeated.Stage != normalizedStage || repeated.StartsAt != command.StartsAt || repeated.EndsAt != command.EndsAt || repeated.PerformedQuantity != command.PerformedQuantity || repeated.Unit != normalizedUnit || repeated.PhysicalAreaHa != command.PhysicalAreaHa || repeated.InitialMeter != command.InitialMeter || repeated.FinalMeter != command.FinalMeter || repeated.InterruptionMinutes != command.InterruptionMinutes || repeated.InterruptionReason != command.InterruptionReason || repeated.Notes != command.Notes || repeated.EvidenceReference != command.EvidenceReference)
+                    throw new ConflictException("A chave de idempotência já foi usada com outro apontamento.", "agriculture.idempotency_payload_conflict");
+                return;
+            }
+            var operatorExists = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.identity_users where tenant_id=@TenantId and id=@OperatorId and status='ACTIVE' and deleted_at is null)", new { tenant.TenantId, command.OperatorId }, t, cancellationToken: cancellationToken));
+            if (!operatorExists) throw new ConflictException("O operador não existe ou está inativo.", "agriculture.operator_unavailable");
+            if (command.EquipmentId is not null)
+            {
+                var equipmentExists = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.fleet_assets where tenant_id=@TenantId and id=@EquipmentId and cadastral_status='ACTIVE' and status not in('INACTIVE','MAINTENANCE','BLOCKED','WRITTEN_OFF','SOLD') and deleted_at is null)", new { tenant.TenantId, command.EquipmentId }, t, cancellationToken: cancellationToken));
+                if (!equipmentExists) throw new ConflictException("O equipamento não existe ou está indisponível.", "agriculture.equipment_unavailable");
+                var lastMeter = await c.ExecuteScalarAsync<decimal?>(new CommandDefinition("select final_meter from agro360.field_work_logs where tenant_id=@TenantId and equipment_id=@EquipmentId and deleted_at is null and final_meter is not null and ends_at<=@StartsAt order by ends_at desc,id desc limit 1", new { tenant.TenantId, command.EquipmentId, command.StartsAt }, t, cancellationToken: cancellationToken));
+                if (lastMeter is not null && command.InitialMeter is not null && command.InitialMeter < lastMeter)
+                    throw new ConflictException("A leitura inicial não pode ser menor que a última leitura confirmada do equipamento.", "agriculture.meter_continuity");
+            }
             var overlap = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.field_work_logs where tenant_id=@TenantId and deleted_at is null and ((operator_id=@OperatorId) or (@EquipmentId is not null and equipment_id=@EquipmentId)) and starts_at<@EndsAt and ends_at>@StartsAt)", new { tenant.TenantId, command.OperatorId, command.EquipmentId, command.StartsAt, command.EndsAt }, t, cancellationToken: cancellationToken));
             if (overlap) throw new ConflictException("Operador ou equipamento possui apontamento sobreposto.", "agriculture.work_log_overlap");
-            await c.ExecuteAsync(new CommandDefinition("insert into agro360.field_work_logs(id,tenant_id,work_order_id,operator_id,equipment_id,stage,starts_at,ends_at,performed_quantity,unit,physical_area_ha,initial_meter,final_meter,interruption_minutes,interruption_reason,notes,evidence_reference,idempotency_key,created_by,updated_by) values(@Id,@TenantId,@OrderId,@OperatorId,@EquipmentId,@Stage,@StartsAt,@EndsAt,@PerformedQuantity,@Unit,@PhysicalAreaHa,@InitialMeter,@FinalMeter,@InterruptionMinutes,@InterruptionReason,@Notes,@EvidenceReference,@IdempotencyKey,@UserId,@UserId) on conflict(tenant_id,idempotency_key) do nothing", new { Id = Guid.CreateVersion7(), tenant.TenantId, OrderId = orderId, command.OperatorId, command.EquipmentId, Stage = command.Stage.Trim(), command.StartsAt, command.EndsAt, command.PerformedQuantity, Unit = command.Unit.Trim().ToLowerInvariant(), command.PhysicalAreaHa, command.InitialMeter, command.FinalMeter, command.InterruptionMinutes, command.InterruptionReason, command.Notes, command.EvidenceReference, command.IdempotencyKey, tenant.UserId }, t, cancellationToken: cancellationToken));
+            var inserted = await c.ExecuteAsync(new CommandDefinition("insert into agro360.field_work_logs(id,tenant_id,work_order_id,operator_id,equipment_id,stage,starts_at,ends_at,performed_quantity,unit,physical_area_ha,initial_meter,final_meter,interruption_minutes,interruption_reason,notes,evidence_reference,idempotency_key,created_by,updated_by) values(@Id,@TenantId,@OrderId,@OperatorId,@EquipmentId,@Stage,@StartsAt,@EndsAt,@PerformedQuantity,@Unit,@PhysicalAreaHa,@InitialMeter,@FinalMeter,@InterruptionMinutes,@InterruptionReason,@Notes,@EvidenceReference,@IdempotencyKey,@UserId,@UserId) on conflict(tenant_id,idempotency_key) do nothing", new { Id = Guid.CreateVersion7(), tenant.TenantId, OrderId = orderId, command.OperatorId, command.EquipmentId, Stage = normalizedStage, command.StartsAt, command.EndsAt, command.PerformedQuantity, Unit = normalizedUnit, command.PhysicalAreaHa, command.InitialMeter, command.FinalMeter, command.InterruptionMinutes, command.InterruptionReason, command.Notes, command.EvidenceReference, command.IdempotencyKey, tenant.UserId }, t, cancellationToken: cancellationToken));
+            if (inserted == 0)
+            {
+                var concurrent = await c.QuerySingleAsync<WorkLogRow>(new CommandDefinition("select work_order_id WorkOrderId,operator_id OperatorId,equipment_id EquipmentId,stage,starts_at StartsAt,ends_at EndsAt,performed_quantity PerformedQuantity,unit,physical_area_ha PhysicalAreaHa,initial_meter InitialMeter,final_meter FinalMeter,interruption_minutes InterruptionMinutes,interruption_reason InterruptionReason,notes,evidence_reference EvidenceReference from agro360.field_work_logs where tenant_id=@TenantId and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: cancellationToken));
+                if (concurrent.WorkOrderId != orderId || concurrent.OperatorId != command.OperatorId || concurrent.EquipmentId != command.EquipmentId || concurrent.Stage != normalizedStage || concurrent.StartsAt != command.StartsAt || concurrent.EndsAt != command.EndsAt || concurrent.PerformedQuantity != command.PerformedQuantity || concurrent.Unit != normalizedUnit || concurrent.PhysicalAreaHa != command.PhysicalAreaHa || concurrent.InitialMeter != command.InitialMeter || concurrent.FinalMeter != command.FinalMeter || concurrent.InterruptionMinutes != command.InterruptionMinutes || concurrent.InterruptionReason != command.InterruptionReason || concurrent.Notes != command.Notes || concurrent.EvidenceReference != command.EvidenceReference)
+                    throw new ConflictException("A chave de idempotência já foi usada com outro apontamento.", "agriculture.idempotency_payload_conflict");
+                return;
+            }
             await c.ExecuteAsync(new CommandDefinition("update agro360.agriculture_plan_operations o set status='PARTIAL',updated_at=now(),updated_by=@UserId,version=version+1 from agro360.agriculture_operation_orders l where l.tenant_id=o.tenant_id and l.operation_id=o.id and l.work_order_id=@OrderId and o.tenant_id=@TenantId and o.status='PLANNED'", new { tenant.TenantId, OrderId = orderId, tenant.UserId }, t, cancellationToken: cancellationToken));
         }, cancellationToken);
     }
@@ -75,14 +106,15 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
                   from agro360.inventory_products p
                   join agro360.agriculture_records o on o.tenant_id=p.tenant_id and o.id=@OrderId and o.module='work-orders' and o.deleted_at is null
                  where p.tenant_id=@TenantId and p.id=@ProductId and p.deleted_at is null
+                   and lower(p.base_unit)=lower(@Unit)
                    and (@WarehouseId is null or exists(
                        select 1 from agro360.inventory_warehouses w
                         where w.tenant_id=@TenantId and w.id=@WarehouseId and w.deleted_at is null
                           and w.farm_id=(o.data->>'propertyId')::uuid))
                 on conflict(tenant_id,work_order_id,product_id,warehouse_id) do update
                   set planned_quantity=excluded.planned_quantity,unit_cost=excluded.unit_cost,updated_at=now(),updated_by=excluded.updated_by,version=agro360.field_work_order_materials.version+1
-                """, new { Id = Guid.CreateVersion7(), tenant.TenantId, OrderId = orderId, command.ProductId, command.WarehouseId, Quantity = command.PlannedQuantity, command.UnitCost, tenant.UserId }, t, cancellationToken: cancellationToken));
-            if (affected != 1) throw new DomainException("Produto ou depósito não pertence à propriedade ativa da ordem.", "agriculture.material_reference_invalid");
+                """, new { Id = Guid.CreateVersion7(), tenant.TenantId, OrderId = orderId, command.ProductId, command.WarehouseId, Unit = command.Unit.Trim(), Quantity = command.PlannedQuantity, command.UnitCost, tenant.UserId }, t, cancellationToken: cancellationToken));
+            if (affected != 1) throw new DomainException("Produto, unidade ou depósito não pertence à propriedade ativa da ordem. Conversões implícitas não são permitidas.", "agriculture.material_reference_invalid");
         }, cancellationToken);
     }
 
@@ -146,4 +178,7 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
     private sealed record OrderRow(Guid Id, string Module, string Status, DateTimeOffset CreatedAt, string Data, long Version);
     private sealed record MaterialRow(Guid Id, Guid ProductId, Guid? WarehouseId, decimal PlannedQuantity, decimal ReservedQuantity, decimal DeliveredQuantity, decimal ConsumedQuantity, decimal ReturnedQuantity, decimal LostQuantity, decimal? UnitCost);
     private sealed record MaterialEventRow(Guid WorkOrderMaterialId, string EventType, decimal Quantity, string? Reason, Guid? SourceEventId);
+    private sealed record WorkLogRow(Guid WorkOrderId, Guid OperatorId, Guid? EquipmentId, string Stage, DateTimeOffset StartsAt,
+        DateTimeOffset EndsAt, decimal PerformedQuantity, string Unit, decimal? PhysicalAreaHa, decimal? InitialMeter,
+        decimal? FinalMeter, int InterruptionMinutes, string? InterruptionReason, string? Notes, string? EvidenceReference);
 }
