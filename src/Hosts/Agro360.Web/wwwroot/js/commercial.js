@@ -6,7 +6,7 @@
         ...(token() ? { Authorization: `Bearer ${token()}` } : {})
     });
 
-    let resource = "dashboard";
+    let resource = sessionStorage.getItem("agro360.commercial.resource") || "dashboard";
     let page = 1;
     let total = 0;
 
@@ -98,6 +98,7 @@
             document.querySelectorAll("[data-resource]").forEach(item => item.classList.remove("active"));
             button.classList.add("active");
             resource = button.dataset.resource;
+            sessionStorage.setItem("agro360.commercial.resource", resource);
             document.querySelector("#create-commercial").hidden = !["dashboard", "customers", "prospects"].includes(resource);
             page = 1;
             load();
@@ -160,6 +161,6 @@
         }
     };
 
-    document.querySelector('[data-resource="dashboard"]').classList.add("active");
+    (document.querySelector(`[data-resource="${resource}"]`) || document.querySelector('[data-resource="dashboard"]')).classList.add("active");
     load();
 })();
