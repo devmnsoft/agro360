@@ -4,6 +4,9 @@ using Agro360.Infrastructure.Persistence;
 using Agro360.Multitenancy;
 using Agro360.SharedKernel;
 using Dapper;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 
 namespace Agro360.Infrastructure.Services;
 
@@ -19,6 +22,7 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         ["activities"] = "agro360.sales_activities",
         ["price-tables"] = "agro360.sales_price_tables",
         ["orders"] = "agro360.sales_orders",
+        ["proposals"] = "agro360.sales_proposals",
         ["contracts"] = "agro360.sales_contracts",
         ["commissions"] = "agro360.sales_commissions",
         ["splits"] = "agro360.sales_split_agreements",
@@ -29,15 +33,15 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
     public Task<CommercialPage<CommercialRecord>> ListAsync(string resource, string? search, string? status, int page, int pageSize, CancellationToken ct) => db.InTenantTransactionAsync<CommercialPage<CommercialRecord>>(async (c, t) =>
     {
         var table = Table(resource); page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 100); var offset = (page - 1) * pageSize;
-        var name = resource switch { "orders" => "order_number", "commissions" => "coalesce(status,'EXPECTED')", "splits" => "name", _ => "name" };
-        var amount = resource switch { "opportunities" => "estimated_value", "orders" => "total_amount", "contracts" => "contracted_value", "commissions" => "amount", "splits" => "0", _ => "0" };
+        var name = resource switch { "orders" => "order_number", "proposals" => "proposal_number", "commissions" => "coalesce(status,'EXPECTED')", "splits" => "name", _ => "name" };
+        var amount = resource switch { "opportunities" => "estimated_value", "orders" => "total_amount", "proposals" => "coalesce((select total_amount from agro360.sales_proposal_versions v where v.tenant_id=agro360.sales_proposals.tenant_id and v.proposal_id=agro360.sales_proposals.id and v.version_number=agro360.sales_proposals.current_version),0)", "contracts" => "contracted_value", "commissions" => "amount", "splits" => "0", _ => "0" };
         var sql = $"select id,{name} name,status,cast(null as text) detail,{amount} amount,updated_at updatedat from {table} where tenant_id=@TenantId and deleted_at is null and (@Search is null or {name} ilike '%'||@Search||'%') and (@Status is null or status=@Status) order by updated_at desc limit @PageSize offset @Offset; select count(*) from {table} where tenant_id=@TenantId and deleted_at is null and (@Search is null or {name} ilike '%'||@Search||'%') and (@Status is null or status=@Status)";
         using var multi = await c.QueryMultipleAsync(sql, new { tenant.TenantId, Search = string.IsNullOrWhiteSpace(search) ? null : search, Status = string.IsNullOrWhiteSpace(status) ? null : status, PageSize = pageSize, Offset = offset }, t); var rows = (await multi.ReadAsync<CommercialRecord>()).ToArray(); var total = await multi.ReadSingleAsync<int>(); return new(rows, page, pageSize, total);
     }, ct);
 
     public Task<IReadOnlyList<CommercialLookup>> LookupAsync(string resource, string? search, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
     {
-        var table = Table(resource); var name = resource == "orders" ? "order_number" : "name"; return (IReadOnlyList<CommercialLookup>)(await c.QueryAsync<CommercialLookup>($"select id,{name} label,status from {table} where tenant_id=@TenantId and deleted_at is null and (@Search is null or {name} ilike '%'||@Search||'%') order by {name} limit 30", new { tenant.TenantId, Search = string.IsNullOrWhiteSpace(search) ? null : search }, t)).ToArray();
+        var table = Table(resource); var name = resource switch { "orders" => "order_number", "proposals" => "proposal_number", _ => "name" }; return (IReadOnlyList<CommercialLookup>)(await c.QueryAsync<CommercialLookup>($"select id,{name} label,status from {table} where tenant_id=@TenantId and deleted_at is null and (@Search is null or {name} ilike '%'||@Search||'%') order by {name} limit 30", new { tenant.TenantId, Search = string.IsNullOrWhiteSpace(search) ? null : search }, t)).ToArray();
     }, ct);
 
     public Task<Guid> SaveCustomerAsync(Guid? id, CustomerCommand command, CancellationToken ct) { CommercialRules.ValidateTaxDocument(command.TaxDocument); return db.InTenantTransactionAsync(async (c, t) => { var entityId = id ?? Guid.CreateVersion7(); var n = await c.ExecuteAsync(id is null ? "insert into agro360.crm_customers(id,tenant_id,segment_id,representative_id,name,type,tax_document,email,phone,status,notes,created_by,updated_by) values(@Id,@TenantId,@SegmentId,@RepresentativeId,@Name,@Type,@TaxDocument,@Email,@Phone,'ACTIVE',@Notes,@UserId,@UserId)" : "update agro360.crm_customers set segment_id=@SegmentId,representative_id=@RepresentativeId,name=@Name,tax_document=@TaxDocument,email=@Email,phone=@Phone,notes=@Notes,updated_by=@UserId,updated_at=now() where id=@Id and tenant_id=@TenantId and deleted_at is null", new { Id = entityId, tenant.TenantId, command.SegmentId, command.RepresentativeId, command.Name, Type = command.Type.ToUpperInvariant(), command.TaxDocument, command.Email, command.Phone, command.Notes, tenant.UserId }, t); if (n == 0) throw new KeyNotFoundException("Cliente não encontrado."); return entityId; }, ct); }
@@ -156,7 +160,94 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
     public Task ChangeSplitStatusAsync(Guid id, StatusCommand command, CancellationToken ct) => ChangeStatus("agro360.sales_split_agreements", id, command, false, ct);
     private Task ChangeStatus(string table, Guid id, StatusCommand command, bool reasonRequired, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { var status = command.Status.ToUpperInvariant(); if (reasonRequired && status is ("BLOCKED" or "REVERSED") && string.IsNullOrWhiteSpace(command.Reason)) throw new ArgumentException("Informe a justificativa."); var n = await c.ExecuteAsync($"update {table} set status=@Status,status_reason=@Reason,updated_by=@UserId,updated_at=now() where id=@Id and tenant_id=@TenantId and deleted_at is null", new { Id = id, tenant.TenantId, Status = status, command.Reason, tenant.UserId }, t); if (n == 0) throw new KeyNotFoundException(); }, ct);
 
+    public Task<Guid> CreateProposalAsync(SalesProposalCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        var id = Guid.CreateVersion7();
+        await EnsureProposalReferences(c, t, command);
+        await c.ExecuteAsync("insert into agro360.sales_proposals(id,tenant_id,customer_id,opportunity_id,representative_id,proposal_number,status,current_version,created_by,updated_by) values(@Id,@TenantId,@CustomerId,@OpportunityId,@RepresentativeId,'PROP-'||nextval('agro360.sales_proposal_number_seq'),'DRAFT',1,@UserId,@UserId)", new { Id = id, tenant.TenantId, command.CustomerId, command.OpportunityId, command.RepresentativeId, tenant.UserId }, t);
+        await InsertProposalVersion(c, t, id, 1, command, null);
+        return id;
+    }, ct);
+
+    public Task<long> ReviseProposalAsync(Guid id, SalesProposalCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        await EnsureProposalReferences(c, t, command);
+        var row = await c.QuerySingleOrDefaultAsync<(string Status, long CurrentVersion)>("select status,current_version CurrentVersion from agro360.sales_proposals where tenant_id=@TenantId and id=@Id and deleted_at is null for update", new { tenant.TenantId, Id = id }, t);
+        if (row == default) throw new KeyNotFoundException("Proposta não encontrada.");
+        if (row.Status is "ACCEPTED" or "CANCELLED" or "EXPIRED") throw new DomainException("Proposta encerrada não pode ser revisada.", "sales.proposal_revision_forbidden");
+        if (row.Status != "DRAFT" && string.IsNullOrWhiteSpace(command.ChangeReason)) throw new DomainException("Alteração material exige motivo e nova versão.", "sales.proposal_change_reason_required");
+        var next = row.CurrentVersion + 1;
+        await InsertProposalVersion(c, t, id, next, command, row.CurrentVersion);
+        await c.ExecuteAsync("update agro360.sales_proposals set customer_id=@CustomerId,opportunity_id=@OpportunityId,representative_id=@RepresentativeId,current_version=@Next,status='DRAFT',accepted_version=null,accepted_at=null,accepted_by=null,acceptance_evidence_type=null,acceptance_evidence_reference=null,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id and current_version=@Current", new { tenant.TenantId, Id = id, command.CustomerId, command.OpportunityId, command.RepresentativeId, Next = next, Current = row.CurrentVersion, tenant.UserId }, t);
+        return next;
+    }, ct);
+
+    public Task<ProposalVersionView> GetProposalAsync(Guid id, long? version, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        var header = await c.QuerySingleOrDefaultAsync<ProposalHeader>("select p.id ProposalId,p.proposal_number Number,p.status,p.current_version CurrentVersion,p.customer_id CustomerId,v.version_number Version,v.currency,v.valid_until ValidUntil,v.freight,v.items_total ItemsTotal,v.total_amount Total,v.payment_terms PaymentTerms from agro360.sales_proposals p join agro360.sales_proposal_versions v on v.tenant_id=p.tenant_id and v.proposal_id=p.id and v.version_number=coalesce(@Version,p.current_version) where p.tenant_id=@TenantId and p.id=@Id and p.deleted_at is null", new { tenant.TenantId, Id = id, Version = version }, t);
+        if (header is null) throw new KeyNotFoundException("Proposta ou versão não encontrada.");
+        var items = (await c.QueryAsync<ProposalItemView>("select i.id,i.product_id ProductId,i.unit,i.quantity,i.unit_price UnitPrice,i.discount_percentage DiscountPercentage,i.total_amount Total,coalesce((select sum(ci.quantity) from agro360.sales_proposal_conversion_items ci where ci.tenant_id=i.tenant_id and ci.proposal_item_id=i.id),0) ConvertedQuantity,i.pricing_snapshot::text PricingSnapshot from agro360.sales_proposal_items i where i.tenant_id=@TenantId and i.proposal_id=@Id and i.version_number=@Version order by i.created_at,i.id", new { tenant.TenantId, Id = id, header.Version }, t)).ToArray();
+        return new(header.ProposalId, header.Number, header.Status, header.Version, header.CustomerId, header.Currency, header.ValidUntil, header.Freight, header.ItemsTotal, header.Total, header.PaymentTerms, items);
+    }, ct);
+
+    public Task DecideProposalAsync(Guid id, ProposalDecisionCommand command, string decision, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        var next = decision.Trim().ToUpperInvariant();
+        var row = await c.QuerySingleOrDefaultAsync<(string Status, long CurrentVersion)>("select status,current_version CurrentVersion from agro360.sales_proposals where tenant_id=@TenantId and id=@Id and deleted_at is null for update", new { tenant.TenantId, Id = id }, t);
+        if (row == default) throw new KeyNotFoundException("Proposta não encontrada.");
+        if (command.Version != row.CurrentVersion) throw new ConflictException("A proposta possui uma versão mais recente.");
+        CommercialRules.ValidateProposalTransition(row.Status, next, command.Reason);
+        await c.ExecuteAsync("insert into agro360.sales_proposal_decisions(id,tenant_id,proposal_id,version_number,decision,reason,decided_by) values(gen_random_uuid(),@TenantId,@Id,@Version,@Decision,@Reason,@UserId); update agro360.sales_proposals set status=@Decision,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id and current_version=@Version", new { tenant.TenantId, Id = id, command.Version, Decision = next, command.Reason, tenant.UserId }, t);
+    }, ct);
+
+    public Task AcceptProposalAsync(Guid id, ProposalAcceptanceCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        var row = await c.QuerySingleOrDefaultAsync<(string Status, long CurrentVersion, DateOnly ValidUntil)>("select p.status,p.current_version CurrentVersion,v.valid_until ValidUntil from agro360.sales_proposals p join agro360.sales_proposal_versions v on v.tenant_id=p.tenant_id and v.proposal_id=p.id and v.version_number=p.current_version where p.tenant_id=@TenantId and p.id=@Id and p.deleted_at is null for update of p", new { tenant.TenantId, Id = id }, t);
+        if (row == default) throw new KeyNotFoundException("Proposta não encontrada.");
+        if (command.Version != row.CurrentVersion) throw new ConflictException("Versão substituída não pode ser aceita.");
+        CommercialRules.EnsureProposalAcceptable(row.Status, row.ValidUntil, DateOnly.FromDateTime(DateTime.UtcNow));
+        var acceptedAt = command.AcceptedAt ?? DateTimeOffset.UtcNow;
+        await c.ExecuteAsync("insert into agro360.sales_proposal_decisions(id,tenant_id,proposal_id,version_number,decision,reason,decided_at,decided_by) values(gen_random_uuid(),@TenantId,@Id,@Version,'ACCEPTED',@Evidence,@AcceptedAt,@UserId); update agro360.sales_proposals set status='ACCEPTED',accepted_version=@Version,accepted_at=@AcceptedAt,accepted_by=@UserId,acceptance_evidence_type=@EvidenceType,acceptance_evidence_reference=@Evidence,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id, command.Version, command.EvidenceType, Evidence = command.EvidenceReference, AcceptedAt = acceptedAt, tenant.UserId }, t);
+    }, ct);
+
+    public Task<ProposalConversionResult> ConvertProposalAsync(Guid id, ProposalConversionCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(command with { IdempotencyKey = string.Empty })))).ToLowerInvariant();
+        var previous = await c.QuerySingleOrDefaultAsync<(Guid OrderId, string RequestHash)>("select order_id OrderId,request_hash RequestHash from agro360.sales_proposal_conversions where tenant_id=@TenantId and idempotency_key=@IdempotencyKey", new { tenant.TenantId, command.IdempotencyKey }, t);
+        if (previous != default) return previous.RequestHash == hash ? new(previous.OrderId, true) : throw new ConflictException("Chave idempotente já utilizada com conteúdo diferente.");
+        var proposal = await c.QuerySingleOrDefaultAsync<(string Status, long CurrentVersion, Guid CustomerId, Guid? RepresentativeId, string PaymentTerms, decimal Freight)>("select p.status,p.current_version CurrentVersion,p.customer_id CustomerId,p.representative_id RepresentativeId,v.payment_terms PaymentTerms,v.freight from agro360.sales_proposals p join agro360.sales_proposal_versions v on v.tenant_id=p.tenant_id and v.proposal_id=p.id and v.version_number=p.current_version where p.tenant_id=@TenantId and p.id=@Id and p.deleted_at is null for update of p", new { tenant.TenantId, Id = id }, t);
+        if (proposal == default) throw new KeyNotFoundException("Proposta não encontrada.");
+        if (proposal.Status != "ACCEPTED" || proposal.CurrentVersion != command.Version) throw new DomainException("Somente a versão aceita atual pode ser convertida.", "sales.proposal_not_convertible");
+        var requested = command.Items.GroupBy(x => x.ProposalItemId).ToDictionary(x => x.Key, x => x.Sum(y => y.Quantity));
+        if (requested.Count != command.Items.Count) throw new DomainException("Item repetido na conversão.", "sales.proposal_conversion_duplicate_item");
+        var items = (await c.QueryAsync<ConversionItem>("select i.id,i.product_id ProductId,i.unit,i.quantity,i.unit_price UnitPrice,i.discount_percentage DiscountPercentage,i.total_amount TotalAmount,i.price_table_id PriceTableId,i.pricing_snapshot::text PricingSnapshot,coalesce((select sum(ci.quantity) from agro360.sales_proposal_conversion_items ci where ci.tenant_id=i.tenant_id and ci.proposal_item_id=i.id),0) Converted from agro360.sales_proposal_items i where i.tenant_id=@TenantId and i.proposal_id=@Id and i.version_number=@Version for update", new { tenant.TenantId, Id = id, Version = command.Version }, t)).ToDictionary(x => x.Id);
+        foreach (var pair in requested) if (!items.TryGetValue(pair.Key, out var item) || pair.Value <= 0 || item.Converted + pair.Value > item.Quantity) throw new DomainException("Quantidade excede o saldo aceito.", "sales.proposal_conversion_balance");
+        var hasPriorConversion = await c.ExecuteScalarAsync<bool>("select exists(select 1 from agro360.sales_proposal_conversions where tenant_id=@TenantId and proposal_id=@Id and version_number=@Version)", new { tenant.TenantId, Id = id, Version = command.Version }, t);
+        var appliedFreight = hasPriorConversion ? 0m : proposal.Freight;
+        var orderId = Guid.CreateVersion7(); var total = decimal.Round(requested.Sum(x => items[x.Key].TotalAmount * x.Value / items[x.Key].Quantity) + appliedFreight, 2, MidpointRounding.AwayFromZero);
+        await c.ExecuteAsync("insert into agro360.sales_orders(id,tenant_id,customer_id,representative_id,order_number,status,total_amount,freight,payment_terms,created_by,updated_by) values(@OrderId,@TenantId,@CustomerId,@RepresentativeId,'PED-'||nextval('agro360.sales_order_number_seq'),'DRAFT',@Total,@Freight,@PaymentTerms,@UserId,@UserId)", new { OrderId = orderId, tenant.TenantId, proposal.CustomerId, proposal.RepresentativeId, Total = total, Freight = appliedFreight, proposal.PaymentTerms, tenant.UserId }, t);
+        var conversionId = Guid.CreateVersion7(); await c.ExecuteAsync("insert into agro360.sales_proposal_conversions(id,tenant_id,proposal_id,version_number,order_id,idempotency_key,request_hash,created_by) values(@ConversionId,@TenantId,@Id,@Version,@OrderId,@IdempotencyKey,@Hash,@UserId)", new { ConversionId = conversionId, tenant.TenantId, Id = id, Version = command.Version, OrderId = orderId, command.IdempotencyKey, Hash = hash, tenant.UserId }, t);
+        foreach (var pair in requested) { var item = items[pair.Key]; var orderItemId = Guid.CreateVersion7(); var lineTotal = decimal.Round(item.TotalAmount * pair.Value / item.Quantity, 2, MidpointRounding.AwayFromZero); await c.ExecuteAsync("insert into agro360.sales_order_items(id,tenant_id,order_id,product_id,quantity,unit,unit_price,discount_percentage,total_amount,price_table_id,base_unit_price,pricing_snapshot) values(@OrderItemId,@TenantId,@OrderId,@ProductId,@Quantity,@Unit,@UnitPrice,@DiscountPercentage,@Total,@PriceTableId,@UnitPrice,@PricingSnapshot::jsonb); insert into agro360.sales_proposal_conversion_items(tenant_id,conversion_id,proposal_item_id,order_item_id,quantity) values(@TenantId,@ConversionId,@ProposalItemId,@OrderItemId,@Quantity)", new { OrderItemId = orderItemId, tenant.TenantId, OrderId = orderId, item.ProductId, Quantity = pair.Value, item.Unit, item.UnitPrice, item.DiscountPercentage, Total = lineTotal, item.PriceTableId, item.PricingSnapshot, ConversionId = conversionId, ProposalItemId = pair.Key }, t); }
+        return new(orderId, false);
+    }, ct);
+
+    private async Task EnsureProposalReferences(System.Data.Common.DbConnection c, System.Data.Common.DbTransaction t, SalesProposalCommand command)
+    {
+        if (command.ValidUntil < DateOnly.FromDateTime(DateTime.UtcNow)) throw new DomainException("A validade não pode iniciar expirada.", "sales.proposal_validity_invalid");
+        var valid = await c.ExecuteScalarAsync<bool>("select exists(select 1 from agro360.crm_customers where tenant_id=@TenantId and id=@CustomerId and deleted_at is null) and (@OpportunityId is null or exists(select 1 from agro360.sales_opportunities where tenant_id=@TenantId and id=@OpportunityId and customer_id=@CustomerId and deleted_at is null))", new { tenant.TenantId, command.CustomerId, command.OpportunityId }, t);
+        if (!valid) throw new KeyNotFoundException("Cliente ou negociação incompatível.");
+    }
+
+    private async Task InsertProposalVersion(System.Data.Common.DbConnection c, System.Data.Common.DbTransaction t, Guid id, long version, SalesProposalCommand command, long? supersedes)
+    {
+        var currency = command.Currency.Trim().ToUpperInvariant(); var lines = command.Items.Select(x => CommercialRules.ProposalLineTotal(x.Quantity, x.UnitPrice, x.DiscountPercentage)).ToArray(); var itemsTotal = lines.Sum(); var total = decimal.Round(itemsTotal + command.Freight, 2, MidpointRounding.AwayFromZero);
+        await c.ExecuteAsync("insert into agro360.sales_proposal_versions(id,tenant_id,proposal_id,version_number,currency,valid_until,freight,payment_terms,items_total,total_amount,change_reason,supersedes_version,created_by) values(gen_random_uuid(),@TenantId,@Id,@Version,@Currency,@ValidUntil,@Freight,@PaymentTerms,@ItemsTotal,@Total,@ChangeReason,@Supersedes,@UserId)", new { tenant.TenantId, Id = id, Version = version, Currency = currency, command.ValidUntil, command.Freight, command.PaymentTerms, ItemsTotal = itemsTotal, Total = total, command.ChangeReason, Supersedes = supersedes, tenant.UserId }, t);
+        for (var i = 0; i < command.Items.Count; i++) { var item = command.Items[i]; var snapshot = JsonSerializer.Serialize(new { item.PriceTableId, item.UnitPrice, item.DiscountPercentage, currency, rounding = "line-half-away-from-zero" }); await c.ExecuteAsync("insert into agro360.sales_proposal_items(id,tenant_id,proposal_id,version_number,product_id,unit,quantity,unit_price,discount_percentage,total_amount,price_table_id,pricing_snapshot) values(gen_random_uuid(),@TenantId,@Id,@Version,@ProductId,@Unit,@Quantity,@UnitPrice,@DiscountPercentage,@Total,@PriceTableId,@Snapshot::jsonb)", new { tenant.TenantId, Id = id, Version = version, item.ProductId, Unit = item.Unit.Trim().ToUpperInvariant(), item.Quantity, item.UnitPrice, item.DiscountPercentage, Total = lines[i], item.PriceTableId, Snapshot = snapshot }, t); }
+    }
+
     public Task<CommercialDashboard> DashboardAsync(CancellationToken ct) => db.InTenantTransactionAsync<CommercialDashboard>(async (c, t) => { var sql = "select count(*) filter(where status='ACTIVE') activecustomers,count(*) filter(where status='BLOCKED') blockedcustomers from agro360.crm_customers where tenant_id=@TenantId and deleted_at is null; select count(*) from agro360.sales_contracts where tenant_id=@TenantId and status='ACTIVE' and deleted_at is null; select coalesce(sum(estimated_value),0) from agro360.sales_opportunities where tenant_id=@TenantId and stage not in('WON','LOST') and deleted_at is null; select coalesce(sum(total_amount),0) from agro360.sales_orders where tenant_id=@TenantId and status not in('CANCELLED','DELIVERED') and deleted_at is null; select coalesce(sum(amount) filter(where status='EXPECTED'),0),coalesce(sum(amount) filter(where status='PAID'),0) from agro360.sales_commissions where tenant_id=@TenantId and deleted_at is null; select coalesce(sum(amount),0) from agro360.sales_split_entries where tenant_id=@TenantId and status='EXPECTED';"; using var m = await c.QueryMultipleAsync(sql, new { tenant.TenantId }, t); var customers = await m.ReadSingleAsync<(int ActiveCustomers, int BlockedCustomers)>(); var contracts = await m.ReadSingleAsync<int>(); var pipeline = await m.ReadSingleAsync<decimal>(); var forecast = await m.ReadSingleAsync<decimal>(); var commissions = await m.ReadSingleAsync<(decimal Expected, decimal Paid)>(); var splits = await m.ReadSingleAsync<decimal>(); var opp = (await ListAsync("opportunities", null, null, 1, 6, ct)).Items; var orders = (await ListAsync("orders", null, null, 1, 6, ct)).Items; return new(customers.ActiveCustomers, customers.BlockedCustomers, contracts, pipeline, forecast, commissions.Expected, commissions.Paid, splits, opp, orders); }, ct);
     private static string Table(string resource) => Resources.TryGetValue(resource, out var table) ? table : throw new KeyNotFoundException("Recurso comercial não encontrado.");
+    private sealed class ProposalHeader { public Guid ProposalId { get; init; } public string Number { get; init; } = ""; public string Status { get; init; } = ""; public long CurrentVersion { get; init; } public long Version { get; init; } public Guid CustomerId { get; init; } public string Currency { get; init; } = "BRL"; public DateOnly ValidUntil { get; init; } public decimal Freight { get; init; } public decimal ItemsTotal { get; init; } public decimal Total { get; init; } public string PaymentTerms { get; init; } = ""; }
+    private sealed class ConversionItem { public Guid Id { get; init; } public Guid ProductId { get; init; } public string Unit { get; init; } = ""; public decimal Quantity { get; init; } public decimal UnitPrice { get; init; } public decimal DiscountPercentage { get; init; } public decimal TotalAmount { get; init; } public Guid? PriceTableId { get; init; } public string PricingSnapshot { get; init; } = "{}"; public decimal Converted { get; init; } }
     private sealed class SalesPricePolicyLookup { public Guid PriceTableId { get; init; } public Guid ProductId { get; init; } public string Unit { get; init; } = string.Empty; public decimal BasePrice { get; init; } public decimal MaximumDiscount { get; init; } public bool IsDefault { get; init; } public DateOnly ValidFrom { get; init; } public DateTimeOffset UpdatedAt { get; init; } }
 }

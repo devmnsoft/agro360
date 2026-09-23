@@ -4,6 +4,33 @@ namespace Agro360.Domain.Commercial;
 
 public static class CommercialRules
 {
+    private static readonly Dictionary<string, string[]> ProposalTransitions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["DRAFT"] = ["SUBMITTED", "CANCELLED"], ["SUBMITTED"] = ["APPROVED", "REJECTED", "CANCELLED"],
+        ["APPROVED"] = ["ACCEPTED", "CANCELLED"], ["REJECTED"] = ["DRAFT", "CANCELLED"]
+    };
+
+    public static void ValidateProposalTransition(string current, string next, string? reason)
+    {
+        if (!ProposalTransitions.TryGetValue(current, out var allowed) || !allowed.Contains(next))
+            throw new DomainException($"Transição de proposta de {current} para {next} não é permitida.", "sales.proposal_transition_invalid");
+        if (next is "REJECTED" or "CANCELLED" && string.IsNullOrWhiteSpace(reason))
+            throw new DomainException("A decisão exige motivo.", "sales.proposal_reason_required");
+    }
+
+    public static decimal ProposalLineTotal(decimal quantity, decimal unitPrice, decimal discount)
+    {
+        if (quantity <= 0 || unitPrice <= 0 || discount is < 0 or > 100)
+            throw new DomainException("Quantidade, preço ou desconto inválido.", "sales.proposal_item_invalid");
+        return decimal.Round(quantity * unitPrice * (1 - discount / 100), 2, MidpointRounding.AwayFromZero);
+    }
+
+    public static void EnsureProposalAcceptable(string status, DateOnly validUntil, DateOnly today)
+    {
+        if (!string.Equals(status, "APPROVED", StringComparison.OrdinalIgnoreCase))
+            throw new DomainException("Somente proposta aprovada pode ser aceita.", "sales.proposal_not_approved");
+        if (validUntil < today) throw new DomainException("Proposta expirada não pode ser aceita.", "sales.proposal_expired");
+    }
     private static readonly Dictionary<string, string[]> ContractTransitions = new(StringComparer.OrdinalIgnoreCase)
     {
         ["DRAFT"] = ["UNDER_REVIEW", "CANCELLED"],

@@ -15,6 +15,15 @@ public sealed record CommissionCommand([Required] Guid OrderId, [Required] Guid 
 public sealed record SplitParticipantCommand([Required] Guid ParticipantId, [Required] string ParticipantType, [Range(0, 100)] decimal? Percentage, [Range(0, double.MaxValue)] decimal? FixedValue, [Range(0, int.MaxValue)] int Priority);
 public sealed record SplitAgreementCommand([Required, MaxLength(180)] string Name, Guid? OrderId, Guid? ContractId, [Required, MinLength(1)] IReadOnlyList<SplitParticipantCommand> Participants, string? ReleaseRule);
 public sealed record StatusCommand([Required] string Status, [MaxLength(1000)] string? Reason);
+public sealed record ProposalItemCommand([Required] Guid ProductId, [Required, MaxLength(20)] string Unit, [Range(0.000001, double.MaxValue)] decimal Quantity, [Range(0.000001, double.MaxValue)] decimal UnitPrice, [Range(0, 100)] decimal DiscountPercentage, Guid? PriceTableId = null);
+public sealed record SalesProposalCommand([Required] Guid CustomerId, Guid? OpportunityId, Guid? RepresentativeId, [Required, RegularExpression("^[A-Za-z]{3}$")] string Currency, DateOnly ValidUntil, [Range(0, double.MaxValue)] decimal Freight, [Required, MaxLength(2000)] string PaymentTerms, [Required, MinLength(1)] IReadOnlyList<ProposalItemCommand> Items, [MaxLength(1000)] string? ChangeReason = null);
+public sealed record ProposalDecisionCommand([Required] long Version, [MaxLength(1000)] string? Reason);
+public sealed record ProposalAcceptanceCommand([Required] long Version, [Required, MaxLength(40)] string EvidenceType, [Required, MaxLength(1000)] string EvidenceReference, DateTimeOffset? AcceptedAt = null);
+public sealed record ProposalConversionItemCommand([Required] Guid ProposalItemId, [Range(0.000001, double.MaxValue)] decimal Quantity);
+public sealed record ProposalConversionCommand([Required] long Version, [Required, MaxLength(120)] string IdempotencyKey, [Required, MinLength(1)] IReadOnlyList<ProposalConversionItemCommand> Items);
+public sealed record ProposalVersionView(Guid ProposalId, string Number, string Status, long Version, Guid CustomerId, string Currency, DateOnly ValidUntil, decimal Freight, decimal ItemsTotal, decimal Total, string PaymentTerms, IReadOnlyList<ProposalItemView> Items);
+public sealed record ProposalItemView(Guid Id, Guid ProductId, string Unit, decimal Quantity, decimal UnitPrice, decimal DiscountPercentage, decimal Total, decimal ConvertedQuantity, string PricingSnapshot);
+public sealed record ProposalConversionResult(Guid OrderId, bool Existing);
 public sealed record CommercialDashboard(int ActiveCustomers, int BlockedCustomers, int ActiveContracts, decimal PipelineValue, decimal ForecastRevenue, decimal ExpectedCommissions, decimal PaidCommissions, decimal PendingSplits, IReadOnlyList<CommercialRecord> Opportunities, IReadOnlyList<CommercialRecord> Orders);
 
 public interface ICommercial360Service
@@ -33,4 +42,10 @@ public interface ICommercial360Service
     Task<Guid> SaveSplitAsync(SplitAgreementCommand command, CancellationToken ct);
     Task ChangeSplitStatusAsync(Guid id, StatusCommand command, CancellationToken ct);
     Task<CommercialDashboard> DashboardAsync(CancellationToken ct);
+    Task<Guid> CreateProposalAsync(SalesProposalCommand command, CancellationToken ct);
+    Task<long> ReviseProposalAsync(Guid id, SalesProposalCommand command, CancellationToken ct);
+    Task<ProposalVersionView> GetProposalAsync(Guid id, long? version, CancellationToken ct);
+    Task DecideProposalAsync(Guid id, ProposalDecisionCommand command, string decision, CancellationToken ct);
+    Task AcceptProposalAsync(Guid id, ProposalAcceptanceCommand command, CancellationToken ct);
+    Task<ProposalConversionResult> ConvertProposalAsync(Guid id, ProposalConversionCommand command, CancellationToken ct);
 }
