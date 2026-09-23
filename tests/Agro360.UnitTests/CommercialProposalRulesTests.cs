@@ -28,4 +28,24 @@ public sealed class CommercialProposalRulesTests
     [Fact]
     public void OnlyApprovedProposalCanBeAccepted()
         => Assert.Equal("sales.proposal_not_approved", Assert.Throws<DomainException>(() => CommercialRules.EnsureProposalAcceptable("SUBMITTED", new DateOnly(2026, 1, 2), new DateOnly(2026, 1, 1))).Code);
+
+    [Fact]
+    public void TwoOneCentLinesKeepTheirPersistedAmountsWhenHalfIsConverted()
+    {
+        Assert.Equal(0.01m, CommercialRules.ProposalConversionAmount(2m, 0.02m, 0m, 0m, 1m));
+        Assert.Equal(0.01m, CommercialRules.ProposalConversionAmount(2m, 0.02m, 0m, 0m, 1m));
+    }
+
+    [Fact]
+    public void SuccessiveThirdsWithDiscountAssignExactResidualToLastConversion()
+    {
+        var total = CommercialRules.ProposalLineTotal(3m, 0.05m, 10m);
+        var first = CommercialRules.ProposalConversionAmount(3m, total, 0m, 0m, 1m);
+        var second = CommercialRules.ProposalConversionAmount(3m, total, 1m, first, 1m);
+        var last = CommercialRules.ProposalConversionAmount(3m, total, 2m, first + second, 1m);
+
+        Assert.Equal(3m, 1m + 1m + 1m);
+        Assert.Equal(total, first + second + last);
+        Assert.Equal([0.05m, 0.04m, 0.05m], [first, second, last]);
+    }
 }

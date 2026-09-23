@@ -12,8 +12,23 @@ permissions:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agro360_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d agro360_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
       CI: "true"
+      AGRO360_TEST_CONNECTION_STRING: "Host=localhost;Port=5432;Database=agro360_test;Username=postgres;Password=postgres"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -25,6 +40,10 @@ jobs:
         run: dotnet format MNSOFT.Agro360.sln --verify-no-changes --no-restore
       - name: Build
         run: dotnet build MNSOFT.Agro360.sln --configuration Release --no-restore
+      - name: Install disposable PostgreSQL baseline
+        env:
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d agro360_test -f database/agro360-postgres-full.sql
       - name: Validate unique API routes
         run: python3 tools/check-api-routes.py
       - name: Validate portable database release
