@@ -106,6 +106,9 @@ public sealed class DatabaseFoundationTests
     private static string GetRequiredConnectionString()
     {
         var connectionString = ConnectionString;
+        if (string.Equals(Environment.GetEnvironmentVariable("CI"), "true", StringComparison.OrdinalIgnoreCase))
+            Assert.False(string.IsNullOrWhiteSpace(connectionString),
+                "AGRO360_TEST_CONNECTION_STRING é obrigatória no gate de integração do CI.");
         Assert.SkipWhen(
             string.IsNullOrWhiteSpace(connectionString),
             "Defina AGRO360_TEST_CONNECTION_STRING para executar os testes reais de PostgreSQL/PostGIS.");

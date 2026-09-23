@@ -25,6 +25,23 @@ public static class CommercialRules
         return decimal.Round(quantity * unitPrice * (1 - discount / 100), 2, MidpointRounding.AwayFromZero);
     }
 
+    /// <summary>Allocates a proposal line by its cumulative converted quantity.</summary>
+    /// <remarks>The cumulative calculation makes every intermediate amount deterministic and assigns
+    /// the exact residual to the final conversion, so persisted orders always reconcile to the accepted line.</remarks>
+    public static decimal ProposalConversionAmount(decimal lineQuantity, decimal lineTotal, decimal convertedQuantity,
+        decimal convertedAmount, decimal requestedQuantity)
+    {
+        if (lineQuantity <= 0 || lineTotal < 0 || convertedQuantity < 0 || convertedAmount < 0 ||
+            requestedQuantity <= 0 || convertedQuantity + requestedQuantity > lineQuantity)
+            throw new DomainException("Quantidade excede o saldo aceito.", "sales.proposal_conversion_balance");
+
+        var cumulativeQuantity = convertedQuantity + requestedQuantity;
+        var cumulativeAmount = cumulativeQuantity == lineQuantity
+            ? lineTotal
+            : decimal.Round(lineTotal * cumulativeQuantity / lineQuantity, 2, MidpointRounding.AwayFromZero);
+        return cumulativeAmount - convertedAmount;
+    }
+
     public static void EnsureProposalAcceptable(string status, DateOnly validUntil, DateOnly today)
     {
         if (!string.Equals(status, "APPROVED", StringComparison.OrdinalIgnoreCase))

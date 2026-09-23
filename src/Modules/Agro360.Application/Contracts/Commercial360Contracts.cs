@@ -23,7 +23,7 @@ public sealed record ProposalConversionItemCommand([Required] Guid ProposalItemI
 public sealed record ProposalConversionCommand([Required] long Version, [Required, MaxLength(120)] string IdempotencyKey, [Required, MinLength(1)] IReadOnlyList<ProposalConversionItemCommand> Items);
 public sealed record ProposalVersionView(Guid ProposalId, string Number, string Status, long Version, Guid CustomerId, string Currency, DateOnly ValidUntil, decimal Freight, decimal ItemsTotal, decimal Total, string PaymentTerms, IReadOnlyList<ProposalItemView> Items);
 public sealed record ProposalItemView(Guid Id, Guid ProductId, string Unit, decimal Quantity, decimal UnitPrice, decimal DiscountPercentage, decimal Total, decimal ConvertedQuantity, string PricingSnapshot);
-public sealed record ProposalConversionResult(Guid OrderId, bool Existing);
+public sealed record ProposalConversionResult(Guid OrderId, bool Existing, string Currency, decimal Total);
 public sealed record CommercialDashboard(int ActiveCustomers, int BlockedCustomers, int ActiveContracts, decimal PipelineValue, decimal ForecastRevenue, decimal ExpectedCommissions, decimal PaidCommissions, decimal PendingSplits, IReadOnlyList<CommercialRecord> Opportunities, IReadOnlyList<CommercialRecord> Orders);
 
 public interface ICommercial360Service

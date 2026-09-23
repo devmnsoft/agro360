@@ -36,3 +36,22 @@ A execução iniciou na branch `work`, commit `775500d`, com árvore limpa. Fora
 Não foram inventadas alçadas monetárias: a proposta reutiliza `commercial.orders.approve`; configuração explícita de alçadas condicionais permanece pendente. Também permanecem: extensão autorizada de validade como evento próprio, comparação/preview imprimível de versões, editor completo de proposta na Razor, margem estimada/realizada com fonte de custo, conversão para contrato, indicadores unificados contratado/reservado/expedido/entregue/devolvido/cancelado e processador de comissão por aprovação/faturamento/recebimento parcial/estorno. A migration prepara rastreabilidade de regra/evento/ajuste, mas o apurador legado não foi apresentado como concluído.
 
 Build/runtime, PostgreSQL descartável, atualização representativa, seeds, login, dois tenants, concorrência real e jornada em navegador somente podem ser declarados após execução dos comandos descritos no relatório final; falhas ou indisponibilidade do ambiente devem permanecer explícitas.
+
+## Continuidade — fechamento proposta → pedido
+
+**Prioridade vigente:** o pedido deste ciclo e a base `0cd08ee` prevalecem sobre os recortes históricos dos prompts e checkpoints, sem apagar as decisões anteriores. A árvore foi reencontrada limpa exatamente nesse commit. Não houve conflito com instrução local (`AGENTS.md` não existe no escopo do repositório).
+
+| Recorte | Estado nesta continuação | Evidência / limite |
+|---|---|---|
+| Rateio parcial | Corrigido | O valor de cada parcela é calculado sobre quantidade e valor acumulados; a última parcela recebe o residual exato. O cabeçalho soma os valores realmente gravados mais o frete, aplicado somente na primeira conversão. |
+| Idempotência concorrente | Corrigido | A identidade normalizada inclui tenant (pela consulta/RLS), proposta da rota, versão e itens ordenados. Após o lock da proposta ocorre nova leitura da chave; colisão divergente permanece conflito. |
+| Moeda | Compatibilidade incremental | A migration 108 adiciona moeda anulável ao pedido para não atribuir moeda a legado sem fonte. Conversões novas copiam a moeda da versão aceita. |
+| PostgreSQL no CI | Gate obrigatório | O workflow cria PostgreSQL descartável, instala o consolidado e define a connection string. Localmente a suíte continua opcional; em `CI=true`, ausência da variável falha com diagnóstico. |
+| Jornada Razor completa | Pendente | A correção desta continuação fecha invariantes de servidor e o gate de banco. Listagem/editor/comparação e validação responsiva no navegador ainda não foram implementados e não são declarados homologados. |
+| Comissões | Pendente preservada | `CalculateCommissionAsync` continua legado e não passa a alegar origem/snapshot completos da migration 107. |
+
+### Atualização e recuperação desta continuação
+
+1. Faça backup e aplique `database/migrations/108_proposal_conversion_currency.sql` depois da 107.
+2. A migration não preenche moeda histórica: valores nulos são diagnóstico de origem ainda não comprovada.
+3. Instalações limpas usam o consolidado atualizado. Falha durante a migration reverte a transação; recuperação posterior segue restauração de backup, sem editar migrations aplicadas.
