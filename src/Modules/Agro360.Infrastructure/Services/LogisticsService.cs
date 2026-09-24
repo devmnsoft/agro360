@@ -40,7 +40,7 @@ public sealed class LogisticsService(
     });
     public Task<FulfillmentQueuePage> FulfillmentQueueAsync(FulfillmentQueueQuery query, CancellationToken ct) => Tx(async (c, t) =>
     {
-        var page = Math.Max(1, query.Page); var pageSize = Math.Clamp(query.PageSize, 1, 100); var offset = (page - 1) * pageSize;
+        var page = Math.Clamp(query.Page, 1, 1_000_000); var pageSize = Math.Clamp(query.PageSize, 1, 100); var offset = checked((long)(page - 1) * pageSize);
         const string sql = """
         with queue as (
         select o.id order_id,o.order_number,o.status,c.name customer,o.property_id unit_id,o.expected_delivery,
@@ -52,7 +52,7 @@ public sealed class LogisticsService(
         left join lateral(select
             sum(r.quantity) filter(where r.status='ACTIVE') active_reserved,
             sum(r.consumed_quantity) dispatched,
-            0::numeric cancelled
+            i.cancelled_quantity cancelled
           from agro360.fulfillment_reservations r where r.tenant_id=o.tenant_id and r.order_item_id=i.id) x on true
         where o.tenant_id=@TenantId and o.deleted_at is null and o.status in('APPROVED','FULFILLMENT')
           and (@Customer is null or c.name ilike '%'||@Customer||'%') and (@Number is null or o.order_number ilike '%'||@Number||'%')
@@ -60,17 +60,29 @@ public sealed class LogisticsService(
           and (@Status is null or o.status=@Status)
           and (@WarehouseId is null or exists(select 1 from agro360.inventory_stock_lots l join agro360.inventory_stock_balances b on b.tenant_id=l.tenant_id and b.warehouse_id=l.warehouse_id and b.product_id=l.product_id where l.tenant_id=o.tenant_id and l.warehouse_id=@WarehouseId and l.product_id=i.product_id and l.quality_status='APPROVED' and (l.expires_on is null or l.expires_on>=current_date) and b.available-b.reserved>0))
         group by o.id,c.name having sum(i.quantity-coalesce(x.cancelled,0)-coalesce(x.dispatched,0))>0)
-        select *,count(*) over() total_count from queue order by expected_delivery nulls last,order_number limit @PageSize offset @Offset
+        select *, (select count(*) from queue) total_count from queue order by expected_delivery nulls last,order_number,order_id limit @PageSize offset @Offset;
+        with queue as (
+        select o.id from agro360.sales_orders o join agro360.crm_customers c on c.tenant_id=o.tenant_id and c.id=o.customer_id
+        join agro360.sales_order_items i on i.tenant_id=o.tenant_id and i.order_id=o.id
+        where o.tenant_id=@TenantId and o.deleted_at is null and o.status in('APPROVED','FULFILLMENT')
+          and (@Customer is null or c.name ilike '%'||@Customer||'%') and (@Number is null or o.order_number ilike '%'||@Number||'%')
+          and (@UnitId is null or o.property_id=@UnitId) and (@DueUntil is null or o.expected_delivery<=@DueUntil)
+          and (@Status is null or o.status=@Status)
+          and (@WarehouseId is null or exists(select 1 from agro360.inventory_stock_lots l where l.tenant_id=o.tenant_id and l.warehouse_id=@WarehouseId and l.product_id=i.product_id and l.quality_status='APPROVED' and (l.expires_on is null or l.expires_on>=current_date)))
+        group by o.id having sum(i.quantity-i.cancelled_quantity-coalesce((select sum(r.consumed_quantity) from agro360.fulfillment_reservations r where r.tenant_id=i.tenant_id and r.order_item_id=i.id),0))>0)
+        select count(*) from queue
         """;
-        var rows = (await c.QueryAsync(new CommandDefinition(sql, new { tenant.TenantId, Customer = string.IsNullOrWhiteSpace(query.Customer) ? null : query.Customer, Number = string.IsNullOrWhiteSpace(query.Number) ? null : query.Number, query.UnitId, query.DueUntil, Status = string.IsNullOrWhiteSpace(query.Status) ? null : query.Status, query.WarehouseId, PageSize = pageSize, Offset = offset }, t, cancellationToken: ct))).AsList();
-        var total = rows.Count == 0 ? 0 : (long)rows[0].total_count;
+        var parameters = new { tenant.TenantId, Customer = string.IsNullOrWhiteSpace(query.Customer) ? null : query.Customer, Number = string.IsNullOrWhiteSpace(query.Number) ? null : query.Number, query.UnitId, query.DueUntil, Status = string.IsNullOrWhiteSpace(query.Status) ? null : query.Status, query.WarehouseId, PageSize = pageSize, Offset = offset };
+        using var multiple = await c.QueryMultipleAsync(new CommandDefinition(sql, parameters, t, cancellationToken: ct));
+        var rows = (await multiple.ReadAsync()).AsList();
+        var total = await multiple.ReadSingleAsync<long>();
         return new FulfillmentQueuePage(rows, page, pageSize, total);
     });
 
     public Task<dynamic?> OrderFulfillmentDetailAsync(Guid orderId, CancellationToken ct) => Tx<dynamic?>(async (c, t) =>
     {
         var order = await c.QuerySingleOrDefaultAsync(new CommandDefinition("""
-            select o.id,o.order_number,o.status,o.currency,o.payment_terms,o.expected_delivery,c.name customer,
+            select o.id,o.order_number,o.status,o.currency,o.payment_terms,o.expected_delivery,o.customer_id,c.name customer,
                    pc.proposal_id,pc.version_number proposal_version,p.proposal_number
             from agro360.sales_orders o join agro360.crm_customers c on c.tenant_id=o.tenant_id and c.id=o.customer_id
             left join agro360.sales_proposal_conversions pc on pc.tenant_id=o.tenant_id and pc.order_id=o.id
@@ -82,19 +94,30 @@ public sealed class LogisticsService(
             select i.id,i.quantity ordered_quantity,i.unit,p.name product,p.code product_code,
               coalesce(sum(r.quantity) filter(where r.status='ACTIVE'),0) reserved_quantity,
               coalesce(sum(si.picked_quantity) filter(where s.status in('PREPARING','CHECKED')),0) picked_quantity,
+              i.cancelled_quantity,
               coalesce(sum(r.consumed_quantity),0) dispatched_quantity,
-              i.quantity-coalesce(sum(r.consumed_quantity),0) pending_quantity
+              i.quantity-i.cancelled_quantity-coalesce(sum(r.consumed_quantity),0) pending_quantity,
+              i.fulfillment_version
             from agro360.sales_order_items i join agro360.inventory_products p on p.tenant_id=i.tenant_id and p.id=i.product_id
             left join agro360.fulfillment_reservations r on r.tenant_id=i.tenant_id and r.order_item_id=i.id
             left join agro360.fulfillment_shipment_items si on si.tenant_id=r.tenant_id and si.reservation_id=r.id
             left join agro360.fulfillment_shipments s on s.tenant_id=si.tenant_id and s.id=si.shipment_id
             where i.tenant_id=@TenantId and i.order_id=@Id group by i.id,p.name,p.code order by i.created_at,i.id
             """, new { tenant.TenantId, Id = orderId }, t, cancellationToken: ct))).AsList();
-        var reservations = (await c.QueryAsync(new CommandDefinition("select r.id,r.quantity,r.consumed_quantity,r.released_quantity,r.unit,r.status,l.lot_number,w.name warehouse,r.created_at from agro360.fulfillment_reservations r join agro360.inventory_stock_lots l on l.tenant_id=r.tenant_id and l.id=r.stock_lot_id join agro360.inventory_warehouses w on w.tenant_id=l.tenant_id and w.id=l.warehouse_id join agro360.sales_order_items i on i.tenant_id=r.tenant_id and i.id=r.order_item_id where r.tenant_id=@TenantId and i.order_id=@Id order by r.created_at", new { tenant.TenantId, Id = orderId }, t, cancellationToken: ct))).AsList();
-        var shipments = (await c.QueryAsync(new CommandDefinition("select distinct s.id,s.number,s.status,s.dispatched_at,s.created_at from agro360.fulfillment_shipments s join agro360.fulfillment_shipment_items si on si.tenant_id=s.tenant_id and si.shipment_id=s.id join agro360.sales_order_items i on i.tenant_id=si.tenant_id and i.id=si.order_item_id where s.tenant_id=@TenantId and i.order_id=@Id order by s.created_at", new { tenant.TenantId, Id = orderId }, t, cancellationToken: ct))).AsList();
+        var reservations = (await c.QueryAsync(new CommandDefinition("select r.id,r.order_item_id,r.quantity,r.consumed_quantity,r.released_quantity,r.quantity-r.consumed_quantity-r.released_quantity active_quantity,r.unit,r.status,r.version,l.lot_number,w.name warehouse,r.created_at from agro360.fulfillment_reservations r join agro360.inventory_stock_lots l on l.tenant_id=r.tenant_id and l.id=r.stock_lot_id join agro360.inventory_warehouses w on w.tenant_id=l.tenant_id and w.id=l.warehouse_id join agro360.sales_order_items i on i.tenant_id=r.tenant_id and i.id=r.order_item_id where r.tenant_id=@TenantId and i.order_id=@Id order by r.created_at", new { tenant.TenantId, Id = orderId }, t, cancellationToken: ct))).AsList();
+        var shipments = (await c.QueryAsync(new CommandDefinition("select distinct s.id,s.number,s.status,s.version,s.dispatched_at,s.created_at from agro360.fulfillment_shipments s join agro360.fulfillment_shipment_items si on si.tenant_id=s.tenant_id and si.shipment_id=s.id join agro360.sales_order_items i on i.tenant_id=si.tenant_id and i.id=si.order_item_id where s.tenant_id=@TenantId and i.order_id=@Id order by s.created_at", new { tenant.TenantId, Id = orderId }, t, cancellationToken: ct))).AsList();
         var history = (await c.QueryAsync(new CommandDefinition("select event_type,payload,created_at from agro360.sales_commercial_events where tenant_id=@TenantId and aggregate_id=@Id order by created_at", new { tenant.TenantId, Id = orderId }, t, cancellationToken: ct))).AsList();
         return new { order, items, reservations, shipments, history };
     });
+    public Task<IReadOnlyList<dynamic>> EligibleLotsAsync(Guid orderItemId, CancellationToken ct) => Tx<IReadOnlyList<dynamic>>(async (c, t) => (await c.QueryAsync(new CommandDefinition("""
+        select l.id lot_id,l.warehouse_id,w.name warehouse,l.lot_number,l.expires_on,l.quality_status,
+          greatest(0,least(l.quantity-coalesce((select sum(r.quantity-r.consumed_quantity-r.released_quantity) from agro360.fulfillment_reservations r where r.tenant_id=l.tenant_id and r.stock_lot_id=l.id and r.status='ACTIVE'),0),b.available-b.reserved)) eligible_quantity
+        from agro360.sales_order_items i join agro360.inventory_stock_lots l on l.tenant_id=i.tenant_id and l.product_id=i.product_id
+        join agro360.inventory_warehouses w on w.tenant_id=l.tenant_id and w.id=l.warehouse_id and w.deleted_at is null
+        join agro360.inventory_stock_balances b on b.tenant_id=l.tenant_id and b.warehouse_id=l.warehouse_id and b.product_id=l.product_id
+        where i.tenant_id=@TenantId and i.id=@Id and l.quality_status='APPROVED' and (l.expires_on is null or l.expires_on>=current_date)
+          and b.available-b.reserved>0 order by w.name,l.expires_on nulls last,l.lot_number,l.id
+        """, new { tenant.TenantId, Id = orderItemId }, t, cancellationToken: ct))).AsList());
 
     public Task<FulfillmentIndicators> FulfillmentIndicatorsAsync(CancellationToken ct) => Tx(async (c, t) => await c.QuerySingleAsync<FulfillmentIndicators>(new CommandDefinition("""
         select
@@ -121,22 +144,27 @@ public sealed class LogisticsService(
     });
     public Task<Guid> CreateFulfillmentAsync(CreateFulfillmentCommand command, CancellationToken ct)
     {
-        if (command.Items.Count == 0 || command.Items.Any(x => x.Quantity <= 0 || x.PickedQuantity <= 0 || x.CheckedQuantity <= 0 || x.PickedQuantity > x.Quantity || x.CheckedQuantity > x.PickedQuantity)) throw new DomainException("Quantidades de reserva, separação e conferência são inválidas.");
+        if (command.Items.Count == 0 || command.Items.Any(x => x.Quantity <= 0 || x.PickedQuantity < 0 || x.CheckedQuantity < 0 || x.PickedQuantity > x.Quantity || x.CheckedQuantity > x.PickedQuantity)) throw new DomainException("Quantidades de reserva, separação e conferência são inválidas.");
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey)) throw new DomainException("Chave de idempotência é obrigatória.");
         var hash = Hash(command);
         return Tx(async (c, t) =>
         {
             var previous = await c.QuerySingleOrDefaultAsync<(Guid Id, string RequestHash)>(new CommandDefinition("select id,request_hash requesthash from agro360.fulfillment_shipments where tenant_id=@TenantId and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
             if (previous.Id != Guid.Empty) { if (previous.RequestHash != hash) throw new ConflictException("Chave de idempotência reutilizada com conteúdo diferente."); return previous.Id; }
+            // Ordem global: itens comerciais -> lotes -> saldos -> reservas -> documentos.
+            foreach (var orderItemId in command.Items.Select(x => x.OrderItemId).Distinct().Order())
+                await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{orderItemId}" }, t, cancellationToken: ct));
+            foreach (var lotId in command.Items.Select(x => x.StockLotId).Distinct().Order())
+                await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:lot:{tenant.TenantId}:{lotId}" }, t, cancellationToken: ct));
             var id = Guid.CreateVersion7();
-            await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_shipments(id,tenant_id,number,origin_warehouse_id,destination,customer_id,status,idempotency_key,request_hash,created_by,updated_by) values(@Id,@TenantId,@Number,@Warehouse,@Destination,@Customer,'CHECKED',@Key,@Hash,@UserId,@UserId)", new { Id = id, tenant.TenantId, command.Number, Warehouse = command.OriginWarehouseId, command.Destination, Customer = command.CustomerId, Key = command.IdempotencyKey, Hash = hash, tenant.UserId }, t, cancellationToken: ct));
+            var initialStatus = command.Items.All(x => x.CheckedQuantity > 0) ? "CHECKED" : "PREPARING";
+            await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_shipments(id,tenant_id,number,origin_warehouse_id,destination,customer_id,status,idempotency_key,request_hash,created_by,updated_by) values(@Id,@TenantId,@Number,@Warehouse,@Destination,@Customer,@Status,@Key,@Hash,@UserId,@UserId)", new { Id = id, tenant.TenantId, command.Number, Warehouse = command.OriginWarehouseId, command.Destination, Customer = command.CustomerId, Status = initialStatus, Key = command.IdempotencyKey, Hash = hash, tenant.UserId }, t, cancellationToken: ct));
             foreach (var item in command.Items)
             {
-                await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"{tenant.TenantId}:{item.StockLotId}" }, t, cancellationToken: ct));
                 var available = await c.QuerySingleOrDefaultAsync<decimal?>(new CommandDefinition("""
                     select least(
                         l.quantity-coalesce((select sum(r.quantity) from agro360.fulfillment_reservations r where r.tenant_id=l.tenant_id and r.stock_lot_id=l.id and r.status='ACTIVE'),0),
-                        oi.quantity-coalesce((select sum(case when r.status='ACTIVE' then r.quantity else r.consumed_quantity end) from agro360.fulfillment_reservations r where r.tenant_id=oi.tenant_id and r.order_item_id=oi.id and r.status in('ACTIVE','CONSUMED','RELEASED')),0))
+                        oi.quantity-oi.cancelled_quantity-coalesce((select sum(r.quantity-r.released_quantity) from agro360.fulfillment_reservations r where r.tenant_id=oi.tenant_id and r.order_item_id=oi.id and r.status in('ACTIVE','CONSUMED','RELEASED')),0))
                     from agro360.inventory_stock_lots l
                     join agro360.sales_order_items oi on oi.tenant_id=l.tenant_id and oi.id=@OrderItemId and oi.product_id=l.product_id
                     join agro360.sales_orders o on o.tenant_id=oi.tenant_id and o.id=oi.order_id and o.customer_id=@CustomerId and o.status in('APPROVED','FULFILLMENT')
@@ -155,13 +183,92 @@ public sealed class LogisticsService(
             await Audit(c, t, "fulfillment.create", id, command, ct); return id;
         });
     }
+    public Task PrepareFulfillmentAsync(Guid shipmentItemId, PrepareFulfillmentCommand command, CancellationToken ct)
+    {
+        if (command.PickedQuantity < 0 || command.CheckedQuantity < 0 || command.CheckedQuantity > command.PickedQuantity || string.IsNullOrWhiteSpace(command.IdempotencyKey))
+            throw new DomainException("Separação, conferência e chave de idempotência são obrigatórias e coerentes.");
+        if (command.CheckedQuantity != command.PickedQuantity && string.IsNullOrWhiteSpace(command.DivergenceReason))
+            throw new DomainException("Divergência exige motivo e decisão explícita para o remanescente.");
+        var hash = Hash(new { shipmentItemId, command.PickedQuantity, command.CheckedQuantity, command.DivergenceReason, command.Version });
+        return Tx(async (c, t) =>
+        {
+            var replay = await c.QuerySingleOrDefaultAsync<(Guid AggregateId, string RequestHash)>(new CommandDefinition("select aggregate_id AggregateId,request_hash RequestHash from agro360.fulfillment_operation_requests where tenant_id=@TenantId and operation='PREPARE' and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
+            if (replay.AggregateId != Guid.Empty) { if (replay.RequestHash != hash || replay.AggregateId != shipmentItemId) throw new ConflictException("Chave de idempotência reutilizada com conteúdo diferente."); return; }
+            var changed = await c.ExecuteAsync(new CommandDefinition("""
+                update agro360.fulfillment_shipment_items i set picked_quantity=@PickedQuantity,checked_quantity=@CheckedQuantity,
+                  divergence_reason=@DivergenceReason,version=version+1,updated_at=now(),updated_by=@UserId
+                from agro360.fulfillment_shipments s, agro360.fulfillment_reservations r
+                where i.tenant_id=@TenantId and i.id=@Id and i.version=@Version and s.tenant_id=i.tenant_id and s.id=i.shipment_id
+                  and s.status='PREPARING' and r.tenant_id=i.tenant_id and r.id=i.reservation_id and r.status='ACTIVE'
+                  and @PickedQuantity<=r.quantity-r.consumed_quantity-r.released_quantity
+                """, new { tenant.TenantId, Id = shipmentItemId, command.PickedQuantity, command.CheckedQuantity, command.DivergenceReason, command.Version, tenant.UserId }, t, cancellationToken: ct));
+            if (changed != 1) throw new ConflictException("A preparação foi alterada ou a reserva não possui saldo ativo.");
+            await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_shipments s set status=case when exists(select 1 from agro360.fulfillment_shipment_items i where i.tenant_id=s.tenant_id and i.shipment_id=s.id and i.checked_quantity=0) then 'PREPARING' else 'CHECKED' end,version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=(select shipment_id from agro360.fulfillment_shipment_items where tenant_id=@TenantId and id=@Id)", new { tenant.TenantId, Id = shipmentItemId, tenant.UserId }, t, cancellationToken: ct));
+            await RecordOperation(c, t, "PREPARE", shipmentItemId, command.IdempotencyKey, hash, command.Version + 1, ct);
+            await Audit(c, t, "fulfillment.prepare", shipmentItemId, command, ct);
+        });
+    }
+    public Task ReleaseReservationAsync(Guid reservationId, ReleaseReservationCommand command, CancellationToken ct)
+    {
+        if (command.Quantity <= 0 || string.IsNullOrWhiteSpace(command.Reason) || string.IsNullOrWhiteSpace(command.IdempotencyKey)) throw new DomainException("Liberação exige quantidade, motivo e chave de idempotência.");
+        var hash = Hash(new { reservationId, command.Quantity, command.Reason, command.Version });
+        return Tx(async (c, t) =>
+        {
+            var replay = await c.QuerySingleOrDefaultAsync<(Guid AggregateId, string RequestHash)>(new CommandDefinition("select aggregate_id AggregateId,request_hash RequestHash from agro360.fulfillment_operation_requests where tenant_id=@TenantId and operation='RELEASE' and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
+            if (replay.AggregateId != Guid.Empty) { if (replay.RequestHash != hash || replay.AggregateId != reservationId) throw new ConflictException("Chave de idempotência reutilizada com conteúdo diferente."); return; }
+            var orderItemId = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition("select order_item_id from agro360.fulfillment_reservations where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = reservationId }, t, cancellationToken: ct));
+            if (orderItemId is null) throw new NotFoundException("Reserva", reservationId);
+            await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{orderItemId}" }, t, cancellationToken: ct));
+            var row = await c.QuerySingleOrDefaultAsync<(Guid LotId, decimal Quantity, decimal Consumed, decimal Released, long Version)>(new CommandDefinition("select stock_lot_id LotId,quantity,consumed_quantity Consumed,released_quantity Released,version from agro360.fulfillment_reservations where tenant_id=@TenantId and id=@Id and status='ACTIVE' for update", new { tenant.TenantId, Id = reservationId }, t, cancellationToken: ct));
+            if (row.LotId == Guid.Empty || row.Version != command.Version || row.Quantity-row.Consumed-row.Released < command.Quantity) throw new ConflictException("Reserva alterada ou quantidade de liberação indisponível.");
+            var linked = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.fulfillment_shipment_items i join agro360.fulfillment_shipments s on s.tenant_id=i.tenant_id and s.id=i.shipment_id where i.tenant_id=@TenantId and i.reservation_id=@Id and s.status<>'CANCELLED' and (i.picked_quantity>0 or i.checked_quantity>0))", new { tenant.TenantId, Id = reservationId }, t, cancellationToken: ct));
+            if (linked) throw new ConflictException("Desfaça explicitamente a separação e a conferência antes de liberar a reserva.");
+            var requestId = await RecordOperation(c, t, "RELEASE", reservationId, command.IdempotencyKey, hash, command.Version + 1, ct);
+            var released = await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_reservations set released_quantity=released_quantity+@Quantity,status=case when consumed_quantity+released_quantity+@Quantity=quantity then 'RELEASED' else 'ACTIVE' end,version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id and version=@Version and status='ACTIVE'; update agro360.inventory_stock_balances b set reserved=reserved-@Quantity,version=version+1,updated_at=now() from agro360.inventory_stock_lots l where l.tenant_id=b.tenant_id and l.id=@LotId and b.tenant_id=@TenantId and b.warehouse_id=l.warehouse_id and b.product_id=l.product_id and b.reserved>=@Quantity", new { tenant.TenantId, Id = reservationId, row.LotId, command.Quantity, command.Version, tenant.UserId }, t, cancellationToken: ct));
+            if (released != 2) throw new ConflictException("Saldo mudou durante a liberação.");
+            await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_reservation_releases(id,tenant_id,reservation_id,quantity,reason,request_id,created_by) values(@Id,@TenantId,@Reservation,@Quantity,@Reason,@Request,@UserId)", new { Id = Guid.CreateVersion7(), tenant.TenantId, Reservation = reservationId, command.Quantity, command.Reason, Request = requestId, tenant.UserId }, t, cancellationToken: ct));
+            await Audit(c, t, "fulfillment.reservation.release", reservationId, command, ct);
+        });
+    }
+    public Task CancelOrderItemAsync(Guid orderItemId, CancelOrderItemCommand command, CancellationToken ct)
+    {
+        if (command.Quantity <= 0 || string.IsNullOrWhiteSpace(command.Reason) || string.IsNullOrWhiteSpace(command.IdempotencyKey)) throw new DomainException("Cancelamento exige quantidade positiva, motivo e chave de idempotência.");
+        var hash = Hash(new { orderItemId, command.Quantity, command.Reason, command.Version });
+        return Tx(async (c, t) =>
+        {
+            var replay = await c.QuerySingleOrDefaultAsync<(Guid AggregateId, string RequestHash)>(new CommandDefinition("select aggregate_id AggregateId,request_hash RequestHash from agro360.fulfillment_operation_requests where tenant_id=@TenantId and operation='CANCEL' and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
+            if (replay.AggregateId != Guid.Empty) { if (replay.RequestHash != hash || replay.AggregateId != orderItemId) throw new ConflictException("Chave de idempotência reutilizada com conteúdo diferente."); return; }
+            await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{orderItemId}" }, t, cancellationToken: ct));
+            var dispatched = await c.ExecuteScalarAsync<decimal>(new CommandDefinition("select coalesce(sum(consumed_quantity),0) from agro360.fulfillment_reservations where tenant_id=@TenantId and order_item_id=@Id", new { tenant.TenantId, Id = orderItemId }, t, cancellationToken: ct));
+            var prepared = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.fulfillment_reservations r join agro360.fulfillment_shipment_items i on i.tenant_id=r.tenant_id and i.reservation_id=r.id join agro360.fulfillment_shipments s on s.tenant_id=i.tenant_id and s.id=i.shipment_id where r.tenant_id=@TenantId and r.order_item_id=@Id and r.status='ACTIVE' and s.status<>'CANCELLED' and (i.picked_quantity>0 or i.checked_quantity>0))", new { tenant.TenantId, Id = orderItemId }, t, cancellationToken: ct));
+            if (prepared) throw new ConflictException("Desfaça explicitamente a separação e a conferência antes de cancelar o saldo.");
+            var reservations = (await c.QueryAsync<(Guid Id, Guid LotId, decimal Active)>(new CommandDefinition("select id,stock_lot_id LotId,quantity-consumed_quantity-released_quantity Active from agro360.fulfillment_reservations where tenant_id=@TenantId and order_item_id=@Id and status='ACTIVE' order by id for update", new { tenant.TenantId, Id = orderItemId }, t, cancellationToken: ct))).AsList();
+            var toRelease = command.Quantity;
+            foreach (var reservation in reservations)
+            {
+                if (toRelease <= 0) break;
+                var amount = Math.Min(toRelease, reservation.Active);
+                var released = await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_reservations set released_quantity=released_quantity+@Amount,status=case when consumed_quantity+released_quantity+@Amount=quantity then 'CANCELLED' else 'ACTIVE' end,version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Reservation and status='ACTIVE'; update agro360.inventory_stock_balances b set reserved=reserved-@Amount,version=version+1,updated_at=now() from agro360.inventory_stock_lots l where l.tenant_id=b.tenant_id and l.id=@LotId and b.tenant_id=@TenantId and b.warehouse_id=l.warehouse_id and b.product_id=l.product_id and b.reserved>=@Amount", new { tenant.TenantId, Reservation = reservation.Id, reservation.LotId, Amount = amount, tenant.UserId }, t, cancellationToken: ct));
+                if (released != 2) throw new ConflictException("Saldo de reserva mudou durante o cancelamento.");
+                toRelease -= amount;
+            }
+            var changed = await c.ExecuteAsync(new CommandDefinition("update agro360.sales_order_items set cancelled_quantity=cancelled_quantity+@Quantity,fulfillment_version=fulfillment_version+1 where tenant_id=@TenantId and id=@Id and fulfillment_version=@Version and quantity-cancelled_quantity-@Dispatched>=@Quantity", new { tenant.TenantId, Id = orderItemId, command.Quantity, command.Version, Dispatched = dispatched }, t, cancellationToken: ct));
+            if (changed != 1) throw new ConflictException("Item alterado, saldo insuficiente ou preparação vinculada. Desfaça a preparação antes de cancelar.");
+            var requestId = await RecordOperation(c, t, "CANCEL", orderItemId, command.IdempotencyKey, hash, command.Version + 1, ct);
+            await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_order_item_cancellations(id,tenant_id,order_item_id,quantity,reason,request_id,created_by) values(@Id,@TenantId,@Item,@Quantity,@Reason,@Request,@UserId)", new { Id = Guid.CreateVersion7(), tenant.TenantId, Item = orderItemId, command.Quantity, command.Reason, Request = requestId, tenant.UserId }, t, cancellationToken: ct));
+            await Audit(c, t, "fulfillment.order-item.cancel", orderItemId, command, ct);
+        });
+    }
     public Task DispatchFulfillmentAsync(Guid id, DispatchFulfillmentCommand command, CancellationToken ct) => Tx(async (c, t) =>
     {
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey)) throw new DomainException("Chave de idempotência é obrigatória.");
         var requestHash = Hash(new { ShipmentId = id, command.Version });
+        var commercialItems = (await c.QueryAsync<Guid>(new CommandDefinition("select distinct order_item_id from agro360.fulfillment_shipment_items where tenant_id=@TenantId and shipment_id=@Id order by order_item_id", new { tenant.TenantId, Id = id }, t, cancellationToken: ct))).AsList();
+        foreach (var orderItemId in commercialItems)
+            await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{orderItemId}" }, t, cancellationToken: ct));
         var shipment = await c.QuerySingleOrDefaultAsync<(string Status, long Version, string? DispatchIdempotencyKey, string? DispatchRequestHash)>(new CommandDefinition("select status,version,dispatch_idempotency_key DispatchIdempotencyKey,dispatch_request_hash DispatchRequestHash from agro360.fulfillment_shipments where tenant_id=@TenantId and id=@Id for update", new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
         if (string.IsNullOrWhiteSpace(shipment.Status)) throw new NotFoundException("Expedição", id);
-        if (shipment.Status == "DISPATCHED" || shipment.Status == "IN_DELIVERY")
+        if (shipment.DispatchIdempotencyKey is not null)
         {
             if (shipment.DispatchIdempotencyKey == command.IdempotencyKey && shipment.DispatchRequestHash == requestHash) return;
             throw new ConflictException("Expedição já confirmada por outra requisição.");
@@ -174,8 +281,10 @@ public sealed class LogisticsService(
             if (balanceChanged == 0) throw new ConflictException("Saldo autorizado mudou após a separação.");
             var changed = await c.ExecuteAsync(new CommandDefinition("update agro360.inventory_stock_lots set quantity=quantity-@Quantity where tenant_id=@TenantId and id=@LotId and quantity>=@Quantity and quality_status='APPROVED' and (expires_on is null or expires_on>=current_date)", new { tenant.TenantId, item.LotId, item.Quantity }, t, cancellationToken: ct));
             if (changed == 0) throw new ConflictException("Saldo ou qualidade do lote mudou após a separação.");
-            await c.ExecuteAsync(new CommandDefinition("insert into agro360.inventory_stock_movements(id,tenant_id,warehouse_id,product_id,movement_type,quantity,unit,unit_cost,total_cost,lot_number,reference_type,reference_id,idempotency_key,balance_after,average_cost_after,balance_version,occurred_at,created_by) select @Movement,@TenantId,l.warehouse_id,l.product_id,'SALE',@Quantity,@Unit,b.average_cost,round(@Quantity*b.average_cost,4),l.lot_number,'FULFILLMENT_SHIPMENT',@Shipment,@Key,b.available,b.average_cost,b.version,now(),@UserId from agro360.inventory_stock_lots l join agro360.inventory_stock_balances b on b.tenant_id=l.tenant_id and b.warehouse_id=l.warehouse_id and b.product_id=l.product_id where l.tenant_id=@TenantId and l.id=@LotId and not exists(select 1 from agro360.inventory_stock_movements m where m.tenant_id=@TenantId and m.idempotency_key=@Key)", new { Movement = Guid.CreateVersion7(), tenant.TenantId, item.LotId, item.Quantity, item.Unit, Shipment = id, Key = $"fulfillment:{id}:{item.Id}", tenant.UserId }, t, cancellationToken: ct));
-            await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_reservations set status=case when @Quantity=quantity then 'CONSUMED' else 'RELEASED' end,consumed_quantity=@Quantity,released_quantity=quantity-@Quantity,version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Reservation and status='ACTIVE'", new { tenant.TenantId, Reservation = item.ReservationId, item.Quantity, tenant.UserId }, t, cancellationToken: ct));
+            var movementCreated = await c.ExecuteAsync(new CommandDefinition("insert into agro360.inventory_stock_movements(id,tenant_id,warehouse_id,product_id,movement_type,quantity,unit,unit_cost,total_cost,lot_number,reference_type,reference_id,idempotency_key,balance_after,average_cost_after,balance_version,occurred_at,created_by) select @Movement,@TenantId,l.warehouse_id,l.product_id,'SALE',@Quantity,@Unit,b.average_cost,round(@Quantity*b.average_cost,4),l.lot_number,'FULFILLMENT_SHIPMENT',@Shipment,@Key,b.available,b.average_cost,b.version,now(),@UserId from agro360.inventory_stock_lots l join agro360.inventory_stock_balances b on b.tenant_id=l.tenant_id and b.warehouse_id=l.warehouse_id and b.product_id=l.product_id where l.tenant_id=@TenantId and l.id=@LotId and not exists(select 1 from agro360.inventory_stock_movements m where m.tenant_id=@TenantId and m.idempotency_key=@Key)", new { Movement = Guid.CreateVersion7(), tenant.TenantId, item.LotId, item.Quantity, item.Unit, Shipment = id, Key = $"fulfillment:{id}:{item.Id}", tenant.UserId }, t, cancellationToken: ct));
+            if (movementCreated != 1) throw new ConflictException("A saída física já possui movimento ou não pôde ser persistida.");
+            var reservationConsumed = await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_reservations set status=case when @Quantity=quantity then 'CONSUMED' else 'RELEASED' end,consumed_quantity=@Quantity,released_quantity=quantity-@Quantity,version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Reservation and status='ACTIVE' and quantity-consumed_quantity-released_quantity>=@Quantity", new { tenant.TenantId, Reservation = item.ReservationId, item.Quantity, tenant.UserId }, t, cancellationToken: ct));
+            if (reservationConsumed != 1) throw new ConflictException("A reserva mudou durante a confirmação da saída.");
         }
         await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_shipments set status='DISPATCHED',dispatched_at=now(),dispatch_idempotency_key=@Key,dispatch_request_hash=@Hash,version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id, Key = command.IdempotencyKey, Hash = requestHash, tenant.UserId }, t, cancellationToken: ct));
         await Audit(c, t, "fulfillment.dispatch", id, new { command.IdempotencyKey }, ct);
@@ -623,6 +732,12 @@ public sealed class LogisticsService(
         return new { trip, stops, legs, allocations };
     });
     private static string Hash<T>(T command) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(command))));
+    private async Task<Guid> RecordOperation(NpgsqlConnection c, NpgsqlTransaction t, string operation, Guid aggregateId, string key, string hash, long resultVersion, CancellationToken ct)
+    {
+        var id = Guid.CreateVersion7();
+        await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_operation_requests(id,tenant_id,operation,aggregate_id,idempotency_key,request_hash,result_version,created_by) values(@Id,@TenantId,@Operation,@AggregateId,@Key,@Hash,@ResultVersion,@UserId)", new { Id = id, tenant.TenantId, Operation = operation, AggregateId = aggregateId, Key = key, Hash = hash, ResultVersion = resultVersion, tenant.UserId }, t, cancellationToken: ct));
+        return id;
+    }
     private Task Audit(NpgsqlConnection c, NpgsqlTransaction t, string action, Guid id, object x, CancellationToken ct) => c.WriteAuditAsync(t, tenant, action, "Trip", id, null, x, ct);
     private async Task<T> Tx<T>(Func<NpgsqlConnection, NpgsqlTransaction, Task<T>> f) { try { return await db.InTenantTransactionAsync(f, CancellationToken.None); } catch (Exception ex) { InfrastructureLogMessages.LogisticsFailed(logger, tenant.TenantId, ex); throw; } }
     private Task<bool> Tx(Func<NpgsqlConnection, NpgsqlTransaction, Task> f) => Tx(async (c, t) => { await f(c, t); return true; });
