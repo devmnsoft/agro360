@@ -182,7 +182,7 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         return next;
     }, ct);
 
-    public Task<ProposalVersionView> GetProposalAsync(Guid id, long? version, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    public Task<ProposalVersionView> GetProposalAsync(Guid id, long? version, CancellationToken ct) => db.InTenantTransactionAsync<ProposalVersionView>(async (c, t) =>
     {
         var header = await c.QuerySingleOrDefaultAsync<ProposalHeader>("select p.id ProposalId,p.proposal_number Number,p.status,p.current_version CurrentVersion,p.customer_id CustomerId,v.version_number Version,v.currency,v.valid_until ValidUntil,v.freight,v.items_total ItemsTotal,v.total_amount Total,v.payment_terms PaymentTerms from agro360.sales_proposals p join agro360.sales_proposal_versions v on v.tenant_id=p.tenant_id and v.proposal_id=p.id and v.version_number=coalesce(@Version,p.current_version) where p.tenant_id=@TenantId and p.id=@Id and p.deleted_at is null", new { tenant.TenantId, Id = id, Version = version }, t);
         if (header is null) throw new KeyNotFoundException("Proposta ou versão não encontrada.");
@@ -210,7 +210,7 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         await c.ExecuteAsync("insert into agro360.sales_proposal_decisions(id,tenant_id,proposal_id,version_number,decision,reason,decided_at,decided_by) values(gen_random_uuid(),@TenantId,@Id,@Version,'ACCEPTED',@Evidence,@AcceptedAt,@UserId); update agro360.sales_proposals set status='ACCEPTED',accepted_version=@Version,accepted_at=@AcceptedAt,accepted_by=@UserId,acceptance_evidence_type=@EvidenceType,acceptance_evidence_reference=@Evidence,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id, command.Version, command.EvidenceType, Evidence = command.EvidenceReference, AcceptedAt = acceptedAt, tenant.UserId }, t);
     }, ct);
 
-    public Task<ProposalConversionResult> ConvertProposalAsync(Guid id, ProposalConversionCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    public Task<ProposalConversionResult> ConvertProposalAsync(Guid id, ProposalConversionCommand command, CancellationToken ct) => db.InTenantTransactionAsync<ProposalConversionResult>(async (c, t) =>
     {
         var normalizedRequest = new { ProposalId = id, command.Version, Items = command.Items.OrderBy(x => x.ProposalItemId).Select(x => new { x.ProposalItemId, x.Quantity }).ToArray() };
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(normalizedRequest)))).ToLowerInvariant();
