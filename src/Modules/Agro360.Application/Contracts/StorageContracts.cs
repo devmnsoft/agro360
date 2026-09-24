@@ -20,6 +20,8 @@ public sealed record PlanTripCommand(string Number, string Origin, string Destin
 public sealed record FulfillmentItemCommand(Guid OrderItemId, Guid StockLotId, decimal Quantity, decimal PickedQuantity, decimal CheckedQuantity, string Unit, string? DivergenceReason);
 public sealed record CreateFulfillmentCommand(string Number, Guid OriginWarehouseId, Guid CustomerId, string Destination, string IdempotencyKey, IReadOnlyList<FulfillmentItemCommand> Items);
 public sealed record DispatchFulfillmentCommand(long Version, string IdempotencyKey);
+public sealed record FulfillmentQueueQuery(string? Customer = null, Guid? UnitId = null, DateOnly? DueUntil = null, string? Status = null, Guid? WarehouseId = null, string? Number = null, int Page = 1, int PageSize = 20);
+public sealed record FulfillmentQueuePage(IReadOnlyList<dynamic> Items, int Page, int PageSize, long Total);
 public sealed record DeliveryAttemptItemCommand(Guid ShipmentItemId, decimal AcceptedQuantity, decimal RefusedQuantity, string? Reason);
 public sealed record DeliveryAttemptCommand(DateTimeOffset OccurredAt, string Destination, Guid ResponsibleId, string Status, string? Reason, Guid? EvidenceDocumentId, bool EvidencePending, string? PendingNotes, string IdempotencyKey, IReadOnlyList<DeliveryAttemptItemCommand> Items);
 public sealed record ReturnCommand(Guid ShipmentItemId, decimal Quantity, string Reason, string IdempotencyKey);
@@ -64,7 +66,8 @@ public sealed record AfterSalesPage(IReadOnlyList<dynamic> Items, int Page, int 
 public interface ILogisticsService
 {
     Task<IReadOnlyList<dynamic>> ListAsync(CancellationToken ct); Task<Guid> SaveAsync(Guid? id, TripCommand command, CancellationToken ct); Task AddOccurrenceAsync(Guid id, TripOccurrenceCommand command, CancellationToken ct); Task CompleteAsync(Guid id, CancellationToken ct);
-    Task<IReadOnlyList<dynamic>> FulfillmentQueueAsync(string? customer, Guid? unitId, DateOnly? dueUntil, string? status, CancellationToken ct);
+    Task<FulfillmentQueuePage> FulfillmentQueueAsync(FulfillmentQueueQuery query, CancellationToken ct);
+    Task<dynamic?> OrderFulfillmentDetailAsync(Guid orderId, CancellationToken ct);
     Task<FulfillmentIndicators> FulfillmentIndicatorsAsync(CancellationToken ct);
     Task<dynamic?> FulfillmentDetailAsync(Guid id, CancellationToken ct);
     Task<Guid> CreateFulfillmentAsync(CreateFulfillmentCommand command, CancellationToken ct);

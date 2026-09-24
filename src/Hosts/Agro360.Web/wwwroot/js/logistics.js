@@ -94,7 +94,11 @@
         try {
             const q = new URLSearchParams(new FormData(form || document.querySelector('#queue-filters')));
             [...q].forEach(([k, v]) => { if (!v) q.delete(k); });
-            const rows = await request(`/api/logistics/trips/fulfillment/queue?${q}`);
+            const page = await request(`/api/logistics/trips/fulfillment/queue?${q}`);
+            const rows = value(page, 'items') || [];
+            const currentPage = Number(value(page, 'page') || 1);
+            const total = Number(value(page, 'total') || 0);
+            const pageSize = Number(value(page, 'pageSize', 'page_size') || 20);
             content.innerHTML = rows.length ? `
                 <table class="logistics-table">
                     <thead>
@@ -103,7 +107,9 @@
                             <th>Cliente</th>
                             <th>Prazo</th>
                             <th>Situação</th>
+                            <th>Reservada</th>
                             <th>Saldo autorizado</th>
+                            <th>Ação</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -113,14 +119,38 @@
                                 <td>${escapeHtml(value(x, 'customer'))}</td>
                                 <td>${escapeHtml(value(x, 'expected_delivery', 'expectedDelivery') ?? 'Pendente')}</td>
                                 <td><span class="status-pill">${escapeHtml(value(x, 'status'))}</span></td>
+                                <td>${escapeHtml(value(x, 'quantity_reserved', 'quantityReserved') ?? 0)}</td>
                                 <td>${escapeHtml(value(x, 'quantity_pending', 'quantityPending'))}</td>
+                                <td><button type="button" class="secondary-button" data-order-detail="${escapeHtml(value(x, 'order_id', 'orderId'))}">Abrir detalhe</button></td>
                             </tr>
                         `).join('')}
                     </tbody>
-                </table>` : '<p class="empty-state">Nenhum pedido apto para os filtros. Pedidos sem vínculo ou saldo permanecem como pendência.</p>';
+                </table><nav class="pagination" aria-label="Paginação"><button type="button" class="secondary-button" data-page="${currentPage - 1}" ${currentPage <= 1 ? 'disabled' : ''}>Anterior</button><span>Página ${currentPage} de ${Math.max(1, Math.ceil(total / pageSize))} · ${total} pedido(s)</span><button type="button" class="secondary-button" data-page="${currentPage + 1}" ${currentPage * pageSize >= total ? 'disabled' : ''}>Próxima</button></nav>` : '<p class="empty-state">Nenhum pedido apto para os filtros. Ajuste os filtros ou confirme se o pedido foi aprovado e possui saldo pendente.</p>';
+            content.querySelectorAll('[data-page]').forEach(button => button.addEventListener('click', () => { const filter = document.querySelector('#queue-filters'); filter.elements.page.value = button.dataset.page; loadQueue(filter); }));
+            content.querySelectorAll('[data-order-detail]').forEach(button => button.addEventListener('click', () => loadOrderDetail(button.dataset.orderDetail)));
         } catch (err) {
             renderErrorState(err, 'Fila de pedidos');
         }
+    }
+
+    async function loadOrderDetail(orderId) {
+        content.innerHTML = '<p class="empty-state">Carregando resumo, itens, reservas, expedições e histórico…</p>';
+        try {
+            const data = await request(`/api/logistics/trips/fulfillment/orders/${orderId}`);
+            const order = value(data, 'order') || {}, items = value(data, 'items') || [], reservations = value(data, 'reservations') || [], shipments = value(data, 'shipments') || [], history = value(data, 'history') || [];
+            content.innerHTML = `<button type="button" class="secondary-button" id="back-to-queue">← Voltar à fila</button>
+              <section><h2>Resumo</h2><dl><dt>Pedido</dt><dd>${escapeHtml(value(order,'order_number','orderNumber'))}</dd><dt>Cliente</dt><dd>${escapeHtml(value(order,'customer'))}</dd><dt>Origem</dt><dd>${escapeHtml(value(order,'proposal_number','proposalNumber') || 'Pedido direto')}${value(order,'proposal_version','proposalVersion') ? ` · versão ${escapeHtml(value(order,'proposal_version','proposalVersion'))}` : ''}</dd><dt>Moeda e condições</dt><dd>${escapeHtml(value(order,'currency') || 'Não informada')} · ${escapeHtml(value(order,'payment_terms','paymentTerms') || 'Não informadas')}</dd></dl></section>
+              <section><h2>Itens</h2><p class="form-hint">Pendente = pedida − cancelada − expedida. Reserva ativa e separação são subconjuntos do pendente e não são descontadas novamente.</p>${renderOperationalTable(items, [['product','Produto'],['unit','Unidade'],['ordered_quantity','Pedida'],['reserved_quantity','Reservada ativa'],['picked_quantity','Separada'],['dispatched_quantity','Expedida'],['pending_quantity','Pendente']])}</section>
+              <section><h2>Reservas</h2>${renderOperationalTable(reservations, [['warehouse','Depósito'],['lot_number','Lote'],['quantity','Quantidade'],['consumed_quantity','Consumida'],['released_quantity','Liberada'],['status','Estado']])}</section>
+              <section><h2>Expedições</h2>${renderOperationalTable(shipments, [['number','Número'],['status','Estado'],['dispatched_at','Confirmada em']])}</section>
+              <section><h2>Histórico</h2>${renderOperationalTable(history, [['event_type','Evento'],['created_at','Data']])}</section>`;
+            document.querySelector('#back-to-queue')?.addEventListener('click', () => loadQueue());
+        } catch (err) { renderErrorState(err, 'Detalhe operacional do pedido'); }
+    }
+
+    function renderOperationalTable(rows, columns) {
+        if (!rows.length) return '<p class="empty-state">Nenhum registro vinculado nesta seção.</p>';
+        return `<div class="table-scroll"><table class="logistics-table"><thead><tr>${columns.map(([,label]) => `<th>${label}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${columns.map(([key]) => `<td>${escapeHtml(value(row,key,key.replace(/_([a-z])/g,(_,x)=>x.toUpperCase())) ?? '—')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
     }
 
     function renderErrorState(err, contextTitle) {
@@ -454,6 +484,7 @@
 
     document.querySelector('#queue-filters')?.addEventListener('submit', e => {
         e.preventDefault();
+        e.currentTarget.elements.page.value = '1';
         loadQueue(e.currentTarget);
     });
 
