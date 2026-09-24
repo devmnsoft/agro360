@@ -20,7 +20,8 @@ public sealed record PlanTripCommand(string Number, string Origin, string Destin
 public sealed record FulfillmentItemCommand(Guid OrderItemId, Guid StockLotId, decimal Quantity, decimal PickedQuantity, decimal CheckedQuantity, string Unit, string? DivergenceReason);
 public sealed record CreateFulfillmentCommand(string Number, Guid OriginWarehouseId, Guid CustomerId, string Destination, string IdempotencyKey, IReadOnlyList<FulfillmentItemCommand> Items);
 public sealed record DispatchFulfillmentCommand(long Version, string IdempotencyKey);
-public sealed record PrepareFulfillmentCommand(decimal PickedQuantity, decimal CheckedQuantity, string? DivergenceReason, long Version, string IdempotencyKey);
+public sealed record PrepareFulfillmentCommand(decimal PickedQuantity, decimal CheckedQuantity, string? DivergenceReason, long Version, string IdempotencyKey, bool? CompleteCheck = null);
+public sealed record ReopenFulfillmentCommand(string Reason, long ExpectedVersion, string IdempotencyKey, IReadOnlyList<Guid> ItemIds);
 public sealed record ReleaseReservationCommand(decimal Quantity, string Reason, long Version, string IdempotencyKey);
 public sealed record CancelOrderItemCommand(decimal Quantity, string Reason, long Version, string IdempotencyKey);
 public sealed record FulfillmentQueueQuery(string? Customer = null, Guid? UnitId = null, DateOnly? DueUntil = null, string? Status = null, Guid? WarehouseId = null, string? Number = null, int Page = 1, int PageSize = 20);
@@ -77,6 +78,7 @@ public interface ILogisticsService
     Task<Guid> CreateFulfillmentAsync(CreateFulfillmentCommand command, CancellationToken ct);
     Task DispatchFulfillmentAsync(Guid id, DispatchFulfillmentCommand command, CancellationToken ct);
     Task PrepareFulfillmentAsync(Guid shipmentItemId, PrepareFulfillmentCommand command, CancellationToken ct);
+    Task ReopenFulfillmentAsync(Guid shipmentId, ReopenFulfillmentCommand command, CancellationToken ct);
     Task ReleaseReservationAsync(Guid reservationId, ReleaseReservationCommand command, CancellationToken ct);
     Task CancelOrderItemAsync(Guid orderItemId, CancelOrderItemCommand command, CancellationToken ct);
     Task<Guid> RecordDeliveryAttemptAsync(Guid id, DeliveryAttemptCommand command, CancellationToken ct);

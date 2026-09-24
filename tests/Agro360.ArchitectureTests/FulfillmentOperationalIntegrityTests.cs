@@ -17,10 +17,33 @@ public sealed class FulfillmentOperationalIntegrityTests
     public void OperationalViewDerivesQuantitiesFromCanonicalReservations()
     {
         var service = File.ReadAllText(Path.Combine(Root, "src/Modules/Agro360.Infrastructure/Services/LogisticsService.cs"));
-        Assert.Contains("sum(r.quantity) filter(where r.status='ACTIVE')", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("sum(r.quantity-r.consumed_quantity-r.released_quantity) filter(where r.status='ACTIVE')", service, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("sum(r.consumed_quantity)", service, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("i.quantity-i.cancelled_quantity-coalesce(sum(r.consumed_quantity),0) pending_quantity", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("i.quantity-i.cancelled_quantity-coalesce((select sum(r.consumed_quantity)", service, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Expedição já confirmada por outra requisição", service);
+    }
+
+    [Fact]
+    public void InitialUiReservationDoesNotPretendThatCheckingWasCompleted()
+    {
+        var service = File.ReadAllText(Path.Combine(Root, "src/Modules/Agro360.Infrastructure/Services/LogisticsService.cs"));
+        var script = File.ReadAllText(Path.Combine(Root, "src/Hosts/Agro360.Web/wwwroot/js/logistics.js"));
+        Assert.Contains("pickedQuantity:0,checkedQuantity:0", script);
+        Assert.Contains("divergenceReason:null", script);
+        Assert.Contains("x.CheckedQuantity > 0 && x.CheckedQuantity != x.PickedQuantity", service);
+        Assert.Contains("check_completed", service, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PartialReleaseAndReopenUseActiveBalanceAndPreserveHistory()
+    {
+        var service = File.ReadAllText(Path.Combine(Root, "src/Modules/Agro360.Infrastructure/Services/LogisticsService.cs"));
+        var migration = File.ReadAllText(Path.Combine(Root, "database/migrations/111_fulfillment_reopen_and_active_balance.sql"));
+        Assert.Contains("var active = reservation.Quantity - reservation.Consumed - reservation.Released", service);
+        Assert.Contains("reserved=reserved-@Active", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("consumed_quantity=consumed_quantity+@Quantity", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("fulfillment_preparation_reopens", migration);
+        Assert.Contains("previous_picked", migration);
     }
 
     [Fact]
