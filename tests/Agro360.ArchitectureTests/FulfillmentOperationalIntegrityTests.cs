@@ -76,4 +76,35 @@ public sealed class FulfillmentOperationalIntegrityTests
         Assert.Contains("if (shipment.DispatchIdempotencyKey is not null)", service);
         Assert.DoesNotContain("shipment.Status == \"DISPATCHED\" || shipment.Status == \"IN_DELIVERY\"", service);
     }
+
+    [Fact]
+    public void MutationsRevalidateReplayAfterTheSharedCommercialItemLock()
+    {
+        var service = File.ReadAllText(Path.Combine(Root, "src/Modules/Agro360.Infrastructure/Services/LogisticsService.cs"));
+        Assert.Contains("fulfillment:create:", service);
+        Assert.Contains("Replay is deliberately revalidated after the aggregate lock", service);
+        Assert.Contains("if (items.Count == 0 || items.Any(x => x.Quantity <= 0))", service);
+        Assert.Contains("if (shipmentChanged != 1)", service);
+    }
+
+    [Fact]
+    public void UiKeepsCreationAndPreparationKeysUntilSuccessAndCompletesCheckExplicitly()
+    {
+        var script = File.ReadAllText(Path.Combine(Root, "src/Hosts/Agro360.Web/wwwroot/js/logistics.js"));
+        Assert.Contains("operationKey('create',itemId,intent)", script);
+        Assert.Contains("operationKey('prepare',f.dataset.preparation,intent)", script);
+        Assert.Contains("completeCheck:f.complete.checked", script);
+        Assert.Contains("sessionStorage.removeItem(`agro360.fulfillment.prepare.${f.dataset.preparation}`)", script);
+    }
+
+    [Fact]
+    public void ReopenAuditStoresBeforeAndAfterSnapshotsInIncrementalMigration()
+    {
+        var migration = File.ReadAllText(Path.Combine(Root, "database/migrations/112_fulfillment_reopen_after_snapshot.sql"));
+        var service = File.ReadAllText(Path.Combine(Root, "src/Modules/Agro360.Infrastructure/Services/LogisticsService.cs"));
+        Assert.Contains("new_picked", migration);
+        Assert.Contains("new_checked", migration);
+        Assert.Contains("new_check_completed", migration);
+        Assert.Contains("new_picked,new_checked,new_check_completed", service);
+    }
 }
