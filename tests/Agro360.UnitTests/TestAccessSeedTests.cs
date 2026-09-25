@@ -9,7 +9,7 @@ public sealed class TestAccessSeedTests
 
     [Theory]
     [InlineData("Admin@123456", "pbkdf2-sha512$210000$QWdybzM2MFN1cGVyQWRtIQ==$Rw4HKe5g05CZwbA/Qiob2Q5i4oX/RfWIT6HzLtIduRo=")]
-    [InlineData("Cliente@123456", "pbkdf2-sha512$210000$QWdybzM2MENsaWVudGUh$tljrR4u+oXvvHnMM3fcTR/HtHJ8iuX5pcXqXehWteH4=")]
+    [InlineData("Cliente@123456", "pbkdf2-sha512$210000$QWdybzM2MENsaWVudGUhIQ==$VckKAKONnkrSQLXHTkL6w6BLbLUEO7krSY2DRFYpHd0=")]
     [InlineData("Operador@123456", "pbkdf2-sha512$210000$QWdybzM2ME9wZXJhZG9yIQ==$/0AX57LMqF6X3yzEPavcE2vFRSM/PxRg3sXMTjbZjkQ=")]
     public void TestCredentialHashesUseTheApplicationPasswordHasher(string password, string encodedHash)
     {

@@ -1,5 +1,6 @@
 using Agro360.Domain.Commercial;
 using Agro360.SharedKernel;
+using Xunit;
 
 namespace Agro360.UnitTests;
 

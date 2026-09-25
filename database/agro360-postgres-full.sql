@@ -6711,7 +6711,7 @@ declare
  platform_id uuid; santa_id uuid; vale_id uuid; blocked_id uuid;
  v_user_id uuid; role_id uuid; profile_id uuid;
  admin_hash constant text := 'pbkdf2-sha512$210000$QWdybzM2MFN1cGVyQWRtIQ==$Rw4HKe5g05CZwbA/Qiob2Q5i4oX/RfWIT6HzLtIduRo=';
- client_hash constant text := 'pbkdf2-sha512$210000$QWdybzM2MENsaWVudGUh$tljrR4u+oXvvHnMM3fcTR/HtHJ8iuX5pcXqXehWteH4=';
+ client_hash constant text := 'pbkdf2-sha512$210000$QWdybzM2MENsaWVudGUhIQ==$VckKAKONnkrSQLXHTkL6w6BLbLUEO7krSY2DRFYpHd0=';
  operator_hash constant text := 'pbkdf2-sha512$210000$QWdybzM2ME9wZXJhZG9yIQ==$/0AX57LMqF6X3yzEPavcE2vFRSM/PxRg3sXMTjbZjkQ=';
 begin
  -- A tabela canonica nao possui uma coluna textual "code"; o slug e a chave
