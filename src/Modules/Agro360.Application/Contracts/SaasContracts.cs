@@ -32,9 +32,12 @@ public sealed class TenantSummary
     public DateTime? BlockedAt { get; init; }
     public string? BlockReason { get; init; }
 }
-public sealed record TenantCommand(string Slug, string Name, string Type, string Document, string ResponsibleName, string ResponsibleEmail, Guid PlanId);
+public sealed record TenantCommand(string Slug, string Name, string Type, string Document, string ResponsibleName, string ResponsibleEmail, Guid PlanId, string[]? Modules = null);
 public sealed record TenantCreated(Guid Id, InvitationCreated AdministratorInvitation);
 public sealed record TenantUpdateCommand(string Name, string Type, string ResponsibleName, string ResponsibleEmail, Guid PlanId);
+public sealed record SupportSessionCommand(string Reason);
+public sealed record SupportSessionResult(Guid TenantId, string TenantName, string TenantSlug, string AccessToken, DateTimeOffset ExpiresAt);
+public sealed class ModuleCatalogItem { public Guid Id { get; init; } public string Code { get; init; } = string.Empty; public string Name { get; init; } = string.Empty; public string Description { get; init; } = string.Empty; }
 public sealed record ReasonCommand(string Reason);
 public sealed class UsageSummary
 {
@@ -131,8 +134,9 @@ public sealed class SaasAuditSummary { public Guid Id { get; init; } public Guid
 
 public interface ISaasService
 {
-    Task<IReadOnlyList<TenantSummary>> GetTenantsAsync(CancellationToken ct); Task<TenantCreated> CreateTenantAsync(TenantCommand command, Guid actorId, CancellationToken ct); Task UpdateTenantAsync(Guid id, TenantUpdateCommand command, Guid actorId, CancellationToken ct); Task SetTenantStatusAsync(Guid id, string status, string? reason, Guid actorId, CancellationToken ct);
+    Task<IReadOnlyList<TenantSummary>> GetTenantsAsync(CancellationToken ct); Task<TenantSummary> GetTenantByIdAsync(Guid id, CancellationToken ct); Task<TenantCreated> CreateTenantAsync(TenantCommand command, Guid actorId, CancellationToken ct); Task UpdateTenantAsync(Guid id, TenantUpdateCommand command, Guid actorId, CancellationToken ct); Task SetTenantStatusAsync(Guid id, string status, string? reason, Guid actorId, CancellationToken ct);
     Task<IReadOnlyList<PlanSummary>> GetPlansAsync(CancellationToken ct); Task<Guid> CreatePlanAsync(PlanCommand command, Guid actorId, CancellationToken ct); Task UpdatePlanAsync(Guid id, PlanCommand command, Guid actorId, CancellationToken ct);
+    Task<IReadOnlyList<ModuleCatalogItem>> GetModuleCatalogAsync(CancellationToken ct);
     Task<IReadOnlyList<UsageSummary>> GetPlatformUsageAsync(CancellationToken ct); Task<UsageSummary> GetUsageAsync(CancellationToken ct); Task<PlatformDashboard> GetDashboardAsync(CancellationToken ct);
     Task<TenantSummary> GetOrganizationAsync(CancellationToken ct); Task UpdateOrganizationAsync(TenantUpdateCommand command, Guid actorId, CancellationToken ct); Task<PlanSummary> GetCurrentPlanAsync(CancellationToken ct); Task<Guid> RequestUpgradeAsync(UpgradeRequestCommand command, Guid actorId, CancellationToken ct);
     Task<IReadOnlyList<UserSummary>> GetUsersAsync(CancellationToken ct); Task<Guid> SaveUserAsync(Guid? id, UserCommand command, Guid actorId, CancellationToken ct); Task SetUserActiveAsync(Guid id, bool active, string reason, Guid actorId, CancellationToken ct);
@@ -143,5 +147,7 @@ public interface ISaasService
     Task<OrganizationSettings> GetSettingsAsync(CancellationToken ct); Task UpdateSettingsAsync(OrganizationSettings settings, Guid actorId, CancellationToken ct);
     Task<IReadOnlyList<BillingChargeSummary>> GetChargesAsync(CancellationToken ct); Task<Guid> CreateChargeAsync(BillingChargeCommand command, Guid actorId, CancellationToken ct); Task ChangeChargeStatusAsync(Guid id, BillingStatusCommand command, Guid actorId, CancellationToken ct); Task<ManualPaymentResult> RegisterManualPaymentAsync(Guid id, ManualPaymentCommand command, Guid actorId, CancellationToken ct);
     Task<IReadOnlyList<FeatureFlagSummary>> GetFeatureFlagsAsync(Guid tenantId, CancellationToken ct); Task SetFeatureOverrideAsync(FeatureOverrideCommand command, Guid actorId, CancellationToken ct);
-    Task<IReadOnlyList<SaasAuditSummary>> GetAuditAsync(Guid? tenantId, CancellationToken ct);
+    Task<IReadOnlyList<SaasAuditSummary>> GetAuditAsync(Guid? tenantId, string? action, Guid? actorId, DateTime? from, DateTime? until, CancellationToken ct);
+    Task<SupportSessionResult> StartSupportSessionAsync(Guid tenantId, string reason, Guid superAdminUserId, CancellationToken ct);
+    Task EndSupportSessionAsync(Guid tenantId, Guid superAdminUserId, CancellationToken ct);
 }

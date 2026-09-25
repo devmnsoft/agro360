@@ -21,11 +21,14 @@
         state.session = session;
         if (session) {
             localStorage.setItem(storageKeys.session, JSON.stringify(session));
-            // Transitional keys are still consumed by module-specific clients. Keep
-            // them synchronized so a successful login authorizes every screen.
+            // Transitional keys consumed by module-specific clients. Keep synchronized.
             localStorage.setItem("agro360.accessToken", session.accessToken);
             localStorage.setItem("agro360.access_token", session.accessToken);
             localStorage.setItem("agro360.token", session.accessToken);
+            // sessionStorage consumed by logistics.js / after-sales.js
+            sessionStorage.setItem("agro360.accessToken", session.accessToken);
+            sessionStorage.setItem("agro360.access_token", session.accessToken);
+            sessionStorage.setItem("agro360.token", session.accessToken);
             state.refreshStopped = false;
         } else {
             localStorage.removeItem(storageKeys.session);
@@ -34,6 +37,9 @@
             localStorage.removeItem("agro360.token");
             sessionStorage.clear();
         }
+        // Expose canonical global session for inter-module use
+        window.agro360Session = session ?? null;
+        window.dispatchEvent(new CustomEvent("agro360:session", { detail: session ?? null }));
         renderUser();
         renderNavigation();
     }
@@ -240,8 +246,22 @@
             persistSession(result);
             hideLogin();
             toastSuccess("Acesso confirmado", "Bem-vindo. Os dados respeitam sua organização e suas permissões.");
-            if (element("dashboard-subtitle")) await loadDashboard();
-            else window.location.reload();
+            // Route based on role — avoid calling tenant-scoped dashboard for SuperAdmin
+            const isSuperAdmin = (result.roles ?? []).some(r => r === "SUPER_ADMIN" || r === "PLATFORM_SUPER_ADMIN");
+            if (isSuperAdmin) {
+                window.location.href = "/Saas";
+                return;
+            }
+            if (element("dashboard-subtitle")) {
+                try {
+                    await loadDashboard();
+                } catch (e) {
+                    // 403 means tenant has no operational permissions yet; page already handled
+                    if (e.status !== 403) throw e;
+                }
+            } else {
+                window.location.reload();
+            }
         } catch (error) {
             const detail = error instanceof TypeError
                 ? apiUnavailableMessage

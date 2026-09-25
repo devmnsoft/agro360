@@ -110,6 +110,47 @@
         }));
     }
 
+    function wireTenantActions() {
+        content.querySelectorAll("[data-tenant-action]").forEach(btn => {
+            btn.addEventListener("click", async () => {
+                const tenantId = btn.dataset.tenantId;
+                const tenantName = btn.dataset.tenantName;
+                const action = btn.dataset.tenantAction;
+                if (action === "inspect") {
+                    openForm(`Inspecionar: ${escapeHtml(tenantName)}`,
+                        `<p>Iniciará uma sessão de suporte assistido (2h). Todas as ações ficam registradas na auditoria.</p>
+                         <label>Motivo <textarea name="reason" minlength="5" maxlength="1000" required></textarea></label>`,
+                        async data => {
+                            const result = await request(`/api/platform/tenants/${encodeURIComponent(tenantId)}/support-session`, { method: "POST", body: JSON.stringify({ reason: data.get("reason") }) });
+                            // Show persistent support banner
+                            let banner = document.querySelector("#support-banner");
+                            if (!banner) {
+                                banner = document.createElement("div");
+                                banner.id = "support-banner";
+                                banner.style.cssText = "position:fixed;top:0;left:0;width:100%;background:#d97706;color:#fff;padding:0.5rem 1rem;display:flex;align-items:center;gap:1rem;z-index:9999;font-weight:600;";
+                                document.body.prepend(banner);
+                            }
+                            banner.innerHTML = `⚠️ Contexto de suporte ativo: <strong>${escapeHtml(result.tenantName)}</strong> (expira ${new Date(result.expiresAt).toLocaleTimeString("pt-BR")}) <button id="end-support-btn" style="margin-left:auto;background:#fff;color:#d97706;border:none;padding:0.25rem 0.75rem;border-radius:4px;cursor:pointer;font-weight:700">Encerrar</button>`;
+                            document.querySelector("#end-support-btn").addEventListener("click", async () => {
+                                await request(`/api/platform/tenants/${encodeURIComponent(tenantId)}/support-session/end`, { method: "POST" }).catch(() => {});
+                                banner.remove();
+                            });
+                            return `Contexto de suporte iniciado. Token válido por 2h. Todas as ações são auditadas.`;
+                        });
+                } else {
+                    const statusMap = { block: "BLOCKED", suspend: "SUSPENDED", activate: "ACTIVE" };
+                    const labelMap = { block: "Bloquear", suspend: "Suspender", activate: "Ativar" };
+                    openForm(`${labelMap[action]}: ${escapeHtml(tenantName)}`,
+                        `<label>Justificativa <textarea name="reason" minlength="5" maxlength="1000" required></textarea></label>`,
+                        async data => {
+                            const endpoint = action === "activate" ? "activate" : action === "suspend" ? "suspend" : "block";
+                            await request(`/api/platform/tenants/${encodeURIComponent(tenantId)}/${endpoint}`, { method: "POST", body: JSON.stringify({ reason: data.get("reason") }) });
+                        });
+                }
+            });
+        });
+    }
+
     function billingTable(rows) {
         if (!rows.length) return '<div class="empty">Nenhuma cobrança encontrada.</div>';
         return `<div class="saas-card"><table class="saas-table"><thead><tr><th>Cliente</th><th>Competência</th><th>Valor</th><th>Recebido</th><th>Em aberto</th><th>Vencimento</th><th>Status</th><th>Ações</th></tr></thead><tbody>${rows.map(charge => `<tr><td>${escapeHtml(charge.tenantName)}</td><td>${escapeHtml(charge.competence)}</td><td>${escapeHtml(charge.amount)}</td><td>${escapeHtml(charge.paidAmount)}</td><td>${escapeHtml(charge.outstandingAmount)}</td><td>${escapeHtml(charge.dueOn)}</td><td>${escapeHtml(charge.status)}</td><td>${!["PAID", "CANCELLED"].includes(charge.status) ? `<button type="button" class="primary-button" data-charge-payment="${escapeHtml(charge.id)}" data-charge-name="${escapeHtml(charge.tenantName)}" data-charge-outstanding="${escapeHtml(charge.outstandingAmount)}">Registrar pagamento</button>` : "—"}</td></tr>`).join("")}</tbody></table></div>`;
@@ -221,11 +262,28 @@
     }
 
     async function createTenantForm() {
-        const plans = await request("/api/platform/plans");
-        openForm("Nova organização", `<label>Identificador <input name="slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" maxlength="80" required></label><label>Razão social <input name="name" maxlength="180" required></label><label>Tipo <select name="type" required>${["PRODUCER","COOPERATIVE","AGRIBUSINESS","CONSULTANCY","DISTRIBUTOR","CARRIER","OTHER"].map(value => option(value, value)).join("")}</select></label><label>CPF/CNPJ <input name="document" maxlength="18" required></label><label>Responsável <input name="responsibleName" maxlength="160" required></label><label>E-mail do administrador <input name="responsibleEmail" type="email" maxlength="254" required></label><label>Plano <select name="plan" required><option value="">Selecione…</option>${plans.map(plan => option(plan.id, plan.name)).join("")}</select></label>`, async data => {
-            const result = await request("/api/platform/tenants", { method: "POST", body: JSON.stringify({ slug: data.get("slug"), name: data.get("name"), type: data.get("type"), document: data.get("document"), responsibleName: data.get("responsibleName"), responsibleEmail: data.get("responsibleEmail"), planId: data.get("plan") }) });
-            return `Organização provisionada. Comunicação pendente de provedor; link único do administrador: ${location.origin}/Saas/Accept?token=${encodeURIComponent(result.administratorInvitation.activationToken)}`;
-        });
+        const [plans, modules] = await Promise.all([
+            request("/api/platform/plans"),
+            request("/api/platform/modules").catch(() => [])
+        ]);
+        const modulesHtml = modules.length
+            ? `<fieldset><legend>Módulos adicionais</legend><div class="saas-permission-grid">${modules.map(m => `<label><input type="checkbox" name="modules" value="${escapeHtml(m.code)}"> ${escapeHtml(m.name)}</label>`).join("")}</div></fieldset>`
+            : ``;
+        openForm("Nova organização",
+            `<label>Identificador <input name="slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" maxlength="80" required></label>
+             <label>Razão social <input name="name" maxlength="180" required></label>
+             <label>Tipo <select name="type" required>${["PRODUCER","COOPERATIVE","AGRIBUSINESS","CONSULTANCY","DISTRIBUTOR","CARRIER","OTHER"].map(v => option(v, v)).join("")}</select></label>
+             <label>CPF/CNPJ <input name="document" maxlength="18" required></label>
+             <label>Responsável <input name="responsibleName" maxlength="160" required></label>
+             <label>E-mail do administrador <input name="responsibleEmail" type="email" maxlength="254" required></label>
+             <label>Plano <select name="plan" required><option value="">Selecione…</option>${plans.map(p => option(p.id, p.name)).join("")}</select></label>
+             ${modulesHtml}`,
+            async data => {
+                const selectedModules = data.getAll("modules");
+                const payload = { slug: data.get("slug"), name: data.get("name"), type: data.get("type"), document: data.get("document"), responsibleName: data.get("responsibleName"), responsibleEmail: data.get("responsibleEmail"), planId: data.get("plan"), modules: selectedModules.length ? selectedModules : undefined };
+                const result = await request("/api/platform/tenants", { method: "POST", body: JSON.stringify(payload) });
+                return `Organização provisionada. Comunicação pendente de provedor; link único do administrador: ${location.origin}/Saas/Accept?token=${encodeURIComponent(result.administratorInvitation.activationToken)}`;
+            });
     }
 
     function createPlanForm() {
@@ -255,12 +313,62 @@
         content.setAttribute("aria-busy", "true");
         document.querySelector("#saas-help").textContent = helps[view] ?? "Use os filtros e ações disponíveis. O acesso respeita tenant, módulo e permissões.";
         try {
-            if (view === "dashboard") {
+        if (view === "dashboard") {
                 const item = await get("/api/platform/dashboard");
-                content.innerHTML = cards({ "Organizações": item.totalOrganizations, "Ativas": item.activeOrganizations, "Suspensas": item.suspendedOrganizations, "Novos no mês": item.newThisMonth, "Usuários ativos": item.activeUsers, "Próximos do limite": item.nearLimit, "Acima do limite": item.aboveLimit, "Convites pendentes": item.pendingInvitations, "Logins recentes": item.recentLogins, "Alertas de segurança": item.securityAlerts, "Upgrades": item.upgradeRequests, "Suporte": item.supportRequests });
+                content.innerHTML =
+                    `<div class="saas-grid">
+                        <article class="saas-card" role="button" tabindex="0" data-nav-view="tenants" title="Ver organizações">
+                          <small>Organizações</small><strong>${escapeHtml(item.totalOrganizations)}</strong>
+                        </article>
+                        <article class="saas-card"><small>Ativas</small><strong>${escapeHtml(item.activeOrganizations)}</strong></article>
+                        <article class="saas-card" data-nav-view="tenants"><small>Suspensas</small><strong>${escapeHtml(item.suspendedOrganizations)}</strong></article>
+                        <article class="saas-card"><small>Novos no mês</small><strong>${escapeHtml(item.newThisMonth)}</strong></article>
+                        <article class="saas-card"><small>Usuários ativos</small><strong>${escapeHtml(item.activeUsers)}</strong></article>
+                        <article class="saas-card"><small>Próximos do limite</small><strong>${escapeHtml(item.nearLimit)}</strong></article>
+                        <article class="saas-card"><small>Acima do limite</small><strong>${escapeHtml(item.aboveLimit)}</strong></article>
+                        <article class="saas-card"><small>Convites pendentes</small><strong>${escapeHtml(item.pendingInvitations)}</strong></article>
+                        <article class="saas-card" data-nav-view="audit"><small>Alertas de segurança</small><strong>${escapeHtml(item.securityAlerts)}</strong></article>
+                        <article class="saas-card"><small>Upgrades</small><strong>${escapeHtml(item.upgradeRequests)}</strong></article>
+                        <article class="saas-card"><small>Suporte</small><strong>${escapeHtml(item.supportRequests)}</strong></article>
+                    </div>`;
+                content.querySelectorAll("[data-nav-view]").forEach(card => {
+                    card.style.cursor = "pointer";
+                    card.addEventListener("click", () => {
+                        view = card.dataset.navView;
+                        history.replaceState(null, "", `${location.pathname}?view=${encodeURIComponent(view)}`);
+                        load();
+                    });
+                });
             } else if (view === "tenants") {
                 const rows = await get("/api/platform/tenants");
-                content.innerHTML = '<button class="primary-button" data-create="tenant">Nova organização</button>' + table(rows, [["name", "Organização"], ["type", "Tipo"], ["document", "CPF/CNPJ"], ["responsibleName", "Responsável"], ["planName", "Plano"], ["status", "Status"]]);
+                let filtered = rows;
+                const renderTenantsTable = () => {
+                    const q = document.querySelector("#tenant-search")?.value.trim().toLowerCase() ?? "";
+                    filtered = q ? rows.filter(r => r.name.toLowerCase().includes(q) || r.slug?.toLowerCase().includes(q) || r.document?.includes(q)) : rows;
+                    document.querySelector("#tenant-list").innerHTML = filtered.length
+                        ? `<div class="saas-card"><table class="saas-table"><thead><tr><th>Organização</th><th>Tipo</th><th>CPF/CNPJ</th><th>Responsável</th><th>Plano</th><th>Status</th><th>Ações</th></tr></thead><tbody>
+                            ${filtered.map(row => `<tr>
+                              <td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.type)}</td><td>${escapeHtml(row.document)}</td>
+                              <td>${escapeHtml(row.responsibleName)}</td><td>${escapeHtml(row.planName)}</td><td>${escapeHtml(row.status)}</td>
+                              <td class="saas-actions">
+                                ${row.status !== "BLOCKED" ? `<button type="button" class="danger-button" data-tenant-action="block" data-tenant-id="${escapeHtml(row.id)}" data-tenant-name="${escapeHtml(row.name)}">Bloquear</button>` : ""}
+                                ${row.status !== "SUSPENDED" && row.status !== "BLOCKED" ? `<button type="button" class="secondary-button" data-tenant-action="suspend" data-tenant-id="${escapeHtml(row.id)}" data-tenant-name="${escapeHtml(row.name)}">Suspender</button>` : ""}
+                                ${row.status !== "ACTIVE" ? `<button type="button" class="primary-button" data-tenant-action="activate" data-tenant-id="${escapeHtml(row.id)}" data-tenant-name="${escapeHtml(row.name)}">Ativar</button>` : ""}
+                                <button type="button" class="secondary-button" data-tenant-action="inspect" data-tenant-id="${escapeHtml(row.id)}" data-tenant-name="${escapeHtml(row.name)}">Inspecionar</button>
+                              </td>
+                            </tr>`).join("")}
+                           </tbody></table></div>`
+                        : '<div class="empty">Nenhum resultado.</div>';
+                    wireTenantActions();
+                };
+                content.innerHTML =
+                    `<div class="saas-toolbar">
+                       <button class="primary-button" data-create="tenant">Nova organização</button>
+                       <input id="tenant-search" type="search" placeholder="Filtrar por nome, slug ou CPF/CNPJ…" style="flex:1;padding:0.4rem 0.6rem">
+                     </div>
+                     <div id="tenant-list"></div>`;
+                renderTenantsTable();
+                document.querySelector("#tenant-search").addEventListener("input", renderTenantsTable);
             } else if (view === "plans") {
                 const rows = await get("/api/platform/plans");
                 content.innerHTML = '<button class="primary-button" data-create="plan">Novo plano</button>' + table(rows, [["name", "Plano"], ["monthlyPrice", "Mensal informativo"], ["userLimit", "Usuários"], ["propertyLimit", "Propriedades"], ["deviceLimit", "Dispositivos"], ["active", "Ativo"]]);
@@ -269,14 +377,56 @@
                 wireBillingActions();
             } else if (view === "features") {
                 const tenants = await get("/api/platform/tenants");
-                content.innerHTML = '<label class="saas-card">Cliente <select id="feature-tenant"><option value="">Selecione…</option>' + tenants.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("") + '</select></label><div id="feature-list" class="empty">Selecione um cliente para ver as funcionalidades.</div>';
+                content.innerHTML =
+                    `<label class="saas-card">Cliente <select id="feature-tenant"><option value="">Selecione…</option>${tenants.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("")}</select></label>
+                     <div id="feature-list" class="empty">Selecione um cliente para ver as funcionalidades.</div>`;
                 document.querySelector("#feature-tenant").addEventListener("change", async event => {
                     const box = document.querySelector("#feature-list");
                     if (!event.target.value) { box.innerHTML = "Selecione um cliente para ver as funcionalidades."; return; }
-                    box.innerHTML = table(await get(`/api/platform/tenants/${encodeURIComponent(event.target.value)}/features`), [["name", "Funcionalidade"], ["planEnabled", "Liberada pelo plano"], ["tenantEnabled", "Override"], ["effectiveOrigin", "Origem efetiva"], ["expiresAt", "Expira em"]]);
+                    const tenantId = event.target.value;
+                    const tenantName = event.target.options[event.target.selectedIndex].text;
+                    const flags = await get(`/api/platform/tenants/${encodeURIComponent(tenantId)}/features`);
+                    box.innerHTML =
+                        `<table class="saas-table"><thead><tr><th>Funcionalidade</th><th>Plano</th><th>Override</th><th>Origem</th><th>Expira</th><th>Ação</th></tr></thead><tbody>
+                         ${flags.map(f => `<tr><td>${escapeHtml(f.name)}</td><td>${f.planEnabled ? "Sim" : "Não"}</td><td>${f.tenantEnabled == null ? "—" : f.tenantEnabled ? "Ativo" : "Inativo"}</td><td>${escapeHtml(f.effectiveOrigin)}</td><td>${f.expiresAt ? new Date(f.expiresAt).toLocaleDateString("pt-BR") : "—"}</td>
+                           <td><button type="button" class="secondary-button" data-feature-id="${escapeHtml(f.id)}" data-feature-name="${escapeHtml(f.name)}" data-tenant-id="${escapeHtml(tenantId)}" data-tenant-name="${escapeHtml(tenantName)}">Override</button></td></tr>`).join("")}
+                         </tbody></table>`;
+                    box.querySelectorAll("[data-feature-id]").forEach(btn => btn.addEventListener("click", () => {
+                        openForm(`Override: ${escapeHtml(btn.dataset.featureName)}`,
+                            `<p>Cliente: <strong>${escapeHtml(btn.dataset.tenantName)}</strong></p>
+                             <label>Estado <select name="enabled"><option value="true">Habilitar</option><option value="false">Desabilitar</option></select></label>
+                             <label>Justificativa <textarea name="reason" minlength="5" maxlength="1000" required></textarea></label>
+                             <label>Expira em <input name="expiresAt" type="datetime-local" required></label>`,
+                            async data => {
+                                await request("/api/platform/features/override", { method: "PUT", body: JSON.stringify({ tenantId: btn.dataset.tenantId, featureId: btn.dataset.featureId, enabled: data.get("enabled") === "true", reason: data.get("reason"), expiresAt: new Date(data.get("expiresAt")).toISOString() }) });
+                            });
+                    }));
                 });
             } else if (view === "audit") {
-                content.innerHTML = table(await get("/api/platform/audit"), [["createdAt", "Data"], ["tenantName", "Cliente"], ["action", "Ação"], ["entityType", "Entidade"], ["reason", "Justificativa"]]);
+                const tenants = await get("/api/platform/tenants").catch(() => []);
+                const buildAuditUrl = () => {
+                    const params = new URLSearchParams();
+                    const tid = document.querySelector("#audit-tenant")?.value; if (tid) params.set("tenantId", tid);
+                    const act = document.querySelector("#audit-action")?.value.trim(); if (act) params.set("action", act);
+                    const frm = document.querySelector("#audit-from")?.value; if (frm) params.set("from", frm);
+                    const unt = document.querySelector("#audit-until")?.value; if (unt) params.set("until", unt);
+                    return `/api/platform/audit${params.size ? "?" + params.toString() : ""}`;
+                };
+                const renderAudit = async () => {
+                    const rows = await get(buildAuditUrl());
+                    document.querySelector("#audit-list").innerHTML = table(rows, [["createdAt", "Data"], ["tenantName", "Cliente"], ["action", "Ação"], ["entityType", "Entidade"], ["reason", "Justificativa"]]);
+                };
+                content.innerHTML =
+                    `<div class="saas-toolbar" style="flex-wrap:wrap;gap:0.5rem">
+                       <select id="audit-tenant" style="flex:1"><option value="">Todos os clientes</option>${tenants.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join("")}</select>
+                       <input id="audit-action" type="search" placeholder="Ação (ex: TENANT_STATUS_CHANGED)…" style="flex:1">
+                       <label style="display:flex;align-items:center;gap:0.25rem">De <input id="audit-from" type="date" style="width:auto"></label>
+                       <label style="display:flex;align-items:center;gap:0.25rem">Até <input id="audit-until" type="date" style="width:auto"></label>
+                       <button id="audit-filter" class="primary-button" type="button">Filtrar</button>
+                     </div>
+                     <div id="audit-list"></div>`;
+                await renderAudit();
+                document.querySelector("#audit-filter").addEventListener("click", renderAudit);
             } else if (view === "usage") {
                 content.innerHTML = table(await get("/api/platform/usage"), [["tenantName", "Organização"], ["activeUsers", "Usuários atuais"], ["userLimit", "Limite"], ["properties", "Propriedades"], ["propertyLimit", "Limite propriedades"], ["storageUsedMb", "Armazenamento MB"]]);
             } else if (view === "users") {
@@ -291,17 +441,53 @@
                 content.innerHTML = table(await get("/api/notifications"), [["priority", "Prioridade"], ["type", "Tipo"], ["title", "Título"], ["message", "Mensagem"], ["createdAt", "Data"]]);
             } else if (view === "security") {
                 const [sessions, devices] = await Promise.all([get("/api/security/sessions"), get("/api/security/devices")]);
-                content.innerHTML = "<h2>Sessões ativas</h2>" + table(sessions, [["device", "Dispositivo"], ["ipAddress", "IP"], ["lastSeenAt", "Última atividade"]]) + "<h2>Dispositivos autorizados</h2>" + table(devices, [["name", "Nome"], ["platform", "Plataforma"], ["lastSeenAt", "Última atividade"]]);
+                const sessionRows = sessions.length
+                    ? `<div class="saas-card"><table class="saas-table"><thead><tr><th>Dispositivo</th><th>IP</th><th>Última atividade</th><th>Ação</th></tr></thead><tbody>${sessions.map(s => `<tr><td>${escapeHtml(s.device)}</td><td>${escapeHtml(s.ipAddress)}</td><td>${escapeHtml(s.lastSeenAt)}</td><td>${!s.revokedAt ? `<button type="button" class="danger-button" data-revoke-session="${escapeHtml(s.id)}">Revogar</button>` : "Revogada"}</td></tr>`).join("")}</tbody></table></div>`
+                    : '<div class="empty">Nenhuma sessão ativa.</div>';
+                const deviceRows = devices.length
+                    ? `<div class="saas-card"><table class="saas-table"><thead><tr><th>Nome</th><th>Plataforma</th><th>Última atividade</th><th>Ação</th></tr></thead><tbody>${devices.map(d => `<tr><td>${escapeHtml(d.name)}</td><td>${escapeHtml(d.platform)}</td><td>${escapeHtml(d.lastSeenAt)}</td><td>${!d.revokedAt ? `<button type="button" class="danger-button" data-revoke-device="${escapeHtml(d.id)}">Revogar</button>` : "Revogado"}</td></tr>`).join("")}</tbody></table></div>`
+                    : '<div class="empty">Nenhum dispositivo cadastrado.</div>';
+                content.innerHTML = `<h2>Sessões ativas</h2>${sessionRows}<h2>Dispositivos autorizados</h2>${deviceRows}`;
+                content.querySelectorAll("[data-revoke-session]").forEach(btn => btn.addEventListener("click", async () => {
+                    btn.disabled = true;
+                    try { await request(`/api/security/sessions/${encodeURIComponent(btn.dataset.revokeSession)}/revoke`, { method: "POST" }); await load(); }
+                    catch (e) { btn.disabled = false; status.textContent = e.message; }
+                }));
+                content.querySelectorAll("[data-revoke-device]").forEach(btn => btn.addEventListener("click", async () => {
+                    btn.disabled = true;
+                    try { await request(`/api/security/devices/${encodeURIComponent(btn.dataset.revokeDevice)}/revoke`, { method: "POST" }); await load(); }
+                    catch (e) { btn.disabled = false; status.textContent = e.message; }
+                }));
             } else if (view === "account") {
                 const [organization, plan, usage] = await Promise.all([get("/api/account/organization"), get("/api/account/plan"), get("/api/account/usage")]);
                 content.innerHTML = cards({ "Minha organização": organization.name, "Meu plano": plan.name, "Usuários": `${usage.activeUsers} / ${usage.userLimit}`, "Propriedades": `${usage.properties} / ${usage.propertyLimit}`, "Armazenamento": `${usage.storageUsedMb} / ${usage.storageLimitMb} MB` }) + (permissions.has("account.subscription.manage") ? '<button class="primary-button" data-create="upgrade">Solicitar alteração de plano</button>' : "");
             } else if (view === "settings") {
                 const item = await get("/api/settings/organization");
-                content.innerHTML = cards({ "Organização": item.organizationName, "Unidades": item.unitSystem, "Moeda": item.currency, "Fuso horário": item.timeZone, "Cultura": item.mainCulture, "Atividades": item.mainActivities.join(", ") });
+                content.innerHTML =
+                    cards({ "Organização": item.organizationName, "Unidades": item.unitSystem, "Moeda": item.currency, "Fuso horário": item.timeZone, "Cultura": item.mainCulture, "Atividades": item.mainActivities.join(", ") }) +
+                    (permissions.has("account.settings.manage") || isSuperAdministrator ? '<button class="secondary-button" id="settings-edit-btn">Editar configurações</button>' : "");
+                document.querySelector("#settings-edit-btn")?.addEventListener("click", () => openForm("Editar configurações",
+                    `<label>Nome da organização <input name="organizationName" value="${escapeHtml(item.organizationName)}" maxlength="180" required></label>
+                     <label>Moeda (3 letras) <input name="currency" value="${escapeHtml(item.currency)}" maxlength="3" minlength="3" required></label>
+                     <label>Fuso horário <input name="timeZone" value="${escapeHtml(item.timeZone)}" required></label>`,
+                    async data => {
+                        const payload = { ...item, organizationName: data.get("organizationName"), currency: data.get("currency"), timeZone: data.get("timeZone") };
+                        await request("/api/settings/organization", { method: "PUT", body: JSON.stringify(payload) });
+                    }));
             } else if (view === "onboarding") {
-                const [organization, users, invitations] = await Promise.all([get("/api/account/organization"), get("/api/users"), get("/api/invitations")]);
-                const administrator = users.some(item => item.roles.some(role => role === "Administrador do Cliente"));
-                content.innerHTML = cards({ "Organização e responsável": organization.responsibleName ? "Concluído" : "Pendente", "Plano selecionado": organization.planName, "Administrador": administrator ? "Concluído" : "Pendente", "Convites de equipe": invitations.filter(item => item.status === "PENDING").length, "Situação": organization.status });
+                let organization, users, invitations;
+                try { organization = await get("/api/account/organization"); } catch { organization = {}; }
+                try { users = await get("/api/users"); } catch { users = []; }
+                try { invitations = await get("/api/invitations"); } catch { invitations = []; }
+                // Detect admin by role code, not display name (display name may vary)
+                const administrator = users.some(u => u.roles && u.roles.some(r => typeof r === "string" ? r.toLowerCase().includes("administrator") || r.toLowerCase().includes("administrador") : r?.code?.toLowerCase() === "tenant-administrator"));
+                content.innerHTML = cards({
+                    "Organização e responsável": organization.responsibleName ? "Concluído" : "Pendente",
+                    "Plano selecionado": organization.planName ?? "Pendente",
+                    "Administrador": administrator ? "Concluído" : "Pendente",
+                    "Convites de equipe": invitations.filter(i => i.status === "PENDING").length,
+                    "Situação": organization.status ?? "—"
+                }) + (permissions.has("account.invitations.manage") ? '<button class="primary-button" data-create="invitation">Convidar membro da equipe</button>' : "");
             }
         } catch {
             // get() já apresenta erro recuperável e referência de atendimento.
