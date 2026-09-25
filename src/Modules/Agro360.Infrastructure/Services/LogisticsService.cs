@@ -146,6 +146,10 @@ public sealed class LogisticsService(
         var hash = Hash(command);
         return Tx(async (c, t) =>
         {
+            // Serialize the lookup/insert pair: a concurrent replay must observe the
+            // committed document instead of losing the unique-key race and leaving
+            // PostgreSQL's transaction in an aborted state.
+            await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:create:{tenant.TenantId}:{command.IdempotencyKey}" }, t, cancellationToken: ct));
             var previous = await c.QuerySingleOrDefaultAsync<(Guid Id, string RequestHash)>(new CommandDefinition("select id,request_hash requesthash from agro360.fulfillment_shipments where tenant_id=@TenantId and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
             if (previous.Id != Guid.Empty) { if (previous.RequestHash != hash) throw new ConflictException("Chave de idempotência reutilizada com conteúdo diferente."); return previous.Id; }
             // Ordem global: itens comerciais -> lotes -> saldos -> reservas -> documentos.
@@ -190,6 +194,10 @@ public sealed class LogisticsService(
         var hash = Hash(new { shipmentItemId, command.PickedQuantity, command.CheckedQuantity, command.DivergenceReason, command.Version, CheckCompleted = checkCompleted });
         return Tx(async (c, t) =>
         {
+            var orderItemId = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition("select order_item_id from agro360.fulfillment_shipment_items where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = shipmentItemId }, t, cancellationToken: ct));
+            if (orderItemId is null) throw new NotFoundException("Item da expedição", shipmentItemId);
+            await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{orderItemId}" }, t, cancellationToken: ct));
+            // Replay is deliberately revalidated after the aggregate lock.
             var replay = await c.QuerySingleOrDefaultAsync<(Guid AggregateId, string RequestHash)>(new CommandDefinition("select aggregate_id AggregateId,request_hash RequestHash from agro360.fulfillment_operation_requests where tenant_id=@TenantId and operation='PREPARE' and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
             if (replay.AggregateId != Guid.Empty) { if (replay.RequestHash != hash || replay.AggregateId != shipmentItemId) throw new ConflictException("Chave de idempotência reutilizada com conteúdo diferente."); return; }
             var changed = await c.ExecuteAsync(new CommandDefinition("""
@@ -212,11 +220,11 @@ public sealed class LogisticsService(
         var hash = Hash(new { reservationId, command.Quantity, command.Reason, command.Version });
         return Tx(async (c, t) =>
         {
-            var replay = await c.QuerySingleOrDefaultAsync<(Guid AggregateId, string RequestHash)>(new CommandDefinition("select aggregate_id AggregateId,request_hash RequestHash from agro360.fulfillment_operation_requests where tenant_id=@TenantId and operation='RELEASE' and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
-            if (replay.AggregateId != Guid.Empty) { if (replay.RequestHash != hash || replay.AggregateId != reservationId) throw new ConflictException("Chave de idempotência reutilizada com conteúdo diferente."); return; }
             var orderItemId = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition("select order_item_id from agro360.fulfillment_reservations where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = reservationId }, t, cancellationToken: ct));
             if (orderItemId is null) throw new NotFoundException("Reserva", reservationId);
             await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{orderItemId}" }, t, cancellationToken: ct));
+            var replay = await c.QuerySingleOrDefaultAsync<(Guid AggregateId, string RequestHash)>(new CommandDefinition("select aggregate_id AggregateId,request_hash RequestHash from agro360.fulfillment_operation_requests where tenant_id=@TenantId and operation='RELEASE' and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
+            if (replay.AggregateId != Guid.Empty) { if (replay.RequestHash != hash || replay.AggregateId != reservationId) throw new ConflictException("Chave de idempotência reutilizada com conteúdo diferente."); return; }
             var row = await c.QuerySingleOrDefaultAsync<(Guid LotId, decimal Quantity, decimal Consumed, decimal Released, long Version)>(new CommandDefinition("select stock_lot_id LotId,quantity,consumed_quantity Consumed,released_quantity Released,version from agro360.fulfillment_reservations where tenant_id=@TenantId and id=@Id and status='ACTIVE' for update", new { tenant.TenantId, Id = reservationId }, t, cancellationToken: ct));
             if (row.LotId == Guid.Empty || row.Version != command.Version || row.Quantity-row.Consumed-row.Released < command.Quantity) throw new ConflictException("Reserva alterada ou quantidade de liberação indisponível.");
             var linked = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.fulfillment_shipment_items i join agro360.fulfillment_shipments s on s.tenant_id=i.tenant_id and s.id=i.shipment_id where i.tenant_id=@TenantId and i.reservation_id=@Id and s.status<>'CANCELLED' and (i.picked_quantity>0 or i.checked_quantity>0))", new { tenant.TenantId, Id = reservationId }, t, cancellationToken: ct));
@@ -236,6 +244,10 @@ public sealed class LogisticsService(
         var hash = Hash(new { shipmentId, Reason = command.Reason.Trim(), command.ExpectedVersion, ItemIds = itemIds });
         return Tx(async (c, t) =>
         {
+            var commercialItems = (await c.QueryAsync<Guid>(new CommandDefinition("select distinct order_item_id from agro360.fulfillment_shipment_items where tenant_id=@TenantId and shipment_id=@Id order by order_item_id", new { tenant.TenantId, Id = shipmentId }, t, cancellationToken: ct))).AsList();
+            if (commercialItems.Count == 0) throw new NotFoundException("Expedição", shipmentId);
+            foreach (var orderItemId in commercialItems)
+                await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{orderItemId}" }, t, cancellationToken: ct));
             var replay = await c.QuerySingleOrDefaultAsync<(Guid AggregateId, string RequestHash)>(new CommandDefinition("select aggregate_id AggregateId,request_hash RequestHash from agro360.fulfillment_operation_requests where tenant_id=@TenantId and operation='REOPEN' and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
             if (replay.AggregateId != Guid.Empty) { if (replay.AggregateId != shipmentId || replay.RequestHash != hash) throw new ConflictException("Chave de idempotência reutilizada com conteúdo diferente."); return; }
             var shipment = await c.QuerySingleOrDefaultAsync<(string Status, long Version)>(new CommandDefinition("select status,version from agro360.fulfillment_shipments where tenant_id=@TenantId and id=@Id for update", new { tenant.TenantId, Id = shipmentId }, t, cancellationToken: ct));
@@ -245,7 +257,7 @@ public sealed class LogisticsService(
             if (previous.Count != itemIds.Length) throw new ConflictException("Um ou mais itens não pertencem ao documento.");
             var requestId = await RecordOperation(c, t, "REOPEN", shipmentId, command.IdempotencyKey, hash, command.ExpectedVersion + 1, ct);
             foreach (var item in previous)
-                await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_preparation_reopens(id,tenant_id,shipment_id,item_id,reason,previous_picked,previous_checked,previous_check_completed,request_id,created_by) values(@Id,@TenantId,@Shipment,@Item,@Reason,@Picked,@Checked,@Completed,@Request,@UserId)", new { Id = Guid.CreateVersion7(), tenant.TenantId, Shipment = shipmentId, Item = item.Id, Reason = command.Reason.Trim(), item.Picked, item.Checked, item.Completed, Request = requestId, tenant.UserId }, t, cancellationToken: ct));
+                await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_preparation_reopens(id,tenant_id,shipment_id,item_id,reason,previous_picked,previous_checked,previous_check_completed,new_picked,new_checked,new_check_completed,request_id,created_by) values(@Id,@TenantId,@Shipment,@Item,@Reason,@Picked,@Checked,@Completed,0,0,false,@Request,@UserId)", new { Id = Guid.CreateVersion7(), tenant.TenantId, Shipment = shipmentId, Item = item.Id, Reason = command.Reason.Trim(), item.Picked, item.Checked, item.Completed, Request = requestId, tenant.UserId }, t, cancellationToken: ct));
             var changed = await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_shipment_items set picked_quantity=0,checked_quantity=0,check_completed=false,divergence_reason=null,version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and shipment_id=@Shipment and id=any(@Items)", new { tenant.TenantId, Shipment = shipmentId, Items = itemIds, tenant.UserId }, t, cancellationToken: ct));
             if (changed != itemIds.Length) throw new ConflictException("Itens mudaram durante a reabertura.");
             await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_shipments set status='PREPARING',version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id and status='CHECKED'", new { tenant.TenantId, Id = shipmentId, tenant.UserId }, t, cancellationToken: ct));
@@ -258,9 +270,9 @@ public sealed class LogisticsService(
         var hash = Hash(new { orderItemId, command.Quantity, command.Reason, command.Version });
         return Tx(async (c, t) =>
         {
+            await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{orderItemId}" }, t, cancellationToken: ct));
             var replay = await c.QuerySingleOrDefaultAsync<(Guid AggregateId, string RequestHash)>(new CommandDefinition("select aggregate_id AggregateId,request_hash RequestHash from agro360.fulfillment_operation_requests where tenant_id=@TenantId and operation='CANCEL' and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
             if (replay.AggregateId != Guid.Empty) { if (replay.RequestHash != hash || replay.AggregateId != orderItemId) throw new ConflictException("Chave de idempotência reutilizada com conteúdo diferente."); return; }
-            await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{orderItemId}" }, t, cancellationToken: ct));
             var dispatched = await c.ExecuteScalarAsync<decimal>(new CommandDefinition("select coalesce(sum(consumed_quantity),0) from agro360.fulfillment_reservations where tenant_id=@TenantId and order_item_id=@Id", new { tenant.TenantId, Id = orderItemId }, t, cancellationToken: ct));
             var prepared = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.fulfillment_reservations r join agro360.fulfillment_shipment_items i on i.tenant_id=r.tenant_id and i.reservation_id=r.id join agro360.fulfillment_shipments s on s.tenant_id=i.tenant_id and s.id=i.shipment_id where r.tenant_id=@TenantId and r.order_item_id=@Id and r.status='ACTIVE' and s.status<>'CANCELLED' and (i.picked_quantity>0 or i.checked_quantity>0))", new { tenant.TenantId, Id = orderItemId }, t, cancellationToken: ct));
             if (prepared) throw new ConflictException("Desfaça explicitamente a separação e a conferência antes de cancelar o saldo.");
@@ -297,6 +309,7 @@ public sealed class LogisticsService(
         }
         if (shipment.Status != "CHECKED" || shipment.Version != command.Version) throw new ConflictException("Expedição foi alterada ou não está conferida.");
         var items = (await c.QueryAsync<(Guid Id, Guid LotId, Guid ReservationId, decimal Quantity, string Unit)>(new CommandDefinition("select id,stock_lot_id lot_id,reservation_id,checked_quantity quantity,unit from agro360.fulfillment_shipment_items where tenant_id=@TenantId and shipment_id=@Id order by id for update", new { tenant.TenantId, Id = id }, t, cancellationToken: ct))).AsList();
+        if (items.Count == 0 || items.Any(x => x.Quantity <= 0)) throw new ConflictException("A expedição precisa ter itens conferidos com quantidade positiva.");
         foreach (var item in items)
         {
             var reservation = await c.QuerySingleOrDefaultAsync<(decimal Quantity, decimal Consumed, decimal Released)>(new CommandDefinition("select quantity,consumed_quantity Consumed,released_quantity Released from agro360.fulfillment_reservations where tenant_id=@TenantId and id=@Id and status='ACTIVE' for update", new { tenant.TenantId, Id = item.ReservationId }, t, cancellationToken: ct));
@@ -312,7 +325,8 @@ public sealed class LogisticsService(
             var reservationConsumed = await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_reservations set status=case when consumed_quantity+@Quantity=quantity then 'CONSUMED' else 'RELEASED' end,consumed_quantity=consumed_quantity+@Quantity,released_quantity=released_quantity+@Remainder,version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Reservation and status='ACTIVE' and quantity-consumed_quantity-released_quantity=@Active", new { tenant.TenantId, Reservation = item.ReservationId, item.Quantity, Remainder = remainder, Active = active, tenant.UserId }, t, cancellationToken: ct));
             if (reservationConsumed != 1) throw new ConflictException("A reserva mudou durante a confirmação da saída.");
         }
-        await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_shipments set status='DISPATCHED',dispatched_at=now(),dispatch_idempotency_key=@Key,dispatch_request_hash=@Hash,version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id, Key = command.IdempotencyKey, Hash = requestHash, tenant.UserId }, t, cancellationToken: ct));
+        var shipmentChanged = await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_shipments set status='DISPATCHED',dispatched_at=now(),dispatch_idempotency_key=@Key,dispatch_request_hash=@Hash,version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id and status='CHECKED' and version=@Version", new { tenant.TenantId, Id = id, Key = command.IdempotencyKey, Hash = requestHash, Version = command.Version, tenant.UserId }, t, cancellationToken: ct));
+        if (shipmentChanged != 1) throw new ConflictException("O documento mudou durante a confirmação da saída.");
         await Audit(c, t, "fulfillment.dispatch", id, new { command.IdempotencyKey }, ct);
     });
     public Task<Guid> RecordDeliveryAttemptAsync(Guid id, DeliveryAttemptCommand command, CancellationToken ct)
