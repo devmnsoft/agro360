@@ -6,6 +6,7 @@ using Agro360.Application.Abstractions;
 using Agro360.Application.Contracts;
 using Agro360.Domain.Tenancy;
 using Agro360.Infrastructure.Persistence;
+using Agro360.Infrastructure.Security;
 using Agro360.Multitenancy;
 using Agro360.SharedKernel;
 using Dapper;
@@ -131,12 +132,12 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
         var effectiveStatus = status == "ACTIVE" && financialRestriction ? "DELINQUENT" : status;
         var changed = await c.ExecuteAsync(
             """
-            update agro360.saas_organizations set status=@EffectiveStatus,activated_at=case when @EffectiveStatus='ACTIVE' then coalesce(activated_at,now()) else activated_at end,blocked_at=case when @EffectiveStatus in ('SUSPENDED','BLOCKED','DELINQUENT') then now() else null end,block_reason=case when @EffectiveStatus='ACTIVE' then null else @Reason end,updated_at=now() where tenant_id=@Id;
+            update agro360.saas_organizations set status=@EffectiveStatus,activated_at=case when @EffectiveStatus='ACTIVE' then coalesce(activated_at,now()) else activated_at end,blocked_at=case when @Status in ('SUSPENDED','BLOCKED') or @EffectiveStatus in ('SUSPENDED','BLOCKED','DELINQUENT') then now() else null end,block_reason=case when @Status='ACTIVE' then null else @Reason end,updated_at=now() where tenant_id=@Id;
             update agro360.tenancy_tenants set status=case when @EffectiveStatus='ACTIVE' then 1 when @EffectiveStatus in ('IMPLEMENTING','TRIAL') then 2 else 3 end where id=@Id;
-            update agro360.platform_tenants set status=@EffectiveStatus,block_reason=case when @EffectiveStatus='ACTIVE' then null else @Reason end,updated_at=now() where id=@Id;
+            update agro360.platform_tenants set status=@EffectiveStatus,block_reason=case when @Status='ACTIVE' then null else @Reason end,updated_at=now() where id=@Id;
             insert into agro360.saas_tenant_status_events(id,tenant_id,previous_status,new_status,reason,created_by) values(gen_random_uuid(),@Id,@Current,@EffectiveStatus,@Reason,@Actor);
             insert into agro360.audit_saas_events(id,tenant_id,actor_id,event_type,details) values(gen_random_uuid(),@Id,@Actor,'TENANT_STATUS_CHANGED',jsonb_build_object('previousStatus',@Current,'requestedStatus',@Status,'effectiveStatus',@EffectiveStatus,'reason',@Reason));
-            """, new { id, status, EffectiveStatus = effectiveStatus, Current = current, Reason = reason!.Trim(), Actor = actorId }, t);
+            """, new { id, Status = status, status, EffectiveStatus = effectiveStatus, Current = current, Reason = reason!.Trim(), Actor = actorId }, t);
         if (changed == 0) throw new KeyNotFoundException("Organização não encontrada.");
 
         if (effectiveStatus is "SUSPENDED" or "BLOCKED" or "DELINQUENT")
@@ -590,26 +591,63 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
         if (org == default) throw new KeyNotFoundException("Organização não encontrada.");
         if (org.Status is "BLOCKED")
             throw new InvalidOperationException("Não é possível iniciar contexto de suporte em organização bloqueada.");
-        // Super-admin email for token — permissions are fixed for support context
-        var actorEmail = await c.ExecuteScalarAsync<string>(
-            "select email from agro360.identity_users where id=@Actor and deleted_at is null",
-            new { Actor = superAdminUserId }, t)
-            ?? throw new KeyNotFoundException("Super-admin não encontrado.");
-        var expiresAt = DateTimeOffset.UtcNow.AddHours(2);
-        // Token scoped to TARGET tenant but user identity remains superAdminUserId
+        var actor = await c.QuerySingleOrDefaultAsync<(string Email, bool Active)>(
+            """
+            select u.email, a.active from agro360.platform_super_admins a
+            join agro360.identity_users u on u.id=a.user_id
+            where a.user_id=@Actor and a.active and a.deleted_at is null
+              and u.status='ACTIVE' and u.deleted_at is null
+            """, new { Actor = superAdminUserId }, t);
+        if (actor == default || !actor.Active) throw new UnauthorizedAccessException("Super-admin global não encontrado ou inativo.");
+
+        await c.ExecuteAsync(
+            """
+            update agro360.saas_support_sessions
+               set ended_at = now(), ended_by = @Actor, end_reason = 'Substituída por nova sessão de suporte'
+             where tenant_id = @TenantId and actor_id = @Actor and ended_at is null
+            """, new { TenantId = tenantId, Actor = superAdminUserId }, t);
+
+        var contractedModules = (await c.QueryAsync<string>(
+            """
+            select lower(code) from (
+                select unnest(p.modules) code from agro360.saas_organizations o join agro360.saas_plans p on p.id=o.plan_id where o.tenant_id=@TenantId and o.status='ACTIVE' and p.active
+                union
+                select c.code from agro360.platform_tenant_module_entitlements e join agro360.platform_module_catalog c on c.id=e.module_id where e.tenant_id=@TenantId and e.status in('CONTRACTED','ACTIVE','TRIAL')
+                union
+                select m.code from agro360.platform_tenant_modules tm join agro360.platform_marketplace_modules m on m.id=tm.module_id where tm.tenant_id=@TenantId and tm.status='ACTIVE' and (tm.trial_ends_at is null or tm.trial_ends_at>now())
+            ) m
+            """, new { TenantId = tenantId }, t)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var permissions = new List<string> { "support_session" };
+        foreach (var perm in Permissions.Administrator)
+        {
+            var accepted = PermissionAuthorizationHandler.AcceptedModules(perm);
+            if (accepted.Length == 0 || accepted.Any(m => contractedModules.Contains(m)))
+            {
+                permissions.Add(perm);
+            }
+        }
+
+        var roles = stringArray;
         var pair = tokenService.Create(
             tenantId,
             superAdminUserId,
-            actorEmail,
-            SupportSessionPermissions,
-            SupportSessionRoles);
+            actor.Email,
+            permissions,
+            roles);
+        var expiresAt = pair.ExpiresAt;
+
         await c.ExecuteAsync(
             """
+            insert into agro360.saas_support_sessions(tenant_id, actor_id, reason, scope, started_at, expires_at)
+            values(@TenantId, @Actor, @Reason, 'SUPPORT_OPERATIONAL', now(), @ExpiresAt);
+
             insert into agro360.saas_admin_audit_events(tenant_id, actor_id, action, entity_type, entity_id, reason, safe_details)
             values(@TenantId, @Actor, 'SUPPORT_SESSION_STARTED', 'TENANT', @TenantId, @Reason,
                    jsonb_build_object('targetTenant', @TenantSlug, 'expiresAt', @ExpiresAt::text));
             """,
             new { TenantId = tenantId, Actor = superAdminUserId, Reason = reason.Trim(), TenantSlug = org.Slug, ExpiresAt = expiresAt }, t);
+
         return new SupportSessionResult(tenantId, org.Name, org.Slug, pair.AccessToken, expiresAt);
     }, ct);
 
@@ -619,17 +657,25 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
             "select slug from agro360.tenancy_tenants where id=@TenantId and deleted_at is null",
             new { TenantId = tenantId }, t)
             ?? throw new KeyNotFoundException("Organização não encontrada.");
+
+        var ended = await c.ExecuteAsync(
+            """
+            update agro360.saas_support_sessions
+               set ended_at = now(), ended_by = @Actor, end_reason = 'Encerramento de contexto de suporte'
+             where tenant_id = @TenantId and actor_id = @Actor and ended_at is null
+            """, new { TenantId = tenantId, Actor = superAdminUserId }, t);
+
         await c.ExecuteAsync(
             """
             insert into agro360.saas_admin_audit_events(tenant_id, actor_id, action, entity_type, entity_id, reason, safe_details)
             values(@TenantId, @Actor, 'SUPPORT_SESSION_ENDED', 'TENANT', @TenantId, 'Encerramento de contexto de suporte',
-                   jsonb_build_object('targetTenant', @Slug));
+                   jsonb_build_object('targetTenant', @Slug, 'sessionsClosed', @Ended));
             """,
-            new { TenantId = tenantId, Actor = superAdminUserId, Slug = slug }, t);
+            new { TenantId = tenantId, Actor = superAdminUserId, Slug = slug, Ended = ended }, t);
     }, ct);
-    private static readonly string[] SupportSessionPermissions = [Agro360.Application.Permissions.PlatformAdmin, "support_session"];
-    private static readonly string[] SupportSessionRoles = ["PLATFORM_SUPER_ADMIN"];
     private const string UsageSql = "select o.tenant_id TenantId,t.name TenantName,(select count(*) from agro360.identity_users u where u.tenant_id=o.tenant_id and u.status='ACTIVE') ActiveUsers,p.user_limit UserLimit,(select count(*) from agro360.geo_farms f where f.tenant_id=o.tenant_id and f.deleted_at is null) Properties,p.property_limit PropertyLimit,(select count(*) from agro360.saas_devices d where d.tenant_id=o.tenant_id and d.revoked_at is null) Devices,p.device_limit DeviceLimit,coalesce(m.storage_used_mb,0) StorageUsedMb,p.storage_limit_mb StorageLimitMb,coalesce(m.tracked_lots,0) TrackedLots,coalesce(m.certificates,0) Certificates,coalesce(m.offline_records,0) OfflineRecords,coalesce(m.ledger_events,0) LedgerEvents,coalesce(m.exported_reports,0) ExportedReports from agro360.saas_organizations o join agro360.tenancy_tenants t on t.id=o.tenant_id join agro360.saas_plans p on p.id=o.plan_id left join agro360.saas_usage_metrics m on m.tenant_id=o.tenant_id";
+    private static readonly string[] stringArray = new[] { "PLATFORM_SUPER_ADMIN", "SUPPORT_SESSION" };
+
     private static void ValidateTenant(TenantCommand settings) { if (string.IsNullOrWhiteSpace(settings.Name) || !SlugRegex().IsMatch(settings.Slug) || !EmailRegex().IsMatch(settings.ResponsibleEmail) || settings.PlanId == Guid.Empty) throw new ArgumentException("Organização, slug, CPF/CNPJ, responsável e plano válidos são obrigatórios."); SaasGovernanceRules.NormalizeAndValidateDocument(settings.Document); }
     private static void ValidateUpdate(TenantUpdateCommand settings) { if (string.IsNullOrWhiteSpace(settings.Name) || string.IsNullOrWhiteSpace(settings.ResponsibleName) || !EmailRegex().IsMatch(settings.ResponsibleEmail) || settings.PlanId == Guid.Empty) throw new ArgumentException("Dados da organização e plano são obrigatórios."); }
     private static void ValidatePlan(PlanCommand settings) { if (string.IsNullOrWhiteSpace(settings.Name) || settings.MonthlyPrice < 0 || settings.AnnualPrice < 0 || settings.UserLimit < 1 || settings.PropertyLimit < 1 || settings.StorageLimitMb < 1 || settings.DeviceLimit < 1 || settings.Modules.Length == 0) throw new ArgumentException("Plano e limites positivos são obrigatórios."); }

@@ -41,6 +41,8 @@
         <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
         <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
         <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M14 7l5 5-5 5"/></symbol>
+        <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+        <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20M12 2a14.5 14.5 0 0 1 0 20M2 12h20"/></symbol>
     </svg>
 
     <div class="app-shell">
@@ -55,66 +57,72 @@
                 <button type="button" data-feature="context">Alterar contexto <svg><use href="#i-arrow" /></svg></button>
             </div>
             <nav class="main-nav" aria-label="Navegação principal">
-                <span class="nav-label">Administração MNSOFT</span>
-                <a href="/Saas" data-super-admin="true"><svg><use href="#i-grid" /></svg><span>Administração SaaS MNSOFT</span><i>global</i></a>
-
-                <span class="nav-label">Visão geral</span>
+                <span class="nav-label">Início</span>
                 <a class="active" href="/" data-permissions="dashboard.read"><svg><use href="#i-grid" /></svg><span>Início / Dashboard</span></a>
                 <a href="/Work" data-permissions="work.read"><svg><use href="#i-bell" /></svg><span>Tarefas e Alertas</span></a>
                 <a href="/Deployment" data-permissions="deployment.read"><svg><use href="#i-chart" /></svg><span>Central de Implantação</span></a>
 
-                <span class="nav-label">Fazendas e unidades</span>
+                <span class="nav-label">Produção e Campo</span>
                 <a href="/Properties" data-permissions="properties.read"><svg><use href="#i-map" /></svg><span>Fazendas e Unidades</span></a>
-
-                <span class="nav-label">Agricultura</span>
                 <a href="/Agriculture" data-permissions="agriculture.read"><svg><use href="#i-leaf" /></svg><span>Agricultura</span></a>
+                <a href="/field" data-permissions="agriculture.read,operations.read,field.read"><svg><use href="#i-leaf" /></svg><span>Operação de Campo</span></a>
+                <a href="/Maps" data-permissions="properties.read,agriculture.read,maps.read"><svg><use href="#i-map" /></svg><span>Mapa Operacional</span></a>
                 <a href="/Harvest" data-permissions="agriculture.read"><svg><use href="#i-leaf" /></svg><span>Colheita e Recebimento</span></a>
-                <a href="/Costs" data-permissions="finance.read"><svg><use href="#i-chart" /></svg><span>Custos da Safra</span></a>
+                <a href="/Costs" data-permissions="finance.read,agriculture.read"><svg><use href="#i-chart" /></svg><span>Custos da Safra</span></a>
+                <a href="/Production" data-permissions="production.read"><svg><use href="#i-chart" /></svg><span>Produção Agroindustrial</span></a>
 
                 <span class="nav-label">Pecuária</span>
                 <a href="/livestock" data-permissions="livestock.read"><svg><use href="#i-animal" /></svg><span>Pecuária</span></a>
 
-                <span class="nav-label">Produção agroindustrial</span>
-                <a href="/Production" data-permissions="production.read"><svg><use href="#i-chart" /></svg><span>Produção Agroindustrial</span></a>
-
-                <span class="nav-label">Estoque e almoxarifado</span>
+                <span class="nav-label">Estoques e Compras</span>
                 <a href="/Inventory" data-permissions="inventory.read,storage.read"><svg><use href="#i-box" /></svg><span>Estoque e Almoxarifado</span></a>
-                <a href="/Replenishment" data-permissions="inventory.read"><svg><use href="#i-box" /></svg><span>Reposição e Necessidades</span></a>
-
-                <span class="nav-label">Compras</span>
+                <a href="/Replenishment" data-permissions="inventory.read,purchasing.read"><svg><use href="#i-box" /></svg><span>Reposição e Necessidades</span></a>
                 <a href="/Procurement" data-permissions="purchasing.read"><svg><use href="#i-box" /></svg><span>Compras e Fornecedores</span></a>
 
                 <span class="nav-label">Comercial</span>
                 <a href="/Commercial" data-permissions="commercial.read"><svg><use href="#i-coins" /></svg><span>Comercial e Vendas</span></a>
+                <a href="/crm" data-permissions="commercial.read,crm.read"><svg><use href="#i-coins" /></svg><span>CRM e Ciclo do Cliente</span></a>
                 <a href="/AfterSales" data-permissions="after-sales.read"><svg><use href="#i-box" /></svg><span>Pós-venda</span></a>
-
-                <span class="nav-label">Financeiro e controladoria</span>
-                <a href="/Finance" data-permissions="finance.read"><svg><use href="#i-coins" /></svg><span>Financeiro e Custos</span></a>
-
-                <span class="nav-label">Fiscal e documentos</span>
-                <a href="/Fiscal" data-permissions="fiscal.read"><svg><use href="#i-chart" /></svg><span>Fiscal</span></a>
-                <a href="/Documents" data-permissions="documents.read"><svg><use href="#i-box" /></svg><span>Documentos e Evidências</span></a>
 
                 <span class="nav-label">Logística</span>
                 <a href="/Logistics" data-permissions="logistics.read"><svg><use href="#i-truck" /></svg><span>Expedição e Entrega</span></a>
 
-                <span class="nav-label">Qualidade e compliance</span>
+                <span class="nav-label">Financeiro/Fiscal</span>
+                <a href="/Finance" data-permissions="finance.read"><svg><use href="#i-coins" /></svg><span>Financeiro e Custos</span></a>
+                <a href="/Fiscal" data-permissions="fiscal.read"><svg><use href="#i-chart" /></svg><span>Fiscal</span></a>
+                <a href="/Documents" data-permissions="documents.read"><svg><use href="#i-box" /></svg><span>Documentos e Evidências</span></a>
+
+                <span class="nav-label">Qualidade e Rastreabilidade</span>
                 <a href="/Compliance" data-permissions="compliance.read,esg.read"><svg><use href="#i-leaf" /></svg><span>Qualidade e Compliance</span></a>
                 <a href="/Inspections" data-permissions="compliance.read,compliance.inspections.execute"><svg><use href="#i-leaf" /></svg><span>Modelos e Inspeções</span></a>
 
-                <span class="nav-label">Frota e manutenção</span>
+                <span class="nav-label">Pessoas e Recursos</span>
+                <a href="/RuralHr" data-permissions="hr.read,operations.read"><svg><use href="#i-users" /></svg><span>RH Rural</span></a>
+                <a href="/Sst" data-permissions="sst.read,compliance.read"><svg><use href="#i-users" /></svg><span>SST Rural</span></a>
                 <a href="/Fleet" data-permissions="fleet.read"><svg><use href="#i-truck" /></svg><span>Frota e Manutenção</span></a>
 
-                <span class="nav-label">Relatórios e BI</span>
-                <a href="/Reports" data-permissions="intelligence.read,finance.export"><svg><use href="#i-chart" /></svg><span>Relatórios e Analytics</span></a>
+                <span class="nav-label">Cooperativas</span>
+                <a href="/Cooperatives" data-permissions="cooperatives.read,commercial.read"><svg><use href="#i-globe" /></svg><span>Cooperativas e Marketplace</span></a>
 
-                <span class="nav-label">Administração da conta</span>
-                <a href="/Saas" data-permissions="account.users.read"><svg><use href="#i-grid" /></svg><span>Usuários e Perfis</span></a>
-                <a href="/Ecosystem" data-permissions="marketplace.read"><svg><use href="#i-grid" /></svg><span>Meus módulos</span></a>
+                <span class="nav-label">Sustentabilidade/Exportação</span>
+                <a href="/sustentabilidade" data-permissions="esg.read,compliance.read,sustainability.read"><svg><use href="#i-leaf" /></svg><span>Sustentabilidade e ESG</span></a>
+                <a href="/Export" data-permissions="export.read,commercial.read"><svg><use href="#i-globe" /></svg><span>Exportação e Trading</span></a>
+
+                <span class="nav-label">Relatórios</span>
+                <a href="/Reports" data-permissions="intelligence.read,finance.export,reports.read"><svg><use href="#i-chart" /></svg><span>Relatórios e Analytics</span></a>
+                <a href="/intelligence" data-permissions="intelligence.read"><svg><use href="#i-chart" /></svg><span>Inteligência Agro360</span></a>
+                <a href="/inteligencia-agro360" data-permissions="intelligence.read"><svg><use href="#i-chart" /></svg><span>Painel Executivo 360</span></a>
+
+                <span class="nav-label">Minha organização</span>
+                <a href="/Saas?view=account" data-permissions="account.users.read,account.subscription.manage,account.settings.manage"><svg><use href="#i-grid" /></svg><span>Minha Organização</span></a>
+                <a href="/Saas?view=users" data-permissions="account.users.read"><svg><use href="#i-users" /></svg><span>Usuários e Perfis</span></a>
+                <a href="/Ecosystem" data-permissions="marketplace.read"><svg><use href="#i-grid" /></svg><span>Meus Módulos</span></a>
                 <a href="/Governance" data-permissions="governance.read,integrations.read"><svg><use href="#i-grid" /></svg><span>Configurações</span></a>
+                <a href="/Integrations" data-permissions="integrations.read,governance.read"><svg><use href="#i-grid" /></svg><span>Integrações</span></a>
+                <a href="/Support" data-public-menu="true"><svg><use href="#i-bell" /></svg><span>Ajuda / Suporte</span></a>
 
-                <span class="nav-label">Ajuda</span>
-                <a href="/Support" data-public-menu="true"><svg><use href="#i-bell" /></svg><span>Ajuda / Manual do Sistema</span></a>
+                <span class="nav-label">Administração global</span>
+                <a href="/Saas" data-super-admin="true"><svg><use href="#i-grid" /></svg><span>Administração SaaS MNSOFT</span><i>global</i></a>
             </nav>
             <div class="sidebar-footer">
                 <div class="sync-state"><span></span><div><strong>Serviços online</strong><small id="sync-time">verificando agora</small></div></div>
@@ -138,9 +146,10 @@
             </header>
             <div class="assisted-context-banner" id="assisted-context-banner" hidden data-visible="false" role="status">
                 <div>
-                    <strong>Contexto assistido</strong>
-                    <small>Você está operando como SuperAdmin no ambiente do cliente. Toda ação é auditada no ator real.</small>
+                    <strong id="assisted-context-title">Contexto de suporte assistido</strong>
+                    <small id="assisted-context-subtitle">Você está operando como SuperAdmin no ambiente do cliente. Toda ação é auditada no ator real.</small>
                 </div>
+                <button type="button" class="secondary-button" id="end-assisted-session-btn" style="white-space:nowrap;padding:0.35rem 0.75rem;font-size:12px;margin-left:auto;">Encerrar contexto</button>
             </div>
             <nav class="page-breadcrumb" id="page-breadcrumb" aria-label="Você está em">
                 <span aria-current="page">@breadcrumb</span>

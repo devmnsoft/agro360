@@ -52,9 +52,10 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
     public Task AddWorkLogAsync(Guid orderId, FieldWorkLogCommand command, CancellationToken cancellationToken)
     {
         var durationMinutes = (command.EndsAt - command.StartsAt).TotalMinutes;
+        var interruptionMinutes = command.InterruptionMinutes;
         if (command.EndsAt <= command.StartsAt || command.PerformedQuantity < 0 || command.PhysicalAreaHa < 0 || command.InitialMeter < 0 || command.FinalMeter < command.InitialMeter ||
-            command.InterruptionMinutes < 0 || command.InterruptionMinutes > durationMinutes ||
-            (command.InterruptionMinutes > 0 && string.IsNullOrWhiteSpace(command.InterruptionReason)) ||
+            interruptionMinutes < 0 || interruptionMinutes > durationMinutes ||
+            (interruptionMinutes > 0 && string.IsNullOrWhiteSpace(command.InterruptionReason)) ||
             (command.InitialMeter is null) != (command.FinalMeter is null) || string.IsNullOrWhiteSpace(command.Stage) ||
             string.IsNullOrWhiteSpace(command.Unit) || string.IsNullOrWhiteSpace(command.IdempotencyKey))
             throw new DomainException("Revise duração, quantidades, parada, medidor e chave da requisição.", "agriculture.work_log_invalid");

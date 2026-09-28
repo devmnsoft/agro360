@@ -53,15 +53,34 @@
 
     function renderNavigation() {
         const permissions = new Set((state.session?.permissions ?? []).map(normalizePermission));
-        const isSuperAdministrator = (state.session?.roles ?? []).includes("SUPER_ADMIN");
+        const roles = state.session?.roles ?? [];
+        const isSuperAdministrator = roles.some(r => r === "SUPER_ADMIN" || r === "PLATFORM_SUPER_ADMIN");
+        const isSupportSession = Boolean(state.session?.supportSession);
+
         document.querySelectorAll(".main-nav a").forEach(link => {
             const required = (link.dataset.permissions ?? "").split(",").filter(Boolean).map(normalizePermission);
-            const allowed = Boolean(state.session) && (isSuperAdministrator
-                || link.dataset.publicMenu === "true"
-                || (link.dataset.superAdmin !== "true" && required.some(permission => permissions.has(permission))));
+            const isGlobalAdminLink = link.dataset.superAdmin === "true";
+            let allowed = false;
+
+            if (isGlobalAdminLink) {
+                allowed = isSuperAdministrator;
+            } else if (link.dataset.publicMenu === "true") {
+                allowed = true;
+            } else if (isSupportSession) {
+                // In support session, SuperAdmin has tenant-contracted permissions
+                allowed = required.length === 0 || required.some(p => permissions.has(p));
+            } else if (isSuperAdministrator) {
+                // In global platform context, SuperAdmin can view all valid operational features
+                allowed = true;
+            } else if (state.session) {
+                // Tenant user (Admin, Operator, etc.)
+                allowed = required.length === 0 || required.some(p => permissions.has(p));
+            }
+
             link.hidden = !allowed;
             link.setAttribute("aria-hidden", String(!allowed));
         });
+
         document.querySelectorAll(".main-nav .nav-label").forEach(label => {
             let sibling = label.nextElementSibling;
             let hasVisibleLink = false;
@@ -71,6 +90,7 @@
             }
             label.hidden = !hasVisibleLink;
         });
+
         const currentPath = window.location.pathname.toLowerCase().replace(/\/$/, "") || "/";
         let activePathAssigned = false;
         document.querySelectorAll(".main-nav a").forEach(link => {
@@ -78,6 +98,22 @@
             const isCurrent = !activePathAssigned && linkPath === currentPath;
             link.classList.toggle("active", isCurrent);
             activePathAssigned ||= isCurrent;
+
+            link.onclick = (e) => {
+                const inSupport = Boolean(state.session?.supportSession);
+                const isGlobal = link.dataset.superAdmin === "true" || link.dataset.publicMenu === "true" || link.getAttribute("href") === "/";
+                if (isSuperAdministrator && !inSupport && !isGlobal) {
+                    e.preventDefault();
+                    agro360Feedback.toast(
+                        "warning",
+                        "Contexto de cliente necessário",
+                        "Para operar recursos deste módulo, selecione uma organização e inicie a sessão de suporte assistido em Administração SaaS."
+                    );
+                    setTimeout(() => {
+                        window.location.assign("/Saas?view=tenants");
+                    }, 1200);
+                }
+            };
         });
     }
 
@@ -88,7 +124,11 @@
         element("user-initials").textContent = user?.name
             ? user.name.split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()
             : "A3";
-        element("active-farm").textContent = user?.activeOrganization ?? "Organização não selecionada";
+        if (user?.supportSession) {
+            element("active-farm").textContent = `${user.supportSession.tenantName || user.activeOrganization} (Suporte)`;
+        } else {
+            element("active-farm").textContent = user?.activeOrganization ?? "Organização não selecionada";
+        }
     }
 
     async function api(path, options = {}, retry = true) {
@@ -690,7 +730,10 @@
         }
     };
 
-    Object.assign(window, { toastSuccess, toastWarning, toastError, toastInfo, confirmDialog, agro360Feedback, agro360Api: api, retrySessionRefresh });
+    Object.assign(window, {
+        toastSuccess, toastWarning, toastError, toastInfo, confirmDialog, agro360Feedback,
+        agro360Api: api, retrySessionRefresh, agro360SetSession: persistSession, agro360PersistSession: persistSession
+    });
 
     function setText(id, value) {
         const target = element(id);

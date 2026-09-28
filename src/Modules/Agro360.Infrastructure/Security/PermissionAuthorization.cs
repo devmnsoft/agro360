@@ -44,6 +44,59 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
             return;
         }
 
+        var isSupportSession = context.User.HasClaim("permission", "support_session") || context.User.HasClaim("role", "SUPPORT_SESSION");
+        if (isSupportSession)
+        {
+            var supportAccess = await connection.QuerySingleAsync<SupportAccessState>(
+                """
+                select exists(
+                           select 1 from agro360.platform_super_admins a
+                           join agro360.identity_users u on u.id=a.user_id
+                           where a.user_id=@UserId and a.active and a.deleted_at is null
+                             and u.status='ACTIVE' and u.deleted_at is null
+                       ) IsSuperAdmin,
+                       exists(
+                           select 1 from agro360.saas_support_sessions s
+                           where s.tenant_id=@TenantId and s.actor_id=@UserId
+                             and s.started_at <= now() and s.expires_at > now() and s.ended_at is null
+                       ) ActiveSupportSession,
+                       exists(select 1 from agro360.tenancy_tenants where id=@TenantId and status in(1,2) and deleted_at is null) TenantAllowed,
+                       exists(select 1 from agro360.saas_organizations o join agro360.saas_plans p on p.id=o.plan_id where o.tenant_id=@TenantId and o.status='ACTIVE' and p.active) ContractAllowed
+                """, new { TenantId = tenantId, UserId = userId }, transaction).ConfigureAwait(false);
+
+            if (!supportAccess.IsSuperAdmin || !supportAccess.ActiveSupportSession || !supportAccess.TenantAllowed)
+            {
+                await transaction.CommitAsync().ConfigureAwait(false);
+                return;
+            }
+
+            if (requirement.Permission.StartsWith("account.", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Succeed(requirement);
+                await transaction.CommitAsync().ConfigureAwait(false);
+                return;
+            }
+
+            var acceptedSupportModules = AcceptedModules(requirement.Permission);
+            if (supportAccess.ContractAllowed && acceptedSupportModules.Length > 0)
+            {
+                var contracted = await connection.ExecuteScalarAsync<bool>(
+                    """
+                    select exists(
+                        select 1 from (
+                            select unnest(p.modules) code from agro360.saas_organizations o join agro360.saas_plans p on p.id=o.plan_id where o.tenant_id=@TenantId and o.status='ACTIVE' and p.active
+                            union all
+                            select c.code from agro360.platform_tenant_module_entitlements e join agro360.platform_module_catalog c on c.id=e.module_id where e.tenant_id=@TenantId and e.status in('CONTRACTED','ACTIVE','TRIAL')
+                            union all
+                            select m.code from agro360.platform_tenant_modules tm join agro360.platform_marketplace_modules m on m.id=tm.module_id where tm.tenant_id=@TenantId and tm.status='ACTIVE' and (tm.trial_ends_at is null or tm.trial_ends_at>now())
+                        ) modules where lower(code)=any(@Modules))
+                    """, new { TenantId = tenantId, Modules = acceptedSupportModules.Select(module => module.ToLowerInvariant()).ToArray() }, transaction).ConfigureAwait(false);
+                if (contracted) context.Succeed(requirement);
+            }
+            await transaction.CommitAsync().ConfigureAwait(false);
+            return;
+        }
+
         var baseAccess = await connection.QuerySingleAsync<AccessState>(
             """
             select exists(
@@ -88,7 +141,7 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
         await transaction.CommitAsync().ConfigureAwait(false);
     }
 
-    private static string[] AcceptedModules(string permission)
+    public static string[] AcceptedModules(string permission)
     {
         var group = permission.Split('.', 2, StringSplitOptions.TrimEntries)[0];
         return group switch
@@ -108,4 +161,5 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
     }
 
     private sealed class AccessState { public bool HasPermission { get; init; } public bool TenantAllowed { get; init; } public bool ContractAllowed { get; init; } }
+    private sealed class SupportAccessState { public bool IsSuperAdmin { get; init; } public bool ActiveSupportSession { get; init; } public bool TenantAllowed { get; init; } public bool ContractAllowed { get; init; } }
 }

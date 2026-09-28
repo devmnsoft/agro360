@@ -8,7 +8,7 @@
     const dialogMessage = dialogForm.querySelector(".form-message");
     const session = readSession();
     const permissions = new Set((session?.permissions ?? []).map(normalizePermission));
-    const isSuperAdministrator = (session?.roles ?? []).includes("SUPER_ADMIN");
+    const isSuperAdministrator = (session?.roles ?? []).some(r => r === "SUPER_ADMIN" || r === "PLATFORM_SUPER_ADMIN");
     const tenantViews = new Set(["onboarding", "users", "roles", "invitations", "security", "notifications", "settings", "account"]);
     const requestedView = new URLSearchParams(location.search).get("view");
     let view = requestedView && (isSuperAdministrator || tenantViews.has(requestedView))
@@ -42,7 +42,8 @@
     }
 
     function token() {
-        return session?.accessToken ?? localStorage.getItem("agro360.accessToken");
+        const cur = readSession();
+        return cur?.accessToken ?? localStorage.getItem("agro360.accessToken");
     }
 
     function escapeHtml(value) {
@@ -118,24 +119,44 @@
                 const action = btn.dataset.tenantAction;
                 if (action === "inspect") {
                     openForm(`Inspecionar: ${escapeHtml(tenantName)}`,
-                        `<p>Iniciará uma sessão de suporte assistido (2h). Todas as ações ficam registradas na auditoria.</p>
-                         <label>Motivo <textarea name="reason" minlength="5" maxlength="1000" required></textarea></label>`,
+                        `<p>Iniciará uma sessão de suporte assistido vinculada aos módulos contratados desta organização. Todas as operações são registradas na auditoria.</p>
+                         <label>Motivo do atendimento <textarea name="reason" minlength="5" maxlength="1000" required placeholder="Ex.: Homologação de novos módulos e suporte operacional solicitado pelo cliente."></textarea></label>`,
                         async data => {
-                            const result = await request(`/api/platform/tenants/${encodeURIComponent(tenantId)}/support-session`, { method: "POST", body: JSON.stringify({ reason: data.get("reason") }) });
-                            // Show persistent support banner
-                            let banner = document.querySelector("#support-banner");
-                            if (!banner) {
-                                banner = document.createElement("div");
-                                banner.id = "support-banner";
-                                banner.style.cssText = "position:fixed;top:0;left:0;width:100%;background:#d97706;color:#fff;padding:0.5rem 1rem;display:flex;align-items:center;gap:1rem;z-index:9999;font-weight:600;";
-                                document.body.prepend(banner);
-                            }
-                            banner.innerHTML = `⚠️ Contexto de suporte ativo: <strong>${escapeHtml(result.tenantName)}</strong> (expira ${new Date(result.expiresAt).toLocaleTimeString("pt-BR")}) <button id="end-support-btn" style="margin-left:auto;background:#fff;color:#d97706;border:none;padding:0.25rem 0.75rem;border-radius:4px;cursor:pointer;font-weight:700">Encerrar</button>`;
-                            document.querySelector("#end-support-btn").addEventListener("click", async () => {
-                                await request(`/api/platform/tenants/${encodeURIComponent(tenantId)}/support-session/end`, { method: "POST" }).catch(() => {});
-                                banner.remove();
+                            const reason = data.get("reason");
+                            const result = await request(`/api/platform/tenants/${encodeURIComponent(tenantId)}/support-session`, {
+                                method: "POST",
+                                body: JSON.stringify({ reason })
                             });
-                            return `Contexto de suporte iniciado. Token válido por 2h. Todas as ações são auditadas.`;
+
+                            const currentGlobal = JSON.parse(localStorage.getItem("agro360.session") || "null");
+                            if (currentGlobal && !localStorage.getItem("agro360.global_session")) {
+                                localStorage.setItem("agro360.global_session", JSON.stringify(currentGlobal));
+                            }
+
+                            const supportSessionData = {
+                                ...(currentGlobal || {}),
+                                accessToken: result.accessToken,
+                                activeOrganization: result.tenantName,
+                                tenantId: result.tenantId,
+                                permissions: result.permissions,
+                                roles: ["PLATFORM_SUPER_ADMIN", "SUPPORT_SESSION"],
+                                supportSession: {
+                                    tenantId: result.tenantId,
+                                    tenantName: result.tenantName,
+                                    expiresAt: result.expiresAt
+                                }
+                            };
+
+                            if (window.agro360SetSession) {
+                                window.agro360SetSession(supportSessionData);
+                            } else {
+                                localStorage.setItem("agro360.session", JSON.stringify(supportSessionData));
+                                localStorage.setItem("agro360.accessToken", result.accessToken);
+                                window.agro360Session = supportSessionData;
+                                window.dispatchEvent(new CustomEvent("agro360:session", { detail: supportSessionData }));
+                            }
+
+                            return `Contexto de suporte iniciado para "${result.tenantName}". Validade: até ${new Date(result.expiresAt).toLocaleTimeString("pt-BR")}. O banner no topo permite alternar ou encerrar a qualquer momento.`;
                         });
                 } else {
                     const statusMap = { block: "BLOCKED", suspend: "SUSPENDED", activate: "ACTIVE" };
