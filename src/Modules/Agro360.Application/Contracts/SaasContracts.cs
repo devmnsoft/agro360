@@ -35,8 +35,9 @@ public sealed class TenantSummary
 public sealed record TenantCommand(string Slug, string Name, string Type, string Document, string ResponsibleName, string ResponsibleEmail, Guid PlanId, string[]? Modules = null);
 public sealed record TenantCreated(Guid Id, InvitationCreated AdministratorInvitation);
 public sealed record TenantUpdateCommand(string Name, string Type, string ResponsibleName, string ResponsibleEmail, Guid PlanId);
-public sealed record SupportSessionCommand(string Reason);
-public sealed record SupportSessionResult(Guid TenantId, string TenantName, string TenantSlug, string AccessToken, DateTimeOffset ExpiresAt);
+public sealed record SupportSessionCommand(string Reason, string? Scope = null);
+public sealed record SupportSessionResult(Guid SessionId, Guid TenantId, string TenantName, string TenantSlug, string AccessToken, DateTimeOffset ExpiresAt, string[] Permissions, string Scope);
+public sealed record EndSupportSessionRequest(Guid? SessionId = null, Guid? TenantId = null);
 public sealed class ModuleCatalogItem { public Guid Id { get; init; } public string Code { get; init; } = string.Empty; public string Name { get; init; } = string.Empty; public string Description { get; init; } = string.Empty; }
 public sealed record ReasonCommand(string Reason);
 public sealed class UsageSummary
@@ -148,6 +149,7 @@ public interface ISaasService
     Task<IReadOnlyList<BillingChargeSummary>> GetChargesAsync(CancellationToken ct); Task<Guid> CreateChargeAsync(BillingChargeCommand command, Guid actorId, CancellationToken ct); Task ChangeChargeStatusAsync(Guid id, BillingStatusCommand command, Guid actorId, CancellationToken ct); Task<ManualPaymentResult> RegisterManualPaymentAsync(Guid id, ManualPaymentCommand command, Guid actorId, CancellationToken ct);
     Task<IReadOnlyList<FeatureFlagSummary>> GetFeatureFlagsAsync(Guid tenantId, CancellationToken ct); Task SetFeatureOverrideAsync(FeatureOverrideCommand command, Guid actorId, CancellationToken ct);
     Task<IReadOnlyList<SaasAuditSummary>> GetAuditAsync(Guid? tenantId, string? action, Guid? actorId, DateTime? from, DateTime? until, CancellationToken ct);
-    Task<SupportSessionResult> StartSupportSessionAsync(Guid tenantId, string reason, Guid superAdminUserId, CancellationToken ct);
+    Task<SupportSessionResult> StartSupportSessionAsync(Guid tenantId, string reason, Guid superAdminUserId, CancellationToken ct, string? scope = null);
     Task EndSupportSessionAsync(Guid tenantId, Guid superAdminUserId, CancellationToken ct);
+    Task EndActiveSupportSessionAsync(Guid actorId, Guid? sessionId, CancellationToken ct);
 }

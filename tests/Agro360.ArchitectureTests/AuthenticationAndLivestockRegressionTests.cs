@@ -26,7 +26,7 @@ public sealed class AuthenticationAndLivestockRegressionTests
         Assert.Contains("released_quantity", migration, StringComparison.Ordinal);
         Assert.Contains("quality_status='APPROVED'", service, StringComparison.Ordinal);
         Assert.Contains("expires_on>=current_date", service, StringComparison.Ordinal);
-        Assert.Contains("reserved=reserved-@ReservedQuantity", service, StringComparison.Ordinal);
+        Assert.Contains("reserved=reserved-@Active", service, StringComparison.Ordinal);
         Assert.Contains("'SALE'", service, StringComparison.Ordinal);
         Assert.DoesNotContain("'SHIPMENT',@Quantity", service, StringComparison.Ordinal);
     }

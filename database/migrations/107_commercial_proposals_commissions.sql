@@ -63,7 +63,7 @@ create index if not exists ix_sales_proposal_conversion_balance on agro360.sales
 do $$ declare t text; begin foreach t in array array['sales_proposals','sales_proposal_versions','sales_proposal_items','sales_proposal_decisions','sales_proposal_conversions','sales_proposal_conversion_items'] loop
  execute format('alter table agro360.%I enable row level security',t); execute format('alter table agro360.%I force row level security',t);
  execute format('drop policy if exists tenant_isolation on agro360.%I',t);
- execute format('create policy tenant_isolation on agro360.%I using (tenant_id=agro360.current_tenant_id()) with check (tenant_id=agro360.current_tenant_id())',t);
+ execute format('create policy tenant_isolation on agro360.%I using (tenant_id=agro360.platform_current_tenant_id()) with check (tenant_id=agro360.platform_current_tenant_id())',t);
 end loop; end $$;
 
 alter table agro360.sales_commissions add column if not exists rule_snapshot jsonb not null default '{}';
@@ -80,6 +80,6 @@ create table if not exists agro360.sales_commission_adjustments(
 alter table agro360.sales_commission_adjustments enable row level security;
 alter table agro360.sales_commission_adjustments force row level security;
 drop policy if exists tenant_isolation on agro360.sales_commission_adjustments;
-create policy tenant_isolation on agro360.sales_commission_adjustments using (tenant_id=agro360.current_tenant_id()) with check (tenant_id=agro360.current_tenant_id());
+create policy tenant_isolation on agro360.sales_commission_adjustments using (tenant_id=agro360.platform_current_tenant_id()) with check (tenant_id=agro360.platform_current_tenant_id());
 insert into agro360.platform_schema_versions(version,description,installed_at) values('10.7.0','Propostas comerciais versionadas e comissões rastreáveis',now()) on conflict(version) do nothing;
 commit;

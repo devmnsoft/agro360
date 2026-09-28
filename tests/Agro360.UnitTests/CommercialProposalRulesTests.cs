@@ -49,4 +49,47 @@ public sealed class CommercialProposalRulesTests
         Assert.Equal(total, first + second + last);
         Assert.Equal([0.05m, 0.04m, 0.05m], [first, second, last]);
     }
+
+    [Fact]
+    public void ExceedingRemainingAcceptedBalanceThrowsDomainException()
+    {
+        var ex = Assert.Throws<DomainException>(() =>
+            CommercialRules.ProposalConversionAmount(10m, 100m, 6m, 60m, 5m));
+        Assert.Equal("sales.proposal_conversion_balance", ex.Code);
+    }
+
+    [Theory]
+    [InlineData("DRAFT", "ACCEPTED")]
+    [InlineData("APPROVED", "SUBMITTED")]
+    [InlineData("ACCEPTED", "DRAFT")]
+    [InlineData("CANCELLED", "APPROVED")]
+    public void InvalidProposalTransitionsAreRejected(string from, string to)
+    {
+        var ex = Assert.Throws<DomainException>(() =>
+            CommercialRules.ValidateProposalTransition(from, to, "motivo"));
+        Assert.Equal("sales.proposal_transition_invalid", ex.Code);
+    }
+
+    [Fact]
+    public void InactiveOrBlockedCustomerCannotOrder()
+    {
+        var exBlocked = Assert.Throws<DomainException>(() =>
+            CommercialRules.CustomerCanOrder("BLOCKED", false));
+        Assert.Equal("sales.customer_blocked", exBlocked.Code);
+
+        var exInactive = Assert.Throws<DomainException>(() =>
+            CommercialRules.CustomerCanOrder("INACTIVE", false));
+        Assert.Equal("sales.customer_inactive", exInactive.Code);
+    }
+
+    [Fact]
+    public void DelinquentCustomerRequiresSuperiorAuthorization()
+    {
+        var ex = Assert.Throws<DomainException>(() =>
+            CommercialRules.CustomerCanOrder("DELINQUENT", false));
+        Assert.Equal("sales.customer_delinquent_authorization_required", ex.Code);
+
+        // Does not throw when authorized
+        CommercialRules.CustomerCanOrder("DELINQUENT", true);
+    }
 }

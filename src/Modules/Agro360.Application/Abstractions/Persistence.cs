@@ -23,7 +23,7 @@ public interface IPasswordHasher
 
 public interface ITokenService
 {
-    TokenPair Create(Guid tenantId, Guid userId, string email, IReadOnlyCollection<string> permissions, IReadOnlyCollection<string> roles);
+    TokenPair Create(Guid tenantId, Guid userId, string email, IReadOnlyCollection<string> permissions, IReadOnlyCollection<string> roles, IEnumerable<System.Security.Claims.Claim>? additionalClaims = null);
 
     string HashRefreshToken(string refreshToken);
 }

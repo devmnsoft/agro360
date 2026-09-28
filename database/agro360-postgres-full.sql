@@ -1022,6 +1022,14 @@ as $$
     select nullif(current_setting('app.tenant_id', true), '')::uuid
 $$;
 
+create or replace function agro360.current_tenant_id()
+returns uuid
+language sql
+stable
+as $$
+    select agro360.platform_current_tenant_id();
+$$;
+
 create or replace function agro360.platform_enable_tenant_rls(target_table regclass)
 returns void
 language plpgsql
@@ -5233,7 +5241,7 @@ select agro360.platform_enable_tenant_rls('agro360.harvest_closing_versions');
 insert into agro360.platform_schema_versions(version,description,installed_at) values('7.7.0','Conferência e fechamento gerencial versionado da safra',now()) on conflict(version) do nothing;
 commit;
 begin;
-create table agro360.cost_management_entries(
+create table if not exists agro360.cost_management_entries(
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id), farm_id uuid not null,
  category varchar(60) not null, competence_date date not null, planned_amount numeric(18,4) not null default 0,
  committed_amount numeric(18,4) not null default 0, recognized_amount numeric(18,4) not null, paid_amount numeric(18,4) not null default 0,
@@ -5245,9 +5253,9 @@ create table agro360.cost_management_entries(
  check(planned_amount>=0 and committed_amount>=0 and recognized_amount>=0 and paid_amount>=0 and allocated_amount>=0 and reversed_amount>=0),
  check(allocated_amount<=recognized_amount),check(currency='BRL'),check(status in('OPEN','VOID'))
 );
-create index ix_cost_management_filter on agro360.cost_management_entries(tenant_id,farm_id,competence_date desc,status) where deleted_at is null;
-create index ix_cost_management_pending on agro360.cost_management_entries(tenant_id,competence_date desc) where deleted_at is null and status='OPEN';
-create table agro360.cost_allocation_batches(
+create index if not exists ix_cost_management_filter on agro360.cost_management_entries(tenant_id,farm_id,competence_date desc,status) where deleted_at is null;
+create index if not exists ix_cost_management_pending on agro360.cost_management_entries(tenant_id,competence_date desc) where deleted_at is null and status='OPEN';
+create table if not exists agro360.cost_allocation_batches(
  id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),entry_id uuid not null,method varchar(16) not null,
  amount numeric(18,4) not null,currency char(3) not null,base_snapshot jsonb not null,idempotency_key varchar(160) not null,status varchar(16) not null,
  justification varchar(1000),confirmed_at timestamptz not null,confirmed_by uuid not null,reversed_at timestamptz,reversed_by uuid,reversal_reason varchar(1000),reversal_key varchar(160),created_at timestamptz not null default now(),created_by uuid not null,
@@ -5255,7 +5263,7 @@ create table agro360.cost_allocation_batches(
  check(amount>0),check(method in('DIRECT','PERCENTAGE','AREA','PRODUCTION','HOURS','EQUAL')),check(status in('CONFIRMED','REVERSED')),
  check(status<>'REVERSED' or (reversed_at is not null and reversed_by is not null and nullif(trim(reversal_reason),'') is not null))
 );
-create table agro360.cost_allocations(
+create table if not exists agro360.cost_allocations(
  id uuid primary key,tenant_id uuid not null,batch_id uuid not null,entry_id uuid not null,season_id uuid not null,farm_id uuid not null,field_id uuid,cost_center_id uuid,
  base_value numeric(20,6) not null,base_unit varchar(20),percentage numeric(12,6) not null,amount numeric(18,4) not null,rounding_adjustment numeric(18,4) not null default 0,
  status varchar(16) not null,confirmed_at timestamptz not null,confirmed_by uuid not null,reversed_at timestamptz,reversed_by uuid,reversal_reason varchar(1000),created_at timestamptz not null default now(),created_by uuid not null,
@@ -5263,8 +5271,8 @@ create table agro360.cost_allocations(
  foreign key(tenant_id,season_id) references agro360.agriculture_seasons(tenant_id,id),foreign key(tenant_id,farm_id) references agro360.geo_farms(tenant_id,id),foreign key(tenant_id,field_id) references agro360.geo_fields(tenant_id,id),foreign key(tenant_id,cost_center_id) references agro360.finance_cost_centers(tenant_id,id),
  check(base_value>=0 and percentage>=0 and percentage<=100 and amount>0),check(status in('CONFIRMED','REVERSED'))
 );
-create index ix_cost_allocations_season on agro360.cost_allocations(tenant_id,season_id,confirmed_at desc,status);
-create index ix_cost_allocations_entry on agro360.cost_allocations(tenant_id,entry_id,status);
+create index if not exists ix_cost_allocations_season on agro360.cost_allocations(tenant_id,season_id,confirmed_at desc,status);
+create index if not exists ix_cost_allocations_entry on agro360.cost_allocations(tenant_id,entry_id,status);
 select agro360.platform_enable_tenant_rls('agro360.cost_management_entries');
 select agro360.platform_enable_tenant_rls('agro360.cost_allocation_batches');
 select agro360.platform_enable_tenant_rls('agro360.cost_allocations');
@@ -5392,7 +5400,7 @@ insert into agro360.platform_schema_versions(version,description,installed_at) v
 commit;
 begin;
 
-create table agro360.inventory_transfers (
+create table if not exists agro360.inventory_transfers (
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id), number bigint generated always as identity,
  farm_id uuid not null, source_warehouse_id uuid not null, destination_warehouse_id uuid not null,
  requested_by uuid not null, responsible_id uuid not null, expected_on date not null, justification varchar(1000) not null,
@@ -5406,27 +5414,27 @@ create table agro360.inventory_transfers (
  check(source_warehouse_id<>destination_warehouse_id),
  check(status in ('DRAFT','AWAITING_SHIPMENT','IN_TRANSIT','PARTIALLY_RECEIVED','RECEIVED','CANCELLED'))
 );
-create table agro360.inventory_transfer_items (
+create table if not exists agro360.inventory_transfer_items (
  id uuid primary key, tenant_id uuid not null, transfer_id uuid not null, product_id uuid not null,
  lot_number varchar(100), expires_on date, quantity numeric(20,6) not null, received numeric(20,6) not null default 0,
  unit varchar(16) not null, blocked boolean not null default false, unit_cost numeric(18,4),
  unique(tenant_id,id), foreign key(tenant_id,transfer_id) references agro360.inventory_transfers(tenant_id,id),
  foreign key(tenant_id,product_id) references agro360.inventory_products(tenant_id,id), check(quantity>0), check(received>=0 and received<=quantity)
 );
-create table agro360.inventory_transfer_receipts (
+create table if not exists agro360.inventory_transfer_receipts (
  id uuid primary key, tenant_id uuid not null, transfer_id uuid not null, item_id uuid not null,
  quantity numeric(20,6) not null, condition varchar(20) not null, occurrence varchar(1000), idempotency_key varchar(160) not null,
  received_at timestamptz not null default now(), received_by uuid not null,
  unique(tenant_id,id), unique(tenant_id,idempotency_key), foreign key(tenant_id,transfer_id) references agro360.inventory_transfers(tenant_id,id),
  foreign key(tenant_id,item_id) references agro360.inventory_transfer_items(tenant_id,id), check(quantity>0), check(condition in ('GOOD','DAMAGED','BLOCKED'))
 );
-create table agro360.inventory_transfer_events (
+create table if not exists agro360.inventory_transfer_events (
  id uuid primary key, tenant_id uuid not null, transfer_id uuid not null, type varchar(30) not null, reason varchar(1000),
  occurred_at timestamptz not null default now(), actor_id uuid not null,
  foreign key(tenant_id,transfer_id) references agro360.inventory_transfers(tenant_id,id)
 );
 
-create table agro360.inventory_counts (
+create table if not exists agro360.inventory_counts (
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id), number bigint generated always as identity,
  warehouse_id uuid not null, category varchar(60), product_id uuid, lot_number varchar(100), material_status varchar(20),
  reference_at timestamptz, blind boolean not null default false, movement_policy varchar(16) not null default 'BLOCK',
@@ -5437,7 +5445,7 @@ create table agro360.inventory_counts (
  foreign key(tenant_id,product_id) references agro360.inventory_products(tenant_id,id),
  check(status in ('PLANNED','COUNTING','RECONCILING','AWAITING_APPROVAL','COMPLETED','CANCELLED')), check(movement_policy='BLOCK')
 );
-create table agro360.inventory_count_items (
+create table if not exists agro360.inventory_count_items (
  id uuid primary key, tenant_id uuid not null, count_id uuid not null, product_id uuid not null, lot_number varchar(100), location varchar(160),
  unit varchar(16) not null, reference_quantity numeric(20,6) not null, reference_reserved numeric(20,6) not null,
  accepted_quantity numeric(20,6), accepted_entry_id uuid, decision varchar(24), justification varchar(1000),
@@ -5446,7 +5454,7 @@ create table agro360.inventory_count_items (
  foreign key(tenant_id,product_id) references agro360.inventory_products(tenant_id,id),
  check(accepted_quantity is null or accepted_quantity>=0), check(decision is null or decision in ('ACCEPT','RECOUNT','ADJUST','NO_ACTION'))
 );
-create table agro360.inventory_count_entries (
+create table if not exists agro360.inventory_count_entries (
  id uuid primary key, tenant_id uuid not null, count_id uuid not null, item_id uuid not null, round integer not null,
  quantity numeric(20,6) not null, unit varchar(16) not null, note varchar(1000), evidence_url varchar(1000),
  counted_at timestamptz not null default now(), counted_by uuid not null,
@@ -5455,18 +5463,18 @@ create table agro360.inventory_count_entries (
 );
 alter table agro360.inventory_count_items add constraint fk_count_accepted_entry foreign key(tenant_id,accepted_entry_id) references agro360.inventory_count_entries(tenant_id,id);
 
-create unique index ux_transfer_ship_movement on agro360.inventory_stock_movements(tenant_id,reference_id,product_id,coalesce(lot_number,'')) where reference_type='STOCK_TRANSFER_SHIPMENT';
-create unique index ux_count_adjustment_movement on agro360.inventory_stock_movements(tenant_id,reference_id,product_id,coalesce(lot_number,'')) where reference_type='PHYSICAL_COUNT_ADJUSTMENT';
-create index ix_transfers_queue on agro360.inventory_transfers(tenant_id,status,expected_on,number);
-create index ix_counts_queue on agro360.inventory_counts(tenant_id,status,number);
-create unique index ux_active_count_scope on agro360.inventory_counts(tenant_id,warehouse_id,coalesce(product_id,'00000000-0000-0000-0000-000000000000'::uuid),coalesce(lot_number,'')) where status in ('COUNTING','RECONCILING','AWAITING_APPROVAL');
+create unique index if not exists ux_transfer_ship_movement on agro360.inventory_stock_movements(tenant_id,reference_id,product_id,coalesce(lot_number,'')) where reference_type='STOCK_TRANSFER_SHIPMENT';
+create unique index if not exists ux_count_adjustment_movement on agro360.inventory_stock_movements(tenant_id,reference_id,product_id,coalesce(lot_number,'')) where reference_type='PHYSICAL_COUNT_ADJUSTMENT';
+create index if not exists ix_transfers_queue on agro360.inventory_transfers(tenant_id,status,expected_on,number);
+create index if not exists ix_counts_queue on agro360.inventory_counts(tenant_id,status,number);
+create unique index if not exists ux_active_count_scope on agro360.inventory_counts(tenant_id,warehouse_id,coalesce(product_id,'00000000-0000-0000-0000-000000000000'::uuid),coalesce(lot_number,'')) where status in ('COUNTING','RECONCILING','AWAITING_APPROVAL');
 
 do $$ declare t text; begin foreach t in array array['inventory_transfers','inventory_transfer_items','inventory_transfer_receipts','inventory_transfer_events','inventory_counts','inventory_count_items','inventory_count_entries'] loop perform agro360.platform_enable_tenant_rls('agro360.'||t); end loop; end $$;
 insert into agro360.platform_schema_versions(version,description,installed_at) values('82.0.0','Transferências e inventário físico transacionais',now()) on conflict(version) do nothing;
 commit;
 begin;
 
-create table agro360.inventory_replenishment_policies (
+create table if not exists agro360.inventory_replenishment_policies (
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id), product_id uuid not null,
  warehouse_id uuid not null, minimum_stock numeric(20,6) not null default 0, target_stock numeric(20,6) not null,
  replenishment_days integer, minimum_purchase numeric(20,6), purchase_multiple numeric(20,6), purchase_unit varchar(16) not null,
@@ -5478,9 +5486,9 @@ create table agro360.inventory_replenishment_policies (
  check(minimum_purchase is null or minimum_purchase>=0), check(purchase_multiple is null or purchase_multiple>0),
  check(stock_per_purchase_unit>0), check(status in ('ACTIVE','INACTIVE'))
 );
-create unique index ux_replenishment_policy_active on agro360.inventory_replenishment_policies(tenant_id,product_id,warehouse_id) where status='ACTIVE';
+create unique index if not exists ux_replenishment_policy_active on agro360.inventory_replenishment_policies(tenant_id,product_id,warehouse_id) where status='ACTIVE';
 
-create table agro360.inventory_material_needs (
+create table if not exists agro360.inventory_material_needs (
  id uuid primary key, tenant_id uuid not null, policy_id uuid not null, product_id uuid not null, warehouse_id uuid not null,
  needed_on date not null, horizon_on date not null, usable_stock numeric(20,6) not null, reserved_stock numeric(20,6) not null,
  uncovered_demand numeric(20,6) not null, confirmed_inbound numeric(20,6) not null, transfer_inbound numeric(20,6) not null,
@@ -5494,14 +5502,14 @@ create table agro360.inventory_material_needs (
  check(status in ('IDENTIFIED','ANALYSIS','FORWARDED','PARTIALLY_FULFILLED','FULFILLED','DISMISSED','CANCELLED')),
  check(suggested_stock_quantity>=0 and suggested_purchase_quantity>=0)
 );
-create unique index ux_material_need_confirmation on agro360.inventory_material_needs(tenant_id,idempotency_key) where idempotency_key is not null;
-create index ix_material_needs_queue on agro360.inventory_material_needs(tenant_id,status,needed_on,product_id,id);
+create unique index if not exists ux_material_need_confirmation on agro360.inventory_material_needs(tenant_id,idempotency_key) where idempotency_key is not null;
+create index if not exists ix_material_needs_queue on agro360.inventory_material_needs(tenant_id,status,needed_on,product_id,id);
 do $$ declare t text; begin foreach t in array array['inventory_replenishment_policies','inventory_material_needs'] loop perform agro360.platform_enable_tenant_rls('agro360.'||t); end loop; end $$;
 insert into agro360.platform_schema_versions(version,description,installed_at) values('83.0.0','Planejamento de reposição e necessidades de materiais',now()) on conflict(version) do nothing;
 commit;
 begin;
 
-create table agro360.procurement_match_tolerances (
+create table if not exists agro360.procurement_match_tolerances (
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id),
  quantity_percent numeric(9,4) not null default 0, quantity_absolute numeric(20,6) not null default 0,
  price_percent numeric(9,4) not null default 0, price_absolute numeric(18,4) not null default 0,
@@ -5516,9 +5524,9 @@ create table agro360.procurement_match_tolerances (
  check(quantity_percent between 0 and 100 and price_percent between 0 and 100 and total_percent between 0 and 100 and excess_percent between 0 and 100),
  check(quantity_absolute>=0 and price_absolute>=0 and total_absolute>=0 and excess_absolute>=0 and delivery_days>=0)
 );
-create unique index ux_proc_match_tolerance_active on agro360.procurement_match_tolerances(tenant_id) where active and deleted_at is null;
+create unique index if not exists ux_proc_match_tolerance_active on agro360.procurement_match_tolerances(tenant_id) where active and deleted_at is null;
 
-create table agro360.procurement_billing_documents (
+create table if not exists agro360.procurement_billing_documents (
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id), purchase_order_id uuid not null,
  supplier_id uuid not null, document_number varchar(100) not null, document_series varchar(30) not null default '',
  issued_on date not null, currency char(3) not null default 'BRL', goods_total numeric(18,2) not null,
@@ -5537,7 +5545,7 @@ create table agro360.procurement_billing_documents (
  check(status in('PENDING_MATCH','PENDING_EXCEPTION','MATCHED','REJECTED','CANCELLED','REPLACED'))
 );
 
-create table agro360.procurement_billing_lines (
+create table if not exists agro360.procurement_billing_lines (
  id uuid primary key, tenant_id uuid not null, billing_document_id uuid not null, purchase_order_item_id uuid not null,
  receipt_item_id uuid not null, description varchar(300) not null, quantity numeric(20,6) not null, unit varchar(20) not null,
  unit_price numeric(18,4) not null, discount numeric(18,2) not null default 0, total numeric(18,2) not null,
@@ -5550,7 +5558,7 @@ create table agro360.procurement_billing_lines (
  check(quantity>0 and unit_price>=0 and discount>=0 and total=round(quantity*unit_price-discount,2))
 );
 
-create table agro360.procurement_invoice_matches (
+create table if not exists agro360.procurement_invoice_matches (
  id uuid primary key, tenant_id uuid not null, billing_document_id uuid not null, purchase_order_id uuid not null,
  status varchar(24) not null, idempotency_key varchar(100) not null, tolerance_snapshot jsonb not null,
  contracted_total numeric(18,2) not null, accepted_total numeric(18,2) not null, billed_total numeric(18,2) not null,
@@ -5565,7 +5573,7 @@ create table agro360.procurement_invoice_matches (
  check(decision is null or decision in('APPROVED_EXCEPTION','REJECTED','CORRECTION_REQUESTED'))
 );
 
-create table agro360.procurement_match_divergences (
+create table if not exists agro360.procurement_match_divergences (
  id uuid primary key, tenant_id uuid not null, invoice_match_id uuid not null, billing_line_id uuid,
  purchase_order_item_id uuid, receipt_item_id uuid, type varchar(24) not null, origin varchar(24) not null,
  description varchar(1000) not null, expected_value numeric(20,6), actual_value numeric(20,6),
@@ -5584,8 +5592,8 @@ create table agro360.procurement_match_divergences (
  check(length(trim(description))>=3), check(resolution is null or nullif(trim(resolution_reason),'') is not null)
 );
 
-create index ix_proc_billing_queue on agro360.procurement_billing_documents(tenant_id,status,issued_on,id);
-create index ix_proc_match_divergence_queue on agro360.procurement_match_divergences(tenant_id,status,responsible_id,created_at,id);
+create index if not exists ix_proc_billing_queue on agro360.procurement_billing_documents(tenant_id,status,issued_on,id);
+create index if not exists ix_proc_match_divergence_queue on agro360.procurement_match_divergences(tenant_id,status,responsible_id,created_at,id);
 do $$ declare t text; begin foreach t in array array['procurement_match_tolerances','procurement_billing_documents','procurement_billing_lines','procurement_invoice_matches','procurement_match_divergences'] loop perform agro360.platform_enable_tenant_rls('agro360.'||t); end loop; end $$;
 insert into agro360.platform_schema_versions(version,description,installed_at) values('84.0.0','Conferência persistida de pedido, aceite e cobrança com divergências',now()) on conflict(version) do nothing;
 commit;
@@ -5598,7 +5606,7 @@ create sequence if not exists agro360.field_work_order_number_seq;
 alter table agro360.agriculture_records drop constraint if exists agriculture_records_status_check;
 alter table agro360.agriculture_records add constraint agriculture_records_status_check check(status in('OPEN','PLANNED','AWAITING_RESOURCES','RELEASED','IN_PROGRESS','PAUSED','AWAITING_REVIEW','COMPLETED','CANCELLED','APPROVED','REVISION','CLOSED'));
 
-create table agro360.field_work_order_resources (
+create table if not exists agro360.field_work_order_resources (
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id),
  work_order_id uuid not null references agro360.agriculture_records(id), resource_type varchar(16) not null,
  resource_id uuid not null, starts_at timestamptz not null, ends_at timestamptz not null,
@@ -5610,9 +5618,9 @@ create table agro360.field_work_order_resources (
  check(resource_type in ('PERSON','EQUIPMENT')), check(ends_at>starts_at),
  check(status in ('RESERVED','RELEASED','CANCELLED'))
 );
-create index ix_field_resource_overlap on agro360.field_work_order_resources(tenant_id,resource_type,resource_id,starts_at,ends_at) where deleted_at is null and status='RESERVED';
+create index if not exists ix_field_resource_overlap on agro360.field_work_order_resources(tenant_id,resource_type,resource_id,starts_at,ends_at) where deleted_at is null and status='RESERVED';
 
-create table agro360.field_work_logs (
+create table if not exists agro360.field_work_logs (
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id),
  work_order_id uuid not null, operator_id uuid not null, equipment_id uuid, stage varchar(100) not null,
  starts_at timestamptz not null, ends_at timestamptz not null, performed_quantity numeric(20,6) not null,
@@ -5627,10 +5635,10 @@ create table agro360.field_work_logs (
  check(initial_meter is null or initial_meter>=0), check(final_meter is null or final_meter>=initial_meter),
  check(interruption_minutes>=0), check(length(trim(stage))>=2)
 );
-create index ix_field_log_order on agro360.field_work_logs(tenant_id,work_order_id,starts_at) where deleted_at is null;
-create index ix_field_log_resource on agro360.field_work_logs(tenant_id,equipment_id,starts_at,ends_at) where equipment_id is not null and deleted_at is null;
+create index if not exists ix_field_log_order on agro360.field_work_logs(tenant_id,work_order_id,starts_at) where deleted_at is null;
+create index if not exists ix_field_log_resource on agro360.field_work_logs(tenant_id,equipment_id,starts_at,ends_at) where equipment_id is not null and deleted_at is null;
 
-create table agro360.field_work_order_materials (
+create table if not exists agro360.field_work_order_materials (
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id), work_order_id uuid not null,
  product_id uuid not null, warehouse_id uuid, unit varchar(20) not null, planned_quantity numeric(20,6) not null,
  reserved_quantity numeric(20,6) not null default 0, delivered_quantity numeric(20,6) not null default 0,
@@ -5645,9 +5653,9 @@ create table agro360.field_work_order_materials (
  check(consumed_quantity+returned_quantity+lost_quantity<=delivered_quantity),
  check(status in('PLANNED','RESERVED','DELIVERED','SETTLED','SHORTAGE'))
 );
-create index ix_field_material_order on agro360.field_work_order_materials(tenant_id,work_order_id) where deleted_at is null;
+create index if not exists ix_field_material_order on agro360.field_work_order_materials(tenant_id,work_order_id) where deleted_at is null;
 
-create table agro360.field_material_events (
+create table if not exists agro360.field_material_events (
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id), work_order_material_id uuid not null,
  event_type varchar(16) not null, quantity numeric(20,6) not null, reason varchar(1000),
  inventory_movement_id uuid, source_event_id uuid, idempotency_key varchar(100) not null,
@@ -5659,7 +5667,7 @@ create table agro360.field_material_events (
  check(event_type<>'RETURN' or source_event_id is not null)
 );
 
-create table agro360.field_work_order_reviews (
+create table if not exists agro360.field_work_order_reviews (
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id), work_order_id uuid not null,
  order_version bigint not null, outcome varchar(20) not null, summary jsonb not null, notes varchar(2000),
  created_at timestamptz not null default now(), created_by uuid not null, unique(tenant_id,id), unique(tenant_id,work_order_id,order_version),
@@ -5674,7 +5682,7 @@ begin;
 
 -- Operations are children of the existing Agriculture 360 plan record. They do
 -- not introduce another season/task aggregate.
-create table agro360.agriculture_plan_operations (
+create table if not exists agro360.agriculture_plan_operations (
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id),
  plan_record_id uuid not null, season_id uuid not null, farm_id uuid not null, field_id uuid not null,
  name varchar(160) not null, operation_type varchar(80) not null,
@@ -5695,9 +5703,9 @@ create table agro360.agriculture_plan_operations (
  check(planned_area_ha>0 and original_area_ha>0),
  check(status in('PLANNED','PARTIAL','IN_PROGRESS','COMPLETED','CANCELLED'))
 );
-create index ix_plan_operations_season on agro360.agriculture_plan_operations(tenant_id,season_id,planned_start,id) where deleted_at is null;
+create index if not exists ix_plan_operations_season on agro360.agriculture_plan_operations(tenant_id,season_id,planned_start,id) where deleted_at is null;
 
-create table agro360.agriculture_operation_dependencies (
+create table if not exists agro360.agriculture_operation_dependencies (
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id),
  operation_id uuid not null, predecessor_id uuid not null,
  blocking_type varchar(16) not null, release_condition varchar(24) not null default 'COMPLETED',
@@ -5714,7 +5722,7 @@ create table agro360.agriculture_operation_dependencies (
        (exception_authorized_by is not null and exception_authorized_at is not null and nullif(trim(exception_reason),'') is not null))
 );
 
-create table agro360.agriculture_operation_orders (
+create table if not exists agro360.agriculture_operation_orders (
  tenant_id uuid not null, operation_id uuid not null, work_order_id uuid not null,
  covered_area_ha numeric(14,4) not null, idempotency_key varchar(100) not null,
  created_at timestamptz not null default now(), created_by uuid not null,
@@ -5724,7 +5732,7 @@ create table agro360.agriculture_operation_orders (
  check(covered_area_ha>0)
 );
 
-create table agro360.agriculture_plan_revisions (
+create table if not exists agro360.agriculture_plan_revisions (
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id),
  operation_id uuid not null, version bigint not null, reason varchar(1000) not null,
  before_value jsonb not null, after_value jsonb not null, impact jsonb not null,
@@ -7138,6 +7146,134 @@ grant select,insert,update,delete on agro360.saas_tenant_restrictions,
 insert into agro360.platform_schema_versions(version,description,installed_at)
 values('10.4.0','AG-SaaS-ADM-002 - ciclo administrativo e conciliacao',now()) on conflict(version) do nothing;
 commit;
+
+-- Origem canônica: database/migrations/068_integrated_livestock_foundation.sql
+begin;
+alter table agro360.livestock_animals
+    add column if not exists internal_identifier varchar(80),
+    add column if not exists birth_date_estimated boolean not null default false,
+    add column if not exists origin varchar(160),
+    add column if not exists notes text;
+
+update agro360.livestock_animals
+set internal_identifier = coalesce(nullif(internal_identifier, ''), tag)
+where internal_identifier is null or internal_identifier = '';
+
+create unique index if not exists ux_livestock_animals_tenant_internal_identifier
+    on agro360.livestock_animals(tenant_id, lower(internal_identifier))
+    where deleted_at is null and internal_identifier is not null;
+
+create table if not exists agro360.livestock_identifier_history (
+    id uuid primary key,
+    tenant_id uuid not null references agro360.tenancy_tenants(id),
+    animal_id uuid not null references agro360.livestock_animals(id),
+    identifier_type varchar(20) not null check(identifier_type in ('INTERNAL','EAR_TAG','RFID')),
+    identifier varchar(80) not null,
+    valid_from timestamptz not null,
+    valid_until timestamptz,
+    change_reason text not null,
+    created_at timestamptz not null default now(),
+    created_by uuid not null,
+    check(valid_until is null or valid_until >= valid_from)
+);
+create unique index if not exists ux_livestock_identifier_current
+    on agro360.livestock_identifier_history(tenant_id, identifier_type, lower(identifier)) where valid_until is null;
+
+create table if not exists agro360.livestock_locations (
+    id uuid primary key,
+    tenant_id uuid not null references agro360.tenancy_tenants(id),
+    farm_id uuid not null references agro360.geo_farms(id),
+    parent_id uuid references agro360.livestock_locations(id),
+    name varchar(120) not null,
+    location_type varchar(20) not null check(location_type in ('PASTURE','PADDOCK','CORRAL','FACILITY')),
+    status varchar(20) not null default 'ACTIVE' check(status in ('ACTIVE','INACTIVE','QUARANTINE')),
+    capacity numeric(14,3),
+    capacity_unit varchar(16),
+    created_at timestamptz not null default now(),
+    created_by uuid not null,
+    updated_at timestamptz,
+    updated_by uuid,
+    deleted_at timestamptz,
+    unique(tenant_id, farm_id, name),
+    check(capacity is null or capacity > 0)
+);
+
+alter table agro360.livestock_herds
+    add column if not exists control_mode varchar(16) not null default 'INDIVIDUAL',
+    add column if not exists location_id uuid references agro360.livestock_locations(id),
+    add column if not exists version bigint not null default 1;
+
+
+create table if not exists agro360.livestock_group_movements (
+    id uuid primary key,
+    tenant_id uuid not null references agro360.tenancy_tenants(id),
+    herd_id uuid not null references agro360.livestock_herds(id),
+    movement_type varchar(20) not null check(movement_type in ('ENTRY','TRANSFER','LOT_CHANGE','LOCATION_CHANGE','SALE','DEATH','DISCARD','ADJUSTMENT','REVERSAL')),
+    quantity integer not null check(quantity > 0),
+    from_farm_id uuid references agro360.geo_farms(id),
+    to_farm_id uuid references agro360.geo_farms(id),
+    from_location_id uuid references agro360.livestock_locations(id),
+    to_location_id uuid references agro360.livestock_locations(id),
+    reason varchar(160) not null,
+    occurred_at timestamptz not null,
+    responsible_id uuid not null,
+    reverses_id uuid references agro360.livestock_group_movements(id),
+    idempotency_key varchar(120),
+    created_at timestamptz not null default now(),
+    created_by uuid not null,
+    unique(tenant_id, idempotency_key)
+);
+
+create table if not exists agro360.livestock_individualization_reconciliations (
+    id uuid primary key,
+    tenant_id uuid not null references agro360.tenancy_tenants(id),
+    herd_id uuid not null references agro360.livestock_herds(id),
+    collective_quantity integer not null check(collective_quantity >= 0),
+    identified_quantity integer not null check(identified_quantity >= 0),
+    difference integer generated always as (collective_quantity - identified_quantity) stored,
+    occurred_at timestamptz not null,
+    reason text not null,
+    status varchar(16) not null check(status in ('DRAFT','CONFIRMED','REVERSED')),
+    created_at timestamptz not null default now(),
+    created_by uuid not null,
+    confirmed_at timestamptz,
+    confirmed_by uuid,
+    check(status <> 'CONFIRMED' or collective_quantity = identified_quantity)
+);
+
+alter table agro360.livestock_identifier_history enable row level security;
+alter table agro360.livestock_identifier_history force row level security;
+drop policy if exists livestock_identifier_history_isolation on agro360.livestock_identifier_history;
+create policy livestock_identifier_history_isolation on agro360.livestock_identifier_history
+ using (tenant_id=nullif(current_setting('app.tenant_id',true),'')::uuid)
+ with check (tenant_id=nullif(current_setting('app.tenant_id',true),'')::uuid);
+
+alter table agro360.livestock_locations enable row level security;
+alter table agro360.livestock_locations force row level security;
+drop policy if exists livestock_locations_isolation on agro360.livestock_locations;
+create policy livestock_locations_isolation on agro360.livestock_locations
+ using (tenant_id=nullif(current_setting('app.tenant_id',true),'')::uuid)
+ with check (tenant_id=nullif(current_setting('app.tenant_id',true),'')::uuid);
+
+alter table agro360.livestock_group_movements enable row level security;
+alter table agro360.livestock_group_movements force row level security;
+drop policy if exists livestock_group_movements_isolation on agro360.livestock_group_movements;
+create policy livestock_group_movements_isolation on agro360.livestock_group_movements
+ using (tenant_id=nullif(current_setting('app.tenant_id',true),'')::uuid)
+ with check (tenant_id=nullif(current_setting('app.tenant_id',true),'')::uuid);
+
+alter table agro360.livestock_individualization_reconciliations enable row level security;
+alter table agro360.livestock_individualization_reconciliations force row level security;
+drop policy if exists livestock_individualization_reconciliations_isolation on agro360.livestock_individualization_reconciliations;
+create policy livestock_individualization_reconciliations_isolation on agro360.livestock_individualization_reconciliations
+ using (tenant_id=nullif(current_setting('app.tenant_id',true),'')::uuid)
+ with check (tenant_id=nullif(current_setting('app.tenant_id',true),'')::uuid);
+
+insert into agro360.platform_schema_versions(version, description, installed_at)
+values ('0.6.8', 'Pecuária integrada - fundações de rebanho e rastreabilidade', now())
+on conflict(version) do nothing;
+commit;
+
 begin;
 
 -- Normaliza a modalidade coletiva legada e torna a individualização parcial,
@@ -7402,7 +7538,7 @@ create index if not exists ix_sales_proposal_conversion_balance on agro360.sales
 do $$ declare t text; begin foreach t in array array['sales_proposals','sales_proposal_versions','sales_proposal_items','sales_proposal_decisions','sales_proposal_conversions','sales_proposal_conversion_items'] loop
  execute format('alter table agro360.%I enable row level security',t); execute format('alter table agro360.%I force row level security',t);
  execute format('drop policy if exists tenant_isolation on agro360.%I',t);
- execute format('create policy tenant_isolation on agro360.%I using (tenant_id=agro360.current_tenant_id()) with check (tenant_id=agro360.current_tenant_id())',t);
+ execute format('create policy tenant_isolation on agro360.%I using (tenant_id=agro360.platform_current_tenant_id()) with check (tenant_id=agro360.platform_current_tenant_id())',t);
 end loop; end $$;
 
 alter table agro360.sales_commissions add column if not exists rule_snapshot jsonb not null default '{}';
@@ -7419,7 +7555,7 @@ create table if not exists agro360.sales_commission_adjustments(
 alter table agro360.sales_commission_adjustments enable row level security;
 alter table agro360.sales_commission_adjustments force row level security;
 drop policy if exists tenant_isolation on agro360.sales_commission_adjustments;
-create policy tenant_isolation on agro360.sales_commission_adjustments using (tenant_id=agro360.current_tenant_id()) with check (tenant_id=agro360.current_tenant_id());
+create policy tenant_isolation on agro360.sales_commission_adjustments using (tenant_id=agro360.platform_current_tenant_id()) with check (tenant_id=agro360.platform_current_tenant_id());
 insert into agro360.platform_schema_versions(version,description,installed_at) values('10.7.0','Propostas comerciais versionadas e comissões rastreáveis',now()) on conflict(version) do nothing;
 commit;
 
@@ -7594,6 +7730,37 @@ create index if not exists ix_saas_support_sessions_history
 
 insert into agro360.platform_schema_versions(version,description,installed_at)
 values('11.3.0','Sessão persistida e revogável de suporte global assistido',now())
+on conflict(version) do nothing;
+
+commit;
+
+-- Origem canônica: database/migrations/114_saas_support_sessions_hardening.sql
+begin;
+set local search_path to agro360, public;
+
+alter table agro360.saas_support_sessions enable row level security;
+alter table agro360.saas_support_sessions force row level security;
+
+drop policy if exists saas_support_sessions_isolation on agro360.saas_support_sessions;
+create policy saas_support_sessions_isolation on agro360.saas_support_sessions
+    using (
+        nullif(current_setting('app.tenant_id', true), '')::uuid is null
+        or tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid
+    )
+    with check (
+        nullif(current_setting('app.tenant_id', true), '')::uuid is null
+        or tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid
+    );
+
+do $$
+begin
+    if exists (select 1 from pg_roles where rolname = 'agro360_app') then
+        grant select, insert, update, delete on agro360.saas_support_sessions to agro360_app;
+    end if;
+end $$;
+
+insert into agro360.platform_schema_versions(version, description, installed_at)
+values('11.4.0', 'Hardening de suporte assistido e permissões da aplicação', now())
 on conflict(version) do nothing;
 
 commit;

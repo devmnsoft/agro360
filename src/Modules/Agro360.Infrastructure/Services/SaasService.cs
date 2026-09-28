@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -581,12 +582,12 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
         order by a.created_at desc limit 500
         """,
         new { TenantId = tenantId, Action = action, ActorId = actorId, From = from, Until = until }, t)).ToArray(), ct);
-    public Task<SupportSessionResult> StartSupportSessionAsync(Guid tenantId, string reason, Guid superAdminUserId, CancellationToken ct) => System("support-session-start", async (c, t) =>
+    public Task<SupportSessionResult> StartSupportSessionAsync(Guid tenantId, string reason, Guid superAdminUserId, CancellationToken ct, string? scope = null) => System("support-session-start", async (c, t) =>
     {
         if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length < 5)
             throw new ArgumentException("Motivo obrigatório com ao menos 5 caracteres.");
         var org = await c.QuerySingleOrDefaultAsync<(string Name, string Slug, string Status)>(
-            "select t.name, t.slug, s.status from agro360.tenancy_tenants t join agro360.saas_organizations s on s.tenant_id=t.id where t.id=@TenantId and t.deleted_at is null",
+            "select t.name, t.slug, s.status from agro360.tenancy_tenants t join agro360.saas_organizations s on s.tenant_id=t.id where t.id=@TenantId and t.deleted_at is null for update",
             new { TenantId = tenantId }, t);
         if (org == default) throw new KeyNotFoundException("Organização não encontrada.");
         if (org.Status is "BLOCKED")
@@ -600,6 +601,7 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
             """, new { Actor = superAdminUserId }, t);
         if (actor == default || !actor.Active) throw new UnauthorizedAccessException("Super-admin global não encontrado ou inativo.");
 
+        await c.QueryAsync<Guid>("select id from agro360.saas_support_sessions where tenant_id = @TenantId and actor_id = @Actor and ended_at is null for update", new { TenantId = tenantId, Actor = superAdminUserId }, t);
         await c.ExecuteAsync(
             """
             update agro360.saas_support_sessions
@@ -618,37 +620,55 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
             ) m
             """, new { TenantId = tenantId }, t)).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        var effectiveScope = string.Equals(scope?.Trim(), "SUPPORT_OPERATIONAL", StringComparison.OrdinalIgnoreCase)
+            ? "SUPPORT_OPERATIONAL"
+            : "SUPPORT_READ_OPERATIONAL";
+
         var permissions = new List<string> { "support_session" };
         foreach (var perm in Permissions.Administrator)
         {
             var accepted = PermissionAuthorizationHandler.AcceptedModules(perm);
             if (accepted.Length == 0 || accepted.Any(m => contractedModules.Contains(m)))
             {
-                permissions.Add(perm);
+                if (effectiveScope == "SUPPORT_READ_OPERATIONAL")
+                {
+                    if (Permissions.IsReadOnlyPermission(perm)) permissions.Add(perm);
+                }
+                else
+                {
+                    permissions.Add(perm);
+                }
             }
         }
 
+        var sessionId = Guid.CreateVersion7();
+        var additionalClaims = new[]
+        {
+            new Claim("support_session_id", sessionId.ToString()),
+            new Claim("support_scope", effectiveScope)
+        };
         var roles = stringArray;
         var pair = tokenService.Create(
             tenantId,
             superAdminUserId,
             actor.Email,
             permissions,
-            roles);
+            roles,
+            additionalClaims);
         var expiresAt = pair.ExpiresAt;
 
         await c.ExecuteAsync(
             """
-            insert into agro360.saas_support_sessions(tenant_id, actor_id, reason, scope, started_at, expires_at)
-            values(@TenantId, @Actor, @Reason, 'SUPPORT_OPERATIONAL', now(), @ExpiresAt);
+            insert into agro360.saas_support_sessions(id, tenant_id, actor_id, reason, scope, started_at, expires_at)
+            values(@SessionId, @TenantId, @Actor, @Reason, @Scope, now(), @ExpiresAt);
 
             insert into agro360.saas_admin_audit_events(tenant_id, actor_id, action, entity_type, entity_id, reason, safe_details)
             values(@TenantId, @Actor, 'SUPPORT_SESSION_STARTED', 'TENANT', @TenantId, @Reason,
-                   jsonb_build_object('targetTenant', @TenantSlug, 'expiresAt', @ExpiresAt::text));
+                   jsonb_build_object('sessionId', @SessionId::text, 'targetTenant', @TenantSlug, 'scope', @Scope, 'expiresAt', @ExpiresAt::text));
             """,
-            new { TenantId = tenantId, Actor = superAdminUserId, Reason = reason.Trim(), TenantSlug = org.Slug, ExpiresAt = expiresAt }, t);
+            new { SessionId = sessionId, TenantId = tenantId, Actor = superAdminUserId, Reason = reason.Trim(), Scope = effectiveScope, TenantSlug = org.Slug, ExpiresAt = expiresAt }, t);
 
-        return new SupportSessionResult(tenantId, org.Name, org.Slug, pair.AccessToken, expiresAt);
+        return new SupportSessionResult(sessionId, tenantId, org.Name, org.Slug, pair.AccessToken, expiresAt, permissions.ToArray(), effectiveScope);
     }, ct);
 
     public Task EndSupportSessionAsync(Guid tenantId, Guid superAdminUserId, CancellationToken ct) => System("support-session-end", async (c, t) =>
@@ -672,6 +692,45 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
                    jsonb_build_object('targetTenant', @Slug, 'sessionsClosed', @Ended));
             """,
             new { TenantId = tenantId, Actor = superAdminUserId, Slug = slug, Ended = ended }, t);
+    }, ct);
+
+    public Task EndActiveSupportSessionAsync(Guid actorId, Guid? sessionId, CancellationToken ct) => System("support-session-end-active", async (c, t) =>
+    {
+        var activeSessions = (await c.QueryAsync<(Guid Id, Guid TenantId)>(
+            """
+            select id, tenant_id
+            from agro360.saas_support_sessions
+            where actor_id = @Actor
+              and (@SessionId is null or id = @SessionId)
+              and ended_at is null
+            order by started_at desc
+            for update
+            """,
+            new { Actor = actorId, SessionId = sessionId }, t)).AsList();
+
+        if (activeSessions.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var sess in activeSessions)
+        {
+            var ended = await c.ExecuteAsync(
+                """
+                update agro360.saas_support_sessions
+                   set ended_at = now(), ended_by = @Actor, end_reason = 'Encerramento pelo próprio operador assistido'
+                 where id = @SessionId and ended_at is null
+                """,
+                new { SessionId = sess.Id, Actor = actorId }, t);
+
+            await c.ExecuteAsync(
+                """
+                insert into agro360.saas_admin_audit_events(tenant_id, actor_id, action, entity_type, entity_id, reason, safe_details)
+                values(@TenantId, @Actor, 'SUPPORT_SESSION_ENDED', 'TENANT', @TenantId, 'Encerramento pelo próprio operador assistido',
+                       jsonb_build_object('sessionId', @SessionId::text, 'closedCount', @Ended));
+                """,
+                new { TenantId = sess.TenantId, Actor = actorId, SessionId = sess.Id, Ended = ended }, t);
+        }
     }, ct);
     private const string UsageSql = "select o.tenant_id TenantId,t.name TenantName,(select count(*) from agro360.identity_users u where u.tenant_id=o.tenant_id and u.status='ACTIVE') ActiveUsers,p.user_limit UserLimit,(select count(*) from agro360.geo_farms f where f.tenant_id=o.tenant_id and f.deleted_at is null) Properties,p.property_limit PropertyLimit,(select count(*) from agro360.saas_devices d where d.tenant_id=o.tenant_id and d.revoked_at is null) Devices,p.device_limit DeviceLimit,coalesce(m.storage_used_mb,0) StorageUsedMb,p.storage_limit_mb StorageLimitMb,coalesce(m.tracked_lots,0) TrackedLots,coalesce(m.certificates,0) Certificates,coalesce(m.offline_records,0) OfflineRecords,coalesce(m.ledger_events,0) LedgerEvents,coalesce(m.exported_reports,0) ExportedReports from agro360.saas_organizations o join agro360.tenancy_tenants t on t.id=o.tenant_id join agro360.saas_plans p on p.id=o.plan_id left join agro360.saas_usage_metrics m on m.tenant_id=o.tenant_id";
     private static readonly string[] stringArray = new[] { "PLATFORM_SUPER_ADMIN", "SUPPORT_SESSION" };

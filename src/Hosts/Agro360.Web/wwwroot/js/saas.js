@@ -134,15 +134,20 @@
                             }
 
                             const supportSessionData = {
-                                ...(currentGlobal || {}),
+                                userId: currentGlobal?.userId,
+                                userName: currentGlobal?.userName,
+                                userEmail: currentGlobal?.userEmail,
                                 accessToken: result.accessToken,
                                 activeOrganization: result.tenantName,
                                 tenantId: result.tenantId,
                                 permissions: result.permissions,
                                 roles: ["PLATFORM_SUPER_ADMIN", "SUPPORT_SESSION"],
                                 supportSession: {
+                                    sessionId: result.sessionId,
                                     tenantId: result.tenantId,
                                     tenantName: result.tenantName,
+                                    tenantSlug: result.tenantSlug,
+                                    scope: result.scope,
                                     expiresAt: result.expiresAt
                                 }
                             };
@@ -154,6 +159,7 @@
                                 localStorage.setItem("agro360.accessToken", result.accessToken);
                                 window.agro360Session = supportSessionData;
                                 window.dispatchEvent(new CustomEvent("agro360:session", { detail: supportSessionData }));
+                                document.dispatchEvent(new CustomEvent("agro360:session", { detail: supportSessionData }));
                             }
 
                             return `Contexto de suporte iniciado para "${result.tenantName}". Validade: até ${new Date(result.expiresAt).toLocaleTimeString("pt-BR")}. O banner no topo permite alternar ou encerrar a qualquer momento.`;

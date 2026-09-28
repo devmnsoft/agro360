@@ -15,7 +15,7 @@ public sealed class PlatformController(ISaasService s) : SaasControllerBase(s)
     [HttpGet("tenants/{id:guid}")] public Task<TenantSummary> TenantById(Guid id, CancellationToken ct) => Service.GetTenantByIdAsync(id, ct);
     [HttpPut("tenants/{id:guid}")] public async Task<IActionResult> Update(Guid id, TenantUpdateCommand x, CancellationToken ct) { await Service.UpdateTenantAsync(id, x, UserId(), ct); return NoContent(); }
     [HttpPost("tenants/{id:guid}/suspend")] public Task<IActionResult> Suspend(Guid id, ReasonCommand x, CancellationToken ct) => Status(id, "SUSPENDED", x.Reason, ct); [HttpPost("tenants/{id:guid}/block")] public Task<IActionResult> Block(Guid id, ReasonCommand x, CancellationToken ct) => Status(id, "BLOCKED", x.Reason, ct); [HttpPost("tenants/{id:guid}/activate")] public Task<IActionResult> Activate(Guid id, ReasonCommand x, CancellationToken ct) => Status(id, "ACTIVE", x.Reason, ct); private async Task<IActionResult> Status(Guid id, string status, string? reason, CancellationToken ct) { await Service.SetTenantStatusAsync(id, status, reason, UserId(), ct); return NoContent(); }
-    [HttpPost("tenants/{id:guid}/support-session")] public async Task<IActionResult> StartSupport(Guid id, SupportSessionCommand x, CancellationToken ct) { var result = await Service.StartSupportSessionAsync(id, x.Reason, UserId(), ct); return Ok(result); }
+    [HttpPost("tenants/{id:guid}/support-session")] public async Task<IActionResult> StartSupport(Guid id, SupportSessionCommand x, CancellationToken ct) { var result = await Service.StartSupportSessionAsync(id, x.Reason, UserId(), ct, x.Scope); return Ok(result); }
     [HttpPost("tenants/{id:guid}/support-session/end")] public async Task<IActionResult> EndSupport(Guid id, CancellationToken ct) { await Service.EndSupportSessionAsync(id, UserId(), ct); return NoContent(); }
     [HttpGet("plans")] public Task<IReadOnlyList<PlanSummary>> Plans(CancellationToken ct) => Service.GetPlansAsync(ct); [HttpPost("plans")] public async Task<IActionResult> CreatePlan(PlanCommand x, CancellationToken ct) { var id = await Service.CreatePlanAsync(x, UserId(), ct); return CreatedAtAction(nameof(Plans), new { id }); }
     [HttpPut("plans/{id:guid}")] public async Task<IActionResult> UpdatePlan(Guid id, PlanCommand x, CancellationToken ct) { await Service.UpdatePlanAsync(id, x, UserId(), ct); return NoContent(); }
@@ -25,6 +25,20 @@ public sealed class PlatformController(ISaasService s) : SaasControllerBase(s)
     [HttpPost("billing/{id:guid}/payments")] public Task<ManualPaymentResult> RegisterPayment(Guid id, ManualPaymentCommand x, CancellationToken ct) => Service.RegisterManualPaymentAsync(id, x, UserId(), ct);
     [HttpGet("tenants/{tenantId:guid}/features")] public Task<IReadOnlyList<FeatureFlagSummary>> Features(Guid tenantId, CancellationToken ct) => Service.GetFeatureFlagsAsync(tenantId, ct); [HttpPut("features/override")] public async Task<IActionResult> FeatureOverride(FeatureOverrideCommand x, CancellationToken ct) { await Service.SetFeatureOverrideAsync(x, UserId(), ct); return NoContent(); }
     [HttpGet("audit")] public Task<IReadOnlyList<SaasAuditSummary>> Audit(Guid? tenantId, string? action, Guid? actorId, DateTime? from, DateTime? until, CancellationToken ct) => Service.GetAuditAsync(tenantId, action, actorId, from, until, ct);
+}
+[ApiController, Authorize, Route("api/platform/support-session")]
+public sealed class SupportSessionOperationController(ISaasService s) : SaasControllerBase(s)
+{
+    [HttpPost("end")]
+    public async Task<IActionResult> EndOwnSupportSession([FromBody] EndSupportSessionRequest? request, CancellationToken ct)
+    {
+        var sessionIdClaim = User.FindFirstValue("support_session_id");
+        Guid? sessionId = null;
+        if (Guid.TryParse(sessionIdClaim, out var parsed)) sessionId = parsed;
+        else if (request?.SessionId is not null && request.SessionId != Guid.Empty) sessionId = request.SessionId;
+        await Service.EndActiveSupportSessionAsync(UserId(), sessionId, ct);
+        return NoContent();
+    }
 }
 [Route("api/account")]
 public sealed class AccountController(ISaasService s) : SaasControllerBase(s) { [HttpGet("organization"), Authorize(Policy = Permissions.AccountSettingsRead)] public Task<TenantSummary> Organization(CancellationToken ct) => Service.GetOrganizationAsync(ct); [HttpPut("organization"), Authorize(Policy = Permissions.AccountSettingsManage)] public async Task<IActionResult> Organization(TenantUpdateCommand x, CancellationToken ct) { await Service.UpdateOrganizationAsync(x, UserId(), ct); return NoContent(); } [HttpGet("plan"), Authorize(Policy = Permissions.AccountSubscriptionRead)] public Task<PlanSummary> Plan(CancellationToken ct) => Service.GetCurrentPlanAsync(ct); [HttpGet("usage"), Authorize(Policy = Permissions.AccountSubscriptionRead)] public Task<UsageSummary> Usage(CancellationToken ct) => Service.GetUsageAsync(ct); [HttpPost("upgrade-requests"), Authorize(Policy = Permissions.AccountSubscriptionManage)] public async Task<IActionResult> Upgrade(UpgradeRequestCommand x, CancellationToken ct) { var id = await Service.RequestUpgradeAsync(x, UserId(), ct); return Created("/api/account/upgrade-requests", new { id }); } }

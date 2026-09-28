@@ -189,4 +189,12 @@ public static class Permissions
         AccountSubscriptionRead, AccountSubscriptionManage,
         AccountNotificationsRead, AccountNotificationsManage
     ];
+
+    public static bool IsReadOnlyPermission(string permission)
+    {
+        if (string.IsNullOrWhiteSpace(permission)) return false;
+        var p = permission.Trim().ToLowerInvariant();
+        if (p == "support_session") return true;
+        return p.EndsWith(".read", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".reports", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".download", StringComparison.OrdinalIgnoreCase);
+    }
 }

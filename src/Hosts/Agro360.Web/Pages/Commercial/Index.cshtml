@@ -3,14 +3,314 @@
 @{ViewData["Title"]="CRM & Comercial";}
 <link rel="stylesheet" href="~/css/commercial.css" asp-append-version="true" />
 <section class="commercial-shell">
- <header class="commercial-hero"><div><span class="eyebrow">Comercial Agro 360</span><h1>CRM Rural & Vendas B2B</h1><p>Relacionamentos, propostas versionadas, pedidos, contratos, entregas e receita prevista em um fluxo auditável.</p></div><button class="primary" id="create-commercial" type="button">+ Novo cliente</button></header>
- <details class="screen-guide"><summary>Como funciona esta tela</summary><div><p><strong>Para que serve:</strong> acompanhar clientes e o ciclo comercial real do tenant.</p><p><strong>Quando usar:</strong> da prospecção ao pedido e acompanhamento financeiro.</p><p><strong>Campos principais:</strong> cliente, produto, quantidade, preço, condição de pagamento, data prevista, status, responsável, representante e comissão.</p><p><strong>Ações:</strong> filtre e consulte registros ou cadastre um cliente. Bloqueios, aprovações e cancelamentos são validados pela API e auditados.</p><p><strong>Próximo passo:</strong> registre uma oportunidade, avance o pipeline e gere o pedido após a negociação.</p></div></details>
- <div class="metric-grid" id="commercial-metrics" aria-live="polite"><article><small>Clientes ativos</small><strong>—</strong></article><article><small>Pipeline</small><strong>—</strong></article><article><small>Receita prevista</small><strong>—</strong></article><article><small>Comissões previstas</small><strong>—</strong></article></div>
+ <nav class="breadcrumb" aria-label="Navegação"><a href="/">Início</a> / <span>Comercial</span></nav>
+ <header class="commercial-hero">
+  <div>
+   <span class="eyebrow">Comercial Agro 360</span>
+   <h1>CRM Rural & Vendas B2B</h1>
+   <p>Relacionamentos, propostas versionadas, pedidos, contratos, entregas e receita prevista em um fluxo auditável.</p>
+  </div>
+  <button class="primary" id="create-commercial" type="button">+ Novo cliente</button>
+ </header>
+ <details class="screen-guide" open>
+  <summary>Como funciona esta tela</summary>
+  <div>
+   <p><strong>Para que serve:</strong> gerenciar clientes, oportunidades e o ciclo completo de propostas comerciais versionadas até a conversão em pedidos de venda com rastreabilidade auditável.</p>
+   <p><strong>Como usar:</strong> selecione a aba desejada (Clientes, Prospects, Propostas, Pedidos). No fluxo de vendas: cadastre o cliente, elabore a proposta com itens e validade, submeta para aprovação, registre o aceite do cliente e converta total ou parcialmente em pedido.</p>
+   <p><strong>Regras principais:</strong> edição concorrente de proposta exige validação da versão esperada no servidor. Somente clientes elegíveis podem originar pedidos. O servidor é a autoridade de preços, descontos, fretes e saldos. Chaves de idempotência protegem a conversão contra duplicação acidental.</p>
+   <p><strong>Próximo passo:</strong> acompanhar o status das propostas, registrar aceite formal com evidência e converter o saldo em pedidos para faturamento e expedição.</p>
+  </div>
+ </details>
+ <div class="metric-grid" id="commercial-metrics" aria-live="polite">
+  <article><small>Clientes ativos</small><strong>—</strong></article>
+  <article><small>Pipeline</small><strong>—</strong></article>
+  <article><small>Receita prevista</small><strong>—</strong></article>
+  <article><small>Comissões previstas</small><strong>—</strong></article>
+ </div>
  <nav class="commercial-tabs" aria-label="Áreas comerciais">
- @foreach(var tab in new[]{("dashboard","Dashboard Comercial"),("customers","Clientes / Compradores"),("prospects","Prospects"),("contacts","Contatos"),("representatives","Representantes"),("opportunities","Pipeline Comercial"),("activities","Atividades"),("price-tables","Tabelas de preço"),("proposals","Propostas"),("orders","Pedidos de Venda"),("contracts","Contratos de Venda"),("commissions","Comissões"),("splits","Split interno"),("targets","Metas")}){<button type="button" data-resource="@tab.Item1">@tab.Item2</button>}
+  @foreach(var tab in new[]{("dashboard","Dashboard Comercial"),("customers","Clientes / Compradores"),("prospects","Prospects"),("contacts","Contatos"),("representatives","Representantes"),("opportunities","Pipeline Comercial"),("activities","Atividades"),("price-tables","Tabelas de preço"),("proposals","Propostas"),("orders","Pedidos de Venda"),("contracts","Contratos de Venda"),("commissions","Comissões"),("splits","Split interno"),("targets","Metas")}){
+   <button type="button" data-resource="@tab.Item1">@tab.Item2</button>
+  }
  </nav>
- <section class="commercial-panel"><div class="panel-toolbar"><label class="search-field">Buscar<input id="commercial-search" type="search" maxlength="120" placeholder="Nome, número ou responsável" /></label><label>Status<select id="commercial-status"><option value="">Todos</option><option>ACTIVE</option><option>DRAFT</option><option>APPROVED</option><option>BLOCKED</option><option>CANCELLED</option></select></label></div><div id="commercial-content" class="commercial-content"><p class="empty-state">Carregando dados reais…</p></div><div class="pagination"><button id="previous-page" type="button">Anterior</button><span id="page-label">Página 1</span><button id="next-page" type="button">Próxima</button></div></section>
+ <section class="commercial-panel">
+  <div class="panel-toolbar">
+   <label class="search-field">Buscar
+    <input id="commercial-search" type="search" maxlength="120" placeholder="Nome, número ou responsável" />
+   </label>
+   <label>Status
+    <select id="commercial-status">
+     <option value="">Todos</option>
+     <option value="DRAFT">Rascunho (DRAFT)</option>
+     <option value="SUBMITTED">Submetida (SUBMITTED)</option>
+     <option value="APPROVED">Aprovada (APPROVED)</option>
+     <option value="ACCEPTED">Aceita (ACCEPTED)</option>
+     <option value="REJECTED">Rejeitada (REJECTED)</option>
+     <option value="ACTIVE">Ativo (ACTIVE)</option>
+     <option value="BLOCKED">Bloqueado (BLOCKED)</option>
+     <option value="CANCELLED">Cancelado (CANCELLED)</option>
+    </select>
+   </label>
+  </div>
+  <div id="commercial-content" class="commercial-content">
+   <p class="empty-state">Carregando dados reais…</p>
+  </div>
+  <div class="pagination">
+   <button id="previous-page" type="button">Anterior</button>
+   <span id="page-label">Página 1</span>
+   <button id="next-page" type="button">Próxima</button>
+  </div>
+ </section>
 </section>
+
 <div id="commercial-toast" class="commercial-toast" role="status" aria-live="polite" hidden></div>
-<dialog id="commercial-dialog"><form id="commercial-form"><header><h2>Novo cliente</h2><button value="cancel" formmethod="dialog" aria-label="Fechar">×</button></header><input type="hidden" name="type" value="CUSTOMER" /><label>Nome / razão social<input name="name" required minlength="2" maxlength="180" /></label><label>Segmento<select name="segmentId" required data-lookup="segments"><option value="">Selecione…</option></select></label><label>Representante responsável <span class="help" title="Vendedor ativo responsável pela carteira.">?</span><select name="representativeId" data-lookup="representatives"><option value="">Sem responsável</option></select></label><div class="form-row"><label>CPF/CNPJ <span class="help" title="Informe somente dígitos; os verificadores são validados no servidor.">?</span><input name="taxDocument" inputmode="numeric" pattern="[0-9]{11}|[0-9]{14}" /></label><label>E-mail<input name="email" type="email" maxlength="254" /></label></div><label>Telefone<input name="phone" type="tel" minlength="8" maxlength="40" /></label><label>Observações<textarea name="notes" maxlength="2000"></textarea></label><p class="form-error" role="alert"></p><footer><button type="button" data-close>Cancelar</button><button class="primary" type="submit">Salvar cliente</button></footer></form></dialog>
+
+<!-- Modal de Cadastro de Cliente / Prospect -->
+<dialog id="commercial-dialog">
+ <form id="commercial-form">
+  <header>
+   <h2>Novo cliente</h2>
+   <button value="cancel" formmethod="dialog" aria-label="Fechar" type="button" data-close>×</button>
+  </header>
+  <input type="hidden" name="type" value="CUSTOMER" />
+  <label>Nome / razão social *
+   <input name="name" required minlength="2" maxlength="180" />
+  </label>
+  <label>Segmento *
+   <select name="segmentId" required data-lookup="segments">
+    <option value="">Selecione…</option>
+   </select>
+  </label>
+  <label>Representante responsável <span class="help" title="Vendedor ativo responsável pela carteira.">?</span>
+   <select name="representativeId" data-lookup="representatives">
+    <option value="">Sem responsável</option>
+   </select>
+  </label>
+  <div class="form-row">
+   <label>CPF/CNPJ <span class="help" title="Informe somente dígitos; os verificadores são validados no servidor.">?</span>
+    <input name="taxDocument" inputmode="numeric" pattern="[0-9]{11}|[0-9]{14}" />
+   </label>
+   <label>E-mail
+    <input name="email" type="email" maxlength="254" />
+   </label>
+  </div>
+  <label>Telefone
+   <input name="phone" type="tel" minlength="8" maxlength="40" />
+  </label>
+  <label>Observações
+   <textarea name="notes" maxlength="2000"></textarea>
+  </label>
+  <p class="form-error" role="alert"></p>
+  <footer>
+   <button type="button" data-close>Cancelar</button>
+   <button class="primary" type="submit">Salvar cliente</button>
+  </footer>
+ </form>
+</dialog>
+
+<!-- Modal de Elaboração / Revisão de Proposta Comercial -->
+<dialog id="proposal-dialog" class="dialog-wide">
+ <form id="proposal-form">
+  <header>
+   <h2 id="proposal-modal-title">Nova Proposta Comercial</h2>
+   <button value="cancel" formmethod="dialog" aria-label="Fechar" type="button" data-close>×</button>
+  </header>
+  <input type="hidden" name="proposalId" />
+  <input type="hidden" name="expectedVersion" />
+  <div class="form-row">
+   <label style="flex:2">Cliente elegível *
+    <select name="customerId" required data-lookup="customers">
+     <option value="">Selecione o cliente…</option>
+    </select>
+   </label>
+   <label style="flex:1">Moeda da proposta *
+    <select name="currency" required>
+     <option value="BRL">BRL - Real</option>
+     <option value="USD">USD - Dólar Comercial</option>
+     <option value="EUR">EUR - Euro</option>
+    </select>
+   </label>
+   <label style="flex:1">Validade até *
+    <input type="date" name="validUntil" required />
+   </label>
+  </div>
+  <div class="form-row">
+   <label style="flex:1">Negociação / Oportunidade
+    <select name="opportunityId" data-lookup="opportunities">
+     <option value="">Nenhuma negociação vinculada</option>
+    </select>
+   </label>
+   <label style="flex:1">Representante comercial
+    <select name="representativeId" data-lookup="representatives">
+     <option value="">Sem representante</option>
+    </select>
+   </label>
+   <label style="flex:1">Valor do frete
+    <input type="number" step="0.01" min="0" name="freight" value="0.00" required />
+   </label>
+  </div>
+  <label>Condição de pagamento e termos comerciais *
+   <input name="paymentTerms" required maxlength="2000" placeholder="Ex.: 30/60 dias via boleto bancário CIF" />
+  </label>
+  <div id="proposal-change-reason-group" hidden>
+   <label>Motivo da revisão (exigido para alterar propostas já submetidas/aprovadas) *
+    <textarea name="changeReason" maxlength="1000" placeholder="Explique o motivo das alterações na nova versão"></textarea>
+   </label>
+  </div>
+  <fieldset style="border:1px solid #284c40;border-radius:10px;padding:.8rem;margin-top:.4rem">
+   <legend style="color:#8ee5bd;font-weight:700">Itens da Proposta</legend>
+   <table class="items-table" id="proposal-items-table">
+    <thead>
+     <tr>
+      <th>Produto</th>
+      <th>Unidade</th>
+      <th style="width:110px">Quantidade</th>
+      <th style="width:130px">Preço Unit.</th>
+      <th style="width:90px">Desc. (%)</th>
+      <th style="width:120px">Total</th>
+      <th style="width:40px"></th>
+     </tr>
+    </thead>
+    <tbody id="proposal-items-body"></tbody>
+   </table>
+   <button type="button" id="add-proposal-item-row" class="btn-sm btn-outline">+ Adicionar produto</button>
+  </fieldset>
+  <div class="proposal-totals-bar">
+   <span>Itens: <span id="summary-items-total">0,00</span></span>
+   <span>Frete: <span id="summary-freight">0,00</span></span>
+   <span style="color:#65d6a6">Total da Proposta: <span id="summary-grand-total">0,00</span></span>
+  </div>
+  <div id="proposal-conflict-banner" class="conflict-alert" hidden>
+   <div>
+    <strong>Conflito de versão concorrente:</strong>
+    <p id="proposal-conflict-msg" style="margin:.2rem 0 0 0"></p>
+   </div>
+   <button type="button" id="proposal-reload-latest" class="btn-sm btn-action">Recarregar versão mais recente</button>
+  </div>
+  <p class="form-error" id="proposal-form-error" role="alert"></p>
+  <footer>
+   <button type="button" data-close>Cancelar</button>
+   <button class="primary" type="submit" id="save-proposal-submit">Salvar Proposta</button>
+  </footer>
+ </form>
+</dialog>
+
+<!-- Modal de Detalhes da Proposta Comercial -->
+<dialog id="proposal-detail-dialog" class="dialog-wide">
+ <div>
+  <header style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+   <div>
+    <h2 style="margin:0" id="detail-proposal-number">Proposta</h2>
+    <small id="detail-proposal-subtitle" style="color:#87a399"></small>
+   </div>
+   <button value="cancel" formmethod="dialog" aria-label="Fechar" type="button" data-close>×</button>
+  </header>
+  <div class="detail-grid">
+   <div class="detail-item"><small>Cliente</small><strong id="detail-customer-name">—</strong></div>
+   <div class="detail-item"><small>Status</small><strong id="detail-status-badge">—</strong></div>
+   <div class="detail-item"><small>Versão consultada</small><strong id="detail-version-label">—</strong></div>
+   <div class="detail-item"><small>Moeda</small><strong id="detail-currency">—</strong></div>
+   <div class="detail-item"><small>Validade</small><strong id="detail-valid-until">—</strong></div>
+   <div class="detail-item"><small>Condições de Pagamento</small><strong id="detail-payment-terms">—</strong></div>
+  </div>
+  <div id="detail-change-reason-box" class="detail-item" style="padding:.5rem;background:#152b24;border-radius:8px;margin-bottom:.8rem" hidden>
+   <small>Motivo da revisão desta versão:</small>
+   <span id="detail-change-reason"></span>
+  </div>
+  <table class="items-table">
+   <thead>
+    <tr>
+     <th>Produto</th>
+     <th>Unidade</th>
+     <th>Qtd. Proposta</th>
+     <th>Preço Unit.</th>
+     <th>Desconto</th>
+     <th>Total</th>
+     <th>Convertido</th>
+     <th>Saldo p/ Pedido</th>
+    </tr>
+   </thead>
+   <tbody id="detail-items-body"></tbody>
+  </table>
+  <div class="proposal-totals-bar">
+   <span>Itens: <span id="detail-items-total">0,00</span></span>
+   <span>Frete: <span id="detail-freight">0,00</span></span>
+   <span style="color:#65d6a6">Total: <span id="detail-grand-total">0,00</span></span>
+  </div>
+  <div class="modal-actions-bar" id="detail-actions-bar"></div>
+  <footer style="margin-top:1rem;display:flex;justify-content:flex-end">
+   <button type="button" data-close>Fechar</button>
+  </footer>
+ </div>
+</dialog>
+
+<!-- Modal de Aceite Formal da Proposta -->
+<dialog id="proposal-accept-dialog" class="dialog-medium">
+ <form id="proposal-accept-form">
+  <header>
+   <h2>Registrar Aceite da Proposta</h2>
+   <button value="cancel" formmethod="dialog" aria-label="Fechar" type="button" data-close>×</button>
+  </header>
+  <input type="hidden" name="proposalId" />
+  <input type="hidden" name="version" />
+  <p style="color:#9bb7ad">Confirme os dados de aceite do comprador para a proposta <strong id="accept-proposal-number"></strong> (Versão <span id="accept-version-number"></span>).</p>
+  <label>Tipo de evidência de aceite *
+   <select name="evidenceType" required>
+    <option value="ASSINATURA">Assinatura formal do contrato / termo</option>
+    <option value="PEDIDO_COMPRA">Ordem de Compra / Pedido do Cliente (OC)</option>
+    <option value="EMAIL">Confirmação expressa por E-mail</option>
+    <option value="WHATSAPP">Confirmação formal por Mensagem</option>
+   </select>
+  </label>
+  <label>Referência / identificador da evidência *
+   <input name="evidenceReference" required maxlength="1000" placeholder="Ex.: OC-2026-981 ou E-mail confirmado por compras@fazenda.com" />
+  </label>
+  <label>Data e hora do aceite
+   <input type="datetime-local" name="acceptedAt" />
+  </label>
+  <p class="form-error" role="alert"></p>
+  <footer>
+   <button type="button" data-close>Cancelar</button>
+   <button class="primary" type="submit">Confirmar Aceite</button>
+  </footer>
+ </form>
+</dialog>
+
+<!-- Modal de Conversão da Proposta em Pedido de Venda -->
+<dialog id="proposal-convert-dialog" class="dialog-wide">
+ <form id="proposal-convert-form">
+  <header>
+   <h2>Converter Proposta em Pedido de Venda</h2>
+   <button value="cancel" formmethod="dialog" aria-label="Fechar" type="button" data-close>×</button>
+  </header>
+  <input type="hidden" name="proposalId" />
+  <input type="hidden" name="version" />
+  <input type="hidden" name="idempotencyKey" />
+  <p style="color:#9bb7ad">Proposta <strong id="convert-proposal-number"></strong> · Selecione a quantidade a faturar por item (conversão parcial ou total).</p>
+  <table class="items-table">
+   <thead>
+    <tr>
+     <th>Produto</th>
+     <th>Unidade</th>
+     <th>Qtd. Proposta</th>
+     <th>Já Convertido</th>
+     <th>Saldo Elegível</th>
+     <th style="width:160px">Qtd. a Converter no Pedido</th>
+    </tr>
+   </thead>
+   <tbody id="convert-items-body"></tbody>
+  </table>
+  <div id="convert-freight-note" style="padding:.6rem;background:#152b24;border-radius:8px;font-size:.85rem;color:#a2dac7"></div>
+  <div id="convert-success-alert" class="success-alert" hidden>
+   <strong>Pedido de venda gerado com sucesso!</strong>
+   <p id="convert-success-details" style="margin:.3rem 0"></p>
+   <button type="button" id="convert-goto-orders" class="btn-sm btn-action">Visualizar Pedido</button>
+  </div>
+  <p class="form-error" role="alert"></p>
+  <footer>
+   <button type="button" data-close>Cancelar</button>
+   <button class="primary" type="submit" id="convert-submit-button">Gerar Pedido de Venda</button>
+  </footer>
+ </form>
+</dialog>
+
 <script src="~/js/commercial.js" asp-append-version="true"></script>

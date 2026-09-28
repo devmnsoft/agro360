@@ -145,7 +145,7 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options, IClock clock) 
 {
     private readonly JwtOptions _options = Validate(options.Value);
 
-    public TokenPair Create(Guid tenantId, Guid userId, string email, IReadOnlyCollection<string> permissions, IReadOnlyCollection<string> roles)
+    public TokenPair Create(Guid tenantId, Guid userId, string email, IReadOnlyCollection<string> permissions, IReadOnlyCollection<string> roles, IEnumerable<Claim>? additionalClaims = null)
     {
         var now = clock.UtcNow;
         var expiresAt = now.AddMinutes(_options.AccessTokenMinutes);
@@ -158,6 +158,10 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options, IClock clock) 
         };
         claims.AddRange(permissions.Select(permission => new Claim("permission", permission)));
         claims.AddRange(roles.Select(role => new Claim("role", role)));
+        if (additionalClaims is not null)
+        {
+            claims.AddRange(additionalClaims);
+        }
 
         var credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.SigningKey)),

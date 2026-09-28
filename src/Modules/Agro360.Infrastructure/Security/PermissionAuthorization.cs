@@ -47,6 +47,13 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
         var isSupportSession = context.User.HasClaim("permission", "support_session") || context.User.HasClaim("role", "SUPPORT_SESSION");
         if (isSupportSession)
         {
+            var sessionIdClaim = context.User.FindFirstValue("support_session_id");
+            if (!Guid.TryParse(sessionIdClaim, out var sessionId))
+            {
+                await transaction.CommitAsync().ConfigureAwait(false);
+                return;
+            }
+
             var supportAccess = await connection.QuerySingleAsync<SupportAccessState>(
                 """
                 select exists(
@@ -57,14 +64,23 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
                        ) IsSuperAdmin,
                        exists(
                            select 1 from agro360.saas_support_sessions s
-                           where s.tenant_id=@TenantId and s.actor_id=@UserId
+                           where s.id=@SessionId and s.tenant_id=@TenantId and s.actor_id=@UserId
                              and s.started_at <= now() and s.expires_at > now() and s.ended_at is null
                        ) ActiveSupportSession,
                        exists(select 1 from agro360.tenancy_tenants where id=@TenantId and status in(1,2) and deleted_at is null) TenantAllowed,
-                       exists(select 1 from agro360.saas_organizations o join agro360.saas_plans p on p.id=o.plan_id where o.tenant_id=@TenantId and o.status='ACTIVE' and p.active) ContractAllowed
-                """, new { TenantId = tenantId, UserId = userId }, transaction).ConfigureAwait(false);
+                       exists(select 1 from agro360.saas_organizations o join agro360.saas_plans p on p.id=o.plan_id where o.tenant_id=@TenantId and o.status='ACTIVE' and p.active) ContractAllowed,
+                       coalesce((select s.scope from agro360.saas_support_sessions s where s.id=@SessionId and s.tenant_id=@TenantId and s.actor_id=@UserId and s.ended_at is null), '') Scope
+                """, new { TenantId = tenantId, UserId = userId, SessionId = sessionId }, transaction).ConfigureAwait(false);
 
             if (!supportAccess.IsSuperAdmin || !supportAccess.ActiveSupportSession || !supportAccess.TenantAllowed)
+            {
+                await transaction.CommitAsync().ConfigureAwait(false);
+                return;
+            }
+
+            // Scope check: if scope is read-only, mutations must be denied
+            var isMutation = !Permissions.IsReadOnlyPermission(requirement.Permission);
+            if (isMutation && !string.Equals(supportAccess.Scope, "SUPPORT_OPERATIONAL", StringComparison.OrdinalIgnoreCase))
             {
                 await transaction.CommitAsync().ConfigureAwait(false);
                 return;
@@ -161,5 +177,5 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
     }
 
     private sealed class AccessState { public bool HasPermission { get; init; } public bool TenantAllowed { get; init; } public bool ContractAllowed { get; init; } }
-    private sealed class SupportAccessState { public bool IsSuperAdmin { get; init; } public bool ActiveSupportSession { get; init; } public bool TenantAllowed { get; init; } public bool ContractAllowed { get; init; } }
+    private sealed class SupportAccessState { public bool IsSuperAdmin { get; init; } public bool ActiveSupportSession { get; init; } public bool TenantAllowed { get; init; } public bool ContractAllowed { get; init; } public string Scope { get; init; } = ""; }
 }

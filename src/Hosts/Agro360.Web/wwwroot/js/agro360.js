@@ -35,11 +35,13 @@
             localStorage.removeItem("agro360.accessToken");
             localStorage.removeItem("agro360.access_token");
             localStorage.removeItem("agro360.token");
+            localStorage.removeItem("agro360.global_session");
             sessionStorage.clear();
         }
         // Expose canonical global session for inter-module use
         window.agro360Session = session ?? null;
         window.dispatchEvent(new CustomEvent("agro360:session", { detail: session ?? null }));
+        document.dispatchEvent(new CustomEvent("agro360:session", { detail: session ?? null }));
         renderUser();
         renderNavigation();
     }
@@ -140,9 +142,27 @@
         headers.set("X-Timezone", Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Belem");
         const response = await fetch(`${apiBase}${path}`, { ...options, headers });
 
-        if (response.status === 401 && canReplay && retry && !state.refreshStopped && state.session?.refreshToken) {
-            const refreshed = await refreshSession();
-            if (refreshed) return api(path, options, false);
+        if (response.status === 401 && canReplay && retry && !state.refreshStopped) {
+            if (state.session?.supportSession) {
+                state.refreshStopped = true;
+                const globalSessionStr = localStorage.getItem("agro360.global_session");
+                if (globalSessionStr) {
+                    try {
+                        const globalSession = JSON.parse(globalSessionStr);
+                        localStorage.removeItem("agro360.global_session");
+                        persistSession(globalSession);
+                        showToast("warning", "Contexto assistido encerrado", "A sessão assistida expirou ou foi revogada. O contexto global foi restaurado.", "support-session-expired");
+                        return api(path, options, false);
+                    } catch { }
+                }
+                persistSession(null);
+                showLogin();
+                showToast("warning", "Sessão expirada", "A sessão de suporte expirou. Faça login novamente.", "support-expired-login");
+                return null;
+            } else if (state.session?.refreshToken) {
+                const refreshed = await refreshSession();
+                if (refreshed) return api(path, options, false);
+            }
         }
 
         if (!response.ok) {
@@ -189,7 +209,9 @@
                 throw error;
             }
             const refreshed = await response.json();
-            refreshed.activeOrganization = state.session?.activeOrganization;
+            if (!state.session?.supportSession) {
+                refreshed.activeOrganization = state.session?.activeOrganization;
+            }
             persistSession(refreshed);
             return true;
         } catch (error) {
@@ -769,6 +791,17 @@
         document.querySelectorAll("[data-feature]").forEach(button => button.addEventListener("click", featureMessage));
         document.addEventListener("keydown", keydown);
         palette.addEventListener("click", event => { if (event.target === palette) closePalette(); });
+        window.addEventListener("storage", event => {
+            if (event.key === storageKeys.session) {
+                state.session = readJson(storageKeys.session);
+                window.agro360Session = state.session ?? null;
+                window.dispatchEvent(new CustomEvent("agro360:session", { detail: state.session ?? null }));
+                document.dispatchEvent(new CustomEvent("agro360:session", { detail: state.session ?? null }));
+                renderUser();
+                renderNavigation();
+                if (state.session && element("dashboard-subtitle")) loadDashboard();
+            }
+        });
         if ("serviceWorker" in navigator) navigator.serviceWorker.register("/service-worker.js").catch(() => {});
         if (state.session && element("dashboard-subtitle")) loadDashboard(); else if (!state.session) showLogin();
     }
