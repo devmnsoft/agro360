@@ -5395,7 +5395,7 @@ create table if not exists agro360.inventory_material_approval_rules(
  unique(tenant_id,id));
 create index if not exists ix_material_requests_queue on agro360.inventory_material_requests(tenant_id,status,needed_on,number);
 create index if not exists ix_material_events_request on agro360.inventory_material_request_events(tenant_id,request_id,occurred_at);
-do $$ declare t text; begin foreach t in array array['inventory_material_requests','inventory_material_request_items','inventory_material_reservations','inventory_material_deliveries','inventory_material_delivery_lots','inventory_material_consumptions','inventory_material_returns','inventory_material_request_events','inventory_material_approval_rules'] loop execute format('alter table agro360.%I enable row level security',t); execute format('alter table agro360.%I force row level security',t); execute format('create policy %I on agro360.%I using (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid) with check (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid)',t||'_tenant',t); end loop; end $$;
+do $$ declare t text; begin foreach t in array array['inventory_material_requests','inventory_material_request_items','inventory_material_reservations','inventory_material_deliveries','inventory_material_delivery_lots','inventory_material_consumptions','inventory_material_returns','inventory_material_request_events','inventory_material_approval_rules'] loop execute format('alter table agro360.%I enable row level security',t); execute format('alter table agro360.%I force row level security',t); execute format('drop policy if exists %I on agro360.%I',t||'_tenant',t); execute format('create policy %I on agro360.%I using (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid) with check (tenant_id=nullif(current_setting(''app.tenant_id'',true),'''')::uuid)',t||'_tenant',t); end loop; end $$;
 insert into agro360.platform_schema_versions(version,description,installed_at) values('0.81.0','Requisições internas, reservas, entrega, consumo e devolução',now()) on conflict(version) do nothing;
 commit;
 begin;
@@ -5461,7 +5461,11 @@ create table if not exists agro360.inventory_count_entries (
  unique(tenant_id,id), unique(tenant_id,item_id,round), foreign key(tenant_id,count_id) references agro360.inventory_counts(tenant_id,id),
  foreign key(tenant_id,item_id) references agro360.inventory_count_items(tenant_id,id), check(round>0), check(quantity>=0)
 );
-alter table agro360.inventory_count_items add constraint fk_count_accepted_entry foreign key(tenant_id,accepted_entry_id) references agro360.inventory_count_entries(tenant_id,id);
+do $$ begin
+ if not exists(select 1 from pg_constraint where conname='fk_count_accepted_entry') then
+  alter table agro360.inventory_count_items add constraint fk_count_accepted_entry foreign key(tenant_id,accepted_entry_id) references agro360.inventory_count_entries(tenant_id,id);
+ end if;
+end $$;
 
 create unique index if not exists ux_transfer_ship_movement on agro360.inventory_stock_movements(tenant_id,reference_id,product_id,coalesce(lot_number,'')) where reference_type='STOCK_TRANSFER_SHIPMENT';
 create unique index if not exists ux_count_adjustment_movement on agro360.inventory_stock_movements(tenant_id,reference_id,product_id,coalesce(lot_number,'')) where reference_type='PHYSICAL_COUNT_ADJUSTMENT';
@@ -5745,6 +5749,7 @@ insert into agro360.platform_schema_versions(version,description,installed_at) v
 
 alter table agro360.field_material_events drop constraint if exists field_material_events_event_type_check;
 alter table agro360.field_material_events add constraint field_material_events_event_type_check check(event_type in('RESERVE','DELIVER','CONSUME','RETURN','LOSS','RELEASE','REVERSAL'));
+alter table agro360.field_material_events drop constraint if exists field_material_events_reversal_source_check;
 alter table agro360.field_material_events add constraint field_material_events_reversal_source_check check(event_type<>'REVERSAL' or source_event_id is not null);
 create unique index if not exists ux_field_material_single_reversal on agro360.field_material_events(tenant_id,source_event_id) where event_type='REVERSAL';
 insert into agro360.platform_schema_versions(version,description,installed_at) values('87.0.0','Estorno rastreável de consumo em ordens de campo',now()) on conflict(version) do nothing;
@@ -5885,7 +5890,9 @@ alter table agro360.compliance_non_conformities add column if not exists deletio
 alter table agro360.compliance_non_conformities drop constraint if exists compliance_non_conformities_status_check;
 update agro360.compliance_non_conformities set status=case status when 'IN_PROGRESS' then 'IN_TREATMENT' when 'PENDING_APPROVAL' then 'AWAITING_VERIFICATION' else status end where status in('IN_PROGRESS','PENDING_APPROVAL');
 alter table agro360.compliance_non_conformities add constraint compliance_non_conformities_status_check check(status in('OPEN','ANALYSIS','IN_TREATMENT','AWAITING_VERIFICATION','CLOSED','CANCELLED')) not valid;
+alter table agro360.compliance_non_conformities drop constraint if exists compliance_nc_containment_check;
 alter table agro360.compliance_non_conformities add constraint compliance_nc_containment_check check(containment_status in('NOT_REQUIRED','PENDING','ACTIVE','PARTIALLY_RELEASED','RELEASED'));
+alter table agro360.compliance_non_conformities drop constraint if exists compliance_nc_quantity_basis_check;
 alter table agro360.compliance_non_conformities add constraint compliance_nc_quantity_basis_check check((affected_quantity is null and affected_unit is null) or (affected_quantity>0 and nullif(trim(affected_unit),'') is not null));
 create unique index if not exists ux_compliance_nc_number on agro360.compliance_non_conformities(tenant_id,number);
 create unique index if not exists ux_compliance_nc_idempotency on agro360.compliance_non_conformities(tenant_id,idempotency_key) where idempotency_key is not null;
@@ -5987,7 +5994,9 @@ alter table agro360.compliance_nc_verifications alter column responsible_id set 
 alter table agro360.compliance_nc_verifications alter column due_on set not null;
 alter table agro360.compliance_nc_verifications alter column decided_by set not null;
 alter table agro360.compliance_nc_verifications alter column created_by set not null;
+alter table agro360.compliance_nc_verifications drop constraint if exists compliance_nc_verification_criterion_check;
 alter table agro360.compliance_nc_verifications add constraint compliance_nc_verification_criterion_check check(criterion_type in('QUALITATIVE','QUANTITATIVE','DOCUMENTAL')) not valid;
+alter table agro360.compliance_nc_verifications drop constraint if exists compliance_nc_verification_quantitative_check;
 alter table agro360.compliance_nc_verifications add constraint compliance_nc_verification_quantitative_check check(criterion_type<>'QUANTITATIVE' or (expected_value is not null and observed_value is not null and nullif(trim(unit),'') is not null and comparison_operator in('GT','GTE','EQ','LTE','LT') and (unit<>'%' or percentage_basis>0))) not valid;
 create unique index if not exists ux_compliance_nc_verification_idempotency on agro360.compliance_nc_verifications(tenant_id,idempotency_key) where idempotency_key is not null;
 create index if not exists ix_compliance_nc_verification_queue on agro360.compliance_nc_verifications(tenant_id,responsible_id,due_on) where deleted_at is null;
@@ -6607,8 +6616,11 @@ do $$ declare constraint_name text; begin
  select c.conname into constraint_name from pg_constraint c where c.conrelid='agro360.saas_billing_charges'::regclass and c.contype='c' and pg_get_constraintdef(c.oid) like '%status = ANY%';
  if constraint_name is not null then execute format('alter table agro360.saas_billing_charges drop constraint %I',constraint_name); end if;
 end $$;
+alter table agro360.saas_billing_charges drop constraint if exists ck_saas_billing_charge_status;
 alter table agro360.saas_billing_charges add constraint ck_saas_billing_charge_status check(status in('DRAFT','OPEN','ISSUED','PAID','OVERDUE','CANCELLED','NEGOTIATING'));
+alter table agro360.saas_billing_charges drop constraint if exists ck_saas_billing_amounts;
 alter table agro360.saas_billing_charges add constraint ck_saas_billing_amounts check(base_amount>=0 and additional_amount>=0 and discount>=0 and discount<=base_amount+additional_amount and amount=round(base_amount+additional_amount-discount,2));
+alter table agro360.saas_billing_charges drop constraint if exists ck_saas_billing_payment_evidence;
 alter table agro360.saas_billing_charges add constraint ck_saas_billing_payment_evidence check(status<>'PAID' or (paid_on is not null and paid_amount>0 and length(trim(coalesce(notes,'')))>0));
 
 alter table agro360.saas_onboarding_steps add column if not exists recommended_action varchar(500);
@@ -6732,9 +6744,10 @@ begin
  -- A instalacao historica usava slug "santa-clara". O documento identifica e
  -- atualiza esse mesmo registro, em vez de criar um segundo cliente.
  select t.id into santa_id from agro360.tenancy_tenants t left join agro360.platform_tenants p on p.id=t.id
- where t.slug in ('fazenda-santa-clara','santa-clara') or p.normalized_document='11222333000181' order by (p.normalized_document='11222333000181') desc limit 1;
- if santa_id is null then santa_id:=gen_random_uuid(); insert into agro360.tenancy_tenants(id,name,slug,timezone_id,status,plan_code) values(santa_id,'Fazenda Santa Clara','fazenda-santa-clara','America/Sao_Paulo',1,'ENTERPRISE');
- else update agro360.tenancy_tenants set name='Fazenda Santa Clara',slug='fazenda-santa-clara',timezone_id='America/Sao_Paulo',plan_code='ENTERPRISE',updated_at=now() where id=santa_id; end if;
+ where t.id = '30000000-0000-0000-0000-000000000001' or t.slug = 'santa-clara' or p.normalized_document='11222333000181'
+ order by (t.id = '30000000-0000-0000-0000-000000000001') desc, (t.slug = 'santa-clara') desc limit 1;
+ if santa_id is null then santa_id:='30000000-0000-0000-0000-000000000001'::uuid; insert into agro360.tenancy_tenants(id,name,slug,timezone_id,status,plan_code) values(santa_id,'Fazenda Santa Clara','santa-clara','America/Sao_Paulo',1,'ENTERPRISE');
+ else update agro360.tenancy_tenants set name='Fazenda Santa Clara',slug='santa-clara',timezone_id='America/Sao_Paulo',plan_code='ENTERPRISE',updated_at=now() where id=santa_id; end if;
 
  select t.id into vale_id from agro360.tenancy_tenants t left join agro360.platform_tenants p on p.id=t.id where t.slug='cooperativa-vale-verde' or p.normalized_document='22333444000191' limit 1;
  if vale_id is null then vale_id:=gen_random_uuid(); insert into agro360.tenancy_tenants(id,name,slug,timezone_id,status,plan_code) values(vale_id,'Cooperativa Vale Verde','cooperativa-vale-verde','America/Sao_Paulo',1,'GROWTH');
