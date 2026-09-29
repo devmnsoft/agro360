@@ -59,7 +59,6 @@
                     } else {
                         localStorage.setItem("agro360.session", JSON.stringify(globalSession));
                         window.dispatchEvent(new CustomEvent("agro360:session", { detail: globalSession }));
-                        document.dispatchEvent(new CustomEvent("agro360:session", { detail: globalSession }));
                     }
                 } catch (e) {
                     console.error("Falha ao restaurar sessão global", e);
@@ -90,7 +89,6 @@
     }
 
     window.addEventListener("agro360:session", reveal);
-    document.addEventListener("agro360:session", reveal);
     document.addEventListener("DOMContentLoaded", reveal);
     reveal();
 })();

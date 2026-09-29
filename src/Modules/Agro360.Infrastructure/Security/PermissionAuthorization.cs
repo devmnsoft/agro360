@@ -165,7 +165,7 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
             "properties" => ["properties"], "agriculture" => ["agriculture"], "inventory" => ["inventory"], "livestock" => ["livestock"],
             "crm" or "commercial" or "commercial-saas" or "customer-success" => ["commercial"], "finance" => ["finance"], "purchasing" => ["purchasing"],
             "production" => ["agroindustry"], "fleet" or "maintenance" => ["fleet"], "dashboard" => ["reports", "analytics"],
-            "storage" => ["inventory", "warehousing"], "logistics" or "regional-logistics" => ["logistics"],
+            "storage" => ["inventory", "warehousing"], "logistics" or "regional-logistics" or "after-sales" => ["logistics"],
             "traceability" or "ledger" or "sales-network" => ["traceability"], "intelligence" => ["reports", "intelligence", "analytics", "ai", "predictive-ai"],
             "compliance" or "esg" or "sustainability" => ["environment-esg"], "maps" => ["properties", "analytics"], "cooperative" => ["cooperatives"],
             "rural-hr" or "sst" => ["verticals", "rural-hr"], "documents" or "evidences" or "dossiers" or "certificates" => ["documents"],

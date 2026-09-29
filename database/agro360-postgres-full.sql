@@ -7777,3 +7777,26 @@ values('11.4.0', 'Hardening de suporte assistido e permissões da aplicação', 
 on conflict(version) do nothing;
 
 commit;
+
+-- Origem canônica: database/migrations/115_saas_support_sessions_rls_hardening.sql
+begin;
+set local search_path to agro360, public;
+
+drop policy if exists saas_support_sessions_isolation on agro360.saas_support_sessions;
+create policy saas_support_sessions_isolation on agro360.saas_support_sessions
+    using (
+        (nullif(current_setting('app.tenant_id', true), '')::uuid is not null
+         and tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        or nullif(current_setting('app.platform_context', true), '') = 'true'
+    )
+    with check (
+        (nullif(current_setting('app.tenant_id', true), '')::uuid is not null
+         and tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        or nullif(current_setting('app.platform_context', true), '') = 'true'
+    );
+
+insert into agro360.platform_schema_versions(version, description, installed_at)
+values('11.5.0', 'Revisão da política RLS para sessões de suporte com plataforma explícita', now())
+on conflict(version) do nothing;
+
+commit;

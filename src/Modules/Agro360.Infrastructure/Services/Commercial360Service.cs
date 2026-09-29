@@ -33,7 +33,66 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
 
     public Task<CommercialPage<CommercialRecord>> ListAsync(string resource, string? search, string? status, int page, int pageSize, CancellationToken ct) => db.InTenantTransactionAsync<CommercialPage<CommercialRecord>>(async (c, t) =>
     {
-        var table = Table(resource); page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 100); var offset = (page - 1) * pageSize;
+        var table = Table(resource);
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var offset = (page - 1) * pageSize;
+
+        if (resource.Equals("products", StringComparison.OrdinalIgnoreCase))
+        {
+            var pSearch = string.IsNullOrWhiteSpace(search) ? null : search;
+            var sqlProducts = """
+                select id, name, 'ACTIVE' as status, (sku || ' · ' || base_unit) as detail, 0::numeric as amount,
+                       coalesce(updated_at, created_at) as updatedat, null as customername, null as currency
+                from agro360.inventory_products
+                where tenant_id = @TenantId and deleted_at is null
+                  and (@Search is null or name ilike '%'||@Search||'%' or sku ilike '%'||@Search||'%' or code::text ilike '%'||@Search||'%')
+                  and (@Status is null or @Status = 'ACTIVE')
+                order by name, id
+                limit @PageSize offset @Offset;
+
+                select count(*)
+                from agro360.inventory_products
+                where tenant_id = @TenantId and deleted_at is null
+                  and (@Search is null or name ilike '%'||@Search||'%' or sku ilike '%'||@Search||'%' or code::text ilike '%'||@Search||'%')
+                  and (@Status is null or @Status = 'ACTIVE');
+                """;
+            using var multiP = await c.QueryMultipleAsync(sqlProducts, new { tenant.TenantId, Search = pSearch, Status = string.IsNullOrWhiteSpace(status) ? null : status, PageSize = pageSize, Offset = offset }, t);
+            var rowsP = (await multiP.ReadAsync<CommercialRecord>()).ToArray();
+            var totalP = await multiP.ReadSingleAsync<int>();
+            return new(rowsP, page, pageSize, totalP);
+        }
+
+        if (resource.Equals("opportunities", StringComparison.OrdinalIgnoreCase))
+        {
+            var oppSearch = string.IsNullOrWhiteSpace(search) ? null : search;
+            var sqlOpp = """
+                select o.id, o.name, o.stage as status,
+                       coalesce(c.name, '') as detail,
+                       o.estimated_value as amount,
+                       o.updated_at as updatedat,
+                       c.name as customername,
+                       'BRL' as currency
+                from agro360.sales_opportunities o
+                left join agro360.crm_customers c on c.tenant_id = o.tenant_id and c.id = o.customer_id
+                where o.tenant_id = @TenantId and o.deleted_at is null
+                  and (@Search is null or o.name ilike '%'||@Search||'%')
+                  and (@Status is null or o.stage = @Status)
+                order by o.updated_at desc, o.id desc
+                limit @PageSize offset @Offset;
+
+                select count(*)
+                from agro360.sales_opportunities o
+                where o.tenant_id = @TenantId and o.deleted_at is null
+                  and (@Search is null or o.name ilike '%'||@Search||'%')
+                  and (@Status is null or o.stage = @Status);
+                """;
+            using var multiOpp = await c.QueryMultipleAsync(sqlOpp, new { tenant.TenantId, Search = oppSearch, Status = string.IsNullOrWhiteSpace(status) ? null : status, PageSize = pageSize, Offset = offset }, t);
+            var rowsOpp = (await multiOpp.ReadAsync<CommercialRecord>()).ToArray();
+            var totalOpp = await multiOpp.ReadSingleAsync<int>();
+            return new(rowsOpp, page, pageSize, totalOpp);
+        }
+
         var typeClause = resource switch
         {
             "customers" => " and type = 'CUSTOMER'",
@@ -49,22 +108,132 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             "prospects" => "coalesce(tax_document, email)",
             _ => "cast(null as text)"
         };
-        var amount = resource switch { "opportunities" => "estimated_value", "orders" => "total_amount", "proposals" => "coalesce((select total_amount from agro360.sales_proposal_versions v where v.tenant_id=agro360.sales_proposals.tenant_id and v.proposal_id=agro360.sales_proposals.id and v.version_number=agro360.sales_proposals.current_version),0)", "contracts" => "contracted_value", "commissions" => "amount", "splits" => "0", _ => "0" };
-        var sql = $"select id,{name} name,status,{detail} detail,{amount} amount,updated_at updatedat from {table} where tenant_id=@TenantId and deleted_at is null{typeClause} and (@Search is null or {name} ilike '%'||@Search||'%') and (@Status is null or status=@Status) order by updated_at desc limit @PageSize offset @Offset; select count(*) from {table} where tenant_id=@TenantId and deleted_at is null{typeClause} and (@Search is null or {name} ilike '%'||@Search||'%') and (@Status is null or status=@Status)";
-        using var multi = await c.QueryMultipleAsync(sql, new { tenant.TenantId, Search = string.IsNullOrWhiteSpace(search) ? null : search, Status = string.IsNullOrWhiteSpace(status) ? null : status, PageSize = pageSize, Offset = offset }, t); var rows = (await multi.ReadAsync<CommercialRecord>()).ToArray(); var total = await multi.ReadSingleAsync<int>(); return new(rows, page, pageSize, total);
+        var amount = resource switch
+        {
+            "orders" => "total_amount",
+            "proposals" => "coalesce((select total_amount from agro360.sales_proposal_versions v where v.tenant_id=agro360.sales_proposals.tenant_id and v.proposal_id=agro360.sales_proposals.id and v.version_number=agro360.sales_proposals.current_version),0)",
+            "contracts" => "contracted_value",
+            "commissions" => "amount",
+            "splits" => "0",
+            _ => "0"
+        };
+        var customerNameCol = resource switch
+        {
+            "orders" => "(select c.name from agro360.crm_customers c where c.tenant_id=agro360.sales_orders.tenant_id and c.id=agro360.sales_orders.customer_id) as customername",
+            "proposals" => "(select c.name from agro360.crm_customers c where c.tenant_id=agro360.sales_proposals.tenant_id and c.id=agro360.sales_proposals.customer_id) as customername",
+            _ => "cast(null as text) as customername"
+        };
+        var currencyCol = resource switch
+        {
+            "orders" => "coalesce(currency, 'BRL') as currency",
+            "proposals" => "coalesce((select currency from agro360.sales_proposal_versions v where v.tenant_id=agro360.sales_proposals.tenant_id and v.proposal_id=agro360.sales_proposals.id and v.version_number=agro360.sales_proposals.current_version), 'BRL') as currency",
+            "contracts" => "coalesce(currency, 'BRL') as currency",
+            _ => "cast(null as text) as currency"
+        };
+
+        var sql = $"select id,{name} name,status,{detail} detail,{amount} amount,updated_at updatedat,{customerNameCol},{currencyCol} from {table} where tenant_id=@TenantId and deleted_at is null{typeClause} and (@Search is null or {name} ilike '%'||@Search||'%') and (@Status is null or status=@Status) order by updated_at desc, id desc limit @PageSize offset @Offset; select count(*) from {table} where tenant_id=@TenantId and deleted_at is null{typeClause} and (@Search is null or {name} ilike '%'||@Search||'%') and (@Status is null or status=@Status)";
+        using var multi = await c.QueryMultipleAsync(sql, new { tenant.TenantId, Search = string.IsNullOrWhiteSpace(search) ? null : search, Status = string.IsNullOrWhiteSpace(status) ? null : status, PageSize = pageSize, Offset = offset }, t);
+        var rows = (await multi.ReadAsync<CommercialRecord>()).ToArray();
+        var total = await multi.ReadSingleAsync<int>();
+        return new(rows, page, pageSize, total);
     }, ct);
 
     public Task<IReadOnlyList<CommercialLookup>> LookupAsync(string resource, string? search, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
     {
         var table = Table(resource);
-        var typeClause = resource switch
+        var searchGuid = Guid.TryParse(search, out var g) ? g : (Guid?)null;
+        var (sql, param) = resource switch
         {
-            "customers" => " and type = 'CUSTOMER'",
-            "prospects" => " and type = 'PROSPECT'",
-            _ => ""
+            "products" => (
+                """
+                select id, (name || ' (' || sku || ')') as label, 'ACTIVE' as status, base_unit as unit, sku
+                from agro360.inventory_products
+                where tenant_id = @TenantId and deleted_at is null
+                  and (@Search is null or name ilike '%'||@Search||'%' or sku ilike '%'||@Search||'%' or code::text ilike '%'||@Search||'%' or id = @SearchGuid)
+                order by name, id
+                limit 50
+                """,
+                (object)new { tenant.TenantId, Search = string.IsNullOrWhiteSpace(search) ? null : search, SearchGuid = searchGuid }
+            ),
+            "opportunities" => (
+                """
+                select id, name as label, stage as status
+                from agro360.sales_opportunities
+                where tenant_id = @TenantId and deleted_at is null
+                  and (@Search is null or name ilike '%'||@Search||'%' or id = @SearchGuid)
+                order by name, id
+                limit 50
+                """,
+                new { tenant.TenantId, Search = string.IsNullOrWhiteSpace(search) ? null : search, SearchGuid = searchGuid }
+            ),
+            "customers" => (
+                """
+                select id, name as label, status
+                from agro360.crm_customers
+                where tenant_id = @TenantId and deleted_at is null and type = 'CUSTOMER'
+                  and (@Search is null or name ilike '%'||@Search||'%' or tax_document ilike '%'||@Search||'%' or id = @SearchGuid)
+                order by name, id
+                limit 50
+                """,
+                new { tenant.TenantId, Search = string.IsNullOrWhiteSpace(search) ? null : search, SearchGuid = searchGuid }
+            ),
+            "prospects" => (
+                """
+                select id, name as label, status
+                from agro360.crm_customers
+                where tenant_id = @TenantId and deleted_at is null and type = 'PROSPECT'
+                  and (@Search is null or name ilike '%'||@Search||'%' or tax_document ilike '%'||@Search||'%' or id = @SearchGuid)
+                order by name, id
+                limit 50
+                """,
+                new { tenant.TenantId, Search = string.IsNullOrWhiteSpace(search) ? null : search, SearchGuid = searchGuid }
+            ),
+            "orders" => (
+                """
+                select id, order_number as label, status
+                from agro360.sales_orders
+                where tenant_id = @TenantId and deleted_at is null
+                  and (@Search is null or order_number ilike '%'||@Search||'%' or id = @SearchGuid)
+                order by order_number, id
+                limit 50
+                """,
+                new { tenant.TenantId, Search = string.IsNullOrWhiteSpace(search) ? null : search, SearchGuid = searchGuid }
+            ),
+            "proposals" => (
+                """
+                select id, proposal_number as label, status
+                from agro360.sales_proposals
+                where tenant_id = @TenantId and deleted_at is null
+                  and (@Search is null or proposal_number ilike '%'||@Search||'%' or id = @SearchGuid)
+                order by proposal_number, id
+                limit 50
+                """,
+                new { tenant.TenantId, Search = string.IsNullOrWhiteSpace(search) ? null : search, SearchGuid = searchGuid }
+            ),
+            "contracts" => (
+                """
+                select id, coalesce(contract_number || ' - ' || name, name) as label, status
+                from agro360.sales_contracts
+                where tenant_id = @TenantId and deleted_at is null
+                  and (@Search is null or name ilike '%'||@Search||'%' or contract_number ilike '%'||@Search||'%' or id = @SearchGuid)
+                order by name, id
+                limit 50
+                """,
+                new { tenant.TenantId, Search = string.IsNullOrWhiteSpace(search) ? null : search, SearchGuid = searchGuid }
+            ),
+            _ => (
+                $"""
+                select id, name as label, status
+                from {table}
+                where tenant_id = @TenantId and deleted_at is null
+                  and (@Search is null or name ilike '%'||@Search||'%' or id = @SearchGuid)
+                order by name, id
+                limit 50
+                """,
+                new { tenant.TenantId, Search = string.IsNullOrWhiteSpace(search) ? null : search, SearchGuid = searchGuid }
+            )
         };
-        var name = resource switch { "orders" => "order_number", "proposals" => "proposal_number", _ => "name" };
-        return (IReadOnlyList<CommercialLookup>)(await c.QueryAsync<CommercialLookup>($"select id,{name} label,status from {table} where tenant_id=@TenantId and deleted_at is null{typeClause} and (@Search is null or {name} ilike '%'||@Search||'%') order by {name} limit 30", new { tenant.TenantId, Search = string.IsNullOrWhiteSpace(search) ? null : search }, t)).ToArray();
+        return (IReadOnlyList<CommercialLookup>)(await c.QueryAsync<CommercialLookup>(sql, param, t)).ToArray();
     }, ct);
 
     public Task<Guid> SaveCustomerAsync(Guid? id, CustomerCommand command, CancellationToken ct) { CommercialRules.ValidateTaxDocument(command.TaxDocument); return db.InTenantTransactionAsync(async (c, t) => { var entityId = id ?? Guid.CreateVersion7(); var n = await c.ExecuteAsync(id is null ? "insert into agro360.crm_customers(id,tenant_id,segment_id,representative_id,name,type,tax_document,email,phone,status,notes,created_by,updated_by) values(@Id,@TenantId,@SegmentId,@RepresentativeId,@Name,@Type,@TaxDocument,@Email,@Phone,'ACTIVE',@Notes,@UserId,@UserId)" : "update agro360.crm_customers set segment_id=@SegmentId,representative_id=@RepresentativeId,name=@Name,tax_document=@TaxDocument,email=@Email,phone=@Phone,notes=@Notes,updated_by=@UserId,updated_at=now() where id=@Id and tenant_id=@TenantId and deleted_at is null", new { Id = entityId, tenant.TenantId, command.SegmentId, command.RepresentativeId, command.Name, Type = command.Type.ToUpperInvariant(), command.TaxDocument, command.Email, command.Phone, command.Notes, tenant.UserId }, t); if (n == 0) throw new KeyNotFoundException("Cliente não encontrado."); return entityId; }, ct); }
@@ -145,10 +314,15 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         return id;
     }, ct);
 
-    public Task ChangeOrderStatusAsync(Guid id, StatusCommand command, bool mayOverrideBlock, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    public Task ChangeOrderStatusAsync(Guid id, StatusCommand command, bool mayOverrideBlock, CancellationToken ct)
     {
         var next = CommercialRules.NormalizeOrderStatus(command.Status);
-        var order = await c.QuerySingleOrDefaultAsync<(string Status, string CustomerStatus)>(
+        if (next is "RESERVED" or "FULFILLMENT" or "INVOICED" or "DELIVERED" or "RETURNED")
+            throw new DomainException($"O status '{next}' decorre de fatos operacionais e deve ser registrado pelo módulo correspondente (Logística ou Faturamento).", "sales.order_operational_status_disallowed");
+
+        return db.InTenantTransactionAsync(async (c, t) =>
+        {
+            var order = await c.QuerySingleOrDefaultAsync<(string Status, string CustomerStatus)>(
             "select o.status,c.status CustomerStatus from agro360.sales_orders o join agro360.crm_customers c on c.id=o.customer_id and c.tenant_id=o.tenant_id where o.id=@Id and o.tenant_id=@TenantId and o.deleted_at is null for update of o",
             new { Id = id, tenant.TenantId }, t);
         if (order == default) throw new KeyNotFoundException("Pedido não encontrado.");
@@ -164,8 +338,31 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         await c.ExecuteAsync("update agro360.sales_orders set status=@Status,cancellation_reason=case when @Status='CANCELLED' then @Reason end,updated_by=@UserId,updated_at=now() where id=@Id and tenant_id=@TenantId and status=@Current", new { Id = id, tenant.TenantId, Status = next, Current = order.Status, command.Reason, tenant.UserId }, t);
         await c.ExecuteAsync("insert into agro360.sales_commercial_events(id,tenant_id,event_type,aggregate_id,payload,created_by) values(gen_random_uuid(),@TenantId,@Type,@Id,jsonb_build_object('from',@Current,'status',@Status,'reason',@Reason),@UserId)", new { tenant.TenantId, Type = $"ORDER_{next}", Id = id, Current = order.Status, Status = next, command.Reason, tenant.UserId }, t);
         if (next == "CANCELLED")
+        {
             await c.ExecuteAsync("update agro360.sales_commissions set status='CANCELLED',updated_at=now() where tenant_id=@TenantId and order_id=@Id and status not in('PAID','REVERSED'); update agro360.sales_split_entries set status='CANCELLED',updated_at=now() where tenant_id=@TenantId and order_id=@Id and status='EXPECTED'", new { tenant.TenantId, Id = id }, t);
+
+            // Release any active fulfillment reservations to restore stock balances without leaving orphan reservations
+            var activeReservations = (await c.QueryAsync<(Guid Id, Guid LotId, decimal Active)>(
+                "select r.id, r.stock_lot_id LotId, (r.quantity - r.consumed_quantity - r.released_quantity) Active " +
+                "from agro360.fulfillment_reservations r " +
+                "join agro360.sales_order_items oi on oi.tenant_id = r.tenant_id and oi.id = r.order_item_id " +
+                "where r.tenant_id = @TenantId and oi.order_id = @Id and r.status = 'ACTIVE' " +
+                "order by r.id for update",
+                new { tenant.TenantId, Id = id }, t)).AsList();
+
+            foreach (var res in activeReservations)
+            {
+                if (res.Active > 0)
+                {
+                    await c.ExecuteAsync(
+                        "update agro360.fulfillment_reservations set released_quantity = released_quantity + @Amount, status = 'CANCELLED', version = version + 1, updated_at = now(), updated_by = @UserId where tenant_id = @TenantId and id = @ReservationId and status = 'ACTIVE'; " +
+                        "update agro360.inventory_stock_balances b set reserved = reserved - @Amount, version = version + 1, updated_at = now() from agro360.inventory_stock_lots l where l.tenant_id = b.tenant_id and l.id = @LotId and b.tenant_id = @TenantId and b.warehouse_id = l.warehouse_id and b.product_id = l.product_id and b.reserved >= @Amount",
+                        new { tenant.TenantId, ReservationId = res.Id, res.LotId, Amount = res.Active, tenant.UserId }, t);
+                }
+            }
+        }
     }, ct);
+    }
 
     public Task<Guid> CalculateCommissionAsync(CommissionCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
     {
@@ -192,20 +389,28 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         return id;
     }, ct);
 
-    public Task<long> ReviseProposalAsync(Guid id, SalesProposalCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    public Task<long> ReviseProposalAsync(Guid id, SalesProposalCommand command, CancellationToken ct)
     {
-        await EnsureProposalReferences(c, t, command);
-        var row = await c.QuerySingleOrDefaultAsync<(string Status, long CurrentVersion)>("select status,current_version CurrentVersion from agro360.sales_proposals where tenant_id=@TenantId and id=@Id and deleted_at is null for update", new { tenant.TenantId, Id = id }, t);
-        if (row == default) throw new KeyNotFoundException("Proposta não encontrada.");
-        if (row.Status is "ACCEPTED" or "CANCELLED" or "EXPIRED") throw new DomainException("Proposta encerrada não pode ser revisada.", "sales.proposal_revision_forbidden");
-        if (command.ExpectedVersion.HasValue && command.ExpectedVersion.Value != row.CurrentVersion)
-            throw new ConflictException($"A proposta foi alterada concorrentemente (versão atual: {row.CurrentVersion}, esperada: {command.ExpectedVersion.Value}). Recarregue os dados antes de revisar.");
-        if (row.Status != "DRAFT" && string.IsNullOrWhiteSpace(command.ChangeReason)) throw new DomainException("Alteração material exige motivo e nova versão.", "sales.proposal_change_reason_required");
-        var next = row.CurrentVersion + 1;
-        await InsertProposalVersion(c, t, id, next, command, row.CurrentVersion);
-        await c.ExecuteAsync("update agro360.sales_proposals set customer_id=@CustomerId,opportunity_id=@OpportunityId,representative_id=@RepresentativeId,current_version=@Next,status='DRAFT',accepted_version=null,accepted_at=null,accepted_by=null,acceptance_evidence_type=null,acceptance_evidence_reference=null,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id and current_version=@Current", new { tenant.TenantId, Id = id, command.CustomerId, command.OpportunityId, command.RepresentativeId, Next = next, Current = row.CurrentVersion, tenant.UserId }, t);
-        return next;
-    }, ct);
+        if (!command.ExpectedVersion.HasValue || command.ExpectedVersion.Value <= 0)
+            throw new DomainException("A versão esperada (ExpectedVersion) deve ser positiva e informada na revisão.", "sales.proposal_expected_version_required");
+
+        return db.InTenantTransactionAsync(async (c, t) =>
+        {
+            // Lock proposal row first under transaction so concurrent revisions serialize before any snapshot
+            var row = await c.QuerySingleOrDefaultAsync<(string Status, long CurrentVersion)>("select status,current_version CurrentVersion from agro360.sales_proposals where tenant_id=@TenantId and id=@Id and deleted_at is null for update", new { tenant.TenantId, Id = id }, t);
+            if (row == default) throw new KeyNotFoundException("Proposta não encontrada.");
+            if (row.Status is "ACCEPTED" or "CANCELLED" or "EXPIRED") throw new DomainException("Proposta encerrada não pode ser revisada.", "sales.proposal_revision_forbidden");
+            if (command.ExpectedVersion.Value != row.CurrentVersion)
+                throw new ConflictException($"A proposta foi alterada concorrentemente (versão atual: {row.CurrentVersion}, esperada: {command.ExpectedVersion.Value}). Recarregue os dados antes de revisar.");
+
+            await EnsureProposalReferences(c, t, command);
+            if (row.Status != "DRAFT" && string.IsNullOrWhiteSpace(command.ChangeReason)) throw new DomainException("Alteração material exige motivo e nova versão.", "sales.proposal_change_reason_required");
+            var next = row.CurrentVersion + 1;
+            await InsertProposalVersion(c, t, id, next, command, row.CurrentVersion);
+            await c.ExecuteAsync("update agro360.sales_proposals set customer_id=@CustomerId,opportunity_id=@OpportunityId,representative_id=@RepresentativeId,current_version=@Next,status='DRAFT',accepted_version=null,accepted_at=null,accepted_by=null,acceptance_evidence_type=null,acceptance_evidence_reference=null,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id and current_version=@Current", new { tenant.TenantId, Id = id, command.CustomerId, command.OpportunityId, command.RepresentativeId, Next = next, Current = row.CurrentVersion, tenant.UserId }, t);
+            return next;
+        }, ct);
+    }
 
     public Task<ProposalVersionView> GetProposalAsync(Guid id, long? version, CancellationToken ct) => db.InTenantTransactionAsync<ProposalVersionView>(async (c, t) =>
     {
@@ -224,6 +429,95 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             "where i.tenant_id=@TenantId and i.proposal_id=@Id and i.version_number=@Version order by i.created_at,i.id",
             new { tenant.TenantId, Id = id, header.Version }, t)).ToArray();
         return new(header.ProposalId, header.Number, header.Status, header.Version, header.CustomerId, header.Currency, header.ValidUntil, header.Freight, header.ItemsTotal, header.Total, header.PaymentTerms, items, header.CustomerName, header.CurrentVersion, header.AcceptedVersion, header.ChangeReason, header.OpportunityId, header.RepresentativeId);
+    }, ct);
+
+    public Task<SalesOrderDetailView> GetOrderAsync(Guid id, CancellationToken ct) => db.InTenantTransactionAsync<SalesOrderDetailView>(async (c, t) =>
+    {
+        var order = await c.QuerySingleOrDefaultAsync<OrderHeaderDto>(
+            """
+            select o.id, o.order_number OrderNumber, o.customer_id CustomerId, coalesce(c.name, 'Cliente') CustomerName,
+                   o.status, coalesce(o.currency, 'BRL') Currency, o.total_amount TotalAmount, o.freight,
+                   o.payment_terms PaymentTerms, o.expected_delivery ExpectedDelivery, o.notes,
+                   o.created_at CreatedAt, o.updated_at UpdatedAt,
+                   pc.proposal_id ProposalId, p.proposal_number ProposalNumber, pc.version_number ProposalVersion
+            from agro360.sales_orders o
+            left join agro360.crm_customers c on c.tenant_id = o.tenant_id and c.id = o.customer_id
+            left join agro360.sales_proposal_conversions pc on pc.tenant_id = o.tenant_id and pc.order_id = o.id
+            left join agro360.sales_proposals p on p.tenant_id = o.tenant_id and p.id = pc.proposal_id
+            where o.tenant_id = @TenantId and o.id = @Id and o.deleted_at is null
+            """,
+            new { tenant.TenantId, Id = id }, t);
+
+        if (order is null) throw new KeyNotFoundException("Pedido não encontrado.");
+
+        var items = (await c.QueryAsync<SalesOrderItemDetailView>(
+            """
+            select i.id, i.product_id ProductId, coalesce(pr.name, 'Produto') ProductName,
+                   i.unit, i.quantity, i.unit_price UnitPrice, i.discount_percentage DiscountPercentage,
+                   i.total_amount TotalAmount, i.price_table_id PriceTableId, i.base_unit_price BaseUnitPrice
+            from agro360.sales_order_items i
+            left join agro360.inventory_products pr on pr.tenant_id = i.tenant_id and pr.id = i.product_id
+            where i.tenant_id = @TenantId and i.order_id = @Id
+            order by i.created_at, i.id
+            """,
+            new { tenant.TenantId, Id = id }, t)).ToArray();
+
+        var fulfillments = (await c.QueryAsync<SalesOrderFulfillmentView>(
+            """
+            select distinct s.id ShipmentId, s.number ShipmentNumber, s.status Status, s.created_at CreatedAt
+            from agro360.fulfillment_shipments s
+            join agro360.fulfillment_shipment_items si on si.tenant_id = s.tenant_id and si.shipment_id = s.id
+            join agro360.sales_order_items oi on oi.tenant_id = si.tenant_id and oi.id = si.order_item_id
+            where s.tenant_id = @TenantId and oi.order_id = @Id and s.deleted_at is null
+            order by s.created_at desc
+            """,
+            new { tenant.TenantId, Id = id }, t)).ToArray();
+
+        var events = (await c.QueryAsync<SalesOrderEventView>(
+            """
+            select event_type EventType, payload::text Details, created_at OccurredAt
+            from agro360.sales_commercial_events
+            where tenant_id = @TenantId and aggregate_id = @Id
+            order by created_at desc
+            """,
+            new { tenant.TenantId, Id = id }, t)).ToArray();
+
+        var itemsTotal = items.Sum(x => x.TotalAmount);
+        var nextAction = order.Status switch
+        {
+            "DRAFT" => "Submeter para aprovação ou cancelar",
+            "UNDER_REVIEW" => "Aprovar ou rejeitar pedido",
+            "APPROVED" => "Atender expedição na Logística ou cancelar",
+            "FULFILLMENT" => "Acompanhar separação e conferência na Logística",
+            "INVOICED" => "Aguardando entrega ao cliente",
+            "DELIVERED" => "Pedido entregue e finalizado",
+            "CANCELLED" => "Pedido cancelado",
+            "RETURNED" => "Pedido devolvido",
+            _ => "Consultar status"
+        };
+
+        return new SalesOrderDetailView(
+            order.Id,
+            order.OrderNumber,
+            order.CustomerId,
+            order.CustomerName,
+            order.Status,
+            order.Currency,
+            itemsTotal,
+            order.Freight,
+            order.TotalAmount,
+            order.PaymentTerms,
+            order.ExpectedDelivery,
+            order.Notes,
+            order.ProposalId,
+            order.ProposalNumber,
+            order.ProposalVersion,
+            order.CreatedAt,
+            order.UpdatedAt,
+            items,
+            fulfillments,
+            events,
+            nextAction);
     }, ct);
 
     public Task DecideProposalAsync(Guid id, ProposalDecisionCommand command, string decision, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
@@ -290,9 +584,63 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         for (var i = 0; i < command.Items.Count; i++) { var item = command.Items[i]; var snapshot = JsonSerializer.Serialize(new { item.PriceTableId, item.UnitPrice, item.DiscountPercentage, currency, rounding = "line-half-away-from-zero" }); await c.ExecuteAsync("insert into agro360.sales_proposal_items(id,tenant_id,proposal_id,version_number,product_id,unit,quantity,unit_price,discount_percentage,total_amount,price_table_id,pricing_snapshot) values(gen_random_uuid(),@TenantId,@Id,@Version,@ProductId,@Unit,@Quantity,@UnitPrice,@DiscountPercentage,@Total,@PriceTableId,@Snapshot::jsonb)", new { tenant.TenantId, Id = id, Version = version, item.ProductId, Unit = item.Unit.Trim().ToUpperInvariant(), item.Quantity, item.UnitPrice, item.DiscountPercentage, Total = lines[i], item.PriceTableId, Snapshot = snapshot }, t); }
     }
 
-    public Task<CommercialDashboard> DashboardAsync(CancellationToken ct) => db.InTenantTransactionAsync<CommercialDashboard>(async (c, t) => { var sql = "select count(*) filter(where status='ACTIVE') activecustomers,count(*) filter(where status='BLOCKED') blockedcustomers from agro360.crm_customers where tenant_id=@TenantId and deleted_at is null; select count(*) from agro360.sales_contracts where tenant_id=@TenantId and status='ACTIVE' and deleted_at is null; select coalesce(sum(estimated_value),0) from agro360.sales_opportunities where tenant_id=@TenantId and stage not in('WON','LOST') and deleted_at is null; select coalesce(sum(total_amount),0) from agro360.sales_orders where tenant_id=@TenantId and status not in('CANCELLED','DELIVERED') and deleted_at is null; select coalesce(sum(amount) filter(where status='EXPECTED'),0),coalesce(sum(amount) filter(where status='PAID'),0) from agro360.sales_commissions where tenant_id=@TenantId and deleted_at is null; select coalesce(sum(amount),0) from agro360.sales_split_entries where tenant_id=@TenantId and status='EXPECTED';"; using var m = await c.QueryMultipleAsync(sql, new { tenant.TenantId }, t); var customers = await m.ReadSingleAsync<(int ActiveCustomers, int BlockedCustomers)>(); var contracts = await m.ReadSingleAsync<int>(); var pipeline = await m.ReadSingleAsync<decimal>(); var forecast = await m.ReadSingleAsync<decimal>(); var commissions = await m.ReadSingleAsync<(decimal Expected, decimal Paid)>(); var splits = await m.ReadSingleAsync<decimal>(); var opp = (await ListAsync("opportunities", null, null, 1, 6, ct)).Items; var orders = (await ListAsync("orders", null, null, 1, 6, ct)).Items; return new(customers.ActiveCustomers, customers.BlockedCustomers, contracts, pipeline, forecast, commissions.Expected, commissions.Paid, splits, opp, orders); }, ct);
+    public Task<CommercialDashboard> DashboardAsync(CancellationToken ct) => db.InTenantTransactionAsync<CommercialDashboard>(async (c, t) =>
+    {
+        var sql = """
+            select count(*) filter(where status='ACTIVE') activecustomers, count(*) filter(where status='BLOCKED') blockedcustomers from agro360.crm_customers where tenant_id=@TenantId and deleted_at is null;
+            select count(*) from agro360.sales_contracts where tenant_id=@TenantId and status='ACTIVE' and deleted_at is null;
+            select coalesce(sum(estimated_value),0) from agro360.sales_opportunities where tenant_id=@TenantId and stage not in('WON','LOST') and deleted_at is null;
+            select coalesce(sum(total_amount),0) from agro360.sales_orders where tenant_id=@TenantId and status not in('CANCELLED','DELIVERED') and deleted_at is null;
+            select coalesce(sum(amount) filter(where status='EXPECTED'),0), coalesce(sum(amount) filter(where status='PAID'),0) from agro360.sales_commissions where tenant_id=@TenantId and deleted_at is null;
+            select coalesce(sum(amount),0) from agro360.sales_split_entries where tenant_id=@TenantId and status='EXPECTED';
+            select coalesce(currency, 'BRL') Currency, coalesce(sum(total_amount), 0) OrdersTotal from agro360.sales_orders where tenant_id=@TenantId and status not in('CANCELLED','DELIVERED') and deleted_at is null group by coalesce(currency, 'BRL');
+            """;
+        using var m = await c.QueryMultipleAsync(sql, new { tenant.TenantId }, t);
+        var customers = await m.ReadSingleAsync<(int ActiveCustomers, int BlockedCustomers)>();
+        var contracts = await m.ReadSingleAsync<int>();
+        var pipeline = await m.ReadSingleAsync<decimal>();
+        var forecast = await m.ReadSingleAsync<decimal>();
+        var commissions = await m.ReadSingleAsync<(decimal Expected, decimal Paid)>();
+        var splits = await m.ReadSingleAsync<decimal>();
+        var currencyRows = (await m.ReadAsync<(string Currency, decimal OrdersTotal)>()).ToArray();
+
+        var opp = (await ListAsync("opportunities", null, null, 1, 6, ct)).Items;
+        var orders = (await ListAsync("orders", null, null, 1, 6, ct)).Items;
+
+        var currencyTotals = currencyRows.Select(cr => new SalesCurrencyTotal(
+            cr.Currency,
+            cr.Currency == "BRL" ? pipeline : 0m,
+            cr.Currency == "BRL" ? forecast : 0m,
+            cr.OrdersTotal)).ToArray();
+        if (currencyTotals.Length == 0)
+        {
+            currencyTotals = [new SalesCurrencyTotal("BRL", pipeline, forecast, 0m)];
+        }
+
+        return new(customers.ActiveCustomers, customers.BlockedCustomers, contracts, pipeline, forecast, commissions.Expected, commissions.Paid, splits, opp, orders, currencyTotals);
+    }, ct);
+
     private static string Table(string resource) => Resources.TryGetValue(resource, out var table) ? table : throw new KeyNotFoundException("Recurso comercial não encontrado.");
     private sealed class ProposalHeader { public Guid ProposalId { get; init; } public string Number { get; init; } = ""; public string Status { get; init; } = ""; public long CurrentVersion { get; init; } public long? AcceptedVersion { get; init; } public long Version { get; init; } public Guid CustomerId { get; init; } public string CustomerName { get; init; } = ""; public Guid? OpportunityId { get; init; } public Guid? RepresentativeId { get; init; } public string Currency { get; init; } = "BRL"; public DateOnly ValidUntil { get; init; } public decimal Freight { get; init; } public decimal ItemsTotal { get; init; } public decimal Total { get; init; } public string PaymentTerms { get; init; } = ""; public string? ChangeReason { get; init; } }
     private sealed class ConversionItem { public Guid Id { get; init; } public Guid ProductId { get; init; } public string Unit { get; init; } = ""; public decimal Quantity { get; init; } public decimal UnitPrice { get; init; } public decimal DiscountPercentage { get; init; } public decimal TotalAmount { get; init; } public Guid? PriceTableId { get; init; } public string PricingSnapshot { get; init; } = "{}"; public decimal Converted { get; init; } public decimal ConvertedAmount { get; init; } }
     private sealed class SalesPricePolicyLookup { public Guid PriceTableId { get; init; } public Guid ProductId { get; init; } public string Unit { get; init; } = string.Empty; public decimal BasePrice { get; init; } public decimal MaximumDiscount { get; init; } public bool IsDefault { get; init; } public DateOnly ValidFrom { get; init; } public DateTimeOffset UpdatedAt { get; init; } }
+    private sealed class OrderHeaderDto
+    {
+        public Guid Id { get; init; }
+        public string OrderNumber { get; init; } = "";
+        public Guid CustomerId { get; init; }
+        public string CustomerName { get; init; } = "";
+        public string Status { get; init; } = "";
+        public string Currency { get; init; } = "BRL";
+        public decimal TotalAmount { get; init; }
+        public decimal Freight { get; init; }
+        public string? PaymentTerms { get; init; }
+        public DateOnly? ExpectedDelivery { get; init; }
+        public string? Notes { get; init; }
+        public DateTimeOffset CreatedAt { get; init; }
+        public DateTimeOffset? UpdatedAt { get; init; }
+        public Guid? ProposalId { get; init; }
+        public string? ProposalNumber { get; init; }
+        public long? ProposalVersion { get; init; }
+    }
 }

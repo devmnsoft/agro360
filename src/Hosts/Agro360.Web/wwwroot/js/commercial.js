@@ -24,6 +24,10 @@
     const proposalAcceptForm = document.querySelector("#proposal-accept-form");
     const proposalConvertDialog = document.querySelector("#proposal-convert-dialog");
     const proposalConvertForm = document.querySelector("#proposal-convert-form");
+    const orderDetailDialog = document.querySelector("#order-detail-dialog");
+
+    let currentTenantId = null;
+    let pendingAbortController = null;
 
     const statusTranslations = {
         DRAFT: "Rascunho",
@@ -37,7 +41,7 @@
         DELINQUENT: "Inadimplente",
         UNDER_REVIEW: "Em Análise",
         RESERVED: "Reservado",
-        FULFILLMENT: "Faturamento/Separação",
+        FULFILLMENT: "Em Atendimento",
         INVOICED: "Faturado",
         DELIVERED: "Entregue",
         RETURNED: "Devolvido",
@@ -47,7 +51,7 @@
 
     function notify(message, isError = false) {
         toast.textContent = message;
-        toast.style.background = isError ? "#8c2f39" : "#143d2c";
+        toast.style.background = isError ? "var(--red, #8c2f39)" : "var(--accent-strong, #143d2c)";
         toast.hidden = false;
         clearTimeout(notify.timer);
         notify.timer = setTimeout(() => {
@@ -70,8 +74,13 @@
     }
 
     async function request(path, options = {}) {
+        if (!pendingAbortController || pendingAbortController.signal.aborted) {
+            pendingAbortController = new AbortController();
+        }
+        const signal = options.signal || pendingAbortController.signal;
         const response = await fetch(`${api}${path}`, {
             ...options,
+            signal,
             headers: { ...headers(), ...options.headers }
         });
         if (!response.ok) {
@@ -90,13 +99,33 @@
             const lookupType = select.dataset.lookup;
             select.replaceChildren(new Option(select.dataset.placeholder || "Selecione...", ""));
             try {
-                const rows = await request(`/api/commercial/lookups/${lookupType}`);
+                const searchParam = current ? `?search=${encodeURIComponent(current)}` : "";
+                const rows = await request(`/api/commercial/lookups/${lookupType}${searchParam}`);
+                let foundCurrent = false;
                 for (const item of rows) {
-                    select.add(new Option(item.label, item.id));
+                    const opt = new Option(item.label, item.id);
+                    if (item.unit) opt.dataset.unit = item.unit;
+                    if (item.basePrice) opt.dataset.price = item.basePrice;
+                    select.add(opt);
+                    if (item.id === current) foundCurrent = true;
                 }
-                if (current) select.value = current;
+                if (current) {
+                    if (foundCurrent) {
+                        select.value = current;
+                    } else {
+                        // Preserva a seleção atual fora dos primeiros registros
+                        select.add(new Option(`Registro Atual (${current.substring(0, 8)}...)`, current, true, true));
+                        select.value = current;
+                    }
+                }
             } catch (error) {
                 console.warn(`Falha ao carregar lookup ${lookupType}:`, error);
+                const retryBtn = document.createElement("button");
+                retryBtn.type = "button";
+                retryBtn.className = "btn-sm btn-outline";
+                retryBtn.textContent = "Tentar novamente";
+                retryBtn.onclick = () => loadLookups(container);
+                select.parentElement?.appendChild(retryBtn);
             }
         }
     }
@@ -109,11 +138,20 @@
             if (resource === "dashboard") {
                 const data = await request("/api/commercial/dashboard");
                 if (thisRequestId !== activeRequestId) return;
-                document.querySelector("#commercial-metrics").innerHTML =
+
+                let metricsHtml =
                     `<article><small>Clientes ativos</small><strong>${data.activeCustomers}</strong></article>` +
-                    `<article><small>Pipeline</small><strong>${formatMoney(data.pipelineValue)}</strong></article>` +
-                    `<article><small>Receita prevista</small><strong>${formatMoney(data.forecastRevenue)}</strong></article>` +
-                    `<article><small>Comissões previstas</small><strong>${formatMoney(data.expectedCommissions)}</strong></article>`;
+                    `<article><small>Pipeline (BRL)</small><strong>${formatMoney(data.pipelineValue, "BRL")}</strong></article>` +
+                    `<article><small>Receita prevista (BRL)</small><strong>${formatMoney(data.forecastRevenue, "BRL")}</strong></article>` +
+                    `<article><small>Comissões previstas (BRL)</small><strong>${formatMoney(data.expectedCommissions, "BRL")}</strong></article>`;
+
+                if (data.currencyTotals && data.currencyTotals.length > 0) {
+                    metricsHtml += data.currencyTotals.map(ct =>
+                        `<article><small>Pedidos em Carteira (${escapeHtml(ct.currency)})</small><strong>${formatMoney(ct.ordersTotal, ct.currency)}</strong></article>`
+                    ).join("");
+                }
+
+                document.querySelector("#commercial-metrics").innerHTML = metricsHtml;
                 content.innerHTML = '<h3 style="margin-top:0">Pedidos de Venda Recentes</h3>' + renderTable(data.orders, "orders");
                 attachTableActions();
                 return;
@@ -159,9 +197,8 @@
                 </thead>
                 <tbody>
                     ${items.map(item => {
-                        const parts = (item.detail || "").split(" · ");
-                        const clientName = parts[0] || "—";
-                        const currency = parts[1] || "BRL";
+                        const clientName = item.customerName || (item.detail || "").split(" · ")[0] || "—";
+                        const currency = item.currency || (item.detail || "").split(" · ")[1] || "BRL";
                         const statusClass = `status-${(item.status || "").toLowerCase()}`;
                         const statusPt = statusTranslations[item.status] || item.status;
                         return `
@@ -192,13 +229,13 @@
                         <th>Moeda</th>
                         <th>Total</th>
                         <th>Atualização</th>
+                        <th style="width:140px">Ações</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${items.map(item => {
-                        const parts = (item.detail || "").split(" · ");
-                        const clientName = parts[0] || "—";
-                        const currency = parts[1] || "BRL";
+                        const clientName = item.customerName || (item.detail || "").split(" · ")[0] || "—";
+                        const currency = item.currency || (item.detail || "").split(" · ")[1] || "BRL";
                         const statusClass = `status-${(item.status || "").toLowerCase()}`;
                         const statusPt = statusTranslations[item.status] || item.status;
                         return `
@@ -209,6 +246,9 @@
                             <td><span class="version-chip">${escapeHtml(currency)}</span></td>
                             <td><strong>${formatMoney(item.amount, currency)}</strong></td>
                             <td>${new Date(item.updatedAt).toLocaleDateString("pt-BR")}</td>
+                            <td class="actions-cell">
+                                <button type="button" class="btn-sm btn-action view-order-btn" data-id="${item.id}">Ver detalhes</button>
+                            </td>
                         </tr>`;
                     }).join("")}
                 </tbody>
@@ -247,6 +287,9 @@
         document.querySelectorAll(".view-proposal-btn").forEach(btn => {
             btn.onclick = () => openProposalDetails(btn.dataset.id);
         });
+        document.querySelectorAll(".view-order-btn").forEach(btn => {
+            btn.onclick = () => openOrderDetails(btn.dataset.id);
+        });
     }
 
     // Gerenciamento de Linhas de Itens na Proposta
@@ -268,7 +311,7 @@
         const tr = document.createElement("tr");
 
         const productOptions = products.map(p =>
-            `<option value="${p.id}" ${itemData && itemData.productId === p.id ? "selected" : ""}>${escapeHtml(p.label)}</option>`
+            `<option value="${p.id}" data-unit="${escapeHtml(p.unit || "")}" data-price="${p.basePrice || ""}" ${itemData && itemData.productId === p.id ? "selected" : ""}>${escapeHtml(p.label)}</option>`
         ).join("");
 
         tr.innerHTML = `
@@ -279,13 +322,13 @@
                 </select>
             </td>
             <td>
-                <input class="item-unit" value="${escapeHtml(itemData?.unit || "SACAS")}" maxlength="20" required style="width:80px" />
+                <input class="item-unit" value="${escapeHtml(itemData?.unit || "")}" placeholder="Ex: KG, SC" maxlength="20" required style="width:80px" />
             </td>
             <td>
                 <input class="item-qty" type="number" step="0.0001" min="0.0001" value="${itemData?.quantity || 1}" required style="width:100px" />
             </td>
             <td>
-                <input class="item-price" type="number" step="0.01" min="0.01" value="${itemData?.unitPrice || 100.00}" required style="width:110px" />
+                <input class="item-price" type="number" step="0.01" min="0.01" value="${itemData?.unitPrice != null ? itemData.unitPrice : ""}" placeholder="0,00" required style="width:110px" />
             </td>
             <td>
                 <input class="item-discount" type="number" step="0.01" min="0" max="100" value="${itemData?.discountPercentage || 0}" style="width:80px" />
@@ -295,6 +338,23 @@
                 <button type="button" class="btn-sm btn-danger remove-item-btn" title="Remover item">×</button>
             </td>
         `;
+
+        const productSelect = tr.querySelector(".item-product");
+        const unitInput = tr.querySelector(".item-unit");
+        const priceInput = tr.querySelector(".item-price");
+
+        productSelect.onchange = () => {
+            const selectedOpt = productSelect.selectedOptions[0];
+            if (selectedOpt) {
+                if (selectedOpt.dataset.unit && !unitInput.value) {
+                    unitInput.value = selectedOpt.dataset.unit;
+                }
+                if (selectedOpt.dataset.price && !priceInput.value) {
+                    priceInput.value = selectedOpt.dataset.price;
+                }
+            }
+            recalculateProposalTotals();
+        };
 
         tr.querySelectorAll("input, select").forEach(input => {
             input.oninput = recalculateProposalTotals;
@@ -809,13 +869,128 @@
             };
 
             notify(`Pedido ${result.orderNumber || ""} gerado com sucesso!`);
+            proposalConvertDialog.close();
             await load();
+            await openOrderDetails(result.orderId);
         } catch (error) {
             submitBtn.disabled = false;
             errElement.textContent = error.message;
             notify(error.message, true);
         }
     };
+
+    async function openOrderDetails(orderId) {
+        if (!orderDetailDialog) return;
+        try {
+            const order = await request(`/api/commercial/orders/${orderId}`);
+            if (!order) return;
+
+            document.querySelector("#order-detail-title").textContent = `Pedido ${order.orderNumber}`;
+            const pill = document.querySelector("#order-detail-status-pill");
+            const statusClass = `status-${(order.status || "").toLowerCase()}`;
+            pill.className = `status-pill ${statusClass}`;
+            pill.textContent = statusTranslations[order.status] || order.status;
+
+            document.querySelector("#order-detail-customer").textContent = order.customerName || "—";
+            document.querySelector("#order-detail-proposal").textContent = order.proposalNumber
+                ? `${order.proposalNumber} (Versão ${order.proposalVersion})`
+                : "Venda Direta / Sem Proposta";
+            document.querySelector("#order-detail-currency").textContent = order.currency || "BRL";
+            document.querySelector("#order-detail-payment").textContent = order.paymentTerms || "Padrão";
+            document.querySelector("#order-detail-delivery").textContent = order.expectedDelivery
+                ? new Date(`${order.expectedDelivery}T12:00:00`).toLocaleDateString("pt-BR")
+                : "A combinar";
+            document.querySelector("#order-detail-items-total").textContent = formatMoney(order.itemsTotal, order.currency);
+            document.querySelector("#order-detail-freight").textContent = formatMoney(order.freight, order.currency);
+            document.querySelector("#order-detail-total").textContent = formatMoney(order.totalAmount, order.currency);
+
+            const notesCard = document.querySelector("#order-detail-notes-card");
+            if (order.notes) {
+                notesCard.hidden = false;
+                document.querySelector("#order-detail-notes-text").textContent = order.notes;
+            } else {
+                notesCard.hidden = true;
+            }
+
+            document.querySelector("#order-detail-next-action").textContent = order.nextPermittedAction || "—";
+
+            // Itens
+            const itemsBody = document.querySelector("#order-detail-items-body");
+            if (order.items && order.items.length) {
+                itemsBody.innerHTML = order.items.map(item => `
+                    <tr>
+                        <td><strong>${escapeHtml(item.productName || item.productId)}</strong></td>
+                        <td>${escapeHtml(item.unit)}</td>
+                        <td>${Number(item.quantity).toLocaleString("pt-BR")}</td>
+                        <td>${formatMoney(item.unitPrice, order.currency)}</td>
+                        <td>${item.discountPercentage ? `${Number(item.discountPercentage).toFixed(2)}%` : "0%"}</td>
+                        <td><strong>${formatMoney(item.totalAmount, order.currency)}</strong></td>
+                    </tr>
+                `).join("");
+            } else {
+                itemsBody.innerHTML = '<tr><td colspan="6" class="empty-state">Nenhum item registrado.</td></tr>';
+            }
+
+            // Fulfillments
+            const fulfillmentsBody = document.querySelector("#order-detail-fulfillments-body");
+            if (order.fulfillments && order.fulfillments.length) {
+                fulfillmentsBody.innerHTML = order.fulfillments.map(f => {
+                    const fClass = `status-${(f.status || "").toLowerCase()}`;
+                    const fStatusPt = statusTranslations[f.status] || f.status;
+                    return `
+                    <tr>
+                        <td><strong>${escapeHtml(f.shipmentNumber)}</strong></td>
+                        <td><span class="status-pill ${fClass}">${escapeHtml(fStatusPt)}</span></td>
+                        <td>${new Date(f.createdAt).toLocaleDateString("pt-BR")} ${new Date(f.createdAt).toLocaleTimeString("pt-BR")}</td>
+                    </tr>`;
+                }).join("");
+            } else {
+                fulfillmentsBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:1rem">Nenhum atendimento logístico vinculado até o momento.</td></tr>';
+            }
+
+            // History
+            const historyBody = document.querySelector("#order-detail-history-body");
+            if (order.history && order.history.length) {
+                historyBody.innerHTML = order.history.map(h => `
+                    <tr>
+                        <td><span class="version-chip">${escapeHtml(h.eventType)}</span></td>
+                        <td>${escapeHtml(h.details || "—")}</td>
+                        <td>${new Date(h.occurredAt).toLocaleDateString("pt-BR")} ${new Date(h.occurredAt).toLocaleTimeString("pt-BR")}</td>
+                    </tr>
+                `).join("");
+            } else {
+                historyBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:1rem">Nenhum evento registrado.</td></tr>';
+            }
+
+            // Logistics button - preselected order without auto-reserving stock
+            const logisticsBtn = document.querySelector("#order-detail-logistics-btn");
+            if (logisticsBtn) {
+                logisticsBtn.href = `/Logistics?orderId=${encodeURIComponent(order.id)}`;
+            }
+
+            orderDetailDialog.showModal();
+        } catch (error) {
+            notify(`Falha ao carregar detalhes do pedido: ${error.message}`, true);
+        }
+    }
+
+    window.addEventListener("agro360:session", event => {
+        const session = event.detail;
+        const newTenantId = session?.tenantId || null;
+        if (currentTenantId !== null && currentTenantId !== newTenantId) {
+            if (pendingAbortController) {
+                pendingAbortController.abort();
+            }
+            availableProducts = [];
+            [commercialDialog, proposalDialog, proposalDetailDialog, proposalAcceptDialog, proposalConvertDialog, orderDetailDialog].forEach(d => {
+                if (d && d.open) d.close();
+            });
+            notify("Organização alterada. Recarregando contexto comercial...");
+            page = 1;
+            load();
+        }
+        currentTenantId = newTenantId;
+    });
 
     // Fechar dialogs
     document.querySelectorAll("dialog [data-close]").forEach(btn => {

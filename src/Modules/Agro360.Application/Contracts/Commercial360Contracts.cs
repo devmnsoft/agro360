@@ -3,8 +3,8 @@ using System.ComponentModel.DataAnnotations;
 namespace Agro360.Application.Contracts;
 
 public sealed record CommercialPage<T>(IReadOnlyList<T> Items, int Page, int PageSize, int Total);
-public sealed record CommercialRecord(Guid Id, string Name, string Status, string? Detail, decimal Amount, DateTimeOffset UpdatedAt);
-public sealed record CommercialLookup(Guid Id, string Label, string? Status = null);
+public sealed record CommercialRecord(Guid Id, string Name, string Status, string? Detail, decimal Amount, DateTimeOffset UpdatedAt, string? CustomerName = null, string? Currency = null);
+public sealed record CommercialLookup(Guid Id, string Label, string? Status = null, string? Unit = null, string? Sku = null, decimal? BasePrice = null, Guid? PriceTableId = null);
 public sealed record CustomerCommand([Required, MaxLength(180)] string Name, [Required] Guid SegmentId, [MaxLength(14), RegularExpression("^[0-9]{11,14}$")] string? TaxDocument, [EmailAddress] string? Email, [Phone] string? Phone, [Required] string Type = "CUSTOMER", Guid? RepresentativeId = null, [MaxLength(2000)] string? Notes = null);
 public sealed record OpportunityCommand([Required] Guid CustomerId, [Required, MaxLength(180)] string Name, [Range(0.01, double.MaxValue)] decimal EstimatedValue, [Required] string Stage, [Range(0, 100)] int Probability, Guid? ProductId, Guid? RepresentativeId, DateOnly? ExpectedClose, string? Source, string? NextAction, string? LossReason);
 public sealed record ActivityCommand([Required] Guid CustomerId, [Required] string Type, [Required] DateTimeOffset ScheduledAt, [Required] string Status, Guid? RepresentativeId, string? Channel, string? Result, string? NextAction, string? Notes, string? CancellationReason);
@@ -24,7 +24,34 @@ public sealed record ProposalConversionCommand([Required] long Version, [Require
 public sealed record ProposalVersionView(Guid ProposalId, string Number, string Status, long Version, Guid CustomerId, string Currency, DateOnly ValidUntil, decimal Freight, decimal ItemsTotal, decimal Total, string PaymentTerms, IReadOnlyList<ProposalItemView> Items, string? CustomerName = null, long CurrentVersion = 1, long? AcceptedVersion = null, string? ChangeReason = null, Guid? OpportunityId = null, Guid? RepresentativeId = null);
 public sealed record ProposalItemView(Guid Id, Guid ProductId, string Unit, decimal Quantity, decimal UnitPrice, decimal DiscountPercentage, decimal Total, decimal ConvertedQuantity, string PricingSnapshot, string? ProductName = null);
 public sealed record ProposalConversionResult(Guid OrderId, bool Existing, string Currency, decimal Total, string? OrderNumber = null);
-public sealed record CommercialDashboard(int ActiveCustomers, int BlockedCustomers, int ActiveContracts, decimal PipelineValue, decimal ForecastRevenue, decimal ExpectedCommissions, decimal PaidCommissions, decimal PendingSplits, IReadOnlyList<CommercialRecord> Opportunities, IReadOnlyList<CommercialRecord> Orders);
+public sealed record SalesCurrencyTotal(string Currency, decimal PipelineValue, decimal ForecastRevenue, decimal OrdersTotal);
+public sealed record CommercialDashboard(int ActiveCustomers, int BlockedCustomers, int ActiveContracts, decimal PipelineValue, decimal ForecastRevenue, decimal ExpectedCommissions, decimal PaidCommissions, decimal PendingSplits, IReadOnlyList<CommercialRecord> Opportunities, IReadOnlyList<CommercialRecord> Orders, IReadOnlyList<SalesCurrencyTotal>? CurrencyTotals = null);
+
+public sealed record SalesOrderItemDetailView(Guid Id, Guid ProductId, string ProductName, string Unit, decimal Quantity, decimal UnitPrice, decimal DiscountPercentage, decimal TotalAmount, Guid? PriceTableId = null, decimal? BaseUnitPrice = null);
+public sealed record SalesOrderFulfillmentView(Guid ShipmentId, string ShipmentNumber, string Status, DateTimeOffset CreatedAt);
+public sealed record SalesOrderEventView(string EventType, string? Details, DateTimeOffset OccurredAt);
+public sealed record SalesOrderDetailView(
+    Guid Id,
+    string OrderNumber,
+    Guid CustomerId,
+    string CustomerName,
+    string Status,
+    string Currency,
+    decimal ItemsTotal,
+    decimal Freight,
+    decimal TotalAmount,
+    string? PaymentTerms,
+    DateOnly? ExpectedDelivery,
+    string? Notes,
+    Guid? ProposalId,
+    string? ProposalNumber,
+    long? ProposalVersion,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? UpdatedAt,
+    IReadOnlyList<SalesOrderItemDetailView> Items,
+    IReadOnlyList<SalesOrderFulfillmentView> Fulfillments,
+    IReadOnlyList<SalesOrderEventView> History,
+    string NextPermittedAction);
 
 public interface ICommercial360Service
 {
@@ -34,6 +61,7 @@ public interface ICommercial360Service
     Task<Guid> SaveOpportunityAsync(Guid? id, OpportunityCommand command, CancellationToken ct);
     Task<Guid> SaveActivityAsync(Guid? id, ActivityCommand command, CancellationToken ct);
     Task<Guid> CreateOrderAsync(SalesOrderCommand command, CancellationToken ct);
+    Task<SalesOrderDetailView> GetOrderAsync(Guid id, CancellationToken ct);
     Task<Guid> CreateContractAsync(CommercialContractCommand command, CancellationToken ct);
     Task ChangeContractStatusAsync(Guid id, StatusCommand command, CancellationToken ct);
     Task ChangeOrderStatusAsync(Guid id, StatusCommand command, bool mayOverrideBlock, CancellationToken ct);

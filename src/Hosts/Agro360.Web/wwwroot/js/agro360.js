@@ -5,6 +5,7 @@
     const apiUnavailableMessage = "A API do Agro360 está indisponível. Tente novamente em instantes ou contate o suporte.";
     const storageKeys = { session: "agro360.session", theme: "agro360.theme" };
     const state = { session: readJson(storageKeys.session), searchTimer: 0, selectedSearch: -1, refreshPromise: null, refreshStopped: false, activeIncidents: new Set() };
+    window.agro360Session = state.session ?? null;
     const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
     const number = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
     const relativeTime = new Intl.RelativeTimeFormat("pt-BR", { numeric: "auto" });
@@ -41,7 +42,6 @@
         // Expose canonical global session for inter-module use
         window.agro360Session = session ?? null;
         window.dispatchEvent(new CustomEvent("agro360:session", { detail: session ?? null }));
-        document.dispatchEvent(new CustomEvent("agro360:session", { detail: session ?? null }));
         renderUser();
         renderNavigation();
     }
@@ -796,7 +796,6 @@
                 state.session = readJson(storageKeys.session);
                 window.agro360Session = state.session ?? null;
                 window.dispatchEvent(new CustomEvent("agro360:session", { detail: state.session ?? null }));
-                document.dispatchEvent(new CustomEvent("agro360:session", { detail: state.session ?? null }));
                 renderUser();
                 renderNavigation();
                 if (state.session && element("dashboard-subtitle")) loadDashboard();

@@ -36,7 +36,16 @@ public sealed class SupportSessionOperationController(ISaasService s) : SaasCont
         Guid? sessionId = null;
         if (Guid.TryParse(sessionIdClaim, out var parsed)) sessionId = parsed;
         else if (request?.SessionId is not null && request.SessionId != Guid.Empty) sessionId = request.SessionId;
+        if (sessionId is null)
+            return BadRequest(new { message = "Identificador da sessão é obrigatório para encerrar esta sessão de suporte." });
         await Service.EndActiveSupportSessionAsync(UserId(), sessionId, ct);
+        return NoContent();
+    }
+
+    [HttpPost("end-all"), Authorize(Policy = Permissions.PlatformAdmin)]
+    public async Task<IActionResult> EndAllSupportSessions(CancellationToken ct)
+    {
+        await Service.EndAllActiveSupportSessionsAsync(UserId(), "Encerramento explícito de todas as sessões ativas", ct);
         return NoContent();
     }
 }

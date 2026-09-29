@@ -397,9 +397,27 @@ static async Task EnsureHistoryAsync(NpgsqlConnection connection) => await conne
 
 static void ValidateChecksums(IEnumerable<Migration> migrations, IReadOnlyDictionary<string, AppliedMigration> applied)
 {
+    var acceptedHistoricalChecksums = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["107_commercial_proposals_commissions.sql"] =
+        [
+            "06dd2c9cc1d3c802963dbe2cf0906ef5112dfa1aacdc4b0aab2e257005df57c8",
+            "def1ffce5c38d38bf3471df42111d4d8ef82524d7756f91d8435d8ee9eb0c649"
+        ]
+    };
+
     foreach (var migration in migrations)
+    {
         if (applied.TryGetValue(migration.Version, out var previous) && !string.Equals(previous.Checksum, migration.Checksum, StringComparison.OrdinalIgnoreCase))
+        {
+            if (acceptedHistoricalChecksums.TryGetValue(migration.Name, out var historical) && historical.Contains(previous.Checksum, StringComparer.OrdinalIgnoreCase))
+            {
+                Log.Warning("Migration aplicada '{Migration}' possui checksum de versão publicada anterior ({PreviousChecksum}); mantendo compatibilidade de upgrade.", migration.Name, previous.Checksum);
+                continue;
+            }
             throw new InvalidOperationException($"Migration aplicada '{migration.Name}' foi alterada (checksum divergente).");
+        }
+    }
 }
 
 static async Task MigrateAsync(NpgsqlConnection connection, Migration[] migrations)

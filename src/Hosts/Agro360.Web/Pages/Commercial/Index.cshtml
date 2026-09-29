@@ -312,5 +312,73 @@
   </footer>
  </form>
 </dialog>
+<!-- Modal de Detalhes do Pedido de Venda -->
+<dialog id="order-detail-dialog" class="dialog-wide">
+ <header>
+  <div>
+   <h2 id="order-detail-title">Pedido de Venda</h2>
+   <span id="order-detail-status-pill" class="status-pill"></span>
+  </div>
+  <button value="cancel" formmethod="dialog" aria-label="Fechar" type="button" data-close>×</button>
+ </header>
+ <div class="detail-grid">
+  <div class="detail-item"><small>Cliente / Comprador</small><strong id="order-detail-customer">—</strong></div>
+  <div class="detail-item"><small>Proposta de Origem</small><strong id="order-detail-proposal">—</strong></div>
+  <div class="detail-item"><small>Moeda</small><strong id="order-detail-currency">—</strong></div>
+  <div class="detail-item"><small>Condições de Pagamento</small><strong id="order-detail-payment">—</strong></div>
+  <div class="detail-item"><small>Previsão de Entrega</small><strong id="order-detail-delivery">—</strong></div>
+  <div class="detail-item"><small>Total de Itens</small><strong id="order-detail-items-total">—</strong></div>
+  <div class="detail-item"><small>Frete</small><strong id="order-detail-freight">—</strong></div>
+  <div class="detail-item"><small>Total do Pedido</small><strong id="order-detail-total" style="color:var(--accent)">—</strong></div>
+ </div>
+ <div id="order-detail-notes-card" class="next-action-card" hidden>
+  <small>Observações do Pedido</small>
+  <span id="order-detail-notes-text"></span>
+ </div>
+ <div class="next-action-card">
+  <small>Próxima Ação Permitida</small>
+  <strong id="order-detail-next-action">—</strong>
+ </div>
+ <h3 style="margin:1rem 0 .4rem">Itens do Pedido</h3>
+ <table class="items-table">
+  <thead>
+   <tr>
+    <th>Produto</th>
+    <th>Unidade</th>
+    <th>Quantidade</th>
+    <th>Preço Unit.</th>
+    <th>Desconto</th>
+    <th>Total</th>
+   </tr>
+  </thead>
+  <tbody id="order-detail-items-body"></tbody>
+ </table>
+ <h3 style="margin:1.2rem 0 .4rem">Atendimentos e Expedições na Logística</h3>
+ <table class="items-table">
+  <thead>
+   <tr>
+    <th>Expedição</th>
+    <th>Status</th>
+    <th>Criada em</th>
+   </tr>
+  </thead>
+  <tbody id="order-detail-fulfillments-body"></tbody>
+ </table>
+ <h3 style="margin:1.2rem 0 .4rem">Histórico de Eventos do Pedido</h3>
+ <table class="items-table">
+  <thead>
+   <tr>
+    <th>Evento</th>
+    <th>Detalhes</th>
+    <th>Ocorrido em</th>
+   </tr>
+  </thead>
+  <tbody id="order-detail-history-body"></tbody>
+ </table>
+ <footer class="modal-actions-bar" id="order-detail-actions-bar">
+  <a id="order-detail-logistics-btn" class="btn-sm btn-action primary" href="#">Prosseguir para Logística</a>
+  <button type="button" data-close>Fechar</button>
+ </footer>
+</dialog>
 
 <script src="~/js/commercial.js" asp-append-version="true"></script>

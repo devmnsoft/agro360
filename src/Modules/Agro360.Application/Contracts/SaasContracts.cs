@@ -152,4 +152,5 @@ public interface ISaasService
     Task<SupportSessionResult> StartSupportSessionAsync(Guid tenantId, string reason, Guid superAdminUserId, CancellationToken ct, string? scope = null);
     Task EndSupportSessionAsync(Guid tenantId, Guid superAdminUserId, CancellationToken ct);
     Task EndActiveSupportSessionAsync(Guid actorId, Guid? sessionId, CancellationToken ct);
+    Task EndAllActiveSupportSessionsAsync(Guid actorId, string reason, CancellationToken ct);
 }

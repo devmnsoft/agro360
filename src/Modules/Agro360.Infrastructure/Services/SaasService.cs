@@ -694,42 +694,86 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
             new { TenantId = tenantId, Actor = superAdminUserId, Slug = slug, Ended = ended }, t);
     }, ct);
 
-    public Task EndActiveSupportSessionAsync(Guid actorId, Guid? sessionId, CancellationToken ct) => System("support-session-end-active", async (c, t) =>
+    public Task EndActiveSupportSessionAsync(Guid actorId, Guid? sessionId, CancellationToken ct)
+    {
+        if (sessionId is null || sessionId == Guid.Empty)
+            throw new ArgumentException("Identificador da sessão é obrigatório para encerrar a sessão de suporte. Para revogar todas as sessões, use o comando explícito.");
+
+        return System("support-session-end-active", async (c, t) =>
+        {
+            var activeSessions = (await c.QueryAsync<(Guid Id, Guid TenantId)>(
+                """
+                select id, tenant_id
+                from agro360.saas_support_sessions
+                where actor_id = @Actor
+                  and id = @SessionId
+                  and ended_at is null
+                for update
+                """,
+                new { Actor = actorId, SessionId = sessionId }, t)).AsList();
+
+            if (activeSessions.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var sess in activeSessions)
+            {
+                var ended = await c.ExecuteAsync(
+                    """
+                    update agro360.saas_support_sessions
+                       set ended_at = now(), ended_by = @Actor, end_reason = 'Encerramento pelo próprio operador assistido'
+                     where id = @SessionId and ended_at is null
+                    """,
+                    new { SessionId = sess.Id, Actor = actorId }, t);
+
+                await c.ExecuteAsync(
+                    """
+                    insert into agro360.saas_admin_audit_events(tenant_id, actor_id, action, entity_type, entity_id, reason, safe_details)
+                    values(@TenantId, @Actor, 'SUPPORT_SESSION_ENDED', 'TENANT', @TenantId, 'Encerramento pelo próprio operador assistido',
+                           jsonb_build_object('sessionId', @SessionId::text, 'closedCount', @Ended));
+                    """,
+                    new { TenantId = sess.TenantId, Actor = actorId, SessionId = sess.Id, Ended = ended }, t);
+            }
+        }, ct);
+    }
+
+    public Task EndAllActiveSupportSessionsAsync(Guid actorId, string reason, CancellationToken ct) => System("support-session-end-all", async (c, t) =>
     {
         var activeSessions = (await c.QueryAsync<(Guid Id, Guid TenantId)>(
             """
             select id, tenant_id
             from agro360.saas_support_sessions
             where actor_id = @Actor
-              and (@SessionId is null or id = @SessionId)
               and ended_at is null
             order by started_at desc
             for update
             """,
-            new { Actor = actorId, SessionId = sessionId }, t)).AsList();
+            new { Actor = actorId }, t)).AsList();
 
         if (activeSessions.Count == 0)
         {
             return;
         }
 
+        var auditReason = string.IsNullOrWhiteSpace(reason) ? "Encerramento explícito de todas as sessões de suporte ativas" : reason.Trim();
         foreach (var sess in activeSessions)
         {
             var ended = await c.ExecuteAsync(
                 """
                 update agro360.saas_support_sessions
-                   set ended_at = now(), ended_by = @Actor, end_reason = 'Encerramento pelo próprio operador assistido'
+                   set ended_at = now(), ended_by = @Actor, end_reason = @Reason
                  where id = @SessionId and ended_at is null
                 """,
-                new { SessionId = sess.Id, Actor = actorId }, t);
+                new { SessionId = sess.Id, Actor = actorId, Reason = auditReason }, t);
 
             await c.ExecuteAsync(
                 """
                 insert into agro360.saas_admin_audit_events(tenant_id, actor_id, action, entity_type, entity_id, reason, safe_details)
-                values(@TenantId, @Actor, 'SUPPORT_SESSION_ENDED', 'TENANT', @TenantId, 'Encerramento pelo próprio operador assistido',
-                       jsonb_build_object('sessionId', @SessionId::text, 'closedCount', @Ended));
+                values(@TenantId, @Actor, 'SUPPORT_SESSION_ENDED', 'TENANT', @TenantId, @Reason,
+                       jsonb_build_object('sessionId', @SessionId::text, 'closedCount', @Ended, 'allSessions', true));
                 """,
-                new { TenantId = sess.TenantId, Actor = actorId, SessionId = sess.Id, Ended = ended }, t);
+                new { TenantId = sess.TenantId, Actor = actorId, SessionId = sess.Id, Ended = ended, Reason = auditReason }, t);
         }
     }, ct);
     private const string UsageSql = "select o.tenant_id TenantId,t.name TenantName,(select count(*) from agro360.identity_users u where u.tenant_id=o.tenant_id and u.status='ACTIVE') ActiveUsers,p.user_limit UserLimit,(select count(*) from agro360.geo_farms f where f.tenant_id=o.tenant_id and f.deleted_at is null) Properties,p.property_limit PropertyLimit,(select count(*) from agro360.saas_devices d where d.tenant_id=o.tenant_id and d.revoked_at is null) Devices,p.device_limit DeviceLimit,coalesce(m.storage_used_mb,0) StorageUsedMb,p.storage_limit_mb StorageLimitMb,coalesce(m.tracked_lots,0) TrackedLots,coalesce(m.certificates,0) Certificates,coalesce(m.offline_records,0) OfflineRecords,coalesce(m.ledger_events,0) LedgerEvents,coalesce(m.exported_reports,0) ExportedReports from agro360.saas_organizations o join agro360.tenancy_tenants t on t.id=o.tenant_id join agro360.saas_plans p on p.id=o.plan_id left join agro360.saas_usage_metrics m on m.tenant_id=o.tenant_id";

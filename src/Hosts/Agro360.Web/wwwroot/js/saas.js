@@ -159,7 +159,6 @@
                                 localStorage.setItem("agro360.accessToken", result.accessToken);
                                 window.agro360Session = supportSessionData;
                                 window.dispatchEvent(new CustomEvent("agro360:session", { detail: supportSessionData }));
-                                document.dispatchEvent(new CustomEvent("agro360:session", { detail: supportSessionData }));
                             }
 
                             return `Contexto de suporte iniciado para "${result.tenantName}". Validade: até ${new Date(result.expiresAt).toLocaleTimeString("pt-BR")}. O banner no topo permite alternar ou encerrar a qualquer momento.`;

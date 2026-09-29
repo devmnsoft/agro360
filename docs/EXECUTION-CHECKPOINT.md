@@ -1,3 +1,94 @@
+## Navegação Funcional, Regras Comerciais Consistentes e Jornada do Pedido — 2026-09-29
+
+Branch `main` (`f42ec3d92e1dd609bb76d9a0940299dad6dec484`).
+
+**Entregue:**
+- **Navegação, Rotas e Mapeamento de Módulos**:
+  - Mapeamento estrito de `after-sales` para `logistics` em `IdentityService.cs` (`IsPermissionContracted`) e `PermissionAuthorizationHandler.cs` (`AcceptedModules`), eliminando liberação genérica de todos os módulos.
+  - Correção de permissões de menu em `_Layout.cshtml`: `/field` vinculado a `mobile.read,agriculture.read`; `/RuralHr` vinculado a `rural-hr.read`; `/Cooperatives` vinculado a `cooperative.read,commercial.read`; `/Reports` vinculado a `intelligence.read,finance.export`; links canônicos padronizados.
+- **Consultas e Projeções de Catálogo/Comercial**:
+  - Correção de `ListAsync` e `LookupAsync` em `Commercial360Service`:
+    - `inventory_products`: projeção de `'ACTIVE' as status`, busca por nome/código/sku sem tentar acessar coluna `status` inexistente na tabela; retorno de `base_unit as Unit, sku as Sku, base_price as BasePrice`.
+    - `sales_opportunities`: mapeamento e filtro por `stage as status` com busca contextual.
+    - Projeção de `CustomerName` e `Currency` em pedidos e propostas.
+    - Suporte a `@SearchGuid` no lookup para reter a seleção de itens sem expor GUID no campo de busca textual.
+- **Ciclo de Sessão, Suporte Assistido e RLS Hardening**:
+  - Migration incremental `database/migrations/115_saas_support_sessions_rls_hardening.sql` e consolidação em `database/agro360-postgres-full.sql` (schema 11.5.0): isolamento estrito onde ausência de `app.tenant_id` exige `app.platform_context = 'true'` explícito.
+  - `DatabaseExecutor`: injeção de `set_config('app.platform_context', 'true', true)` em transações de sistema da plataforma.
+  - `Agro360.Migrator`: tolerância do checksum publicado histórico para a migration 107.
+  - `SaasService`: método `EndActiveSupportSessionAsync` exige `sessionId` não-nulo/não-vazio (evitando encerramento acidental de todas as sessões); novo método `EndAllActiveSupportSessionsAsync` para revogação explícita com auditoria.
+  - Front-end: padronização de eventos `agro360:session` exclusivamente em `window` (eliminando disparos duplicados); inicialização síncrona imediata de `window.agro360Session`; invalidação de cache e cancelamento de requisições ativas (`AbortController`) na troca de tenant.
+- **Regras Comerciais, Concorrência e Coerência de Fatos Operacionais**:
+  - `Commercial360Service.ReviseProposalAsync`: validação antecipada de `ExpectedVersion` positivo obrigatório; lock pessimista `for update` garantindo OCC contra snapshots paralelos (HTTP 409 Conflict).
+  - Bloqueio de mutação operacional arbitrária em `ChangeOrderStatusAsync`: rejeição de status `RESERVED`, `FULFILLMENT`, `INVOICED`, `DELIVERED`, `RETURNED` via transição genérica (exigindo fluxos operacionais de expedição/logística/faturamento).
+  - Cancelamento de pedido libera automaticamente reservas ativas de fulfillment (`fulfillment_reservations`) e ajusta saldo de estoque reservado (`inventory_stock_balances.reserved`), prevenindo reservas órfãs.
+  - Eliminação de valores fixos no front-end (`SACAS` e `100.00` substituídos pela unidade e preço vigentes no lookup do produto); segregação de totais por moeda no dashboard.
+- **Detalhamento do Pedido e Continuidade Logística**:
+  - Novo endpoint `GET /api/commercial/orders/{id}` retornando `SalesOrderDetailView` com itens detalhados, faturamentos/expedições vinculadas, histórico de eventos de negócio e próxima ação permitida.
+  - Modal `#order-detail-dialog` integrado na tela `/Commercial` abrindo automaticamente após conversão da proposta ou sob demanda na listagem de pedidos.
+  - Continuidade logística fluida para `/Logistics` com pedido pré-selecionado sem forçar reserva física indevida.
+- **Harmonização Visual e Acessibilidade**:
+  - `commercial.css`: transição total para Agro360 design tokens (`--surface`, `--text`, `--line`, etc.), remoção da ocultação arbitrária de colunas em resoluções intermediárias, responsividade validada para 360px, 768px e 1440px.
+
+**Evidências Locais:**
+- `dotnet build MNSOFT.Agro360.sln -c Release`: 0 avisos, 0 erros (100% PASS).
+- `dotnet test tests/Agro360.ArchitectureTests -c Release`: 169/169 aprovados (100% PASS).
+- `dotnet test tests/Agro360.UnitTests -c Release`: 225/225 aprovados (100% PASS, incluindo novos testes em `CommercialOrderAndSessionTests`).
+- `git diff --check`: 100% PASS (zero erros de whitespace ou quebras de linha).
+
+## Suporte Assistido Estabilizado e Jornada Comercial Proposta-Pedido (AG-SAAS-SUP-001 + AG-COM-PROP-001) — 2026-09-28
+
+Branch `main` (`b2659edaedb742b598a6bd9ae5c6a0f26ea4c936`).
+
+**Entregue:**
+- **Bloco A: Estabilização de Suporte Assistido (AG-SAAS-SUP-001)**:
+  - **Contratos e Claims de Sessão**:
+    - `SupportSessionCommand(string Reason, string? Scope = null)` e `SupportSessionResult(Guid SessionId, Guid TenantId, string TenantName, string TenantSlug, string AccessToken, DateTimeOffset ExpiresAt, string[] Permissions, string Scope)` emitidos com claims específicas `support_session_id` e `support_scope` no JWT via `ITokenService`.
+    - `EndSupportSessionRequest(Guid? SessionId = null, Guid? TenantId = null)` e método de auto-encerramento `ISaasService.EndActiveSupportSessionAsync(Guid actorId, Guid? sessionId, CancellationToken ct)`.
+  - **Autorização e Governança em Tempo Real**:
+    - `PermissionAuthorization`: validação síncrona contra o banco de dados da existência exata da sessão de suporte ativa (`s.id = @SessionId AND s.tenant_id = @TenantId AND s.actor_id = @UserId AND s.started_at <= now() AND s.expires_at > now() AND s.ended_at IS NULL`). Revogação no banco anula imediatamente o token, impedindo reutilização mesmo se uma nova sessão for iniciada para o mesmo ator/tenant.
+    - `Permissions.IsReadOnlyPermission(string)`: classificação canônica de permissões de leitura vs mutação via `StringComparison.OrdinalIgnoreCase`.
+    - Sessões com escopo `SUPPORT_READ_OPERATIONAL` têm qualquer tentativa de mutação rejeitada com HTTP 403 Forbidden e mensagem de domínio explicativa.
+  - **Concorrência e Ciclo de Vida Backend**:
+    - `SaasService.StartSupportSessionAsync`: bloqueio pessimista do tenant com `SELECT ... FOR UPDATE`, encerramento concorrente de sessões ativas prévias sob o mesmo lock, geração de `sessionId` v7 persistido e auditoria detalhada de início de assistência.
+    - `SupportSessionOperationController`: rota dedicada `POST /api/platform/support-session/end` autorizada para o operador da sessão ativa encerrar o próprio suporte sem exigir role `PlatformAdmin`.
+  - **Front-End e Sincronização Multi-Aba**:
+    - `saas.js`, `shell-evolution.js` e `agro360.js`: propagação do evento `agro360:session` tanto no `window` quanto no `document`, sincronização cross-tab via listener de evento `storage`.
+    - Diferenciação visual clara entre revogação pelo servidor (toast/banner explicativo de sessão revogada) e falhas transitórias de rede/conectividade.
+    - Limpeza de `agro360.global_session` no logout e restauração segura da sessão global no encerramento ou 401 do suporte, sem renovar token global com metadados do tenant assistido.
+  - **Banco de Dados (Schema 11.4.0)**:
+    - Migration `database/migrations/114_saas_support_sessions_hardening.sql` com RLS em `saas_support_sessions` permitindo consulta/gerenciamento global e por tenant.
+    - Atualização do script consolidado `database/agro360-postgres-full.sql` com instalação limpa e reexecução idempotente validadas.
+
+- **Bloco B: Conclusão da Jornada Comercial de Propostas a Pedidos (AG-COM-PROP-001)**:
+  - **Contratos e Versionamento**:
+    - `SalesProposalCommand` com `long? ExpectedVersion` para controle de concorrência otimista (OCC).
+    - DTOs enriquecidos: `ProposalVersionView` (com `CustomerName`, `CurrentVersion`, `AcceptedVersion`, `ChangeReason`, `OpportunityId`, `RepresentativeId`), `ProposalItemView` (`ProductName`), `ProposalConversionResult` (`OrderNumber`).
+  - **Regras de Negócio e Conversão**:
+    - `Commercial360Service.ReviseProposalAsync`: validação de versão otimista (`ExpectedVersion == row.CurrentVersion`), rejeitando edições concorrentes com `ConflictException` (HTTP 409).
+    - `Commercial360Service.ConvertProposalAsync`: validação estrita de cliente não-prospect (`sales.customer_is_prospect`) e elegibilidade de compra (`CommercialRules.CustomerCanOrder`), bloqueando clientes inativos ou prospects.
+    - Conversões parciais e totais com controle de saldo de itens (`ProposalRemainingBalance`), alocação proporcional de frete e valores, idempotência por chave e geração de número legível de pedido (`PED-XXXX`).
+    - Filtros segregados em `ListAsync` e `LookupAsync` para `customers` (`type = 'CUSTOMER'`) e `prospects` (`type = 'PROSPECT'`), eliminando vazamento de GUIDs técnicos nas buscas.
+  - **Interface Comercial Operacional (`/Commercial`)**:
+    - Header com breadcrumbs e guia contextual explicativo ("Para que serve", "Como usar", "Regras principais", "Próximo passo").
+    - Tabela de propostas com badges de status em português (`Rascunho`, `Enviada`, `Aceita`, `Revisada`, `Convertida`, `Rejeitada`, `Cancelada`), moeda, valor total formatado e ações contextuais.
+    - Modais acessíveis: `#proposal-dialog` (criação e revisão de versão com aviso de conflito OCC e recarregamento), `#proposal-detail-dialog` (inspeção de metadados, versões e saldo), `#proposal-accept-dialog` (registro de aceite com evidência e data), `#proposal-convert-dialog` (conversão com alocação de saldo e direcionamento ao pedido gerado).
+    - Prevenção de race condition nas buscas e paginação via `activeRequestId` em `commercial.js`.
+
+**Evidências Locais:**
+- `dotnet build MNSOFT.Agro360.sln -c Release`: 0 avisos, 0 erros (100% PASS).
+- `dotnet test tests/Agro360.ArchitectureTests -c Release`: 169/169 aprovados (100% PASS).
+- `dotnet test tests/Agro360.UnitTests -c Release`: 202/202 aprovados (100% PASS, incluindo 17 novos testes em `CommercialProposalRulesTests` e `SaasSupportSessionRulesTests`).
+- `node --check` em `commercial.js`, `saas.js`, `shell-evolution.js` e `agro360.js`: 100% PASS.
+- `git diff --check`: 100% PASS (zero erros de whitespace ou newline).
+- `scripts/verify-e0.ps1`: 100% PASS em cluster PostgreSQL 18.0 isolado:
+  - Instalação limpa do `agro360-postgres-full.sql`: PASS.
+  - Reexecução do instalador (idempotência): PASS.
+  - Health checks `/health/live` e `/health`: PASS.
+  - OpenAPI e Swagger specs: PASS.
+  - Fluxo de autenticação, rotação de refresh token, logout e proteção contra replay: PASS.
+  - Testes de integração/regressão com PostgreSQL real: PASS.
+
 ## Portal Externo SaaS, Autoatendimento e Rastreabilidade Segura (AG-PORTAL-EXT-001) — 2026-09-21
 
 Branch `main` (`875b520136f969fa21bd1ced7015410ce150857c`).

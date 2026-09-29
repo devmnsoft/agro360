@@ -498,7 +498,7 @@ public sealed class IdentityService(
             "fleet" or "maintenance" => ["fleet"],
             "dashboard" => ["reports", "analytics"],
             "storage" => ["inventory", "warehousing"],
-            "logistics" or "regional-logistics" => ["logistics"],
+            "logistics" or "regional-logistics" or "after-sales" => ["logistics"],
             "traceability" or "ledger" or "sales-network" => ["traceability"],
             "intelligence" => ["reports", "intelligence", "analytics", "ai", "predictive-ai"],
             "compliance" or "esg" or "sustainability" => ["environment-esg"],
