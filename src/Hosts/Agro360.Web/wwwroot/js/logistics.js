@@ -137,14 +137,39 @@
         content.innerHTML = '<p class="empty-state">Carregando resumo, itens, reservas, expedições e histórico…</p>';
         try {
             const data = await request(`/api/logistics/trips/fulfillment/orders/${orderId}`);
-            const order = value(data, 'order') || {}, items = value(data, 'items') || [], reservations = value(data, 'reservations') || [], shipments = value(data, 'shipments') || [], history = value(data, 'history') || [];
-            content.innerHTML = `<button type="button" class="secondary-button" id="back-to-queue">← Voltar à fila</button>
+            const order = value(data, 'order') || {}, items = value(data, 'items') || [], reservations = value(data, 'reservations') || [], shipments = value(data, 'shipments') || [], history = value(data, 'history') || [], schedules = value(data, 'schedules') || [];
+            content.innerHTML = `<div style="display:flex;gap:.5rem;margin-bottom:1rem">
+                <a href="/Commercial?view=orders&orderId=${orderId}" class="secondary-button" id="back-to-commercial">← Voltar ao Comercial</a>
+                <button type="button" class="secondary-button" id="back-to-queue">← Voltar à fila</button>
+              </div>
               <section><h2>Resumo</h2><dl><dt>Pedido</dt><dd>${escapeHtml(value(order,'order_number','orderNumber'))}</dd><dt>Cliente</dt><dd>${escapeHtml(value(order,'customer'))}</dd><dt>Origem</dt><dd>${escapeHtml(value(order,'proposal_number','proposalNumber') || 'Pedido direto')}${value(order,'proposal_version','proposalVersion') ? ` · versão ${escapeHtml(value(order,'proposal_version','proposalVersion'))}` : ''}</dd><dt>Moeda e condições</dt><dd>${escapeHtml(value(order,'currency') || 'Não informada')} · ${escapeHtml(value(order,'payment_terms','paymentTerms') || 'Não informadas')}</dd></dl></section>
+              <section><h2>Compromissos de Entrega (Programação Comercial)</h2>${renderOperationalTable(schedules, [['schedule_number','Nº Programação'],['planned_date','Data Prevista'],['delivery_address','Local de Entrega'],['responsible_name','Responsável'],['status','Situação'],['actions','Ações']], row => {
+                  const st = value(row, 'status');
+                  const sId = value(row, 'id');
+                  if (['PLANNED', 'PREPARING'].includes(st)) {
+                      return `<button type="button" class="primary-button" data-fulfill-schedule="${escapeHtml(sId)}">Atender compromisso</button>`;
+                  }
+                  return `<span class="status-pill">${escapeHtml(st)}</span>`;
+              })}</section>
               <section><h2>Itens</h2><p class="form-hint">Pendente = pedida − cancelada − expedida. Reserva ativa e separação são subconjuntos do pendente e não são descontadas novamente.</p>${renderOperationalTable(items, [['product','Produto'],['unit','Unidade'],['ordered_quantity','Pedida'],['cancelled_quantity','Cancelada'],['reserved_quantity','Reservada ativa'],['picked_quantity','Separada'],['dispatched_quantity','Expedida'],['pending_quantity','Pendente'],['actions','Ações']], row => `<button type="button" class="secondary-button" data-reserve="${escapeHtml(value(row,'id'))}">Reservar</button> <button type="button" class="secondary-button" data-cancel-item="${escapeHtml(value(row,'id'))}" data-version="${escapeHtml(value(row,'fulfillment_version','fulfillmentVersion'))}">Cancelar saldo</button>` )}</section>
               <section><h2>Reservas</h2>${renderOperationalTable(reservations, [['warehouse','Depósito'],['lot_number','Lote'],['quantity','Original'],['active_quantity','Ativa'],['consumed_quantity','Consumida'],['released_quantity','Liberada'],['status','Estado'],['actions','Ações']], row => value(row,'status') === 'ACTIVE' ? `<button type="button" class="secondary-button" data-release="${escapeHtml(value(row,'id'))}" data-version="${escapeHtml(value(row,'version'))}" data-max="${escapeHtml(value(row,'active_quantity','activeQuantity'))}">Liberar</button>` : '—')}</section>
               <section><h2>Expedições</h2>${renderOperationalTable(shipments, [['number','Número'],['status','Estado'],['dispatched_at','Confirmada em'],['actions','Ações']], row => value(row,'status') === 'CHECKED' ? `<button type="button" class="secondary-button" data-reopen="${escapeHtml(value(row,'id'))}" data-version="${escapeHtml(value(row,'version'))}">Reabrir preparação</button> <button type="button" class="primary-button" data-dispatch="${escapeHtml(value(row,'id'))}" data-version="${escapeHtml(value(row,'version'))}">Expedir</button>` : value(row,'status') === 'PREPARING' ? `<button type="button" class="secondary-button" data-prepare="${escapeHtml(value(row,'id'))}">Separar e conferir</button>` : escapeHtml(value(row,'status')))}</section>
               <section><h2>Histórico</h2>${renderOperationalTable(history, [['event_type','Evento'],['created_at','Data']])}</section>`;
             document.querySelector('#back-to-queue')?.addEventListener('click', () => loadQueue());
+            content.querySelectorAll('[data-fulfill-schedule]').forEach(b => {
+                b.addEventListener('click', () => {
+                    const scheduleId = b.dataset.fulfillSchedule;
+                    const schedule = schedules.find(s => String(value(s, 'id')) === scheduleId);
+                    if (!schedule) return;
+                    const schedItem = (value(schedule, 'items') || [])[0];
+                    const orderItem = items.find(x => String(value(x, 'id')) === (schedItem ? value(schedItem, 'order_item_id', 'orderItemId') : null)) || items[0];
+                    if (orderItem) {
+                        showReserveForm(value(orderItem, 'id'), order, orderItem, orderId, scheduleId, schedItem ? value(schedItem, 'id') : null);
+                    } else {
+                        window.agro360Feedback?.toast('warning', 'Sem itens', 'Nenhum item elegível encontrado para esta programação.');
+                    }
+                });
+            });
             content.querySelectorAll('[data-reserve]').forEach(b => b.addEventListener('click', () => showReserveForm(b.dataset.reserve, order, items.find(x => String(value(x,'id')) === b.dataset.reserve), orderId)));
             content.querySelectorAll('[data-release]').forEach(b => b.addEventListener('click', () => releaseReservation(b.dataset.release, Number(b.dataset.version), Number(b.dataset.max), orderId)));
             content.querySelectorAll('[data-cancel-item]').forEach(b => b.addEventListener('click', () => cancelItem(b.dataset.cancelItem, Number(b.dataset.version), orderId)));
@@ -159,13 +184,45 @@
         return `<div class="table-scroll"><table class="logistics-table"><thead><tr>${columns.map(([,label]) => `<th>${label}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${columns.map(([key]) => `<td>${key === 'actions' ? actionRenderer?.(row) || '—' : escapeHtml(value(row,key,key.replace(/_([a-z])/g,(_,x)=>x.toUpperCase())) ?? '—')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
     }
 
-    async function showReserveForm(itemId, order, item, orderId) {
+    async function showReserveForm(itemId, order, item, orderId, scheduleId = null, scheduleItemId = null) {
         const lots = await request(`/api/logistics/trips/fulfillment/order-items/${itemId}/eligible-lots`);
         if (!lots.length) { window.agro360Feedback?.toast('warning','Sem lote elegível','Não há lote aprovado, válido e com saldo livre para este produto.'); return; }
         const host = document.createElement('div'); host.className = 'operation-review';
         host.innerHTML = `<h3>Revisar reserva — ${escapeHtml(value(item,'product'))}</h3><p>Reservar compromete saldo, mas não registra saída física. Separação e conferência serão feitas depois.</p><form><label>Depósito e lote elegível<select name="lot" required>${lots.map(l => `<option value="${escapeHtml(value(l,'lot_id','lotId'))}" data-warehouse="${escapeHtml(value(l,'warehouse_id','warehouseId'))}">${escapeHtml(value(l,'warehouse'))} · lote ${escapeHtml(value(l,'lot_number','lotNumber'))} · saldo ${escapeHtml(value(l,'eligible_quantity','eligibleQuantity'))}</option>`).join('')}</select></label><label>Quantidade (${escapeHtml(value(item,'unit'))})<input name="quantity" type="number" min="0.000001" max="${escapeHtml(value(item,'pending_quantity','pendingQuantity'))}" step="any" required></label><label>Destino<input name="destination" maxlength="200" required value="Cliente ${escapeHtml(value(order,'customer'))}"></label><button class="primary-button">Confirmar reserva</button><button type="button" class="secondary-button" data-dismiss>Cancelar</button><p role="alert"></p></form>`;
         content.prepend(host); host.querySelector('select')?.focus(); host.querySelector('[data-dismiss]').onclick = () => host.remove();
-        host.querySelector('form').onsubmit = async e => { e.preventDefault(); const f=e.currentTarget, option=f.lot.selectedOptions[0], button=f.querySelector('.primary-button'),intent={number:`SEP-${orderId}-${itemId}`,originWarehouseId:option.dataset.warehouse,customerId:value(order,'customer_id','customerId'),destination:f.destination.value,items:[{orderItemId:itemId,stockLotId:f.lot.value,quantity:Number(f.quantity.value),pickedQuantity:0,checkedQuantity:0,unit:value(item,'unit'),divergenceReason:null}]}; button.disabled=true; try { await request('/api/logistics/trips/fulfillment',{method:'POST',body:JSON.stringify({...intent,idempotencyKey:operationKey('create',itemId,intent)})}); sessionStorage.removeItem(`agro360.fulfillment.create.${itemId}`); window.agro360Feedback?.toast('success','Reserva criada','Saldo comprometido sem saída física.'); await loadOrderDetail(orderId); } catch(err) { f.querySelector('[role=alert]').textContent=err.message; button.disabled=false; } };
+        host.querySelector('form').onsubmit = async e => {
+            e.preventDefault();
+            const f = e.currentTarget, option = f.lot.selectedOptions[0], button = f.querySelector('.primary-button'),
+            intent = {
+                number: `SEP-${orderId}-${itemId}`,
+                originWarehouseId: option.dataset.warehouse,
+                customerId: value(order, 'customer_id', 'customerId'),
+                destination: f.destination.value,
+                scheduleId: scheduleId || null,
+                items: [{
+                    orderItemId: itemId,
+                    stockLotId: f.lot.value,
+                    quantity: Number(f.quantity.value),
+                    pickedQuantity:0,checkedQuantity:0,
+                    unit: value(item, 'unit'),
+                    divergenceReason:null,
+                    scheduleItemId: scheduleItemId || null
+                }]
+            };
+            button.disabled = true;
+            try {
+                await request('/api/logistics/trips/fulfillment', {
+                    method: 'POST',
+                    body: JSON.stringify({ ...intent, idempotencyKey: operationKey('create',itemId,intent) })
+                });
+                sessionStorage.removeItem(`agro360.fulfillment.create.${itemId}`);
+                window.agro360Feedback?.toast('success', 'Reserva criada', 'Saldo comprometido sem saída física.');
+                await loadOrderDetail(orderId);
+            } catch (err) {
+                f.querySelector('[role=alert]').textContent = err.message;
+                button.disabled = false;
+            }
+        };
     }
     const operationKey=(operation,id,content)=>{const storage=`agro360.fulfillment.${operation}.${id}`,hash=JSON.stringify(content),old=JSON.parse(sessionStorage.getItem(storage)||'null');if(old?.hash===hash)return old.key;const key=crypto.randomUUID();sessionStorage.setItem(storage,JSON.stringify({hash,key}));return key};
     function operationForm(title, fields, review, submit) { const host=document.createElement('div');host.className='operation-review';host.innerHTML=`<h3>${escapeHtml(title)}</h3><p>${escapeHtml(review)}</p><form>${fields}<button class="primary-button">Confirmar</button><button type="button" class="secondary-button" data-dismiss>Cancelar</button><p role="alert"></p></form>`;content.prepend(host);const form=host.querySelector('form');host.querySelector('[data-dismiss]').onclick=()=>host.remove();form.querySelector('input,textarea')?.focus();form.onsubmit=async e=>{e.preventDefault();if(!form.reportValidity())return;const button=form.querySelector('.primary-button');button.disabled=true;try{await submit(form);host.remove()}catch(err){form.querySelector('[role=alert]').textContent=err.message;button.disabled=false}}; }
@@ -463,6 +520,144 @@
         }
     });
 
+    async function loadSchedules(filterParams = {}) {
+        content.innerHTML = '<p class="empty-state">Carregando carteira de compromissos operacionais…</p>';
+        try {
+            const q = new URLSearchParams(filterParams);
+            [...q].forEach(([k, v]) => { if (!v) q.delete(k); });
+            const data = await request(`/api/commercial/schedules?${q}`);
+            const rows = value(data, 'items') || [];
+            const indicatorsData = value(data, 'indicators') || {};
+            const currentPage = Number(value(data, 'page') || 1);
+            const total = Number(value(data, 'total') || 0);
+            const pageSize = Number(value(data, 'pageSize') || 20);
+
+            const indCards = [
+                ['totalOpen', 'Compromissos em Aberto'],
+                ['late', 'Atrasados'],
+                ['duePeriod', 'Vencendo no Período'],
+                ['partiallyDelivered', 'Parcialmente Atendidos'],
+                ['unassigned', 'Sem Responsável'],
+                ['completed', 'Concluídos']
+            ];
+
+            const indHtml = `
+                <div class="logistics-indicators" style="margin-bottom:1rem">
+                    ${indCards.map(([k, label]) => `
+                        <div class="indicator" style="${k === 'late' && (indicatorsData[k] || 0) > 0 ? 'border-color:#b91c1c;background:#fff5f5;' : ''}">
+                            <strong style="${k === 'late' && (indicatorsData[k] || 0) > 0 ? 'color:#b91c1c;' : ''}">${indicatorsData[k] ?? 0}</strong>
+                            ${label}
+                        </div>
+                    `).join('')}
+                </div>`;
+
+            const filterToolbar = `
+                <form class="toolbar" id="schedules-filter-form" style="margin-bottom:1rem">
+                    <label>Buscar
+                        <input name="search" type="search" placeholder="Nº programação, cliente ou pedido" value="${escapeHtml(filterParams.search || '')}" />
+                    </label>
+                    <label>Situação
+                        <select name="status">
+                            <option value="">Todas</option>
+                            <option value="PLANNED" ${filterParams.status === 'PLANNED' ? 'selected' : ''}>Planejada (PLANNED)</option>
+                            <option value="PREPARING" ${filterParams.status === 'PREPARING' ? 'selected' : ''}>Em Preparação (PREPARING)</option>
+                            <option value="DISPATCHED" ${filterParams.status === 'DISPATCHED' ? 'selected' : ''}>Expedida (DISPATCHED)</option>
+                            <option value="PARTIALLY_DELIVERED" ${filterParams.status === 'PARTIALLY_DELIVERED' ? 'selected' : ''}>Parcialmente Entregue</option>
+                            <option value="DELIVERED" ${filterParams.status === 'DELIVERED' ? 'selected' : ''}>Entregue</option>
+                            <option value="CANCELLED" ${filterParams.status === 'CANCELLED' ? 'selected' : ''}>Cancelada</option>
+                        </select>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+                        <input type="checkbox" name="lateOnly" value="true" ${filterParams.lateOnly === 'true' || filterParams.lateOnly === true ? 'checked' : ''} />
+                        Apenas atrasados
+                    </label>
+                    <button class="primary-button" type="submit">Filtrar</button>
+                </form>`;
+
+            const tableHtml = rows.length ? `
+                <table class="logistics-table">
+                    <thead>
+                        <tr>
+                            <th>Nº Programação</th>
+                            <th>Pedido / Cliente</th>
+                            <th>Data Prevista</th>
+                            <th>Destino</th>
+                            <th>Responsável</th>
+                            <th>Situação</th>
+                            <th>Progresso Itens</th>
+                            <th>Ação</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map(s => {
+                            const orderId = value(s, 'orderId', 'order_id');
+                            const isLate = value(s, 'isLate', 'is_late');
+                            const planned = new Date(value(s, 'plannedDate', 'planned_date')).toLocaleDateString('pt-BR') + ' ' +
+                                new Date(value(s, 'plannedDate', 'planned_date')).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                            const itemsList = value(s, 'items') || [];
+                            const itemsSummary = itemsList.map(i => `${escapeHtml(value(i, 'productName', 'product_name'))}: ${Number(value(i, 'quantity')).toLocaleString('pt-BR')} ${escapeHtml(value(i, 'unit'))}`).join(', ');
+
+                            return `
+                            <tr style="${isLate ? 'background:rgba(220,38,38,0.05);' : ''}">
+                                <td><strong>${escapeHtml(value(s, 'scheduleNumber', 'schedule_number'))}</strong></td>
+                                <td>
+                                    <strong>${escapeHtml(value(s, 'orderNumber', 'order_number'))}</strong><br>
+                                    <small>${escapeHtml(value(s, 'customerName', 'customer_name'))}</small>
+                                </td>
+                                <td>
+                                    <strong>${planned}</strong>
+                                    ${isLate ? '<span class="status-pill" style="background:#fee2e2;color:#b91c1c;margin-left:.3rem;font-weight:700">ATRASADO</span>' : ''}
+                                </td>
+                                <td>${escapeHtml(value(s, 'deliveryAddress', 'delivery_address') || '—')}</td>
+                                <td>${escapeHtml(value(s, 'responsibleName', 'responsible_name') || 'Não atribuído')}</td>
+                                <td><span class="status-pill">${escapeHtml(value(s, 'status'))}</span></td>
+                                <td style="font-size:.85rem">${itemsSummary || '—'}</td>
+                                <td>
+                                    <button type="button" class="secondary-button" data-schedule-order="${escapeHtml(orderId)}">Abrir Pedido</button>
+                                </td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+                <nav class="pagination" aria-label="Paginação">
+                    <button type="button" class="secondary-button" data-schedule-page="${currentPage - 1}" ${currentPage <= 1 ? 'disabled' : ''}>Anterior</button>
+                    <span>Página ${currentPage} de ${Math.max(1, Math.ceil(total / pageSize))} · ${total} compromisso(s)</span>
+                    <button type="button" class="secondary-button" data-schedule-page="${currentPage + 1}" ${currentPage * pageSize >= total ? 'disabled' : ''}>Próxima</button>
+                </nav>
+            ` : '<p class="empty-state">Nenhum compromisso operacional encontrado com os filtros selecionados.</p>';
+
+            content.innerHTML = indHtml + filterToolbar + tableHtml;
+
+            content.querySelector('#schedules-filter-form')?.addEventListener('submit', e => {
+                e.preventDefault();
+                const form = e.currentTarget;
+                loadSchedules({
+                    search: form.search.value.trim(),
+                    status: form.status.value,
+                    lateOnly: form.lateOnly.checked ? 'true' : ''
+                });
+            });
+
+            content.querySelectorAll('[data-schedule-order]').forEach(b => {
+                b.addEventListener('click', () => loadOrderDetail(b.dataset.scheduleOrder));
+            });
+
+            content.querySelectorAll('[data-schedule-page]').forEach(b => {
+                b.addEventListener('click', () => {
+                    const f = content.querySelector('#schedules-filter-form');
+                    loadSchedules({
+                        search: f?.search?.value?.trim() || '',
+                        status: f?.status?.value || '',
+                        lateOnly: f?.lateOnly?.checked ? 'true' : '',
+                        page: b.dataset.schedulePage
+                    });
+                });
+            });
+        } catch (err) {
+            renderErrorState(err, 'Carteira de Compromissos');
+        }
+    }
+
     function switchView(view) {
         activeView = view;
         document.querySelectorAll('.journey-nav button').forEach(x => {
@@ -475,6 +670,8 @@
 
         if (view === 'queue' || view === 'picking' || view === 'shipments') {
             loadQueue();
+        } else if (view === 'schedules') {
+            loadSchedules();
         } else if (view === 'trips') {
             loadTrips();
         } else if (view === 'returns') {
@@ -489,6 +686,8 @@
             await loadIndicators();
             if (activeView === 'returns') {
                 await loadReturns();
+            } else if (activeView === 'schedules') {
+                await loadSchedules();
             } else if (activeView === 'queue' || activeView === 'picking' || activeView === 'shipments') {
                 await loadQueue();
             } else if (activeView === 'trips') {
@@ -517,9 +716,20 @@
         b.addEventListener('click', () => switchView(b.dataset.view));
     });
 
-    // Iniciar na aba de retornos caso o breadcrumb ou URL aponte para retornos
+    // Iniciar na aba correspondente ou abrir pedido direto vindo do Comercial
     const urlParams = new URLSearchParams(window.location.search);
-    const initialView = urlParams.get('tab') || 'returns';
+    const orderIdParam = urlParams.get('orderId');
+    const tabParam = urlParams.get('tab');
+    const initialView = tabParam || (orderIdParam ? 'queue' : 'returns');
     switchView(initialView);
-    refresh();
+    refresh().then(() => {
+        if (orderIdParam) {
+            const isValidGuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(orderIdParam);
+            if (isValidGuid) {
+                loadOrderDetail(orderIdParam);
+            } else {
+                window.agro360Feedback?.toast('error', 'Identificador inválido', 'O pedido informado na URL não é um identificador válido.');
+            }
+        }
+    });
 })();

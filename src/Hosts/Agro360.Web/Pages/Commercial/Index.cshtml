@@ -345,13 +345,33 @@
    <tr>
     <th>Produto</th>
     <th>Unidade</th>
-    <th>Quantidade</th>
+    <th>Qtd. Pedida</th>
     <th>Preço Unit.</th>
     <th>Desconto</th>
     <th>Total</th>
+    <th>Programado</th>
+    <th>Saldo Elegível</th>
    </tr>
   </thead>
   <tbody id="order-detail-items-body"></tbody>
+ </table>
+ <div style="display:flex;justify-content:space-between;align-items:center;margin:1.4rem 0 .4rem">
+  <h3 style="margin:0">Programação de Entregas (Compromissos Operacionais)</h3>
+  <button type="button" id="order-create-schedule-btn" class="btn-sm btn-action primary">+ Nova Programação</button>
+ </div>
+ <table class="items-table" id="order-schedules-table">
+  <thead>
+   <tr>
+    <th>Nº Programação</th>
+    <th>Previsão</th>
+    <th>Local de Entrega</th>
+    <th>Responsável</th>
+    <th>Status</th>
+    <th>Itens e Progresso</th>
+    <th>Ações</th>
+   </tr>
+  </thead>
+  <tbody id="order-detail-schedules-body"></tbody>
  </table>
  <h3 style="margin:1.2rem 0 .4rem">Atendimentos e Expedições na Logística</h3>
  <table class="items-table">
@@ -379,6 +399,159 @@
   <a id="order-detail-logistics-btn" class="btn-sm btn-action primary" href="#">Prosseguir para Logística</a>
   <button type="button" data-close>Fechar</button>
  </footer>
+</dialog>
+
+<!-- Modal de Criação de Programação de Entrega -->
+<dialog id="schedule-create-dialog" class="dialog-wide">
+ <form id="schedule-create-form">
+  <header>
+   <h2>Nova Programação de Entrega</h2>
+   <button value="cancel" formmethod="dialog" aria-label="Fechar" type="button" data-close>×</button>
+  </header>
+  <input type="hidden" name="orderId" />
+  <p style="color:#9bb7ad">Defina os compromissos de data e entrega para o pedido <strong id="schedule-create-order-number"></strong>.</p>
+  <div class="form-row">
+   <label style="flex:1">Data/Hora Prevista *
+    <input type="datetime-local" name="plannedDate" required />
+   </label>
+   <label style="flex:1">Responsável Operacional
+    <select name="responsibleUserId" data-lookup="responsible">
+     <option value="">Sem responsável atribuído</option>
+    </select>
+   </label>
+  </div>
+  <label>Local / Endereço de Entrega *
+   <input name="deliveryAddress" required maxlength="500" placeholder="Fazenda / Propriedade / Silo / Galpão de destino" />
+  </label>
+  <div class="form-row">
+   <label style="flex:1">Início da Janela (opcional)
+    <input type="time" name="windowStartTime" />
+   </label>
+   <label style="flex:1">Fim da Janela (opcional)
+    <input type="time" name="windowEndTime" />
+   </label>
+  </div>
+  <label>Observações Operacionais
+   <textarea name="notes" maxlength="1000" placeholder="Instruções para o transportador, contato no local ou restrições de descarga"></textarea>
+  </label>
+  <fieldset style="border:1px solid #284c40;border-radius:10px;padding:.8rem;margin-top:.4rem">
+   <legend style="color:#8ee5bd;font-weight:700">Quantidades por Item a Programar</legend>
+   <table class="items-table">
+    <thead>
+     <tr>
+      <th>Produto</th>
+      <th>Unidade</th>
+      <th>Qtd. Pedida</th>
+      <th>Já Programado</th>
+      <th>Saldo Elegível</th>
+      <th style="width:160px">Qtd. a Programar *</th>
+     </tr>
+    </thead>
+    <tbody id="schedule-create-items-body"></tbody>
+   </table>
+  </fieldset>
+  <p class="form-error" role="alert"></p>
+  <footer>
+   <button type="button" data-close>Cancelar</button>
+   <button class="primary" type="submit">Salvar Programação</button>
+  </footer>
+ </form>
+</dialog>
+
+<!-- Modal de Reprogramação de Entrega -->
+<dialog id="schedule-reschedule-dialog" class="dialog-wide">
+ <form id="schedule-reschedule-form">
+  <header>
+   <h2>Reprogramar Entrega</h2>
+   <button value="cancel" formmethod="dialog" aria-label="Fechar" type="button" data-close>×</button>
+  </header>
+  <input type="hidden" name="scheduleId" />
+  <input type="hidden" name="expectedVersion" />
+  <p style="color:#9bb7ad">Programação <strong id="reschedule-number"></strong> · Versão <span id="reschedule-version"></span></p>
+  <div class="form-row">
+   <label style="flex:1">Nova Data/Hora Prevista *
+    <input type="datetime-local" name="newPlannedDate" required />
+   </label>
+   <label style="flex:1">Responsável Operacional
+    <select name="responsibleUserId" data-lookup="responsible">
+     <option value="">Sem responsável atribuído</option>
+    </select>
+   </label>
+  </div>
+  <label>Local de Entrega
+   <input name="deliveryAddress" maxlength="500" />
+  </label>
+  <div class="form-row">
+   <label style="flex:1">Início da Janela
+    <input type="time" name="windowStartTime" />
+   </label>
+   <label style="flex:1">Fim da Janela
+    <input type="time" name="windowEndTime" />
+   </label>
+  </div>
+  <label>Motivo da Reprogramação * <span class="help" title="Justificativa auditável para alteração do compromisso original.">?</span>
+   <textarea name="reason" required maxlength="500" placeholder="Explique o motivo da alteração de data, quantidades ou local"></textarea>
+  </label>
+  <fieldset style="border:1px solid #284c40;border-radius:10px;padding:.8rem;margin-top:.4rem">
+   <legend style="color:#8ee5bd;font-weight:700">Ajuste de Quantidades</legend>
+   <table class="items-table">
+    <thead>
+     <tr>
+      <th>Produto</th>
+      <th>Unidade</th>
+      <th>Qtd. Atual</th>
+      <th>Já Expedida</th>
+      <th>Saldo do Pedido</th>
+      <th style="width:160px">Nova Quantidade *</th>
+     </tr>
+    </thead>
+    <tbody id="schedule-reschedule-items-body"></tbody>
+   </table>
+  </fieldset>
+  <p class="form-error" role="alert"></p>
+  <footer>
+   <button type="button" data-close>Cancelar</button>
+   <button class="primary" type="submit">Confirmar Reprogramação</button>
+  </footer>
+ </form>
+</dialog>
+
+<!-- Modal de Cancelamento de Programação -->
+<dialog id="schedule-cancel-dialog" class="dialog-medium">
+ <form id="schedule-cancel-form">
+  <header>
+   <h2>Cancelar Programação de Entrega</h2>
+   <button value="cancel" formmethod="dialog" aria-label="Fechar" type="button" data-close>×</button>
+  </header>
+  <input type="hidden" name="scheduleId" />
+  <input type="hidden" name="expectedVersion" />
+  <p style="color:#f87171">Atenção: A programação <strong id="cancel-schedule-number"></strong> será cancelada e as quantidades não expedidas serão liberadas para novas programações no pedido.</p>
+  <label>Motivo do Cancelamento *
+   <textarea name="reason" required maxlength="500" placeholder="Informe a justificativa do cancelamento"></textarea>
+  </label>
+  <p class="form-error" role="alert"></p>
+  <footer>
+   <button type="button" data-close>Voltar</button>
+   <button class="btn-sm btn-danger" type="submit" style="background:#b91c1c;color:#fff;border:none;padding:.6rem 1.2rem;border-radius:8px;font-weight:700">Confirmar Cancelamento</button>
+  </footer>
+ </form>
+</dialog>
+
+<!-- Modal de Histórico de Revisões da Programação -->
+<dialog id="schedule-revisions-dialog" class="dialog-wide">
+ <div>
+  <header style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+   <div>
+    <h2 style="margin:0" id="revisions-modal-title">Histórico de Revisões</h2>
+    <small id="revisions-modal-subtitle" style="color:#87a399"></small>
+   </div>
+   <button value="cancel" formmethod="dialog" aria-label="Fechar" type="button" data-close>×</button>
+  </header>
+  <div id="schedule-revisions-content"></div>
+  <footer style="margin-top:1rem;display:flex;justify-content:flex-end">
+   <button type="button" data-close>Fechar</button>
+  </footer>
+ </div>
 </dialog>
 
 <script src="~/js/commercial.js" asp-append-version="true"></script>

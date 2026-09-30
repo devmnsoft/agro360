@@ -1,5 +1,11 @@
 # Matriz de rastreabilidade v0.2.0
 
+## Incremento 2026-09-30 — MVP Operacional: Pedido, Programação e Atendimento Rastreável (AG-OPS-MVP-001)
+
+| Dependência/capacidade | Estado real | Evidência/limite |
+|---|---|---|
+| Programação de Entregas e Compromissos Operacionais (AG-OPS-MVP-001) | **Validado em runtime e testes** | Migration 116 (schema 11.6.0) em `sales_delivery_schedules`, `sales_delivery_schedule_items`, `sales_delivery_schedule_revisions` com RLS multi-tenant; regras `CommercialRules` (`EnsureOrderCanBeScheduled`, `CalculateEligibleScheduleBalance`, `ValidateScheduleTransition`, `ValidateDeliverySchedule`, `ValidateReschedule`); controle OCC via `ExpectedVersion` em reprogramação e cancelamento; endpoints de CRUD/gestão em `Commercial360Controller`; vínculo direto com `fulfillment_shipments` (`schedule_id`, `schedule_item_id`) sincronizando status `PREPARING` → `DISPATCHED` → `PARTIALLY_DELIVERED`/`DELIVERED`; ocorrências automáticas na Central de Operações (`SCHEDULE_UNASSIGNED`, `SCHEDULE_LATE`, `DELIVERY_FAILED`); diagnóstico do piloto no Deployment Center; modais operacionais em `/Commercial` e aba "Compromissos" com indicadores em `/Logistics`; round-trip simétrico sem mutações acidentais; 169 arch tests PASS, 260 unit tests PASS (100%), build Release com 0 erros e 0 warnings. |
+
 ## Incremento 2026-09-28 — Estabilização de Suporte Assistido e Conclusão Comercial Proposta-Pedido (AG-SAAS-SUP-001 + AG-COM-PROP-001)
 
 | Dependência/capacidade | Estado real | Evidência/limite |

@@ -25,9 +25,17 @@
     const proposalConvertDialog = document.querySelector("#proposal-convert-dialog");
     const proposalConvertForm = document.querySelector("#proposal-convert-form");
     const orderDetailDialog = document.querySelector("#order-detail-dialog");
+    const scheduleCreateDialog = document.querySelector("#schedule-create-dialog");
+    const scheduleCreateForm = document.querySelector("#schedule-create-form");
+    const scheduleRescheduleDialog = document.querySelector("#schedule-reschedule-dialog");
+    const scheduleRescheduleForm = document.querySelector("#schedule-reschedule-form");
+    const scheduleCancelDialog = document.querySelector("#schedule-cancel-dialog");
+    const scheduleCancelForm = document.querySelector("#schedule-cancel-form");
+    const scheduleRevisionsDialog = document.querySelector("#schedule-revisions-dialog");
 
     let currentTenantId = null;
     let pendingAbortController = null;
+    let currentDetailedOrder = null;
 
     const statusTranslations = {
         DRAFT: "Rascunho",
@@ -46,7 +54,14 @@
         DELIVERED: "Entregue",
         RETURNED: "Devolvido",
         EXPECTED: "Previsto",
-        PAID: "Pago"
+        PAID: "Pago",
+        PLANNED: "Planejada",
+        PREPARING: "Em Preparação",
+        DISPATCHED: "Expedida",
+        PARTIALLY_DELIVERED: "Parcialmente Entregue",
+        COMPLETED: "Concluída",
+        OPEN: "Aberto",
+        PARTIALLY_FULFILLED: "Parcialmente Atendido"
     };
 
     function notify(message, isError = false) {
@@ -884,6 +899,7 @@
         try {
             const order = await request(`/api/commercial/orders/${orderId}`);
             if (!order) return;
+            currentDetailedOrder = order;
 
             document.querySelector("#order-detail-title").textContent = `Pedido ${order.orderNumber}`;
             const pill = document.querySelector("#order-detail-status-pill");
@@ -914,7 +930,7 @@
 
             document.querySelector("#order-detail-next-action").textContent = order.nextPermittedAction || "—";
 
-            // Itens
+            // Itens com programação e saldo elegível
             const itemsBody = document.querySelector("#order-detail-items-body");
             if (order.items && order.items.length) {
                 itemsBody.innerHTML = order.items.map(item => `
@@ -925,10 +941,83 @@
                         <td>${formatMoney(item.unitPrice, order.currency)}</td>
                         <td>${item.discountPercentage ? `${Number(item.discountPercentage).toFixed(2)}%` : "0%"}</td>
                         <td><strong>${formatMoney(item.totalAmount, order.currency)}</strong></td>
+                        <td>${Number(item.scheduledQuantity || 0).toLocaleString("pt-BR")}</td>
+                        <td style="color:${(item.eligibleScheduleBalance || 0) > 0 ? "var(--accent)" : "var(--muted)"};font-weight:700">${Number(item.eligibleScheduleBalance || 0).toLocaleString("pt-BR")}</td>
                     </tr>
                 `).join("");
             } else {
-                itemsBody.innerHTML = '<tr><td colspan="6" class="empty-state">Nenhum item registrado.</td></tr>';
+                itemsBody.innerHTML = '<tr><td colspan="8" class="empty-state">Nenhum item registrado.</td></tr>';
+            }
+
+            // Botão Nova Programação
+            const canSchedule = ["OPEN", "PARTIALLY_FULFILLED"].includes(order.status) &&
+                (order.items || []).some(i => (i.eligibleScheduleBalance || 0) > 0);
+            const createScheduleBtn = document.querySelector("#order-create-schedule-btn");
+            if (createScheduleBtn) {
+                createScheduleBtn.style.display = canSchedule ? "inline-block" : "none";
+                createScheduleBtn.onclick = () => openScheduleCreateModal(order);
+            }
+
+            // Tabela de Programações de Entrega
+            const schedulesBody = document.querySelector("#order-detail-schedules-body");
+            if (order.schedules && order.schedules.length) {
+                schedulesBody.innerHTML = order.schedules.map(s => {
+                    const sClass = `status-${(s.status || "").toLowerCase()}`;
+                    const sStatusPt = statusTranslations[s.status] || s.status;
+                    const plannedDateFormatted = new Date(s.plannedDate).toLocaleDateString("pt-BR") + " " +
+                        new Date(s.plannedDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+                    const isRescheduled = s.originalPlannedDate && s.originalPlannedDate !== s.plannedDate;
+                    const originalDateFormatted = isRescheduled ?
+                        new Date(s.originalPlannedDate).toLocaleDateString("pt-BR") : "";
+
+                    const itemsSummary = (s.items || []).map(i =>
+                        `${escapeHtml(i.productName)}: ${Number(i.quantity).toLocaleString("pt-BR")} ${escapeHtml(i.unit)}` +
+                        (i.dispatchedQuantity > 0 ? ` (${Number(i.dispatchedQuantity).toLocaleString("pt-BR")} exp)` : "")
+                    ).join("<br>");
+
+                    const canReschedule = s.canReschedule && ["PLANNED", "PREPARING"].includes(s.status);
+                    const canCancel = s.canCancel && ["PLANNED", "PREPARING"].includes(s.status);
+                    const hasRevisions = s.revisions && s.revisions.length > 0;
+
+                    return `
+                    <tr>
+                        <td><strong>${escapeHtml(s.scheduleNumber)}</strong></td>
+                        <td>
+                            <strong>${plannedDateFormatted}</strong>
+                            ${isRescheduled ? `<br><small style="color:var(--muted)">Original: ${originalDateFormatted}</small>` : ""}
+                        </td>
+                        <td>${escapeHtml(s.deliveryAddress || s.destinationLocation || "—")}</td>
+                        <td>${escapeHtml(s.responsibleName || "Sem responsável")}</td>
+                        <td><span class="status-pill ${sClass}">${escapeHtml(sStatusPt)}</span></td>
+                        <td style="font-size:0.85rem">${itemsSummary || "—"}</td>
+                        <td class="actions-cell">
+                            ${canReschedule ? `<button type="button" class="btn-sm btn-outline schedule-reschedule-btn" data-schedule-id="${s.id}">Reprogramar</button>` : ""}
+                            ${canCancel ? `<button type="button" class="btn-sm btn-danger schedule-cancel-btn" data-schedule-id="${s.id}">Cancelar</button>` : ""}
+                            ${hasRevisions ? `<button type="button" class="btn-sm btn-outline schedule-revisions-btn" data-schedule-id="${s.id}">Revisões (${s.revisions.length})</button>` : ""}
+                        </td>
+                    </tr>`;
+                }).join("");
+
+                schedulesBody.querySelectorAll(".schedule-reschedule-btn").forEach(btn => {
+                    btn.onclick = () => {
+                        const sched = order.schedules.find(x => x.id === btn.dataset.scheduleId);
+                        if (sched) openScheduleRescheduleModal(sched, order);
+                    };
+                });
+                schedulesBody.querySelectorAll(".schedule-cancel-btn").forEach(btn => {
+                    btn.onclick = () => {
+                        const sched = order.schedules.find(x => x.id === btn.dataset.scheduleId);
+                        if (sched) openScheduleCancelModal(sched, order);
+                    };
+                });
+                schedulesBody.querySelectorAll(".schedule-revisions-btn").forEach(btn => {
+                    btn.onclick = () => {
+                        const sched = order.schedules.find(x => x.id === btn.dataset.scheduleId);
+                        if (sched) openScheduleRevisionsModal(sched);
+                    };
+                });
+            } else {
+                schedulesBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:1rem">Nenhuma programação de entrega cadastrada para este pedido.</td></tr>';
             }
 
             // Fulfillments
@@ -974,6 +1063,239 @@
         }
     }
 
+    async function openScheduleCreateModal(order) {
+        if (!scheduleCreateDialog) return;
+        scheduleCreateForm.reset();
+        scheduleCreateForm.orderId.value = order.id;
+        document.querySelector("#schedule-create-order-number").textContent = order.orderNumber;
+        scheduleCreateForm.querySelector(".form-error").textContent = "";
+
+        const d = new Date();
+        d.setDate(d.getDate() + 1);
+        d.setHours(8, 0, 0, 0);
+        scheduleCreateForm.plannedDate.value = d.toISOString().slice(0, 16);
+
+        await loadLookups(scheduleCreateDialog);
+
+        const eligibleItems = (order.items || []).filter(i => (i.eligibleScheduleBalance || 0) > 0);
+        const tbody = document.querySelector("#schedule-create-items-body");
+        tbody.innerHTML = eligibleItems.map(item => `
+            <tr data-order-item-id="${item.id}">
+                <td><strong>${escapeHtml(item.productName || item.productId)}</strong></td>
+                <td>${escapeHtml(item.unit)}</td>
+                <td>${Number(item.quantity).toLocaleString("pt-BR")}</td>
+                <td>${Number(item.scheduledQuantity || 0).toLocaleString("pt-BR")}</td>
+                <td style="color:var(--accent);font-weight:700">${Number(item.eligibleScheduleBalance).toLocaleString("pt-BR")}</td>
+                <td>
+                    <input type="number" class="schedule-item-qty" step="0.0001" min="0" max="${item.eligibleScheduleBalance}" value="${item.eligibleScheduleBalance}" style="width:120px" required />
+                </td>
+            </tr>
+        `).join("");
+
+        scheduleCreateDialog.showModal();
+    }
+
+    scheduleCreateForm.onsubmit = async event => {
+        event.preventDefault();
+        const errElement = scheduleCreateForm.querySelector(".form-error");
+        errElement.textContent = "";
+
+        const orderId = scheduleCreateForm.orderId.value;
+        const rows = document.querySelectorAll("#schedule-create-items-body tr");
+        const items = [];
+
+        for (const row of rows) {
+            const orderItemId = row.dataset.orderItemId;
+            const qtyInput = row.querySelector(".schedule-item-qty");
+            const quantity = parseFloat(qtyInput?.value) || 0;
+            if (quantity > 0) {
+                items.push({ orderItemId, quantity });
+            }
+        }
+
+        if (!items.length) {
+            errElement.textContent = "Informe ao menos uma quantidade positiva para programar.";
+            return;
+        }
+
+        const payload = {
+            plannedDate: scheduleCreateForm.plannedDate.value,
+            deliveryAddress: scheduleCreateForm.deliveryAddress.value.trim(),
+            responsibleUserId: scheduleCreateForm.responsibleUserId.value || null,
+            windowStartTime: scheduleCreateForm.windowStartTime.value ? `${scheduleCreateForm.windowStartTime.value}:00` : null,
+            windowEndTime: scheduleCreateForm.windowEndTime.value ? `${scheduleCreateForm.windowEndTime.value}:00` : null,
+            notes: scheduleCreateForm.notes.value.trim() || null,
+            items
+        };
+
+        try {
+            await request(`/api/commercial/orders/${orderId}/schedules`, {
+                method: "POST",
+                body: JSON.stringify(payload)
+            });
+            scheduleCreateDialog.close();
+            notify("Programação de entrega criada com sucesso!");
+            await openOrderDetails(orderId);
+            await load();
+        } catch (error) {
+            errElement.textContent = error.message;
+            notify(error.message, true);
+        }
+    };
+
+    async function openScheduleRescheduleModal(schedule, order) {
+        if (!scheduleRescheduleDialog) return;
+        scheduleRescheduleForm.reset();
+        scheduleRescheduleForm.scheduleId.value = schedule.id;
+        scheduleRescheduleForm.expectedVersion.value = schedule.version;
+        document.querySelector("#reschedule-number").textContent = schedule.scheduleNumber;
+        document.querySelector("#reschedule-version").textContent = schedule.version;
+        scheduleRescheduleForm.querySelector(".form-error").textContent = "";
+
+        scheduleRescheduleForm.newPlannedDate.value = new Date(schedule.plannedDate).toISOString().slice(0, 16);
+        if (schedule.deliveryAddress) scheduleRescheduleForm.deliveryAddress.value = schedule.deliveryAddress;
+        if (schedule.windowStartTime) scheduleRescheduleForm.windowStartTime.value = schedule.windowStartTime;
+        if (schedule.windowEndTime) scheduleRescheduleForm.windowEndTime.value = schedule.windowEndTime;
+
+        await loadLookups(scheduleRescheduleDialog);
+        if (schedule.responsibleUserId) scheduleRescheduleForm.responsibleUserId.value = schedule.responsibleUserId;
+
+        const tbody = document.querySelector("#schedule-reschedule-items-body");
+        tbody.innerHTML = (schedule.items || []).map(item => {
+            const orderItem = (order.items || []).find(oi => oi.id === item.orderItemId);
+            const eligible = orderItem ? orderItem.eligibleScheduleBalance : 0;
+            const maxAllowed = Math.round((item.quantity + eligible) * 10000) / 10000;
+            const minAllowed = item.dispatchedQuantity || 0;
+
+            return `
+            <tr data-schedule-item-id="${item.id}" data-order-item-id="${item.orderItemId}">
+                <td><strong>${escapeHtml(item.productName || item.productId)}</strong></td>
+                <td>${escapeHtml(item.unit)}</td>
+                <td>${Number(item.quantity).toLocaleString("pt-BR")}</td>
+                <td>${Number(item.dispatchedQuantity || 0).toLocaleString("pt-BR")}</td>
+                <td>${Number(eligible).toLocaleString("pt-BR")}</td>
+                <td>
+                    <input type="number" class="reschedule-item-qty" step="0.0001" min="${minAllowed}" max="${maxAllowed}" value="${item.quantity}" style="width:120px" required />
+                </td>
+            </tr>`;
+        }).join("");
+
+        scheduleRescheduleDialog.showModal();
+    }
+
+    scheduleRescheduleForm.onsubmit = async event => {
+        event.preventDefault();
+        const errElement = scheduleRescheduleForm.querySelector(".form-error");
+        errElement.textContent = "";
+
+        const scheduleId = scheduleRescheduleForm.scheduleId.value;
+        const expectedVersion = parseInt(scheduleRescheduleForm.expectedVersion.value, 10);
+        const rows = document.querySelectorAll("#schedule-reschedule-items-body tr");
+        const items = [];
+
+        for (const row of rows) {
+            const scheduleItemId = row.dataset.scheduleItemId;
+            const qtyInput = row.querySelector(".reschedule-item-qty");
+            const newQuantity = parseFloat(qtyInput?.value) || 0;
+            items.push({ scheduleItemId, newQuantity });
+        }
+
+        const payload = {
+            newPlannedDate: scheduleRescheduleForm.newPlannedDate.value,
+            reason: scheduleRescheduleForm.reason.value.trim(),
+            expectedVersion,
+            deliveryAddress: scheduleRescheduleForm.deliveryAddress.value.trim() || null,
+            responsibleUserId: scheduleRescheduleForm.responsibleUserId.value || null,
+            windowStartTime: scheduleRescheduleForm.windowStartTime.value ? `${scheduleRescheduleForm.windowStartTime.value}:00` : null,
+            windowEndTime: scheduleRescheduleForm.windowEndTime.value ? `${scheduleRescheduleForm.windowEndTime.value}:00` : null,
+            items
+        };
+
+        try {
+            await request(`/api/commercial/schedules/${scheduleId}/reschedule`, {
+                method: "PUT",
+                body: JSON.stringify(payload)
+            });
+            scheduleRescheduleDialog.close();
+            notify("Entrega reprogramada com sucesso!");
+            if (currentDetailedOrder) await openOrderDetails(currentDetailedOrder.id);
+            await load();
+        } catch (error) {
+            errElement.textContent = error.message;
+            notify(error.message, true);
+        }
+    };
+
+    function openScheduleCancelModal(schedule, order) {
+        if (!scheduleCancelDialog) return;
+        scheduleCancelForm.reset();
+        scheduleCancelForm.scheduleId.value = schedule.id;
+        scheduleCancelForm.expectedVersion.value = schedule.version;
+        document.querySelector("#cancel-schedule-number").textContent = schedule.scheduleNumber;
+        scheduleCancelForm.querySelector(".form-error").textContent = "";
+        scheduleCancelDialog.showModal();
+    }
+
+    scheduleCancelForm.onsubmit = async event => {
+        event.preventDefault();
+        const errElement = scheduleCancelForm.querySelector(".form-error");
+        errElement.textContent = "";
+
+        const scheduleId = scheduleCancelForm.scheduleId.value;
+        const expectedVersion = parseInt(scheduleCancelForm.expectedVersion.value, 10);
+        const reason = scheduleCancelForm.reason.value.trim();
+
+        try {
+            await request(`/api/commercial/schedules/${scheduleId}/cancel`, {
+                method: "POST",
+                body: JSON.stringify({ reason, expectedVersion })
+            });
+            scheduleCancelDialog.close();
+            notify("Programação de entrega cancelada.");
+            if (currentDetailedOrder) await openOrderDetails(currentDetailedOrder.id);
+            await load();
+        } catch (error) {
+            errElement.textContent = error.message;
+            notify(error.message, true);
+        }
+    };
+
+    function openScheduleRevisionsModal(schedule) {
+        if (!scheduleRevisionsDialog) return;
+        document.querySelector("#revisions-modal-title").textContent = `Histórico - ${schedule.scheduleNumber}`;
+        document.querySelector("#revisions-modal-subtitle").textContent = `${(schedule.revisions || []).length} revisão(ões) registrada(s)`;
+
+        const revContent = document.querySelector("#schedule-revisions-content");
+        if (schedule.revisions && schedule.revisions.length) {
+            revContent.innerHTML = `
+                <table class="items-table">
+                    <thead>
+                        <tr>
+                            <th>Versão</th>
+                            <th>Data</th>
+                            <th>Motivo Auditável</th>
+                            <th>Data Prevista Anterior</th>
+                            <th>Nova Data Prevista</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${schedule.revisions.map(r => `
+                            <tr>
+                                <td><span class="version-chip">V${r.version}</span></td>
+                                <td>${new Date(r.revisedAt).toLocaleDateString("pt-BR")} ${new Date(r.revisedAt).toLocaleTimeString("pt-BR")}</td>
+                                <td><strong>${escapeHtml(r.reason)}</strong></td>
+                                <td>${r.previousPlannedDate ? new Date(r.previousPlannedDate).toLocaleDateString("pt-BR") : "—"}</td>
+                                <td>${r.newPlannedDate ? new Date(r.newPlannedDate).toLocaleDateString("pt-BR") : "—"}</td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>`;
+        } else {
+            revContent.innerHTML = '<p class="empty-state">Nenhuma revisão auditável registrada.</p>';
+        }
+        scheduleRevisionsDialog.showModal();
+    }
+
     window.addEventListener("agro360:session", event => {
         const session = event.detail;
         const newTenantId = session?.tenantId || null;
@@ -982,7 +1304,7 @@
                 pendingAbortController.abort();
             }
             availableProducts = [];
-            [commercialDialog, proposalDialog, proposalDetailDialog, proposalAcceptDialog, proposalConvertDialog, orderDetailDialog].forEach(d => {
+            [commercialDialog, proposalDialog, proposalDetailDialog, proposalAcceptDialog, proposalConvertDialog, orderDetailDialog, scheduleCreateDialog, scheduleRescheduleDialog, scheduleCancelDialog, scheduleRevisionsDialog].forEach(d => {
                 if (d && d.open) d.close();
             });
             notify("Organização alterada. Recarregando contexto comercial...");
@@ -1095,11 +1417,23 @@
     };
 
     // Inicialização
+    const urlParams = new URLSearchParams(window.location.search);
+    const viewParam = urlParams.get("view");
+    const orderIdParam = urlParams.get("orderId");
+    if (viewParam === "orders" || orderIdParam) {
+        resource = "orders";
+        sessionStorage.setItem("agro360.commercial.resource", resource);
+    }
+
     const initialTab = document.querySelector(`[data-resource="${resource}"]`) || document.querySelector('[data-resource="dashboard"]');
     if (initialTab) {
         document.querySelectorAll("[data-resource]").forEach(item => item.classList.remove("active"));
         initialTab.classList.add("active");
     }
     updateCreateButton();
-    load();
+    load().then(() => {
+        if (orderIdParam) {
+            openOrderDetails(orderIdParam);
+        }
+    });
 })();

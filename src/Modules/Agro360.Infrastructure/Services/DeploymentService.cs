@@ -66,21 +66,28 @@ public sealed class DeploymentService(DatabaseExecutor db, ITenantContext tenant
    select count(*)::int from agro360.finance_cost_centers where tenant_id=@TenantId and active;
    select count(*)::int from agro360.inventory_products where tenant_id=@TenantId and deleted_at is null;
    select coalesce(array_agg(module_code order by module_code),array[]::varchar[]) from agro360.platform_tenant_module_entitlements where tenant_id=@TenantId and status in ('CONTRACTED','ACTIVE','TRIAL');
+   select count(*)::int from agro360.crm_customers where tenant_id=@TenantId and deleted_at is null;
+   select count(*)::int from agro360.sales_price_tables where tenant_id=@TenantId and status='ACTIVE' and deleted_at is null and current_date between valid_from and valid_to;
+   select count(*)::int from agro360.inventory_stock_lots where tenant_id=@TenantId and quality_status='APPROVED';
    """, p, t, cancellationToken: ct));
         var users = await grid.ReadSingleAsync<int>(); var profiles = await grid.ReadSingleAsync<int>(); var modules = await grid.ReadSingleAsync<int>();
         var farms = await grid.ReadSingleAsync<int>(); var required = await grid.ReadSingleAsync<int>(); var completed = await grid.ReadSingleAsync<int>();
         var settings = await grid.ReadSingleAsync<int>(); var warehouses = await grid.ReadSingleAsync<int>(); var costCenters = await grid.ReadSingleAsync<int>();
         var products = await grid.ReadSingleAsync<int>(); var moduleCodes = (await grid.ReadSingleAsync<string[]>()).Select(x => x.ToLowerInvariant()).ToHashSet();
+        var customers = await grid.ReadSingleAsync<int>(); var priceTables = await grid.ReadSingleAsync<int>(); var stockLots = await grid.ReadSingleAsync<int>();
         var pending = new List<string>(); var alerts = new List<string>(); var actions = new List<ImplementationAction>();
         if (users < 2) { pending.Add("Convide ao menos um segundo usuário para evitar dependência de uma única conta."); actions.Add(new("Cadastrar usuários", "Defina responsáveis e mantenha acessos individuais.", "/Saas?view=users", "HIGH")); }
         if (profiles == 0) { pending.Add("Configure perfis e permissões por função."); actions.Add(new("Configurar perfis", "Aplique o menor privilégio para cada função.", "/Saas?view=roles", "HIGH")); }
         if (modules == 0) { alerts.Add("Nenhum módulo contratado/ativo foi associado ao cliente."); actions.Add(new("Revisar módulos", "Confira plano, módulos e feature flags.", "/Saas?view=features", "CRITICAL")); }
         if (farms == 0) { pending.Add("Cadastre a primeira fazenda ou unidade operacional."); actions.Add(new("Cadastrar fazenda", "Informe dados cadastrais e área da unidade.", "/Agriculture", "HIGH")); }
+        if (customers == 0) { pending.Add("Cadastre o primeiro cliente para iniciar a jornada de propostas e pedidos."); actions.Add(new("Cadastrar cliente", "Cadastre clientes e seus segmentos comerciais.", "/Commercial?view=customers", "HIGH")); }
+        if (priceTables == 0) { pending.Add("Configure a tabela de preços vigente para permitir a emissão de pedidos."); actions.Add(new("Configurar preços", "Cadastre a política comercial e limites de desconto.", "/Commercial?view=price-tables", "HIGH")); }
         if (required > completed) { alerts.Add($"{required - completed} etapa(s) obrigatória(s) do checklist ainda estão pendentes."); actions.Add(new("Concluir checklist", "Revise as etapas obrigatórias de implantação.", "/Deployment?panel=checklist", "MEDIUM")); }
         if (actions.Count == 0) actions.Add(new("Iniciar operação", "A implantação essencial está concluída; registre as primeiras operações.", "/", "LOW"));
         var needsInventory = moduleCodes.Overlaps(["inventory", "storage", "procurement", "purchasing", "fleet", "livestock"]);
         var needsFinance = moduleCodes.Overlaps(["finance", "procurement", "purchasing", "commercial"]);
         var needsCatalog = moduleCodes.Overlaps(["inventory", "storage", "procurement", "purchasing", "agriculture", "livestock", "production"]);
+        var needsCommercial = moduleCodes.Overlaps(["commercial", "sales", "crm"]);
         var steps = new[]
         {
             Step("ORGANIZATION", "Dados da organização", "Identificar corretamente o cliente e seu responsável.", "Esses dados aparecem no contexto operacional e nos registros administrativos.", true, !string.IsNullOrWhiteSpace(tenantRow.TenantName), null, "Revisar organização", "/Saas?view=account"),
@@ -90,6 +97,9 @@ public sealed class DeploymentService(DatabaseExecutor db, ITenantContext tenant
             Step("COST_CENTERS", "Centros de custo", "Organizar a apropriação gerencial dos gastos.", "Compras e lançamentos financeiros podem exigir classificação.", needsFinance, !needsFinance || costCenters > 0, "Há módulo financeiro/compras contratado, mas nenhum centro de custo ativo.", "Configurar centros de custo", "/Finance"),
             Step("USERS_ROLES", "Usuários e perfis", "Manter identidades individuais e menor privilégio.", "A operação só deve começar com responsável e perfil autorizados.", true, users > 1 && profiles > 0, "Convide um segundo usuário e associe perfis válidos.", "Administrar acessos", "/Saas?view=users"),
             Step("CATALOGS", "Catálogos indispensáveis", "Preparar produtos e insumos usados nas jornadas.", "Documentos operacionais referenciam cadastros ativos, não IDs informados manualmente.", needsCatalog, !needsCatalog || products > 0, "Há módulo operacional contratado, mas nenhum produto ativo.", "Configurar catálogos", "/#storage"),
+            Step("CUSTOMERS", "Clientes e segmentos", "Cadastrar clientes e cooperados para a jornada comercial.", "Propostas e pedidos dependem de cliente ativo com segmento cadastrado.", needsCommercial, !needsCommercial || customers > 0, "Cadastre pelo menos um cliente ativo.", "Cadastrar clientes", "/Commercial?view=customers"),
+            Step("PRICE_POLICY", "Política de preços vigente", "Definir preços base e limites de desconto por segmento.", "Garante cálculo comercial determinístico e proteção de margem.", needsCommercial, !needsCommercial || priceTables > 0, "Cadastre ao menos uma tabela de preços com vigência atual.", "Configurar preços", "/Commercial?view=price-tables"),
+            Step("STOCK_LOTS", "Lotes de estoque aprovados", "Assegurar rastreabilidade e disponibilidade para separação e entrega.", "A preparação logística exige lote ativo com qualidade aprovada.", needsInventory, !needsInventory || stockLots > 0, "Cadastre ou receba ao menos um lote aprovado em estoque.", "Verificar estoque", "/#storage"),
             Step("REVIEW", "Revisão final", "Confirmar que dependências obrigatórias possuem dados válidos.", "A conclusão libera próximas ações sem expor módulos não contratados.", true, false, null, "Revisar pendências", "/Deployment")
         };
         var requiredSteps = steps.Where(x => x.Required && x.Code != "REVIEW").ToArray();

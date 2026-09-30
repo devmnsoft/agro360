@@ -1,3 +1,43 @@
+## MVP Operacional — Pedido, Programação e Atendimento Rastreável (AG-OPS-MVP-001) — 2026-09-30
+
+Branch `main` (`868440aa12835666bc067901da1e4958f8d56cd9`).
+
+**Entregue:**
+- **Esquema de Dados e Migração (Schema 11.6.0)**:
+  - Migration incremental `database/migrations/116_operational_mvp_delivery_schedules.sql` e consolidação idempotente em `database/agro360-postgres-full.sql`:
+    - Tabelas `sales_delivery_schedules`, `sales_delivery_schedule_items`, `sales_delivery_schedule_revisions`, sequence `sales_delivery_schedule_seq`.
+    - Colunas `schedule_id` e `schedule_item_id` adicionadas em `fulfillment_shipments` e `fulfillment_shipment_items`.
+    - Isolamento multi-tenant estrito com RLS habilitado (`agro360.platform_enable_tenant_rls`) e políticas tenant-aware em todas as tabelas criadas.
+- **Regras de Negócio e Concorrência Otimista (`CommercialRules.cs`)**:
+  - `EnsureOrderCanBeScheduled`: validação rigorosa de elegibilidade de agendamento (apenas pedidos `APPROVED`, `RESERVED`, `FULFILLMENT` ou `OPEN`/`PARTIALLY_FULFILLED`; pedidos `CANCELLED` rejeitados explicitamente).
+  - `CalculateEligibleScheduleBalance`: cálculo canônico do saldo elegível para agendamento (`max(0, (ordered - cancelled) - (active_scheduled + unlinked_dispatched))`), impedindo sobreagendamento.
+  - `NormalizeScheduleStatus` e `ValidateScheduleTransition`: máquina de estados da programação (`PLANNED` → `PREPARING` → `DISPATCHED` → `PARTIALLY_DELIVERED`/`DELIVERED` ou `CANCELLED`), exigindo motivo auditável para cancelamento.
+  - `ValidateDeliverySchedule`: validação de local de entrega obrigatório, itens com quantidade positiva e unidade compatível.
+  - `ValidateReschedule`: controle de versão esperado (OCC), obrigatoriedade de motivo, impedimento de reprogramação em estados terminais, proibição de redução de quantidade abaixo do já expedido/entregue e bloqueio de acréscimo superior ao saldo elegível restante.
+- **Serviço Comercial e Fechamento Operacional (`Commercial360Service.cs` & `Commercial360Controller.cs`)**:
+  - Cancelamento de pedidos aprimorado: ordenação determinística de locks de itens de pedido (`fulfillment:item:{tenantId}:{orderItemId}`), bloqueio de cancelamento se houver preparação em andamento (`picked_quantity > 0` ou `checked_quantity > 0`), liberação atômica de reservas com concorrência otimista, cancelamento de programações pendentes e atualização de saldo cancelado sem perder o histórico de expedições parciais já confirmadas.
+  - Implementação completa dos endpoints de programação: `POST /api/commercial/orders/{id}/schedules`, `GET /api/commercial/orders/{id}/schedules`, `GET /api/commercial/schedules`, `GET /api/commercial/schedules/{id}`, `PUT /api/commercial/schedules/{id}/reschedule`, `POST /api/commercial/schedules/{id}/cancel`.
+  - Lookup de usuários operacionais responsáveis (`/api/commercial/lookups/responsible`).
+- **Integração com Logística e Expedição (`LogisticsService.cs`)**:
+  - Projeção de programações ativas no detalhe de fulfillment do pedido (`/api/logistics/trips/fulfillment/orders/{orderId}`).
+  - Vínculo direto de expedição ao compromisso de entrega (`CreateFulfillmentAsync` aceitando `scheduleId` e `scheduleItemId`), transicionando a programação para `PREPARING`.
+  - Sincronização de saída física (`DispatchFulfillmentAsync` atualizando `dispatched_quantity` dos itens e estado para `DISPATCHED`).
+  - Sincronização de tentativas de entrega (`RecordDeliveryAttemptAsync` atualizando `delivered_quantity` e transicionando para `PARTIALLY_DELIVERED` ou `DELIVERED`).
+- **Central de Operações e Implantação (`WorkManagementService.cs` & `DeploymentService.cs`)**:
+  - Ocorrências operacionais automatizadas: `SCHEDULE_UNASSIGNED` (aviso para programações sem responsável), `SCHEDULE_LATE` (aviso crítico para programações vencidas), `DELIVERY_FAILED` (ação recomendada para reentrega ou retorno com conferência de qualidade).
+  - Diagnóstico de implantação contextual: verificação de clientes CRM, tabelas de preço e lotes de estoque aprovados, guiando a prontidão do cliente piloto.
+- **Interfaces do Usuário e Continuidade Operacional (`commercial.js`, `logistics.js`, Views)**:
+  - `/Commercial`: Detalhe do pedido com colunas de quantidade programada e saldo elegível, seção de compromissos com modais acessíveis para Nova Programação, Reprogramação (com OCC e motivo), Cancelamento e Histórico de Revisões. Deep link simétrico para `/Logistics?orderId={id}`.
+  - `/Logistics`: Navegação contextual via `?orderId={id}` sem efeitos colaterais ou reservas fantasma, botão "← Voltar ao Comercial", seção de compromissos no pedido com botão "Atender compromisso", e nova aba "Compromissos" com indicadores gerenciais (Abertos, Atrasados, Vencendo no Período, Sem Responsável, Concluídos) e filtros operacionais.
+- **Testes e Qualidade**:
+  - `tests/Agro360.UnitTests/DeliveryScheduleRulesTests.cs`: 17 novos testes cobrindo todas as regras de domínio, limites de saldo, OCC e transições de estado.
+
+**Evidências Locais:**
+- `dotnet build MNSOFT.Agro360.sln -c Release`: 0 avisos, 0 erros (100% PASS).
+- `dotnet test tests/Agro360.ArchitectureTests -c Release`: 169/169 aprovados (100% PASS).
+- `dotnet test tests/Agro360.UnitTests -c Release`: 260/260 aprovados (100% PASS).
+- `node --check` em `commercial.js` e `logistics.js`: 100% PASS.
+
 ## Navegação Funcional, Regras Comerciais Consistentes e Jornada do Pedido — 2026-09-29
 
 Branch `main` (`f42ec3d92e1dd609bb76d9a0940299dad6dec484`).

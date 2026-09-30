@@ -17,8 +17,8 @@ public sealed record TripStopCommand(int Sequence, string Type, string Name, str
 public sealed record TripLegCommand(int Sequence, int OriginStopSequence, int DestinationStopSequence, string Mode, Guid? AssetId, decimal? CapacityTotal, string? CapacityUnit, string? NavigationSource, DateTimeOffset? NavigationValidUntil, Guid? NavigationResponsibleId);
 public sealed record TripAllocationCommand(Guid ShipmentItemId, decimal Quantity, string Unit, int LoadingStopSequence, int UnloadingStopSequence, decimal? Weight, string? WeightUnit, decimal? Volume, string? VolumeUnit);
 public sealed record PlanTripCommand(string Number, string Origin, string Destination, DateTimeOffset PlannedStart, DateTimeOffset PlannedEnd, Guid? ResponsibleId, string? Carrier, string IdempotencyKey, IReadOnlyList<TripStopCommand> Stops, IReadOnlyList<TripLegCommand> Legs, IReadOnlyList<TripAllocationCommand> Allocations);
-public sealed record FulfillmentItemCommand(Guid OrderItemId, Guid StockLotId, decimal Quantity, decimal PickedQuantity, decimal CheckedQuantity, string Unit, string? DivergenceReason);
-public sealed record CreateFulfillmentCommand(string Number, Guid OriginWarehouseId, Guid CustomerId, string Destination, string IdempotencyKey, IReadOnlyList<FulfillmentItemCommand> Items);
+public sealed record FulfillmentItemCommand(Guid OrderItemId, Guid StockLotId, decimal Quantity, decimal PickedQuantity, decimal CheckedQuantity, string Unit, string? DivergenceReason, Guid? ScheduleItemId = null);
+public sealed record CreateFulfillmentCommand(string Number, Guid OriginWarehouseId, Guid CustomerId, string Destination, string IdempotencyKey, IReadOnlyList<FulfillmentItemCommand> Items, Guid? ScheduleId = null);
 public sealed record DispatchFulfillmentCommand(long Version, string IdempotencyKey);
 public sealed record PrepareFulfillmentCommand(decimal PickedQuantity, decimal CheckedQuantity, string? DivergenceReason, long Version, string IdempotencyKey, bool? CompleteCheck = null);
 public sealed record ReopenFulfillmentCommand(string Reason, long ExpectedVersion, string IdempotencyKey, IReadOnlyList<Guid> ItemIds);

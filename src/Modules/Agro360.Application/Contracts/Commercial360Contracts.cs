@@ -27,9 +27,22 @@ public sealed record ProposalConversionResult(Guid OrderId, bool Existing, strin
 public sealed record SalesCurrencyTotal(string Currency, decimal PipelineValue, decimal ForecastRevenue, decimal OrdersTotal);
 public sealed record CommercialDashboard(int ActiveCustomers, int BlockedCustomers, int ActiveContracts, decimal PipelineValue, decimal ForecastRevenue, decimal ExpectedCommissions, decimal PaidCommissions, decimal PendingSplits, IReadOnlyList<CommercialRecord> Opportunities, IReadOnlyList<CommercialRecord> Orders, IReadOnlyList<SalesCurrencyTotal>? CurrencyTotals = null);
 
-public sealed record SalesOrderItemDetailView(Guid Id, Guid ProductId, string ProductName, string Unit, decimal Quantity, decimal UnitPrice, decimal DiscountPercentage, decimal TotalAmount, Guid? PriceTableId = null, decimal? BaseUnitPrice = null);
+public sealed record SalesOrderItemDetailView(Guid Id, Guid ProductId, string ProductName, string Unit, decimal Quantity, decimal UnitPrice, decimal DiscountPercentage, decimal TotalAmount, Guid? PriceTableId = null, decimal? BaseUnitPrice = null, decimal ScheduledQuantity = 0, decimal EligibleScheduleBalance = 0);
 public sealed record SalesOrderFulfillmentView(Guid ShipmentId, string ShipmentNumber, string Status, DateTimeOffset CreatedAt);
 public sealed record SalesOrderEventView(string EventType, string? Details, DateTimeOffset OccurredAt);
+
+public sealed record DeliveryScheduleItemCommand([Required] Guid OrderItemId, [Range(0.000001, double.MaxValue)] decimal Quantity, [Required, MaxLength(20)] string Unit);
+public sealed record CreateDeliveryScheduleCommand([Required] DateOnly PlannedDate, [Required, MaxLength(255)] string Destination, Guid? ResponsibleId, [MaxLength(1000)] string? Notes, [Required, MaxLength(120)] string IdempotencyKey, [Required, MinLength(1)] IReadOnlyList<DeliveryScheduleItemCommand> Items);
+public sealed record RescheduleItemCommand([Required] Guid ScheduleItemId, [Range(0.000001, double.MaxValue)] decimal Quantity);
+public sealed record RescheduleDeliveryCommand([Required] DateOnly PlannedDate, [Required] long ExpectedVersion, [Required, MaxLength(1000)] string Reason, [Required, MaxLength(120)] string IdempotencyKey, [Required, MinLength(1)] IReadOnlyList<RescheduleItemCommand> Items);
+public sealed record CancelDeliveryScheduleCommand([Required] long ExpectedVersion, [Required, MaxLength(1000)] string Reason, [Required, MaxLength(120)] string IdempotencyKey);
+public sealed record DeliveryScheduleItemView(Guid Id, Guid OrderItemId, Guid ProductId, string ProductName, string Unit, decimal Quantity, decimal OriginalQuantity, decimal DispatchedQuantity, decimal DeliveredQuantity, decimal PendingQuantity);
+public sealed record DeliveryScheduleRevisionView(Guid Id, long Version, string Reason, Guid ActorId, string? ActorName, DateOnly PreviousDate, DateOnly NewDate, DateTimeOffset CreatedAt);
+public sealed record DeliveryScheduleView(Guid Id, Guid OrderId, string OrderNumber, string CustomerName, string ScheduleNumber, string Destination, Guid? ResponsibleId, string? ResponsibleName, DateOnly PlannedDate, DateOnly OriginalPlannedDate, string Status, string? Notes, string? CancellationReason, long Version, DateTimeOffset CreatedAt, DateTimeOffset? UpdatedAt, IReadOnlyList<DeliveryScheduleItemView> Items, IReadOnlyList<DeliveryScheduleRevisionView>? Revisions = null);
+public sealed record DeliveryScheduleQuery(string? Search = null, string? Status = null, Guid? CustomerId = null, Guid? OrderId = null, Guid? ProductId = null, Guid? ResponsibleId = null, DateOnly? FromDate = null, DateOnly? ToDate = null, int Page = 1, int PageSize = 20);
+public sealed record DeliveryScheduleIndicators(long TotalOpen, long Late, long DuePeriod, long PartiallyDelivered, long Unassigned, long Completed);
+public sealed record DeliverySchedulePage(IReadOnlyList<DeliveryScheduleView> Items, int Page, int PageSize, long Total, DeliveryScheduleIndicators Indicators);
+
 public sealed record SalesOrderDetailView(
     Guid Id,
     string OrderNumber,
@@ -51,7 +64,8 @@ public sealed record SalesOrderDetailView(
     IReadOnlyList<SalesOrderItemDetailView> Items,
     IReadOnlyList<SalesOrderFulfillmentView> Fulfillments,
     IReadOnlyList<SalesOrderEventView> History,
-    string NextPermittedAction);
+    string NextPermittedAction,
+    IReadOnlyList<DeliveryScheduleView>? Schedules = null);
 
 public interface ICommercial360Service
 {
@@ -76,4 +90,10 @@ public interface ICommercial360Service
     Task DecideProposalAsync(Guid id, ProposalDecisionCommand command, string decision, CancellationToken ct);
     Task AcceptProposalAsync(Guid id, ProposalAcceptanceCommand command, CancellationToken ct);
     Task<ProposalConversionResult> ConvertProposalAsync(Guid id, ProposalConversionCommand command, CancellationToken ct);
+    Task<Guid> CreateDeliveryScheduleAsync(Guid orderId, CreateDeliveryScheduleCommand command, CancellationToken ct);
+    Task RescheduleDeliveryAsync(Guid scheduleId, RescheduleDeliveryCommand command, CancellationToken ct);
+    Task CancelDeliveryScheduleAsync(Guid scheduleId, CancelDeliveryScheduleCommand command, CancellationToken ct);
+    Task<DeliverySchedulePage> ListDeliverySchedulesAsync(DeliveryScheduleQuery query, CancellationToken ct);
+    Task<DeliveryScheduleView?> GetDeliveryScheduleByIdAsync(Guid scheduleId, CancellationToken ct);
+    Task<IReadOnlyList<DeliveryScheduleView>> ListSchedulesForOrderAsync(Guid orderId, CancellationToken ct);
 }

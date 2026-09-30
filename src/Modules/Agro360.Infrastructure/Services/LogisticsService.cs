@@ -104,7 +104,18 @@ public sealed class LogisticsService(
         var reservations = (await c.QueryAsync(new CommandDefinition("select r.id,r.order_item_id,r.quantity,r.consumed_quantity,r.released_quantity,r.quantity-r.consumed_quantity-r.released_quantity active_quantity,r.unit,r.status,r.version,l.lot_number,w.name warehouse,r.created_at from agro360.fulfillment_reservations r join agro360.inventory_stock_lots l on l.tenant_id=r.tenant_id and l.id=r.stock_lot_id join agro360.inventory_warehouses w on w.tenant_id=l.tenant_id and w.id=l.warehouse_id join agro360.sales_order_items i on i.tenant_id=r.tenant_id and i.id=r.order_item_id where r.tenant_id=@TenantId and i.order_id=@Id order by r.created_at", new { tenant.TenantId, Id = orderId }, t, cancellationToken: ct))).AsList();
         var shipments = (await c.QueryAsync(new CommandDefinition("select distinct s.id,s.number,s.status,s.version,s.dispatched_at,s.created_at from agro360.fulfillment_shipments s join agro360.fulfillment_shipment_items si on si.tenant_id=s.tenant_id and si.shipment_id=s.id join agro360.sales_order_items i on i.tenant_id=si.tenant_id and i.id=si.order_item_id where s.tenant_id=@TenantId and i.order_id=@Id order by s.created_at", new { tenant.TenantId, Id = orderId }, t, cancellationToken: ct))).AsList();
         var history = (await c.QueryAsync(new CommandDefinition("select event_type,payload,created_at from agro360.sales_commercial_events where tenant_id=@TenantId and aggregate_id=@Id order by created_at", new { tenant.TenantId, Id = orderId }, t, cancellationToken: ct))).AsList();
-        return new { order, items, reservations, shipments, history };
+        var schedules = (await c.QueryAsync(new CommandDefinition("""
+            select s.id, s.schedule_number, s.status, s.planned_date, s.original_planned_date,
+                   s.destination, u.name responsible, s.version, s.notes, s.cancellation_reason,
+                   coalesce((select sum(si.quantity) from agro360.sales_delivery_schedule_items si where si.tenant_id=s.tenant_id and si.schedule_id=s.id), 0) total_quantity,
+                   coalesce((select sum(si.dispatched_quantity) from agro360.sales_delivery_schedule_items si where si.tenant_id=s.tenant_id and si.schedule_id=s.id), 0) total_dispatched,
+                   coalesce((select sum(si.delivered_quantity) from agro360.sales_delivery_schedule_items si where si.tenant_id=s.tenant_id and si.schedule_id=s.id), 0) total_delivered
+            from agro360.sales_delivery_schedules s
+            left join agro360.identity_users u on u.tenant_id = s.tenant_id and u.id = s.responsible_id
+            where s.tenant_id = @TenantId and s.order_id = @Id
+            order by s.planned_date asc, s.created_at desc
+            """, new { tenant.TenantId, Id = orderId }, t, cancellationToken: ct))).AsList();
+        return new { order, items, reservations, shipments, history, schedules };
     });
     public Task<IReadOnlyList<dynamic>> EligibleLotsAsync(Guid orderItemId, CancellationToken ct) => Tx<IReadOnlyList<dynamic>>(async (c, t) => (await c.QueryAsync(new CommandDefinition("""
         select l.id lot_id,l.warehouse_id,w.name warehouse,l.lot_number,l.expires_on,l.quality_status,
@@ -159,7 +170,11 @@ public sealed class LogisticsService(
                 await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:lot:{tenant.TenantId}:{lotId}" }, t, cancellationToken: ct));
             var id = Guid.CreateVersion7();
             var initialStatus = command.Items.All(x => x.CheckedQuantity > 0) ? "CHECKED" : "PREPARING";
-            await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_shipments(id,tenant_id,number,origin_warehouse_id,destination,customer_id,status,idempotency_key,request_hash,created_by,updated_by) values(@Id,@TenantId,@Number,@Warehouse,@Destination,@Customer,@Status,@Key,@Hash,@UserId,@UserId)", new { Id = id, tenant.TenantId, command.Number, Warehouse = command.OriginWarehouseId, command.Destination, Customer = command.CustomerId, Status = initialStatus, Key = command.IdempotencyKey, Hash = hash, tenant.UserId }, t, cancellationToken: ct));
+            await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_shipments(id,tenant_id,number,origin_warehouse_id,destination,customer_id,status,idempotency_key,request_hash,schedule_id,created_by,updated_by) values(@Id,@TenantId,@Number,@Warehouse,@Destination,@Customer,@Status,@Key,@Hash,@ScheduleId,@UserId,@UserId)", new { Id = id, tenant.TenantId, command.Number, Warehouse = command.OriginWarehouseId, command.Destination, Customer = command.CustomerId, Status = initialStatus, Key = command.IdempotencyKey, Hash = hash, ScheduleId = command.ScheduleId, tenant.UserId }, t, cancellationToken: ct));
+            if (command.ScheduleId.HasValue)
+            {
+                await c.ExecuteAsync(new CommandDefinition("update agro360.sales_delivery_schedules set status='PREPARING',updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@ScheduleId and status='PLANNED'", new { tenant.TenantId, ScheduleId = command.ScheduleId.Value, tenant.UserId }, t, cancellationToken: ct));
+            }
             foreach (var item in command.Items)
             {
                 var available = await c.QuerySingleOrDefaultAsync<decimal?>(new CommandDefinition("""
@@ -177,7 +192,7 @@ public sealed class LogisticsService(
                 if (balanceReserved == 0) throw new ConflictException("Saldo autorizado mudou durante a reserva.");
                 var reservation = Guid.CreateVersion7();
                 await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_reservations(id,tenant_id,order_item_id,stock_lot_id,quantity,unit,status,idempotency_key,request_hash,created_by,updated_by) values(@Id,@TenantId,@OrderItemId,@LotId,@Quantity,@Unit,'ACTIVE',@Key,@Hash,@UserId,@UserId)", new { Id = reservation, tenant.TenantId, item.OrderItemId, LotId = item.StockLotId, item.Quantity, item.Unit, Key = $"{command.IdempotencyKey}:{item.OrderItemId}:{item.StockLotId}", Hash = hash, tenant.UserId }, t, cancellationToken: ct));
-                await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_shipment_items(id,tenant_id,shipment_id,reservation_id,order_item_id,stock_lot_id,requested_quantity,reserved_quantity,picked_quantity,checked_quantity,check_completed,unit,divergence_reason,created_by,updated_by) values(@Id,@TenantId,@ShipmentId,@ReservationId,@OrderItemId,@LotId,@Quantity,@Quantity,@Picked,@Checked,@Completed,@Unit,@Reason,@UserId,@UserId)", new { Id = Guid.CreateVersion7(), tenant.TenantId, ShipmentId = id, ReservationId = reservation, item.OrderItemId, LotId = item.StockLotId, item.Quantity, Picked = item.PickedQuantity, Checked = item.CheckedQuantity, Completed = item.CheckedQuantity > 0, item.Unit, Reason = item.CheckedQuantity == item.Quantity ? null : item.DivergenceReason, tenant.UserId }, t, cancellationToken: ct));
+                await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_shipment_items(id,tenant_id,shipment_id,reservation_id,order_item_id,stock_lot_id,requested_quantity,reserved_quantity,picked_quantity,checked_quantity,check_completed,unit,divergence_reason,schedule_item_id,created_by,updated_by) values(@Id,@TenantId,@ShipmentId,@ReservationId,@OrderItemId,@LotId,@Quantity,@Quantity,@Picked,@Checked,@Completed,@Unit,@Reason,@ScheduleItemId,@UserId,@UserId)", new { Id = Guid.CreateVersion7(), tenant.TenantId, ShipmentId = id, ReservationId = reservation, item.OrderItemId, LotId = item.StockLotId, item.Quantity, Picked = item.PickedQuantity, Checked = item.CheckedQuantity, Completed = item.CheckedQuantity > 0, item.Unit, Reason = item.CheckedQuantity == item.Quantity ? null : item.DivergenceReason, ScheduleItemId = item.ScheduleItemId, tenant.UserId }, t, cancellationToken: ct));
             }
             if (command.Items.Any(x => x.CheckedQuantity > 0 && x.CheckedQuantity != x.PickedQuantity && string.IsNullOrWhiteSpace(x.DivergenceReason))) throw new DomainException("Diferença de conferência exige tratamento explícito.");
             await c.ExecuteAsync(new CommandDefinition("update agro360.sales_orders set status='FULFILLMENT',updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id in(select oi.order_id from agro360.sales_order_items oi join agro360.fulfillment_shipment_items si on si.tenant_id=oi.tenant_id and si.order_item_id=oi.id where si.shipment_id=@Id)", new { Id = id, tenant.TenantId, tenant.UserId }, t, cancellationToken: ct));
@@ -327,6 +342,33 @@ public sealed class LogisticsService(
         }
         var shipmentChanged = await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_shipments set status='DISPATCHED',dispatched_at=now(),dispatch_idempotency_key=@Key,dispatch_request_hash=@Hash,version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id and status='CHECKED' and version=@Version", new { tenant.TenantId, Id = id, Key = command.IdempotencyKey, Hash = requestHash, Version = command.Version, tenant.UserId }, t, cancellationToken: ct));
         if (shipmentChanged != 1) throw new ConflictException("O documento mudou durante a confirmação da saída.");
+
+        var linkedScheduleId = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+            "select schedule_id from agro360.fulfillment_shipments where tenant_id=@TenantId and id=@Id",
+            new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
+
+        if (linkedScheduleId.HasValue)
+        {
+            await c.ExecuteAsync(new CommandDefinition(
+                """
+                update agro360.sales_delivery_schedule_items sdi
+                set dispatched_quantity = dispatched_quantity + si.checked_quantity,
+                    updated_at = now(), updated_by = @UserId
+                from agro360.fulfillment_shipment_items si
+                where si.tenant_id = @TenantId and si.shipment_id = @ShipmentId
+                  and sdi.tenant_id = si.tenant_id and sdi.id = si.schedule_item_id
+                """,
+                new { tenant.TenantId, ShipmentId = id, tenant.UserId }, t, cancellationToken: ct));
+
+            await c.ExecuteAsync(new CommandDefinition(
+                """
+                update agro360.sales_delivery_schedules
+                set status = 'DISPATCHED', version = version + 1, updated_at = now(), updated_by = @UserId
+                where tenant_id = @TenantId and id = @ScheduleId and status in ('PLANNED', 'PREPARING')
+                """,
+                new { tenant.TenantId, ScheduleId = linkedScheduleId.Value, tenant.UserId }, t, cancellationToken: ct));
+        }
+
         await Audit(c, t, "fulfillment.dispatch", id, new { command.IdempotencyKey }, ct);
     });
     public Task<Guid> RecordDeliveryAttemptAsync(Guid id, DeliveryAttemptCommand command, CancellationToken ct)
@@ -347,8 +389,42 @@ public sealed class LogisticsService(
                 var changed = await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_shipment_items set accepted_quantity=accepted_quantity+@Accepted,refused_quantity=refused_quantity+@Refused,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Item and shipment_id=@Shipment and accepted_quantity+refused_quantity+returned_quantity+lost_quantity+@Accepted+@Refused<=checked_quantity", new { tenant.TenantId, Item = item.ShipmentItemId, Shipment = id, Accepted = item.AcceptedQuantity, Refused = item.RefusedQuantity, tenant.UserId }, t, cancellationToken: ct));
                 if (changed == 0) throw new ConflictException("A tentativa repete quantidade aceita ou excede o saldo em trânsito.");
                 await c.ExecuteAsync(new CommandDefinition("insert into agro360.fulfillment_delivery_attempt_items(id,tenant_id,attempt_id,shipment_item_id,accepted_quantity,refused_quantity,reason,created_by) values(@Id,@TenantId,@Attempt,@Item,@Accepted,@Refused,@Reason,@UserId)", new { Id = Guid.CreateVersion7(), tenant.TenantId, Attempt = attempt, Item = item.ShipmentItemId, Accepted = item.AcceptedQuantity, Refused = item.RefusedQuantity, item.Reason, tenant.UserId }, t, cancellationToken: ct));
+
+                if (item.AcceptedQuantity > 0)
+                {
+                    await c.ExecuteAsync(new CommandDefinition(
+                        """
+                        update agro360.sales_delivery_schedule_items sdi
+                        set delivered_quantity = delivered_quantity + @Accepted,
+                            updated_at = now(), updated_by = @UserId
+                        from agro360.fulfillment_shipment_items si
+                        where si.tenant_id = @TenantId and si.id = @Item
+                          and sdi.tenant_id = si.tenant_id and sdi.id = si.schedule_item_id
+                        """,
+                        new { tenant.TenantId, Item = item.ShipmentItemId, Accepted = item.AcceptedQuantity, tenant.UserId }, t, cancellationToken: ct));
+                }
             }
             await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_shipments s set status=case when not exists(select 1 from agro360.fulfillment_shipment_items i where i.tenant_id=s.tenant_id and i.shipment_id=s.id and i.accepted_quantity+i.returned_quantity+i.lost_quantity<i.checked_quantity) then 'RECONCILED' when exists(select 1 from agro360.fulfillment_shipment_items i where i.tenant_id=s.tenant_id and i.shipment_id=s.id and i.refused_quantity>i.returned_quantity) then 'RETURN_PENDING' else 'PARTIAL' end,version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id, tenant.UserId }, t, cancellationToken: ct));
+
+            var attemptScheduleId = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+                "select schedule_id from agro360.fulfillment_shipments where tenant_id=@TenantId and id=@Id",
+                new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
+            if (attemptScheduleId.HasValue)
+            {
+                await c.ExecuteAsync(new CommandDefinition(
+                    """
+                    update agro360.sales_delivery_schedules s
+                    set status = case
+                        when not exists(select 1 from agro360.sales_delivery_schedule_items si where si.tenant_id=s.tenant_id and si.schedule_id=s.id and si.delivered_quantity < si.quantity) then 'DELIVERED'
+                        when exists(select 1 from agro360.sales_delivery_schedule_items si where si.tenant_id=s.tenant_id and si.schedule_id=s.id and si.delivered_quantity > 0) then 'PARTIALLY_DELIVERED'
+                        else status
+                    end,
+                    version = version + 1, updated_at = now(), updated_by = @UserId
+                    where tenant_id = @TenantId and id = @ScheduleId and status in ('DISPATCHED', 'PARTIALLY_DELIVERED')
+                    """,
+                    new { tenant.TenantId, ScheduleId = attemptScheduleId.Value, tenant.UserId }, t, cancellationToken: ct));
+            }
+
             await Audit(c, t, "delivery.attempt", id, command, ct); return attempt;
         });
     }

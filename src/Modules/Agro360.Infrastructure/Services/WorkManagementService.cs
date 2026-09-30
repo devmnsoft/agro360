@@ -99,6 +99,18 @@ public sealed class WorkManagementService(DatabaseExecutor database, ITenantCont
               where g.tenant_id=si.tenant_id and g.lot_number=l.lot_number and g.field_id is not null
             )
             and exists(select 1 from user_permissions where code='agriculture.read')
+          union all
+          select 'SCHEDULE_UNASSIGNED:'||sch.id,sch.id,'SCHEDULE_UNASSIGNED','Compromisso '||sch.schedule_number||' sem responsável','COMMERCIAL',t.name,null,null,sch.planned_date::timestamptz,'OPERATIONAL','Data planejada da entrega','HIGH','Compromisso de entrega sem responsável operacional designado.','Designar responsável','/Commercial?view=orders&orderId='||sch.order_id,coalesce(sch.updated_at,sch.created_at)
+          from agro360.sales_delivery_schedules sch join agro360.tenancy_tenants t on t.id=sch.tenant_id
+          where sch.tenant_id=@TenantId and sch.responsible_id is null and sch.status in ('PLANNED','PREPARING') and exists(select 1 from user_permissions where code in('commercial.read','commercial.write'))
+          union all
+          select 'SCHEDULE_LATE:'||sch.id,sch.id,'SCHEDULE_LATE','Compromisso '||sch.schedule_number||' atrasado','COMMERCIAL',t.name,null,u.name,sch.planned_date::timestamptz,'CONTRACTUAL','Data limite planejada',case when sch.planned_date<current_date-3 then 'CRITICAL' else 'HIGH' end,'Compromisso de entrega com prazo vencido ainda pendente de expedição.','Reprogramar ou expedir','/Commercial?view=orders&orderId='||sch.order_id,coalesce(sch.updated_at,sch.created_at)
+          from agro360.sales_delivery_schedules sch join agro360.tenancy_tenants t on t.id=sch.tenant_id left join agro360.identity_users u on u.tenant_id=sch.tenant_id and u.id=sch.responsible_id
+          where sch.tenant_id=@TenantId and sch.planned_date<current_date and sch.status in ('PLANNED','PREPARING') and exists(select 1 from user_permissions where code in('commercial.read','commercial.write'))
+          union all
+          select 'DELIVERY_FAILED:'||d.id,d.id,'DELIVERY_FAILED','Entrega frustrada: '||coalesce(d.reason,'Recusa de entrega'),'LOGISTICS',t.name,null,u.name,d.occurred_at,'OPERATIONAL','Data da tentativa de entrega','HIGH','Tentativa de entrega registrou recusa total ou parcial e exige ação logística.','Tratar ocorrência','/Logistics?tab=occurrences',d.created_at
+          from agro360.fulfillment_delivery_attempts d join agro360.tenancy_tenants t on t.id=d.tenant_id left join agro360.identity_users u on u.tenant_id=d.tenant_id and u.id=d.responsible_id
+          where d.tenant_id=@TenantId and exists(select 1 from agro360.fulfillment_delivery_attempt_items ai where ai.tenant_id=d.tenant_id and ai.attempt_id=d.id and ai.refused_quantity>0) and exists(select 1 from user_permissions where code in('logistics.read','logistics.fulfillment.read'))
         ), visible as (
           select o.*,s.assigned_to responsible_id,coalesce(assigned.name,o.source_responsible_name) responsible_name,coalesce(s.assignment_version,0) assignment_version,'PENDING'::text origin_status,(r.user_id is not null) viewed_by_me,case when s.assigned_to is not null then 'ASSIGNED' when r.user_id is not null then 'VIEWED' else 'NEW' end interaction_status
           from occurrences o left join agro360.operation_occurrence_states s on s.tenant_id=@TenantId and s.occurrence_key=o.key left join agro360.operation_occurrence_reads r on r.tenant_id=@TenantId and r.occurrence_key=o.key and r.user_id=@UserId left join agro360.identity_users assigned on assigned.tenant_id=@TenantId and assigned.id=s.assigned_to

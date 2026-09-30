@@ -165,6 +165,11 @@
 .status-pill.status-fulfillment { background: rgba(120, 185, 233, .2); color: var(--blue); }
 .status-pill.status-delivered { background: rgba(99, 230, 167, .25); color: var(--accent); }
 .status-pill.status-returned { background: rgba(239, 125, 120, .2); color: var(--red); }
+.status-pill.status-planned { background: rgba(120, 185, 233, .2); color: var(--blue); }
+.status-pill.status-preparing { background: rgba(233, 186, 107, .2); color: var(--amber); }
+.status-pill.status-dispatched { background: rgba(175, 130, 240, .2); color: #c084fc; }
+.status-pill.status-partially_delivered { background: rgba(233, 186, 107, .25); color: var(--amber); }
+.status-pill.status-completed { background: rgba(99, 230, 167, .25); color: var(--accent); }
 
 .version-chip {
     display: inline-block;

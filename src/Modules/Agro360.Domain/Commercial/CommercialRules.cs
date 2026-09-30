@@ -271,6 +271,90 @@ public static class CommercialRules
         var remainder = sum % 11;
         return remainder < 2 ? 0 : 11 - remainder;
     }
+
+    public static void EnsureOrderCanBeScheduled(string orderStatus)
+    {
+        var normalized = orderStatus.Trim().ToUpperInvariant();
+        if (normalized == "CANCELLED")
+            throw new DomainException("Pedido cancelado não aceita programação de entregas.", "sales.schedule_order_cancelled");
+        if (normalized is not ("APPROVED" or "RESERVED" or "FULFILLMENT"))
+            throw new DomainException($"O pedido com status '{normalized}' não aceita programação de entregas.", "sales.schedule_order_ineligible");
+    }
+
+    public static decimal CalculateEligibleScheduleBalance(decimal orderedQuantity, decimal cancelledQuantity, decimal activeScheduledQuantity, decimal unlinkedDispatchedQuantity)
+    {
+        if (orderedQuantity <= 0) return 0m;
+        var netOrdered = Math.Max(0m, orderedQuantity - Math.Max(0m, cancelledQuantity));
+        var alreadyCommitted = Math.Max(0m, activeScheduledQuantity) + Math.Max(0m, unlinkedDispatchedQuantity);
+        return Math.Max(0m, netOrdered - alreadyCommitted);
+    }
+
+    private static readonly Dictionary<string, string[]> ScheduleTransitions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["PLANNED"] = ["PREPARING", "CANCELLED"],
+        ["PREPARING"] = ["DISPATCHED", "CANCELLED"],
+        ["DISPATCHED"] = ["PARTIALLY_DELIVERED", "DELIVERED"],
+        ["PARTIALLY_DELIVERED"] = ["DELIVERED"],
+        ["DELIVERED"] = [],
+        ["CANCELLED"] = []
+    };
+
+    public static string NormalizeScheduleStatus(string? status)
+    {
+        var normalized = status?.Trim().ToUpperInvariant();
+        if (string.IsNullOrEmpty(normalized) || !ScheduleTransitions.ContainsKey(normalized))
+            throw new DomainException("Status da programação de entrega inválido.", "sales.schedule_status_invalid");
+        return normalized;
+    }
+
+    public static void ValidateScheduleTransition(string current, string next, string? reason)
+    {
+        if (!ScheduleTransitions.TryGetValue(current, out var allowed) || !allowed.Contains(next))
+            throw new DomainException($"Transição da programação de entrega de {current} para {next} não é permitida.", "sales.schedule_transition_invalid");
+        if (next == "CANCELLED" && string.IsNullOrWhiteSpace(reason))
+            throw new DomainException("Cancelamento do compromisso de entrega exige motivo.", "sales.schedule_cancel_reason_required");
+    }
+
+    public static void ValidateDeliverySchedule(string? destination, IEnumerable<(Guid OrderItemId, decimal Quantity, decimal EligibleBalance, string Unit)> items)
+    {
+        if (string.IsNullOrWhiteSpace(destination))
+            throw new DomainException("Destino da entrega é obrigatório.", "sales.schedule_destination_required");
+
+        var rows = items.ToArray();
+        if (rows.Length == 0)
+            throw new DomainException("A programação de entrega exige ao menos um item.", "sales.schedule_items_required");
+
+        foreach (var item in rows)
+        {
+            if (item.Quantity <= 0)
+                throw new DomainException("Quantidade da programação deve ser positiva.", "sales.schedule_quantity_invalid");
+            if (string.IsNullOrWhiteSpace(item.Unit))
+                throw new DomainException("Unidade da programação é obrigatória.", "sales.schedule_unit_required");
+            if (item.Quantity > item.EligibleBalance)
+                throw new DomainException($"Quantidade programada ({item.Quantity}) excede o saldo elegível ({item.EligibleBalance}).", "sales.schedule_balance_exceeded");
+        }
+    }
+
+    public static void ValidateReschedule(string currentStatus, decimal dispatchedQuantity, decimal deliveredQuantity, decimal currentItemQuantity, decimal newQuantity, decimal availableEligibleBalance, string? reason)
+    {
+        var normalized = currentStatus.Trim().ToUpperInvariant();
+        if (normalized is "DELIVERED" or "CANCELLED")
+            throw new DomainException($"Não é permitido reprogramar um compromisso com status '{normalized}'.", "sales.reschedule_status_invalid");
+
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new DomainException("Reprogramação exige motivo registrado.", "sales.reschedule_reason_required");
+
+        if (newQuantity <= 0)
+            throw new DomainException("A nova quantidade deve ser positiva.", "sales.reschedule_quantity_invalid");
+
+        var minimumPermitted = Math.Max(dispatchedQuantity, deliveredQuantity);
+        if (newQuantity < minimumPermitted)
+            throw new DomainException($"Não é permitido reduzir a quantidade abaixo do que já foi atendido/expedido ({minimumPermitted}).", "sales.reschedule_below_dispatched");
+
+        var delta = newQuantity - currentItemQuantity;
+        if (delta > 0 && delta > availableEligibleBalance)
+            throw new DomainException($"Acréscimo de {delta} excede o saldo elegível disponível ({availableEligibleBalance}).", "sales.reschedule_balance_exceeded");
+    }
 }
 
 public sealed record CommercialOrderLineCalculation(decimal Quantity, decimal UnitPrice, decimal Discount, decimal BasePrice, decimal MaximumDiscount, decimal LineTotal, decimal EffectiveDiscount);
