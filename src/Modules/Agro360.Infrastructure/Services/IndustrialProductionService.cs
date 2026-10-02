@@ -85,7 +85,7 @@ public sealed class IndustrialProductionService(
                 await c.ExecuteAsync(new CommandDefinition(
                     """
                     insert into agro360.production_batch_traceability(id,tenant_id,batch_id,relation_type,source_batch,source_entity,source_id,source_reference,metadata,created_by,updated_by)
-                    select gen_random_uuid(),c.tenant_id,@BatchId,'MATERIAL_CONSUMPTION',l.lot_number,'production_material_consumptions',c.id,l.lot_number,jsonb_build_object('consumed_quantity',c.quantity,'unit',c.unit),@UserId,@UserId
+                    select gen_random_uuid(),c.tenant_id,@BatchId,'RAW_MATERIAL',l.lot_number,'production_material_consumptions',c.id,l.lot_number,jsonb_build_object('consumed_quantity',c.quantity,'unit',c.unit),@UserId,@UserId
                     from agro360.production_material_consumptions c
                     join agro360.inventory_stock_lots l on l.tenant_id=c.tenant_id and l.id=c.stock_lot_id
                     where c.tenant_id=@TenantId and c.order_id=@OrderId and c.status='POSTED'

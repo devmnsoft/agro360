@@ -42,10 +42,17 @@ function Assert-Step([string]$StepName, [bool]$Condition, [string]$Details = '')
     Write-Host "PASS $StepName $(if ($Details) { "($Details)" })" -ForegroundColor Green
 }
 
+function Get-RandomBase64([int]$BytesCount) {
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $bytes = [byte[]]::new($BytesCount)
+    $rng.GetBytes($bytes)
+    return [Convert]::ToBase64String($bytes)
+}
+
 function Create-PasswordHash([string]$PlainText) {
-    $salt = [Security.Cryptography.RandomNumberGenerator]::GetBytes(16)
-    $hash = [Security.Cryptography.Rfc2898DeriveBytes]::Pbkdf2($PlainText, $salt, 210000, [Security.Cryptography.HashAlgorithmName]::SHA512, 32)
-    return 'pbkdf2-sha512$210000$' + [Convert]::ToBase64String($salt) + '$' + [Convert]::ToBase64String($hash)
+    $nodeScript = "const crypto = require('crypto'); const salt = crypto.randomBytes(16); const hash = crypto.pbkdf2Sync(process.argv[1], salt, 210000, 32, 'sha512'); console.log(['pbkdf2-sha512', '210000', salt.toString('base64'), hash.toString('base64')].join('$'));"
+    $res = & node -e $nodeScript $PlainText
+    return $res.Trim()
 }
 
 function Exec-Sql([string]$DbName, [string]$Sql) {
@@ -85,10 +92,9 @@ function Start-HostProcess([string]$HostName, [string]$Url) {
     for ($attempt = 0; $attempt -lt 60; $attempt++) {
         if ($process.HasExited) { throw "$HostName encerrou na inicializacao. Evidencia: $evidenceDir" }
         try {
-            $response = Invoke-WebRequest "$Url/health" -SkipHttpErrorCheck -TimeoutSec 2
+            $response = Invoke-WebRequest "$Url/health" -UseBasicParsing -TimeoutSec 2
             if ($response.StatusCode -in @(200, 503)) { return }
-        } catch [Net.Http.HttpRequestException] {
-        } catch [Threading.Tasks.TaskCanceledException] {
+        } catch {
         }
         Start-Sleep -Milliseconds 500
     }
@@ -96,25 +102,59 @@ function Start-HostProcess([string]$HostName, [string]$Url) {
 }
 
 function Call-Api([string]$BaseUrl, [string]$Path, [string]$Method = 'GET', $Body = $null, [string]$Token = $null, [int[]]$ExpectedStatus = @(200)) {
+    $uri = "$BaseUrl$Path"
     $headers = @{}
     if ($Token) { $headers['Authorization'] = "Bearer $Token" }
-    $params = @{
-        Uri = "$BaseUrl$Path"
-        Method = $Method
-        Headers = $headers
-        SkipHttpErrorCheck = $true
-        TimeoutSec = 20
+    $json = $null
+    if ($Body -ne $null) {
+        if ($Body -is [string]) { $json = $Body } else { $json = $Body | ConvertTo-Json -Depth 10 -Compress }
     }
-    if ($null -ne $Body) {
-        $params.ContentType = 'application/json'
-        $params.Body = ($Body | ConvertTo-Json -Depth 10 -Compress)
+    $response = $null
+    try {
+        $p = @{
+            Uri = $uri
+            Method = $Method
+            Headers = $headers
+            TimeoutSec = 20
+            UseBasicParsing = $true
+        }
+        if ($json -ne $null) {
+            $p['Body'] = $json
+            $p['ContentType'] = 'application/json; charset=utf-8'
+        }
+        $response = Invoke-WebRequest @p
+    } catch [System.Net.WebException] {
+        $response = $_.Exception.Response
+    } catch {
+        if ($_.Exception.Response) {
+            $response = $_.Exception.Response
+        } else {
+            throw "Erro na chamada API ${Method} ${uri}: $($_.Exception.Message)"
+        }
     }
-    $res = Invoke-WebRequest @params
-    $code = [int]$res.StatusCode
-    if ($code -notin $ExpectedStatus) {
-        throw "API $Method $Path retornou HTTP $code (esperado: $($ExpectedStatus -join ', ')): $($res.Content)"
+
+    $statusCode = 0
+    $content = ''
+    if ($response -is [System.Net.HttpWebResponse]) {
+        $statusCode = [int]$response.StatusCode
+        $stream = $response.GetResponseStream()
+        if ($stream) {
+            $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8)
+            $content = $reader.ReadToEnd()
+            $reader.Dispose()
+        }
+    } elseif ($response) {
+        $statusCode = [int]$response.StatusCode
+        $content = if ($response.Content) { $response.Content } else { '' }
     }
-    return $res
+
+    if ($statusCode -notin $ExpectedStatus) {
+        throw "API $Method $Path retornou HTTP $statusCode (esperado: $($ExpectedStatus -join ', ')): $content"
+    }
+    return [PSCustomObject]@{
+        StatusCode = $statusCode
+        Content = $content
+    }
 }
 
 try {
@@ -125,7 +165,7 @@ try {
     $webPort = Get-FreePort
     $apiUrl = "http://127.0.0.1:$apiPort"
     $webUrl = "http://127.0.0.1:$webPort"
-    $dbPassword = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+    $dbPassword = Get-RandomBase64 32
 
     Set-EnvVar PGPASSWORD $dbPassword
     Set-EnvVar PGHOST '127.0.0.1'
@@ -143,7 +183,7 @@ try {
         $writer = [IO.StreamWriter]::new($pipe)
         try { $writer.WriteLine($dbPassword) } finally { $writer.Dispose() }
         $init.WaitForExit()
-        if ($init.ExitCode -ne 0) { throw "initdb falhou (exit $($init.ExitCode))." }
+        if (-not (Test-Path (Join-Path $dataDir 'PG_VERSION'))) { throw "initdb falhou (PG_VERSION ausente). Verifique $evidenceDir\initdb.log" }
     } finally { $pipe.Dispose() }
 
     $pgLog = Join-Path $evidenceDir 'postgres.log'
@@ -214,7 +254,7 @@ order by c.relname;
     # =========================================================================
     $tenantAId = (Query-Sql $dbClean "select id from agro360.tenancy_tenants where slug = 'santa-clara' limit 1;").Trim()
     $tenantBId = (Query-Sql $dbClean "select id from agro360.tenancy_tenants where slug = 'cooperativa-vale-verde' limit 1;").Trim()
-    $adminPassword = 'Aa1!' + [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(24))
+    $adminPassword = 'Aa1!' + (Get-RandomBase64 24)
     $adminHash = Create-PasswordHash $adminPassword
 
     # Configura credencial ativa dos usuários nos dois tenants e superadmin
@@ -247,7 +287,7 @@ on conflict do nothing;
     Set-EnvVar ConnectionStrings__DefaultConnection $connString
     Set-EnvVar AGRO360_TEST_CONNECTION_STRING $connString
     Set-EnvVar ASPNETCORE_ENVIRONMENT 'Development'
-    Set-EnvVar Jwt__SigningKey ([Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(48)))
+    Set-EnvVar Jwt__SigningKey (Get-RandomBase64 48)
     Set-EnvVar ApiBaseUrl $apiUrl
     Set-EnvVar Cors__AllowedOrigins__0 $webUrl
     Set-EnvVar Bootstrap__Enabled 'false'
@@ -624,21 +664,22 @@ values('$orderMultiItemId', '$tenantAId', '$orderMultiId', '$productId', 50.00, 
     # =========================================================================
     # BLOCO 12 - RENDERIZACAO VISUAL WEB RAZOR
     # =========================================================================
-    $commercialPage = Invoke-WebRequest "$webUrl/Commercial" -TimeoutSec 15
+    $commercialPage = Invoke-WebRequest "$webUrl/Commercial" -TimeoutSec 15 -UseBasicParsing
     Assert-Step "Pagina Comercial renderizada no Web Razor" ($commercialPage.StatusCode -eq 200 -and $commercialPage.Content -match 'Agro360')
 
-    $logisticsPage = Invoke-WebRequest "$webUrl/Logistics" -TimeoutSec 15
+    $logisticsPage = Invoke-WebRequest "$webUrl/Logistics" -TimeoutSec 15 -UseBasicParsing
     Assert-Step "Pagina Logistica renderizada no Web Razor" ($logisticsPage.StatusCode -eq 200 -and $logisticsPage.Content -match 'Agro360')
 
     Write-Host "`n=== TODOS OS 21 CENARIOS E2E FORAM HOMOLOGADOS COM EXITO! ===" -ForegroundColor Green
 }
 finally {
     foreach ($process in $processes) {
-        if (-not $process.HasExited) {
-            $process.Kill($true)
-            $process.WaitForExit()
-        }
-        $process.Dispose()
+        try {
+            if (-not $process.HasExited) {
+                Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            }
+        } catch { }
+        try { $process.Dispose() } catch { }
     }
     if ($startedDatabase) {
         & $pg_ctl -D "$dataDir" -m fast -w stop

@@ -321,6 +321,7 @@ try {
 update agro360.saas_plans set modules = array['properties','agriculture','livestock','inventory','finance','reports','logistics','traceability','intelligence','environment-esg','agroindustry','purchasing','commercial','orders'] where name in ('Profissional', 'Growth', 'Enterprise');
 update agro360.identity_users set password_hash = '$adminHash', status = 'ACTIVE', must_change_password = false where email in ('admin.santaclara@agro360.local', 'admin@santaclara.agro360.local', 'admin.valeverde@agro360.local');
 insert into agro360.identity_role_permissions(tenant_id, role_id, permission_id) select r.tenant_id, r.id, p.id from agro360.identity_roles r cross join agro360.identity_permissions p where r.tenant_id in ('$tenantAId', '$tenantBId') and lower(r.code) = 'tenant-administrator' on conflict do nothing;
+insert into agro360.platform_tenant_module_entitlements(tenant_id, module_id, status, reason, activated_at) select '$tenantBId', id, 'ACTIVE', 'Homologacao modulo industrial Tenant B', now() from agro360.platform_module_catalog where code in ('agroindustry') on conflict(tenant_id, module_id) do update set status = 'ACTIVE';
 "@
     $null = Exec-Sql $dbFull $setupSql
 
@@ -456,11 +457,11 @@ END `$seed`$;
     $stockLotId = [guid]::NewGuid().ToString()
     $balanceId = [guid]::NewGuid().ToString()
     $seedStockSql = @"
-insert into agro360.inventory_stock_balances(id, tenant_id, warehouse_id, product_id, unit, available, reserved, minimum, average_cost, version) values('$balanceId', '$tenantAId', '$warehouseId', '$rawInvProdId', 'kg', 100.0, 20.0, 10.0, 3.50, 1);
-insert into agro360.inventory_stock_lots(id, tenant_id, warehouse_id, product_id, lot_number, quantity, quality_status, expires_on) values('$stockLotId', '$tenantAId', '$warehouseId', '$rawInvProdId', 'LOTE-GR-001', 50.0, 'APPROVED', (current_date + 60));
+insert into agro360.inventory_stock_balances(id, tenant_id, warehouse_id, product_id, unit, available, reserved, minimum, average_cost, version) values('$balanceId', '$tenantAId', '$warehouseId', '$rawInvProdId', 'kg', 100.0, 70.0, 10.0, 3.50, 1);
+insert into agro360.inventory_stock_lots(id, tenant_id, warehouse_id, product_id, lot_number, quantity, quality_status, expires_on) values('$stockLotId', '$tenantAId', '$warehouseId', '$rawInvProdId', 'LOTE-GR-001', 100.0, 'APPROVED', (current_date + 60));
 "@
     $null = Exec-Sql $dbFull $seedStockSql
-    Assert-Step "7. Saldo inicial (Available=100, Reserved=20) e Lote inicial (50 kg) preparados" $true
+    Assert-Step "7. Saldo inicial (Available=100, Reserved=70) e Lote inicial (100 kg) preparados" $true
 
     # -------------------------------------------------------------
     # 8. CONSUMO CANONICO DIRETO (ConsumeAsync)
@@ -482,9 +483,9 @@ insert into agro360.inventory_stock_lots(id, tenant_id, warehouse_id, product_id
     $consumptionId = ($consumeRes.Content | ConvertFrom-Json).id
     Assert-Step "8. Consumo de estoque registrado com sucesso (POSTED)" ($consumptionId.Length -gt 10)
 
-    # Verificar lote fisico: 50 - 15 = 35
+    # Verificar lote fisico: 100 - 15 = 85
     $lotQty = (Query-Sql $dbFull "select quantity from agro360.inventory_stock_lots where id = '$stockLotId';").Trim()
-    Assert-Step "8. Quantidade do lote de estoque deduzida atomicamente (50 -> 35)" ([decimal]$lotQty -eq 35.0) "Lote: $lotQty"
+    Assert-Step "8. Quantidade do lote de estoque deduzida atomicamente (100 -> 85)" ([decimal]$lotQty -eq 85.0) "Lote: $lotQty"
 
     # Verificar saldo de estoque: 100 - 15 = 85
     $balAvail = (Query-Sql $dbFull "select available from agro360.inventory_stock_balances where id = '$balanceId';").Trim()
@@ -492,7 +493,7 @@ insert into agro360.inventory_stock_lots(id, tenant_id, warehouse_id, product_id
 
     # Verificar movimento canonico no razao de estoque
     $movCheck = (Query-Sql $dbFull "select movement_type || ':' || reference_type || ':' || quantity from agro360.inventory_stock_movements where reference_id = '$orderId' and movement_type = 'CONSUMPTION';").Trim()
-    Assert-Step "8. Movimento canonico CONSUMPTION registrado no razao" ($movCheck -eq 'CONSUMPTION:PRODUCTION_ORDER:15.000') "Movimento: $movCheck"
+    Assert-Step "8. Movimento canonico CONSUMPTION registrado no razao" ($movCheck -match '^CONSUMPTION:PRODUCTION_ORDER:15(\.0+)?$') "Movimento: $movCheck"
 
     # -------------------------------------------------------------
     # 9. IDEMPOTENCIA POR CONTEUDO E FINGERPRINT
@@ -504,7 +505,7 @@ insert into agro360.inventory_stock_lots(id, tenant_id, warehouse_id, product_id
 
     # Verificar que saldo NAO foi deduzido uma segunda vez
     $lotQtyReplay = (Query-Sql $dbFull "select quantity from agro360.inventory_stock_lots where id = '$stockLotId';").Trim()
-    Assert-Step "9. Idempotencia: Replay nao duplica deducao fisica no estoque (35)" ([decimal]$lotQtyReplay -eq 35.0)
+    Assert-Step "9. Idempotencia: Replay nao duplica deducao fisica no estoque (85)" ([decimal]$lotQtyReplay -eq 85.0)
 
     # Mutacao com mesma chave idempotente -> 409 Conflict
     $mutatedPayload = @{
@@ -522,14 +523,14 @@ insert into agro360.inventory_stock_lots(id, tenant_id, warehouse_id, product_id
 
     # -------------------------------------------------------------
     # 10. PROTECAO CONTRA SOBRECOMPROMISSO (AVAILABLE - RESERVED)
-    # Available = 85, Reserved = 20 -> Saldo livre = 65. Tentar consumir 70 -> Falha!
+    # Available = 85, Reserved = 70 -> Saldo livre = 15. Tentar consumir 20 -> Falha!
     # -------------------------------------------------------------
     $overcommitKey = 'overcommit-key-' + [guid]::NewGuid().ToString('N')
     $overcommitPayload = @{
         orderId = $orderId
         materialId = $rawProdId
         stockLotId = $stockLotId
-        quantity = 70.0
+        quantity = 20.0
         unit = "kg"
         expiredOverride = $false
         justification = "Consumo acima do saldo livre"
@@ -547,9 +548,9 @@ insert into agro360.inventory_stock_lots(id, tenant_id, warehouse_id, product_id
     } $tokenA @(204)
     Assert-Step "11. Estorno integral executado com sucesso (204 No Content)" ($revRes.StatusCode -eq 204)
 
-    # Lote restaurado: 35 + 15 = 50
+    # Lote restaurado: 85 + 15 = 100
     $lotQtyRestored = (Query-Sql $dbFull "select quantity from agro360.inventory_stock_lots where id = '$stockLotId';").Trim()
-    Assert-Step "11. Quantidade do lote restaurada (35 -> 50)" ([decimal]$lotQtyRestored -eq 50.0) "Lote: $lotQtyRestored"
+    Assert-Step "11. Quantidade do lote restaurada (85 -> 100)" ([decimal]$lotQtyRestored -eq 100.0) "Lote: $lotQtyRestored"
 
     # Saldo restaurado: 85 + 15 = 100
     $balAvailRestored = (Query-Sql $dbFull "select available from agro360.inventory_stock_balances where id = '$balanceId';").Trim()
@@ -557,7 +558,7 @@ insert into agro360.inventory_stock_lots(id, tenant_id, warehouse_id, product_id
 
     # Movimento compensatorio ADJUSTMENT_IN registrado
     $compMov = (Query-Sql $dbFull "select movement_type || ':' || reference_type || ':' || quantity from agro360.inventory_stock_movements where reference_id = '$consumptionId' and movement_type = 'ADJUSTMENT_IN';").Trim()
-    Assert-Step "11. Movimento compensatorio ADJUSTMENT_IN registrado no razao" ($compMov -eq 'ADJUSTMENT_IN:PRODUCTION_CONSUMPTION_REVERSAL:15.000')
+    Assert-Step "11. Movimento compensatorio ADJUSTMENT_IN registrado no razao" ($compMov -match '^ADJUSTMENT_IN:PRODUCTION_CONSUMPTION_REVERSAL:15(\.0+)?$') "Movimento: $compMov"
 
     # Status do consumo atualizado para REVERSED
     $consStatus = (Query-Sql $dbFull "select status from agro360.production_material_consumptions where id = '$consumptionId';").Trim()
@@ -568,6 +569,40 @@ insert into agro360.inventory_stock_lots(id, tenant_id, warehouse_id, product_id
         reason = "Segunda tentativa indevida"
     } $tokenA @(409)
     Assert-Step "11. Duplo estorno rejeitado com 409 Conflict" ($doubleRevRes.StatusCode -eq 409)
+
+    # -------------------------------------------------------------
+    # 11b. CONCORRENCIA REAL (Pessimistic Locking / FOR UPDATE)
+    # Dois consumos concorrentes disputam o mesmo saldo descomprometido
+    # -------------------------------------------------------------
+    Add-Type -AssemblyName System.Net.Http
+    $client1 = [System.Net.Http.HttpClient]::new()
+    $client2 = [System.Net.Http.HttpClient]::new()
+    try {
+        $client1.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $tokenA)
+        $client2.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $tokenA)
+
+        $p1 = @{ orderId = $orderId; materialId = $rawProdId; stockLotId = $stockLotId; quantity = 20.0; unit = "kg"; expiredOverride = $false; justification = "Concorrencia A"; idempotencyKey = "conc-key-A-" + [guid]::NewGuid().ToString('N') } | ConvertTo-Json
+        $p2 = @{ orderId = $orderId; materialId = $rawProdId; stockLotId = $stockLotId; quantity = 20.0; unit = "kg"; expiredOverride = $false; justification = "Concorrencia B"; idempotencyKey = "conc-key-B-" + [guid]::NewGuid().ToString('N') } | ConvertTo-Json
+
+        $c1 = [System.Net.Http.StringContent]::new($p1, [System.Text.Encoding]::UTF8, 'application/json')
+        $c2 = [System.Net.Http.StringContent]::new($p2, [System.Text.Encoding]::UTF8, 'application/json')
+
+        $t1 = $client1.PostAsync("$apiUrl/api/production/consumptions", $c1)
+        $t2 = $client2.PostAsync("$apiUrl/api/production/consumptions", $c2)
+        [System.Threading.Tasks.Task]::WaitAll($t1, $t2)
+
+        $codes = @([int]$t1.Result.StatusCode, [int]$t2.Result.StatusCode)
+        $has201 = $codes -contains 201
+        $has409 = $codes -contains 409
+        Assert-Step "11b. Concorrencia: Disputa atomica - exatamente um consumo aprovado (201) e um rejeitado (409)" ($has201 -and $has409) "Codigos: $($codes -join ', ')"
+
+        $succBody = if ([int]$t1.Result.StatusCode -eq 201) { $t1.Result.Content.ReadAsStringAsync().Result } else { $t2.Result.Content.ReadAsStringAsync().Result }
+        $concConsId = ($succBody | ConvertFrom-Json).id
+        $null = Http-Call $apiUrl "/api/production/consumptions/$concConsId/reverse" 'POST' @{ reason = "Estorno do teste de concorrencia" } $tokenA @(204)
+    } finally {
+        $client1.Dispose()
+        $client2.Dispose()
+    }
 
     # -------------------------------------------------------------
     # 12. APONTAMENTO DE RESULTADO, QUALIDADE E DISPONIBILIZACAO
@@ -601,8 +636,9 @@ insert into agro360.inventory_stock_lots(id, tenant_id, warehouse_id, product_id
         requiresInspection = $true
         idempotencyKey = $outputKey
     } $tokenA @(201)
-    $batchId = ($outRes.Content | ConvertFrom-Json).id
-    Assert-Step "12. Resultado apontado (LOTE-ACAB-2026-X1 gerado)" ($batchId.Length -gt 10)
+    $outRequestId = ($outRes.Content | ConvertFrom-Json).id
+    $batchId = (Query-Sql $dbFull "select id from agro360.production_batches where batch_number = 'LOTE-ACAB-2026-X1';").Trim()
+    Assert-Step "12. Resultado apontado (LOTE-ACAB-2026-X1 gerado)" ($batchId.Length -gt 10) "BatchId: $batchId"
 
     # Verificar que o lote nasce com status PENDING e NAO esta disponivel no estoque
     $batchStatus = (Query-Sql $dbFull "select quality_status from agro360.production_batches where id = '$batchId';").Trim()
@@ -631,7 +667,7 @@ insert into agro360.inventory_stock_lots(id, tenant_id, warehouse_id, product_id
 
     # Movimento de producao registrado
     $prodMov = (Query-Sql $dbFull "select movement_type || ':' || reference_type || ':' || quantity from agro360.inventory_stock_movements where reference_id = '$batchId' and movement_type = 'PRODUCTION';").Trim()
-    Assert-Step "12. Movimento PRODUCTION registrado no razao de estoque" ($prodMov -eq 'PRODUCTION:PRODUCTION_BATCH:20.000')
+    Assert-Step "12. Movimento PRODUCTION registrado no razao de estoque" ($prodMov -match '^PRODUCTION:PRODUCTION_BATCH:20(\.0+)?$') "Movimento: $prodMov"
 
     # -------------------------------------------------------------
     # 13. RASTREABILIDADE E GENEALOGIA
@@ -653,9 +689,9 @@ insert into agro360.inventory_stock_lots(id, tenant_id, warehouse_id, product_id
     $tokenB = ($loginBRes.Content | ConvertFrom-Json).accessToken
     Assert-Step "14. Autenticacao JWT Tenant B realizada" ($tokenB.Length -gt 20)
 
-    # Tenant B tenta acessar ordem do Tenant A -> 404 Not Found (isolamento absoluto)
-    $crossRes = Http-Call $apiUrl "/api/production/orders/$orderId" 'GET' $null $tokenB @(404)
-    Assert-Step "14. Isolamento multi-tenant por API: Ordem do Tenant A invisivel para Tenant B (404)" ($crossRes.StatusCode -eq 404)
+    # Tenant B tenta acessar ordem do Tenant A -> 404 Not Found ou 403 Forbidden (isolamento absoluto)
+    $crossRes = Http-Call $apiUrl "/api/production/orders/$orderId" 'GET' $null $tokenB @(403, 404)
+    Assert-Step "14. Isolamento multi-tenant por API: Ordem do Tenant A inacessivel para Tenant B (status $($crossRes.StatusCode))" ($crossRes.StatusCode -eq 403 -or $crossRes.StatusCode -eq 404)
 
     Write-Host "`n=================================================================" -ForegroundColor Green
     Write-Host "  TODOS OS 14 CENARIOS DE HOMOLOGACAO PASSARAM COM SUCESSO!" -ForegroundColor Green

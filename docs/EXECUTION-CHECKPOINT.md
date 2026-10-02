@@ -1,3 +1,73 @@
+## Homologação E2E Integrada da Produção, Consumo, Estoque e Qualidade (AG-PROD-INT-001) — 2026-10-02
+
+Branch `main`, HEAD de referência `35aaf6040664e7ed42e1b5cb0d63c60883478cef`.
+As alterações das rodadas anteriores foram integradas e consolidadas. Arquivos e configurações locais do usuário (`appsettings.Development.json` e credenciais) preservados.
+
+**Corrigido e Entregue nesta rodada**
+- **Integridade Atômica de Consumo e Idempotência (Migration 118, Schema 11.8.0)**:
+  - Migration incremental `database/migrations/118_production_material_consumption_integrity.sql` e consolidação em `database/agro360-postgres-full.sql`:
+    - Colunas `idempotency_key varchar(160)` e `request_hash char(64)` em `agro360.production_material_consumptions`.
+    - Índice único `ux_prod_material_consumptions_idempotency` garantindo unicidade por tenant e chave.
+    - RLS forçado (`force row level security`) e concessão explícita de permissões ao papel da aplicação (`agro360_app`).
+    - Registro canônico da versão de schema `11.8.0`.
+- **Serviço Industrial e Regras de Negócio (`IndustrialProductionService.cs` & `IndustrialProductionRules.cs`)**:
+  - `ConsumeAsync`:
+    - Pessimistic locking (`FOR UPDATE`) concorrente nas tabelas `inventory_stock_lots` e `inventory_stock_balances`.
+    - Proteção estrita de saldo descomprometido: consumo bloqueado com HTTP 409 caso `available - reserved < quantity`.
+    - Fingerprint SHA-256 da requisição para garantia de idempotência: repetição com mesmo payload devolve registro existente; mutação da requisição para mesma chave devolve HTTP 409 Conflict.
+    - Dedução física atômica: decremento na quantidade do lote (`inventory_stock_lots`) e no saldo disponível (`inventory_stock_balances`).
+    - Lançamento contábil de movimento canônico no ledger de estoque (`CONSUMPTION` referenciando `PRODUCTION_ORDER`).
+  - `ReverseConsumptionAsync`:
+    - Validação de estado ativo (`POSTED`). Bloqueio estrito de duplo estorno com HTTP 409 Conflict.
+    - Reconstituição atômica de saldo no lote de origem e no saldo do armazém.
+    - Lançamento contábil compensatório no ledger (`ADJUSTMENT_IN` com referência `PRODUCTION_CONSUMPTION_REVERSAL`).
+    - Transição de status para `REVERSED`.
+  - `RegisterOutputAsync` & Genealogia:
+    - Vínculo de insumos consumidos na genealogia do lote (`production_batch_traceability`) usando o enum canônico `'RAW_MATERIAL'`.
+    - Geração de lotes acabados com status de qualidade `PENDING` (não liberados para venda imediata) até decisão explícita de qualidade (`APPROVED`).
+- **Interfaces e Experiência do Operador (`production.js` & `forms.js`)**:
+  - `forms.js`: desacoplamento de handlers de submissão da funcionalidade de enriquecimento de campos; exposição pública de `window.agro360Forms.enhanceForm` e `enhanceField`.
+  - `production.js`: inclusão de modal acessível para Consumo Direto com busca contextual de lotes (`data-lookup="lots"`), modal de estorno de consumo com justificativa auditável, e exibição integrada de consumos e lotes apontados no detalhe da ordem de produção.
+- **Suíte de Homologação Integrada (`scripts/verify-production-e2e.ps1`)**:
+  - Instalação limpa em PostgreSQL 18 e revalidação do schema 11.8.0.
+  - Upgrade automatizado via executável real do migrador (`Agro360.Migrator`) com preservação de registros pré-existentes.
+  - Validação estrita de RLS sob papel restrito da aplicação (`agro360_app` com `rolsuper=f` e `rolbypassrls=f`), confirmando isolamento entre Tenant A e Tenant B e 0 registros sem contexto.
+  - Teste real de concorrência com duas requisições HTTP disputando o mesmo saldo descomprometido simultaneamente via `FOR UPDATE`: exatamente uma requisição aprovada (201) e uma rejeitada (409), sem deadlocks e sem saldo negativo.
+  - 15 cenários de ponta a ponta 100% aprovados.
+
+**Evidência executada**
+- `dotnet build MNSOFT.Agro360.sln -c Release`: **0 avisos, 0 erros**.
+- `dotnet exec tests/Agro360.ArchitectureTests/...`: **169/169 aprovados (100%)**.
+- `dotnet exec tests/Agro360.UnitTests/...`: **270/270 aprovados (100%)** (adicionados 5 testes unitários de regras de consumo e estorno em `IndustrialProductionRulesTests.cs`).
+- `node scripts/verify-dispatch-confirmation.mjs`: **PASS**.
+- `node scripts/verify-offline-shell.mjs`: **PASS**.
+- `scripts/verify-production-e2e.ps1`: **15/15 cenários E2E aprovados (Exit code 0)**.
+- `scripts/verify-mvp-e2e.ps1`: **21/21 cenários E2E aprovados (Exit code 0)**.
+
+**Matriz de Homologação AG-PROD-INT-001**
+
+| Dimensão | Cenário / Requisito | Status | Evidência |
+|---|---|---|---|
+| Arquitetura | 169 regras de governança e isolamento | Aprovado | 169/169 PASS |
+| Unidade / Estático | 270 testes unitários de domínio e produção | Aprovado | 270/270 PASS |
+| Banco (Instalação) | Instalação limpa `agro360-postgres-full.sql` | Aprovado | PostgreSQL 18 limpo, v11.8.0 PASS |
+| Banco (Upgrade) | Upgrade migrador real com migration 118 | Aprovado | `Agro360.Migrator` executado com êxito (Exit 0) |
+| Banco (RLS Restrito) | Papel `agro360_app` sem superuser e sem bypass | Aprovado | `rolsuper=f`, `rolbypassrls=f`, isolamento PASS |
+| Autenticação | Login JWT Tenant A e Tenant B | Aprovado | Tokens emitidos com sucesso |
+| Engenharia / OP | Formulação imutável aprovada e ciclo da OP | Aprovado | `PLANNED` -> `RELEASED` -> `IN_PRODUCTION` |
+| Consumo Atômico | Baixa no lote e saldo disponível | Aprovado | 100 -> 85 kg atômico com movimento `CONSUMPTION` |
+| Idempotência | Replay devolve ID existente sem duplicar dedução | Aprovado | Saldo mantido em 85 kg |
+| Idempotência | Mutação com mesma chave rejeitada | Aprovado | HTTP 409 Conflict PASS |
+| Proteção de Reserva | Consumo de saldo comprometido rejeitado | Aprovado | `available - reserved < qty` rejeitado com HTTP 409 |
+| Estorno Atômico | Reconstituição de lote e saldo com `ADJUSTMENT_IN` | Aprovado | 85 -> 100 kg, status `REVERSED`, duplo estorno dá 409 |
+| Concorrência Real | Disputa atômica sob lock pessimista | Aprovado | Exatamente 1 aprovado (201) e 1 rejeitado (409) sem deadlocks |
+| Qualidade / Entrada | Lote produzido nasce pendente de inspeção | Aprovado | `PENDING` não visível em vendas; `APPROVED` libera saldo |
+| Rastreabilidade | Genealogia do produto acabado até matéria-prima | Aprovado | Relação `'RAW_MATERIAL'` vinculada e consultável |
+| Multi-tenant | Ordem do Tenant A inacessível para Tenant B | Aprovado | HTTP 403 Forbidden |
+| Web UI | Renderização das páginas Comercial e Logística | Aprovado | HTTP 200 sem quebras |
+
+---
+
 ## Homologação E2E da Jornada Operacional, Multi-lote e Governança (AG-OPS-MVP-004) — 2026-10-02
 
 Branch `main`, HEAD de referência `b12f971fb44f5f299aad95ed2feac8662384d688` (baseado em `1ff01c909367145092f849ed9ec6ee4dcc55fdc5`).
