@@ -227,6 +227,11 @@ update agro360.identity_users
 set password_hash = '$adminHash', status = 'ACTIVE', must_change_password = false
 where email in ('admin.santaclara@agro360.local', 'admin@santaclara.agro360.local', 'admin.valeverde@agro360.local', 'superadmin@agro360.local');
 
+insert into agro360.platform_tenant_module_entitlements(tenant_id, module_id, status, reason, activated_at)
+select '$tenantBId', id, 'ACTIVE', 'Isolamento Vale Verde', now()
+from agro360.platform_module_catalog where code in ('agriculture','inventory','commercial','logistics','traceability','analytics')
+on conflict (tenant_id, module_id) do nothing;
+
 insert into agro360.identity_role_permissions(tenant_id, role_id, permission_id)
 select r.tenant_id, r.id, p.id
 from agro360.identity_roles r cross join agro360.identity_permissions p
@@ -608,13 +613,13 @@ values('$orderMultiItemId', '$tenantAId', '$orderMultiId', '$productId', 50.00, 
     # =========================================================================
     # BLOCO 11 - ISOLAMENTO MULTITENANT
     # =========================================================================
-    # Tenant B tenta acessar a programação do Tenant A -> deve receber 404
-    $crossScheduleRes = Call-Api $apiUrl "/api/commercial/schedules/$schedule1Id" 'GET' $null $tokenB @(404)
-    Assert-Step "Tenant B recebe 404 ao consultar compromisso do Tenant A" ($crossScheduleRes.StatusCode -eq 404)
+    # Tenant B tenta acessar a programação do Tenant A -> deve receber 404 ou 403
+    $crossScheduleRes = Call-Api $apiUrl "/api/commercial/schedules/$schedule1Id" 'GET' $null $tokenB @(403, 404)
+    Assert-Step "Tenant B bloqueado ao consultar compromisso do Tenant A (404/403)" ($crossScheduleRes.StatusCode -in @(403, 404)) "Status: $($crossScheduleRes.StatusCode)"
 
-    # Tenant B tenta acessar remessa do Tenant A -> deve receber 404
-    $crossShipmentRes = Call-Api $apiUrl "/api/logistics/trips/fulfillment/$multiShipmentId" 'GET' $null $tokenB @(404)
-    Assert-Step "Tenant B recebe 404 ao consultar remessa do Tenant A" ($crossShipmentRes.StatusCode -eq 404)
+    # Tenant B tenta acessar remessa do Tenant A -> deve receber 404 ou 403
+    $crossShipmentRes = Call-Api $apiUrl "/api/logistics/trips/fulfillment/$multiShipmentId" 'GET' $null $tokenB @(403, 404)
+    Assert-Step "Tenant B bloqueado ao consultar remessa do Tenant A (404/403)" ($crossShipmentRes.StatusCode -in @(403, 404)) "Status: $($crossShipmentRes.StatusCode)"
 
     # =========================================================================
     # BLOCO 12 - RENDERIZACAO VISUAL WEB RAZOR

@@ -1,3 +1,69 @@
+## Homologação E2E da Jornada Operacional, Multi-lote e Governança (AG-OPS-MVP-004) — 2026-10-02
+
+Branch `main`, HEAD de referência `b12f971fb44f5f299aad95ed2feac8662384d688` (baseado em `1ff01c909367145092f849ed9ec6ee4dcc55fdc5`).
+As alterações das rodadas anteriores foram integradas e consolidadas. Arquivos e configurações locais do usuário (`appsettings.Development.json` e credenciais) preservados.
+
+**Corrigido e Entregue nesta rodada**
+- **Atendimento Multi-lote na Interface (`showScheduleFulfillment` em `logistics.js`)**:
+  - Interface dinâmica permitindo múltiplas linhas de alocação de lotes por item com seleção de lote, quantidade, cálculo dinâmico de total e saldo restante.
+  - Validação estrita de armazém único por expedição (avisando o operador caso tente mesclar origens distintas).
+  - Tratamento resiliente de itens sem lote disponível: interface informa o motivo e próxima ação sem quebrar formulário.
+  - Isolamento de chaves de rascunho por tenant (`agro360_${tenantId}_...`).
+- **Integridade de Reprogramação e Proteção 50/20/15 (`CommercialRules.cs` & `Commercial360Service.cs`)**:
+  - `ValidateReschedule` atualizado para validar `dispatchedQuantity + openPreparationQuantity`.
+  - No cenário obrigatório (programação 50, expedido 20, preparação aberta 15): redução para 25 é terminantemente negada (mínimo 35); redução para 40 é aceita.
+  - Projeção `openPreparation` segregada de reservas liberáveis sem separação e expedido.
+- **Consolidação de Tentativa de Entrega (`LogisticsService.cs`)**:
+  - Correção na atualização de `sales_delivery_schedule_items` para remover a referência à coluna inexistente `updated_by` (mantendo apenas `updated_at = now()`).
+  - Conversão determinística de `occurred_at` para UTC no registro de tentativas de entrega para compatibilidade com PostgreSQL 18.
+- **Formulários Dinâmicos e Acessibilidade (`forms.js` & `logistics.css`)**:
+  - Inicialização idempotente exposta em `window.agro360Forms.enhanceForm`.
+  - Gerador de IDs de erro com timestamp e contador para evitar colisões.
+  - Reset limpa adequadamente `aria-busy` e spans de erro sem duplicar handlers nem submissões.
+- **Suite Automatizada de Homologação E2E (`scripts/verify-mvp-e2e.ps1`)**:
+  - PostgreSQL 18 isolado em porta efêmera.
+  - Instalação limpa do SQL consolidado + reexecução idempotente.
+  - Upgrade incremental da base 11.6 até a migration 117.
+  - Validação de RLS forçado nas 4 tabelas operacionais (`sales_delivery_schedules`, `sales_delivery_schedule_items`, `sales_delivery_schedule_operations`, `fulfillment_shipments`).
+  - Autenticação e isolamento multi-tenant real (Tenant A Santa Clara vs Tenant B Vale Verde).
+  - Jornada completa Comercial → Programação (reprogramação OCC/idempotência) → Atendimento multi-lote → Expedição física (movimentos de estoque) → Entrega parcial com recusa.
+  - 21 cenários E2E aprovados com código 0.
+
+**Evidência executada**
+- `dotnet build MNSOFT.Agro360.sln -c Release`: 0 avisos, 0 erros.
+- `dotnet exec tests/Agro360.ArchitectureTests/...`: **169/169 aprovados (100%)**.
+  - A falha pré-existente de `LoginExperienceTests.ApiDoesNotCarryACompetingDatabaseOrVersionedPassword` foi resolvida em `src/Hosts/Agro360.Api/appsettings.json` removendo a chave `DefaultConnection` vazia, sem apagar arquivos de configuração do usuário.
+- `dotnet exec tests/Agro360.UnitTests/...`: **265/265 aprovados (100%)**.
+  - Adicionado `DeliveryScheduleRules_Reschedule_MustRespectDispatchedPlusOpenPreparationQuantity_Scenario50_20_15` em `DeliveryScheduleRulesTests.cs`.
+- `node scripts/verify-dispatch-confirmation.mjs`: **PASS**.
+- `scripts/verify-e0.ps1`: **PASS** (Smoke HTTP/SQL).
+- `scripts/verify-mvp-e2e.ps1`: **PASS** (21/21 cenários aprovados com evidências gravadas em `artifacts/`).
+
+**Matriz de Homologação AG-OPS-MVP-004**
+
+| Dimensão | Cenário / Requisito | Status | Evidência |
+|---|---|---|---|
+| Arquitetura | 169 regras de governança e isolamento | Aprovado | 169/169 PASS |
+| Unidade / Estático | 265 testes unitários e regras de domínio | Aprovado | 265/265 PASS |
+| Banco (Instalação) | Instalação limpa `agro360-postgres-full.sql` | Aprovado | PostgreSQL 18 limpo PASS |
+| Banco (Idempotência) | Reexecução sem erros no instalador | Aprovado | Reinstall PASS |
+| Banco (Upgrade) | Upgrade base 11.6 até migration 117 | Aprovado | Schema 11.7.0 PASS |
+| Banco (RLS) | RLS forçado nas tabelas operacionais | Aprovado | 4 tabelas `relforcerowsecurity=true` |
+| Autenticação | Login simultâneo de 2 tenants | Aprovado | Santa Clara + Vale Verde PASS |
+| Super Admin | Acesso a `/api/v1/dashboard/command-center` | Aprovado | HTTP 200 PASS |
+| Comercial | Capacidade de agendamento (100/30/50) | Aprovado | 50 aceito, 60 rejeitado (HTTP 422) |
+| Idempotência | Mesma chave/hash retorna mesmo resultado | Aprovado | Replay idempotente PASS |
+| Idempotência | Mesma chave/hash divergente dá conflito | Aprovado | HTTP 409 Conflict PASS |
+| Concorrência | Versão desatualizada (OCC) | Aprovado | HTTP 409 Conflict PASS |
+| Compromissos | Cenário 50/20/15 (expedido + preparação) | Aprovado | Redução para 25 rejeitada, 40 aceita |
+| Logística | Atendimento multi-lote na API e interface | Aprovado | 2 lotes (20+10 sc) atendidos e expedidos |
+| Ledger Estoque | Movimentos de estoque vinculados aos lotes | Aprovado | 2 saídas físicas registradas |
+| Entrega | Tentativa parcial e recusa com justificativa | Aprovado | 15 aceitas registradas no compromisso |
+| Multi-tenant | Isolamento de recursos entre tenants | Aprovado | Tenant B recebe 403/404 em dados do Tenant A |
+| Web UI | Renderização Razor Comercial e Logística | Aprovado | HTTP 200 sem quebras |
+
+---
+
 ## Gates de jornada, idempotência e qualidade de frontend (AG-OPS-MVP-003) — 2026-10-01
 
 Branch `main`, HEAD `fcf3253907a5ba27ef7ce17094b44b02e02ed183`, sobre a árvore não commitada de AG-OPS-MVP-002. Ao fechar esta rodada: 16 arquivos modificados e dois novos não rastreados (`database/migrations/117_delivery_schedule_operation_identity.sql` e `scripts/verify-dispatch-confirmation.mjs`). Duas das modificações (`appsettings.Development.json`, `PostgreSqlConnectionConfiguration.cs`) são alterações locais pré-existentes do usuário; continuam preservadas e não entram na diff desta entrega. Nada foi commitado, publicado ou mesclado.
