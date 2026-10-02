@@ -337,6 +337,7 @@
                 addBtn.onclick = () => {
                     const newRow = createAllocRow(idx, 0);
                     rowsContainer.appendChild(newRow);
+                    window.agro360Forms?.enhanceForm(form);
                     recalcItem(idx);
                 };
             }

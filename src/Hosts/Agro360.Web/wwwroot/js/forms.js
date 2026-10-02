@@ -28,20 +28,8 @@ candidate=`${base}_${count++}-validation`;
 }
 return candidate;
 }
-function enhanceForm(form){
-if(!form||form.dataset.formEnhanced==='true')return;
-form.dataset.formEnhanced='true';
-form.noValidate=false;
-let summary=form.querySelector('.form-validation-summary');
-if(!summary){
-summary=document.createElement('div');
-summary.className='form-validation-summary';
-summary.role='alert';
-summary.hidden=true;
-form.prepend(summary);
-}
-form.querySelectorAll('input,select,textarea').forEach(input=>{
-if(input.dataset.fieldEnhanced==='true')return;
+function enhanceField(input, form){
+if(!input||input.dataset.fieldEnhanced==='true')return;
 input.dataset.fieldEnhanced='true';
 const label=input.closest('label')||document.querySelector(`label[for="${CSS.escape(input.id||'')}"]`);
 if(input.required&&label&&!label.querySelector('.required-mark'))label.insertAdjacentHTML('afterbegin','<span class="required-mark" aria-label="obrigatório">*</span> ');
@@ -67,8 +55,30 @@ existingDescribedBy.push(msg.id);
 input.setAttribute('aria-describedby',existingDescribedBy.join(' '));
 }
 input.addEventListener('invalid',()=>{msg.textContent=errorFor(input)});
-input.addEventListener('input',()=>{if(input.validity.valid)msg.textContent=''});
+input.addEventListener('input',()=>{
+if(input.validity.valid)msg.textContent='';
+if(form){
+const summary=form.querySelector('.form-validation-summary');
+const bad=[...form.elements].filter(x=>x.willValidate&&!x.validity.valid);
+if(summary&&!bad.length){
+summary.hidden=true;
+summary.textContent='';
+}
+}
 });
+}
+function enhanceFormHandlers(form){
+if(!form||form.dataset.formEnhanced==='true')return;
+form.dataset.formEnhanced='true';
+form.noValidate=false;
+let summary=form.querySelector('.form-validation-summary');
+if(!summary){
+summary=document.createElement('div');
+summary.className='form-validation-summary';
+summary.role='alert';
+summary.hidden=true;
+form.prepend(summary);
+}
 form.addEventListener('submit',()=>{
 const bad=[...form.elements].filter(x=>x.willValidate&&!x.validity.valid);
 summary.hidden=!bad.length;
@@ -82,6 +92,11 @@ form.removeAttribute('aria-busy');
 form.querySelectorAll('.field-validation').forEach(m=>{m.textContent='';});
 });
 }
+function enhanceForm(form){
+if(!form)return;
+enhanceFormHandlers(form);
+form.querySelectorAll('input,select,textarea').forEach(input=>enhanceField(input,form));
+}
 function clearBusy(form){
 if(!form)return;
 form.removeAttribute('aria-busy');
@@ -93,5 +108,5 @@ document.addEventListener('click',event=>{const trigger=event.target.closest('[d
 document.querySelector('#confirmation-form')?.addEventListener('submit',event=>{if(event.submitter?.value!=='confirm'){pending=null;return}if(!reasonField.hidden&&reason.value.trim().length<3){event.preventDefault();reasonError.textContent='Informe uma justificativa com pelo menos 3 caracteres.';return}const target=pending;pending=null;dialog.close();if(!target)return;if(!reasonField.hidden){const form=target.closest('form');const field=form?.querySelector('[name="reason"],[name="justification"]');if(field)field.value=reason.value.trim()}target.dataset.confirmed='true';target.click()});
 document.querySelectorAll('form:not(#confirmation-form)').forEach(enhanceForm);
 enhanceHelp();
-window.agro360Forms={enhanceForm,enhanceAll:()=>document.querySelectorAll('form:not(#confirmation-form)').forEach(enhanceForm),clearBusy,enhanceHelp};
+window.agro360Forms={enhanceForm,enhanceField,enhanceAll:()=>document.querySelectorAll('form:not(#confirmation-form)').forEach(enhanceForm),clearBusy,enhanceHelp};
 })();
