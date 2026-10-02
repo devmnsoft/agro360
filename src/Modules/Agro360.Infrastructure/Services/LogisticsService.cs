@@ -460,12 +460,12 @@ public sealed class LogisticsService(
                         """
                         update agro360.sales_delivery_schedule_items sdi
                         set delivered_quantity = delivered_quantity + @Accepted,
-                            updated_at = now(), updated_by = @UserId
+                            updated_at = now()
                         from agro360.fulfillment_shipment_items si
                         where si.tenant_id = @TenantId and si.id = @Item
                           and sdi.tenant_id = si.tenant_id and sdi.id = si.schedule_item_id
                         """,
-                        new { tenant.TenantId, Item = item.ShipmentItemId, Accepted = item.AcceptedQuantity, tenant.UserId }, t, cancellationToken: ct));
+                        new { tenant.TenantId, Item = item.ShipmentItemId, Accepted = item.AcceptedQuantity }, t, cancellationToken: ct));
                 }
             }
             await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_shipments s set status=case when not exists(select 1 from agro360.fulfillment_shipment_items i where i.tenant_id=s.tenant_id and i.shipment_id=s.id and i.accepted_quantity+i.returned_quantity+i.lost_quantity<i.checked_quantity) then 'RECONCILED' when exists(select 1 from agro360.fulfillment_shipment_items i where i.tenant_id=s.tenant_id and i.shipment_id=s.id and i.refused_quantity>i.returned_quantity) then 'RETURN_PENDING' else 'PARTIAL' end,version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id, tenant.UserId }, t, cancellationToken: ct));
