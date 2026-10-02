@@ -298,17 +298,52 @@ try {
     $tenantAId = (Query-Sql $dbFull "select id from agro360.tenancy_tenants where slug = 'santa-clara' limit 1;").Trim()
     $tenantBId = (Query-Sql $dbFull "select id from agro360.tenancy_tenants where slug = 'cooperativa-vale-verde' limit 1;").Trim()
 
-    # Leitura com Tenant A sob usuario restrito
-    $readA = Query-Sql $dbFull "set `"app.tenant_id`" = '$tenantAId'; select count(*) from agro360.production_material_consumptions where tenant_id = '$tenantAId';" $appUser $appPass
-    Assert-Step "3. Usuario restrito le dados do Tenant A com contexto" ([int]$readA -ge 0)
+    # Fixtures com registros conhecidos de dois tenants
+    $fixtureAId = [guid]::NewGuid().ToString()
+    $fixtureBId = [guid]::NewGuid().ToString()
+    $fixtureUserId = '00000000-0000-0000-0000-000000000002'
+    $seedFixturesSql = @"
+set session_replication_role = 'replica';
+insert into agro360.rural_hr_records(id, tenant_id, kind, name, status, created_by, updated_by, created_at, updated_at)
+values ('$fixtureAId', '$tenantAId', 'TEAM', 'Equipe Colheita Santa Clara', 'ACTIVE', '$fixtureUserId', '$fixtureUserId', now(), now()),
+       ('$fixtureBId', '$tenantBId', 'TEAM', 'Equipe Plantio Vale Verde', 'ACTIVE', '$fixtureUserId', '$fixtureUserId', now(), now());
+set session_replication_role = 'origin';
+"@
+    $null = Exec-Sql $dbFull $seedFixturesSql
+
+    # Leitura positiva com Tenant A sob usuario restrito
+    $readA = Query-Sql $dbFull "set `"app.tenant_id`" = '$tenantAId'; select name from agro360.rural_hr_records where id = '$fixtureAId';" $appUser $appPass
+    Assert-Step "3. Leitura positiva sob papel restrito com contexto Tenant A" ($readA -eq 'Equipe Colheita Santa Clara') "Nome: $readA"
 
     # Tenant B nao pode enxergar dados do Tenant A
-    $readCross = Query-Sql $dbFull "set `"app.tenant_id`" = '$tenantBId'; select count(*) from agro360.production_material_consumptions where tenant_id = '$tenantAId';" $appUser $appPass
-    Assert-Step "3. Isolamento RLS: Tenant B nao ve linhas do Tenant A" ($readCross -eq '0')
+    $readCross = Query-Sql $dbFull "set `"app.tenant_id`" = '$tenantBId'; select count(*) from agro360.rural_hr_records where id = '$fixtureAId';" $appUser $appPass
+    Assert-Step "3. Isolamento RLS: Tenant B nao ve fixture do Tenant A" ($readCross -eq '0')
 
-    # Consulta sem contexto de tenant retorna 0 linhas
-    $readNoContext = Query-Sql $dbFull "reset `"app.tenant_id`"; select count(*) from agro360.production_material_consumptions;" $appUser $appPass
+    # Consulta sem contexto de tenant retorna vazio
+    $readNoContext = Query-Sql $dbFull "reset `"app.tenant_id`"; select count(*) from agro360.rural_hr_records where id in ('$fixtureAId', '$fixtureBId');" $appUser $appPass
     Assert-Step "3. Isolamento RLS: Sem contexto retorna 0 linhas" ($readNoContext -eq '0')
+
+    # Mutacao cruzada (UPDATE do Tenant A via sessao do Tenant B) afeta 0 linhas
+    $updateCross = Query-Sql $dbFull "set `"app.tenant_id`" = '$tenantBId'; update agro360.rural_hr_records set name = 'Hacked' where id = '$fixtureAId'; select count(*) from agro360.rural_hr_records where id = '$fixtureAId' and name = 'Hacked';" $appUser $appPass
+    Assert-Step "3. Isolamento RLS: UPDATE cruzado entre tenants afeta 0 linhas" ($updateCross -eq '0')
+
+    # Delecao cruzada (DELETE do Tenant A via sessao do Tenant B) afeta 0 linhas
+    $deleteCross = Query-Sql $dbFull "set `"app.tenant_id`" = '$tenantBId'; delete from agro360.rural_hr_records where id = '$fixtureAId'; set `"app.tenant_id`" = '$tenantAId'; select count(*) from agro360.rural_hr_records where id = '$fixtureAId';" $appUser $appPass
+    Assert-Step "3. Isolamento RLS: DELETE cruzado entre tenants protegido" ($deleteCross -eq '1')
+
+    # Insercao cruzada (tentativa de Tenant A inserir registro com tenant_id do Tenant B) falha por RLS
+    $insertCrossFailed = $false
+    try {
+        $null = Exec-Sql $dbFull "set `"app.tenant_id`" = '$tenantAId'; insert into agro360.rural_hr_records(id, tenant_id, kind, name, status, created_by, updated_by) values (gen_random_uuid(), '$tenantBId', 'TEAM', 'Invasao Cruzada', 'ACTIVE', '$fixtureUserId', '$fixtureUserId');" $appUser $appPass
+    } catch {
+        $insertCrossFailed = $_.Exception.Message -match 'row-level security' -or $_.Exception.Message -match 'violates row-level security'
+    }
+    Assert-Step "3. Isolamento RLS: INSERT cruzado com tenant_id divergente rejeitado por politica RLS" $insertCrossFailed
+
+
+    # Reuso de conexao e ausencia de vazamento de contexto
+    $contextResetLeakTest = Query-Sql $dbFull "set `"app.tenant_id`" = '$tenantAId'; reset `"app.tenant_id`"; select count(*) from agro360.rural_hr_records where id = '$fixtureAId';" $appUser $appPass
+    Assert-Step "3. Reuso e limpeza de conexao: Apos reset de contexto, dados nao vazam" ($contextResetLeakTest -eq '0')
 
     # -------------------------------------------------------------
     # 4. CONFIGURACAO DO AMBIENTE OPERACIONAL E INICIO DA API
@@ -325,11 +360,12 @@ insert into agro360.platform_tenant_module_entitlements(tenant_id, module_id, st
 "@
     $null = Exec-Sql $dbFull $setupSql
 
-    # Configura API para usar a connection string
-    $connApi = "Host=127.0.0.1;Port=$dbPort;Database=$dbFull;Username=postgres;Password=$dbPassword"
+    # Configura API para usar papel restrito agro360_app
+    $connApi = "Host=127.0.0.1;Port=$dbPort;Database=$dbFull;Username=$appUser;Password=$appPass"
     Set-EnvVar ConnectionStrings__Agro360 $connApi
     Set-EnvVar ConnectionStrings__DefaultConnection $connApi
     Set-EnvVar AGRO360_TEST_CONNECTION_STRING $connApi
+
     Set-EnvVar ASPNETCORE_ENVIRONMENT 'Development'
     Set-EnvVar Jwt__SigningKey (Get-RandomBase64 48)
     Set-EnvVar ApiBaseUrl $apiUrl

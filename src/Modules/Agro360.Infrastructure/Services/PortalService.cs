@@ -132,7 +132,8 @@ public sealed class PortalService(
                 select i.id, i.tenant_id, i.name, i.email, i.entity_type, i.entity_id, i.expires_at, i.revoked_at, i.accepted_at,
                        p.id profile_id, p.code profile
                 from agro360.portal_invitations i
-                join agro360.portal_profiles p on p.id = i.profile_id and p.tenant_id = i.tenant_id
+                join agro360.portal_profiles p on p.id = i.profile_id and p.tenant_id = i.tenant_id and p.active and p.deleted_at is null
+                join agro360.tenancy_tenants tn on tn.id = i.tenant_id and tn.status in (1, 2) and tn.deleted_at is null
                 where i.token_hash = @Hash
                 for update
                 """,
@@ -197,8 +198,8 @@ public sealed class PortalService(
                 """
                 select u.id, u.tenant_id, u.name, u.email, u.password_hash, u.status, p.code profile
                 from agro360.portal_external_users u
-                join agro360.portal_profiles p on p.id = u.profile_id and p.tenant_id = u.tenant_id
-                join agro360.tenancy_tenants tn on tn.id = u.tenant_id
+                join agro360.portal_profiles p on p.id = u.profile_id and p.tenant_id = u.tenant_id and p.active and p.deleted_at is null
+                join agro360.tenancy_tenants tn on tn.id = u.tenant_id and tn.status in (1, 2) and tn.deleted_at is null
                 where tn.slug = @Slug and u.email = @Email and u.status = 'ACTIVE' and u.deleted_at is null
                 """,
                 new { Slug = command.TenantSlug.Trim().ToLowerInvariant(), Email = email }, t, cancellationToken: ct));
@@ -638,10 +639,10 @@ public sealed class PortalService(
                   and d.status = 'APPROVED'
                   and d.deleted_at is null
                   and (
-                      dp.external_user_id = @UserId
-                      or (dp.entity_type = ul.entity_type and dp.entity_id = ul.entity_id)
+                      (dp.external_user_id = @UserId and dp.can_download)
+                      or (dp.entity_type = ul.entity_type and dp.entity_id = ul.entity_id and dp.can_download)
                       or (l.entity_type = ul.entity_type and l.entity_id = ul.entity_id)
-                      or dp.profile_code = @Profile
+                      or (dp.profile_code = @Profile and dp.can_download)
                   )
                 order by d.created_at desc
                 limit 100
@@ -668,10 +669,10 @@ public sealed class PortalService(
                       and d.status = 'APPROVED'
                       and d.deleted_at is null
                       and (
-                          dp.external_user_id = @UserId
-                          or (dp.entity_type = ul.entity_type and dp.entity_id = ul.entity_id)
+                          (dp.external_user_id = @UserId and dp.can_download)
+                          or (dp.entity_type = ul.entity_type and dp.entity_id = ul.entity_id and dp.can_download)
                           or (l.entity_type = ul.entity_type and l.entity_id = ul.entity_id)
-                          or dp.profile_code = @Profile
+                          or (dp.profile_code = @Profile and dp.can_download)
                       )
                 )
                 """,
@@ -715,7 +716,7 @@ public sealed class PortalService(
 
     private async Task<dynamic> User(Npgsql.NpgsqlConnection c, Npgsql.NpgsqlTransaction t, CancellationToken ct) =>
         await c.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition(
-            "select u.name, p.code profile from agro360.portal_external_users u join agro360.portal_profiles p on p.id = u.profile_id and p.tenant_id = u.tenant_id where u.id = @UserId and u.tenant_id = @TenantId and u.status = 'ACTIVE' and u.deleted_at is null",
+            "select u.name, p.code profile from agro360.portal_external_users u join agro360.portal_profiles p on p.id = u.profile_id and p.tenant_id = u.tenant_id and p.active and p.deleted_at is null join agro360.tenancy_tenants tn on tn.id = u.tenant_id and tn.status in (1, 2) and tn.deleted_at is null where u.id = @UserId and u.tenant_id = @TenantId and u.status = 'ACTIVE' and u.deleted_at is null",
             new { tenant.TenantId, tenant.UserId }, t, cancellationToken: ct))
             ?? throw new ForbiddenException("Acesso externo não autorizado.");
 

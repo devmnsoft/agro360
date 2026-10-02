@@ -17,8 +17,29 @@ public static class DocumentRules
         if (!AllowedExtensions.Contains(extension)) throw new DomainException("Extensão de arquivo não permitida.", "documents.invalid_extension");
         if (length <= 0 || length > maximumBytes) throw new DomainException($"O arquivo deve ter até {maximumBytes / 1024 / 1024} MB.", "documents.invalid_size");
         if (string.IsNullOrWhiteSpace(contentType) || contentType.Contains('\r') || contentType.Contains('\n')) throw new DomainException("Tipo MIME inválido.", "documents.invalid_mime");
+        ValidateMimeCompatibility(extension, contentType);
         return extension;
     }
+
+    public static void ValidateMimeCompatibility(string extension, string contentType)
+    {
+        var mime = contentType.Trim().ToLowerInvariant();
+        var valid = extension switch
+        {
+            ".pdf" => mime == "application/pdf" || mime == "application/octet-stream",
+            ".png" => mime == "image/png",
+            ".jpg" or ".jpeg" => mime is "image/jpeg" or "image/jpg",
+            ".webp" => mime == "image/webp",
+            ".csv" => mime is "text/csv" or "application/vnd.ms-excel" or "text/plain" or "application/octet-stream",
+            ".txt" => mime is "text/plain",
+            ".xml" => mime is "text/xml" or "application/xml",
+            ".docx" => mime is "application/vnd.openxmlformats-officedocument.wordprocessingml.document" or "application/zip" or "application/octet-stream",
+            ".xlsx" => mime is "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" or "application/zip" or "application/octet-stream",
+            _ => false
+        };
+        if (!valid) throw new DomainException($"Tipo MIME '{contentType}' incompatível com a extensão '{extension}'.", "documents.invalid_mime");
+    }
+
 
     public static async Task<string> Sha256Async(Stream stream, CancellationToken cancellationToken = default)
     {

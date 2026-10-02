@@ -15,7 +15,14 @@ public sealed class DocumentsController(IDocumentService service) : ControllerBa
     [HttpGet("{id:guid}"), Authorize(Policy = Permissions.DocumentsRead)] public async Task<ActionResult<DocumentDetails>> Details(Guid id, CancellationToken ct) => await service.DocumentAsync(id, ct) is { } item ? Ok(item) : NotFound();
     [HttpPost, RequestSizeLimit(26_214_400), Authorize(Policy = Permissions.DocumentsUpload)] public async Task<IActionResult> Upload([FromForm] UploadForm form, CancellationToken ct) { if (form.File is null) return ValidationProblem("Arquivo obrigatório."); var command = new UploadDocumentCommand(form.Name, form.Description, form.DocumentTypeId, form.Tags, form.EntityType, form.EntityId); await using var stream = form.File.OpenReadStream(); var id = await service.UploadAsync(command, stream, form.File.FileName, form.File.ContentType, form.File.Length, ct); return Created($"/api/documents/{id}", new { id }); }
     [HttpPost("{id:guid}/versions"), RequestSizeLimit(26_214_400), Authorize(Policy = Permissions.DocumentsUpload)] public async Task<IActionResult> Version(Guid id, [FromForm] VersionForm form, CancellationToken ct) { if (form.File is null) return ValidationProblem("Arquivo obrigatório."); await using var stream = form.File.OpenReadStream(); await service.AddVersionAsync(id, stream, form.File.FileName, form.File.ContentType, form.File.Length, form.Reason, ct); return NoContent(); }
-    [HttpGet("{id:guid}/download"), Authorize(Policy = Permissions.DocumentsDownload)] public async Task<IActionResult> Download(Guid id, [FromQuery] Guid? versionId, CancellationToken ct) { var file = await service.DownloadAsync(id, versionId, ct); return File(file.Content, file.MimeType, file.FileName, enableRangeProcessing: true); }
+    [HttpGet("{id:guid}/download"), Authorize(Policy = Permissions.DocumentsDownload)]
+    public async Task<IActionResult> Download(Guid id, [FromQuery] Guid? versionId, CancellationToken ct)
+    {
+        var file = await service.DownloadAsync(id, versionId, ct);
+        Response.Headers.Append("X-Content-Type-Options", "nosniff");
+        return File(file.Content, file.MimeType, file.FileName, enableRangeProcessing: true);
+    }
+
     [HttpPost("{id:guid}/archive"), Authorize(Policy = Permissions.DocumentsUpload)] public async Task<IActionResult> Archive(Guid id, CancellationToken ct) { await service.ArchiveAsync(id, ct); return NoContent(); }
     [HttpGet("export/{resource}"), Authorize(Policy = Permissions.DocumentsRead)] public async Task<IActionResult> Export(string resource, CancellationToken ct) => File(await service.ExportCsvAsync(resource, ct), "text/csv", $"agro360-{resource}.csv");
 }
@@ -42,6 +49,13 @@ public sealed class CertificatesController(IDocumentService service) : Controlle
     [HttpGet, Authorize(Policy = Permissions.DocumentsRead)] public Task<IReadOnlyList<CertificateRow>> List(CancellationToken ct) => service.CertificatesAsync(ct);
     [HttpPost, Authorize(Policy = Permissions.CertificatesIssue)] public async Task<IActionResult> Issue(IssueCertificateCommand x, CancellationToken ct) { var item = await service.IssueCertificateAsync(x, ct); return Created($"/api/certificates/{item.Id}", item); }
     [HttpPost("{id:guid}/revoke"), Authorize(Policy = Permissions.CertificatesRevoke)] public async Task<IActionResult> Revoke(Guid id, [FromBody] ReasonForm x, CancellationToken ct) { await service.RevokeCertificateAsync(id, x.Reason, ct); return NoContent(); }
-    [AllowAnonymous, HttpGet("public/{code}")] public async Task<ActionResult<PublicCertificate>> Public(string code, CancellationToken ct) => await service.PublicCertificateAsync(code, HttpContext.Connection.RemoteIpAddress?.ToString(), ct) is { } item ? Ok(item) : NotFound();
+    [AllowAnonymous, HttpGet("public/{code}")]
+    public async Task<ActionResult<PublicCertificate>> Public(string code, CancellationToken ct)
+    {
+        Response.Headers.Append("Cache-Control", "no-cache, no-store, must-revalidate");
+        Response.Headers.Append("Pragma", "no-cache");
+        return await service.PublicCertificateAsync(code, HttpContext.Connection.RemoteIpAddress?.ToString(), ct) is { } item ? Ok(item) : NotFound();
+    }
+
 }
 public sealed record ReasonForm(string Reason);

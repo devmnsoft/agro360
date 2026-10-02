@@ -118,6 +118,21 @@ public sealed record PostgreSqlConnectionConfiguration(
                 "Não envie nem versione a senha.");
         }
 
+        if (!string.Equals(environment, "Development", StringComparison.OrdinalIgnoreCase))
+        {
+            if (builder.Password is "123456" or "postgres" or "admin" or "root" or "password")
+            {
+                throw new InvalidOperationException(
+                    $"Configuração insegura detectada no ambiente '{environment}': a senha fornecida para '{key}' é uma senha padrão de desenvolvimento e é proibida em produção.");
+            }
+
+            if (string.Equals(builder.Username, "postgres", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Configuração insegura detectada no ambiente '{environment}': a aplicação de runtime não deve conectar como superusuário 'postgres'. Utilize o papel restrito 'agro360_app'.");
+            }
+        }
+
         return new PostgreSqlConnectionConfiguration(
             builder.ConnectionString,
             key,

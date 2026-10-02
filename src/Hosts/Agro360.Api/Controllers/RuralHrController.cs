@@ -25,6 +25,6 @@ public sealed class RuralHrController(IRuralHrService service, ILogger<RuralHrCo
     [HttpGet("dashboard")] public Task<RuralHrDashboard> Dashboard(CancellationToken ct) => service.DashboardAsync(ct);
     [HttpGet("{resource}/export")] public async Task<IActionResult> Export(string resource, CancellationToken ct) => File(await service.ExportAsync(Kind(resource), ct), "text/csv", $"{resource}.csv");
     private static string Kind(string resource) => Kinds.TryGetValue(resource, out var kind) ? kind : throw new KeyNotFoundException("Recurso de RH Rural não encontrado.");
-    private async Task<IActionResult> ChangeStatus(string resource, Guid id, string status, CancellationToken ct) { _ = Kind(resource); await service.ChangeStatusAsync(id, status, ct); return NoContent(); }
+    private async Task<IActionResult> ChangeStatus(string resource, Guid id, string status, CancellationToken ct) { var kind = Kind(resource); await service.ChangeStatusAsync(id, kind, status, ct); return NoContent(); }
     private async Task<IActionResult> Boundary(Func<Task<IActionResult>> operation) { try { return await operation(); } catch (Exception ex) { ApiLogMessages.RuralHrBoundaryFailed(logger, ex); throw; } }
 }

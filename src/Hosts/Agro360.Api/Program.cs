@@ -44,6 +44,15 @@ if (Encoding.UTF8.GetByteCount(jwt.SigningKey) < 32)
     throw new InvalidOperationException("Jwt:SigningKey deve possuir pelo menos 32 bytes.");
 }
 
+if (!builder.Environment.IsDevelopment())
+{
+    var insecureKeys = new[] { "agro360-dev-insecure-jwt-key", "secret", "password", "123456" };
+    if (insecureKeys.Any(k => jwt.SigningKey.Contains(k, StringComparison.OrdinalIgnoreCase)))
+    {
+        throw new InvalidOperationException("Jwt:SigningKey inseguro não é permitido em ambiente produtivo.");
+    }
+}
+
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -76,7 +85,10 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser()
         .RequireRole("SUPER_ADMIN")
         .AddRequirements(new PermissionRequirement(Permissions.PlatformAdmin)));
-    options.AddPolicy(Permissions.PortalAccess, policy => policy.RequireAuthenticatedUser().RequireClaim("permission", Permissions.PortalAccess));
+    options.AddPolicy(Permissions.PortalAccess, policy => policy
+        .RequireAuthenticatedUser()
+        .RequireClaim("permission", Permissions.PortalAccess)
+        .AddRequirements(new PermissionRequirement(Permissions.PortalAccess)));
 });
 
 builder.Services.AddRateLimiter(options =>
@@ -84,18 +96,77 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
     {
-        var key = context.User.FindFirst("sub")?.Value
-            ?? context.Connection.RemoteIpAddress?.ToString()
-            ?? "anonymous";
-        return RateLimitPartition.GetFixedWindowLimiter(
-            key,
-            _ => new FixedWindowRateLimiterOptions
+        var path = context.Request.Path.Value?.ToLowerInvariant() ?? "";
+        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var user = context.User.FindFirst("sub")?.Value ?? ip;
+
+        if (path.Contains("/auth/login", StringComparison.Ordinal) || path.Contains("/portal/login", StringComparison.Ordinal))
+        {
+            return RateLimitPartition.GetFixedWindowLimiter($"login_{ip}", _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 180,
+                PermitLimit = 15,
                 Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-                AutoReplenishment = true
+                QueueLimit = 0
             });
+        }
+
+        if (path.Contains("/auth/mfa", StringComparison.Ordinal))
+        {
+            return RateLimitPartition.GetFixedWindowLimiter($"mfa_{ip}", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            });
+        }
+
+        if (path.Contains("/auth/refresh", StringComparison.Ordinal) || path.Contains("/portal/refresh", StringComparison.Ordinal))
+        {
+            return RateLimitPartition.GetFixedWindowLimiter($"refresh_{ip}", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 40,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            });
+        }
+
+        if (path.Contains("/invitations", StringComparison.Ordinal))
+        {
+            return RateLimitPartition.GetFixedWindowLimiter($"invite_{user}", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            });
+        }
+
+        if (path.Contains("/bootstrap", StringComparison.Ordinal))
+        {
+            return RateLimitPartition.GetFixedWindowLimiter($"bootstrap_{ip}", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            });
+        }
+
+        if (path.Contains("/public/", StringComparison.Ordinal))
+        {
+            return RateLimitPartition.GetFixedWindowLimiter($"public_{ip}", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            });
+        }
+
+        return RateLimitPartition.GetFixedWindowLimiter(user, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 180,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        });
     });
 });
 
@@ -107,6 +178,12 @@ builder.Services.AddCors(options => options.AddPolicy("web", policy => policy
     .AllowAnyMethod()));
 
 var app = builder.Build();
+
+app.UseForwardedHeaders(new Microsoft.AspNetCore.Builder.ForwardedHeadersOptions
+{
+    ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
+});
+
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseSerilogRequestLogging();
@@ -120,6 +197,7 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseMiddleware<TenantContextMiddleware>();
 app.UseAuthorization();
+
 
 if (app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Swagger:Enabled"))
 {

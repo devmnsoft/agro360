@@ -31,6 +31,54 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
 
         var organizationId = ReadOptionalGuid(context, "X-Organization-ID");
         var farmId = ReadOptionalGuid(context, "X-Farm-ID");
+
+        if (organizationId.HasValue || farmId.HasValue)
+        {
+            var connectionFactory = context.RequestServices.GetService<Agro360.Application.Abstractions.IDbConnectionFactory>();
+            if (connectionFactory is not null)
+            {
+                await using var conn = await connectionFactory.OpenConnectionAsync().ConfigureAwait(false);
+
+                if (organizationId.HasValue)
+                {
+                    var orgValid = await Dapper.SqlMapper.ExecuteScalarAsync<bool>(conn,
+                        "select exists(select 1 from agro360.organization_organizations where tenant_id = @TenantId and id = @OrgId and deleted_at is null)",
+                        new { TenantId = tenantId, OrgId = organizationId.Value }).ConfigureAwait(false);
+                    if (!orgValid)
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        await context.Response.WriteAsJsonAsync(new
+                        {
+                            type = "invalid_organization_scope",
+                            title = "Organização informada não pertence ao tenant autenticado",
+                            status = 403,
+                            traceId = context.TraceIdentifier
+                        }).ConfigureAwait(false);
+                        return;
+                    }
+                }
+
+                if (farmId.HasValue)
+                {
+                    var farmValid = await Dapper.SqlMapper.ExecuteScalarAsync<bool>(conn,
+                        "select exists(select 1 from agro360.geo_farms where tenant_id = @TenantId and id = @FarmId and (@OrgId is null or organization_id = @OrgId) and deleted_at is null)",
+                        new { TenantId = tenantId, FarmId = farmId.Value, OrgId = organizationId }).ConfigureAwait(false);
+                    if (!farmValid)
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        await context.Response.WriteAsJsonAsync(new
+                        {
+                            type = "invalid_farm_scope",
+                            title = "Fazenda informada não pertence ao tenant autenticado",
+                            status = 403,
+                            traceId = context.TraceIdentifier
+                        }).ConfigureAwait(false);
+                        return;
+                    }
+                }
+            }
+        }
+
         var timeZone = context.Request.Headers["X-Timezone"].FirstOrDefault() ?? "America/Belem";
         tenantContext.SetScope(new TenantScope(tenantId, userId, organizationId, farmId, timeZone));
 
@@ -42,6 +90,7 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
         {
             tenantContext.Clear();
         }
+
     }
 
     private static Guid? ReadOptionalGuid(HttpContext context, string headerName)

@@ -5,6 +5,7 @@ using Agro360.Application.Contracts;
 using Agro360.Domain.People;
 using Agro360.Infrastructure.Persistence;
 using Agro360.Multitenancy;
+using Agro360.SharedKernel;
 using Dapper;
 
 namespace Agro360.Infrastructure.Services;
@@ -17,7 +18,55 @@ public sealed class RuralHrService(DatabaseExecutor db, ITenantContext tenant) :
     public Task<Guid> RegisterTimeAsync(TimeEntryCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { if (command.EndedAt is not null) RuralHrRules.WorkedHours(command.StartedAt, command.EndedAt.Value, command.BreakMinutes); if (await c.ExecuteScalarAsync<bool>("select exists(select 1 from agro360.rural_hr_time_entries where tenant_id=@TenantId and person_id=@PersonId and ended_at is null)", new { tenant.TenantId, command.PersonId }, t)) throw new ArgumentException("A pessoa já possui jornada aberta."); var id = Guid.NewGuid(); await c.ExecuteAsync("insert into agro360.rural_hr_time_entries(id,tenant_id,person_id,team_id,property_id,resource_id,started_at,ended_at,break_minutes,activity_type,notes,offline_id,status,created_by) values(@Id,@TenantId,@PersonId,@TeamId,@PropertyId,@ResourceId,@StartedAt,@EndedAt,@BreakMinutes,@ActivityType,@Notes,@OfflineId,case when @EndedAt is null then 'OPEN' else 'CLOSED' end,@UserId)", new { Id = id, tenant.TenantId, command.PersonId, command.TeamId, command.PropertyId, command.ResourceId, command.StartedAt, command.EndedAt, command.BreakMinutes, command.ActivityType, command.Notes, command.OfflineId, tenant.UserId }, t); return id; }, ct);
     public Task EndTimeAsync(Guid id, DateTimeOffset endedAt, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { var start = await c.QuerySingleOrDefaultAsync<DateTimeOffset?>("select started_at from agro360.rural_hr_time_entries where tenant_id=@TenantId and id=@Id and ended_at is null", new { tenant.TenantId, Id = id }, t) ?? throw new KeyNotFoundException("Jornada aberta não encontrada."); RuralHrRules.WorkedHours(start, endedAt, 0); await c.ExecuteAsync("update agro360.rural_hr_time_entries set ended_at=@EndedAt,status='CLOSED',updated_at=now() where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id, EndedAt = endedAt }, t); }, ct);
     public Task<Guid> AddTransportAsync(TransportCommand command, CancellationToken ct) { RuralHrRules.EnsureCapacity(command.Capacity, command.PassengerCount); return SaveAsync(null, new("TRANSPORT", command.Name, command.DriverId, command.TeamId, null, command.VehicleId, command.StartsAt, command.EndsAt, command.PassengerCount, command.Route), ct); }
-    public Task ChangeStatusAsync(Guid id, string status, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { var n = await c.ExecuteAsync("update agro360.rural_hr_records set status=@Status,updated_by=@UserId,updated_at=now() where tenant_id=@TenantId and id=@Id; update agro360.rural_hr_people set status=@Status,updated_by=@UserId,updated_at=now() where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id, Status = status, tenant.UserId }, t); if (n == 0) throw new KeyNotFoundException("Registro não encontrado."); }, ct);
+    public Task ChangeStatusAsync(Guid id, string kind, string status, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        var targetKind = (kind ?? "").Trim().ToUpperInvariant();
+        if (targetKind == "PERSON")
+        {
+            var current = await c.QuerySingleOrDefaultAsync<string>("select status from agro360.rural_hr_people where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id }, t)
+                ?? throw new KeyNotFoundException("Pessoa não encontrada.");
+            RuralHrRules.ValidateStatusTransition("PERSON", current, status);
+            await c.ExecuteAsync("update agro360.rural_hr_people set status=@Status,updated_by=@UserId,updated_at=now() where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id, Status = status.ToUpperInvariant(), tenant.UserId }, t);
+        }
+        else if (targetKind == "TIME_ENTRY")
+        {
+            var current = await c.QuerySingleOrDefaultAsync<string>("select status from agro360.rural_hr_time_entries where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id }, t)
+                ?? throw new KeyNotFoundException("Jornada não encontrada.");
+            RuralHrRules.ValidateStatusTransition("TIME_ENTRY", current, status);
+            await c.ExecuteAsync("update agro360.rural_hr_time_entries set status=@Status,updated_at=now() where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id, Status = status.ToUpperInvariant() }, t);
+        }
+        else
+        {
+            var current = await c.QuerySingleOrDefaultAsync<string>("select status from agro360.rural_hr_records where tenant_id=@TenantId and id=@Id and kind=@Kind", new { tenant.TenantId, Id = id, Kind = targetKind }, t)
+                ?? throw new KeyNotFoundException("Registro de RH não encontrado.");
+            RuralHrRules.ValidateStatusTransition(targetKind, current, status);
+            await c.ExecuteAsync("update agro360.rural_hr_records set status=@Status,updated_by=@UserId,updated_at=now() where tenant_id=@TenantId and id=@Id and kind=@Kind", new { tenant.TenantId, Id = id, Kind = targetKind, Status = status.ToUpperInvariant(), tenant.UserId }, t);
+        }
+    }, ct);
+
+    public Task ChangeStatusAsync(Guid id, string status, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        // Fallback overload: detect matching record first, then person
+        var record = await c.QuerySingleOrDefaultAsync<(string Kind, string Status)>("select kind, status from agro360.rural_hr_records where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id }, t);
+        if (record != default && !string.IsNullOrWhiteSpace(record.Kind))
+        {
+            RuralHrRules.ValidateStatusTransition(record.Kind, record.Status, status);
+            await c.ExecuteAsync("update agro360.rural_hr_records set status=@Status,updated_by=@UserId,updated_at=now() where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id, Status = status.ToUpperInvariant(), tenant.UserId }, t);
+            return;
+        }
+
+        var personStatus = await c.QuerySingleOrDefaultAsync<string>("select status from agro360.rural_hr_people where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id }, t);
+        if (personStatus is not null)
+        {
+            RuralHrRules.ValidateStatusTransition("PERSON", personStatus, status);
+            await c.ExecuteAsync("update agro360.rural_hr_people set status=@Status,updated_by=@UserId,updated_at=now() where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id, Status = status.ToUpperInvariant(), tenant.UserId }, t);
+            return;
+        }
+
+        throw new KeyNotFoundException("Registro não encontrado.");
+    }, ct);
+
     public Task<RuralHrDashboard> DashboardAsync(CancellationToken ct) => db.InTenantTransactionAsync((c, t) => c.QuerySingleAsync<RuralHrDashboard>("select (select count(*) from agro360.rural_hr_people where tenant_id=@TenantId and status='ACTIVE') activepeople,count(*) filter(where kind='TEAM' and status='ACTIVE') activeteams,coalesce((select sum(extract(epoch from(coalesce(ended_at,now())-started_at))/3600-break_minutes/60.0) from agro360.rural_hr_time_entries where tenant_id=@TenantId),0) workedhours,coalesce(sum(amount) filter(where kind='LABOR_COST'),0) laborcost,count(*) filter(where kind='TRAINING' and ends_at<now()) expiredtrainings,count(*) filter(where kind='PPE' and ends_at<now()) expiredppe,count(*) filter(where kind='INCIDENT' and status not in('CLOSED','COMPLETED')) openincidents,count(*) filter(where kind='CORRECTIVE_ACTION' and ends_at<now() and status!='COMPLETED') overdueactions,count(*) filter(where kind='TEAM' and status='IN_FIELD') teamsinfield,count(*) filter(where kind in('INCIDENT','RISK','PPE','TRAINING') and status='CRITICAL') criticalalerts from agro360.rural_hr_records where tenant_id=@TenantId", new { tenant.TenantId }, t), ct);
-    public async Task<byte[]> ExportAsync(string kind, CancellationToken ct) { var rows = await ListAsync(kind, null, ct); var csv = new StringBuilder("Nome;Status;Inicio;Fim;Valor\n"); foreach (var x in rows) csv.AppendLine(CultureInfo.InvariantCulture, $"{x.Name.Replace(';', ',')};{x.Status};{x.StartsAt:O};{x.EndsAt:O};{x.Amount.ToString(CultureInfo.InvariantCulture)}"); return Encoding.UTF8.GetBytes(csv.ToString()); }
+    public async Task<byte[]> ExportAsync(string kind, CancellationToken ct) { var rows = await ListAsync(kind, null, ct); var csv = new StringBuilder("Nome;Status;Inicio;Fim;Valor\n"); foreach (var x in rows) csv.AppendLine(CultureInfo.InvariantCulture, $"{CsvSanitizer.Sanitize(x.Name.Replace(';', ','))};{CsvSanitizer.Sanitize(x.Status)};{x.StartsAt:O};{x.EndsAt:O};{x.Amount.ToString(CultureInfo.InvariantCulture)}"); return Encoding.UTF8.GetBytes(csv.ToString()); }
 }
+

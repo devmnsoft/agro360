@@ -17,7 +17,9 @@ public interface IRuralHrService
     Task<Guid> RegisterTimeAsync(TimeEntryCommand command, CancellationToken ct);
     Task EndTimeAsync(Guid id, DateTimeOffset endedAt, CancellationToken ct);
     Task<Guid> AddTransportAsync(TransportCommand command, CancellationToken ct);
+    Task ChangeStatusAsync(Guid id, string kind, string status, CancellationToken ct);
     Task ChangeStatusAsync(Guid id, string status, CancellationToken ct);
     Task<RuralHrDashboard> DashboardAsync(CancellationToken ct);
     Task<byte[]> ExportAsync(string kind, CancellationToken ct);
 }
+

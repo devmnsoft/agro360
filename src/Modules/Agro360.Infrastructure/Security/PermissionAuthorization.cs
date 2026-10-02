@@ -44,7 +44,27 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
             return;
         }
 
+        if (requirement.Permission == Permissions.PortalAccess)
+        {
+            var portalAuthorized = await connection.ExecuteScalarAsync<bool>(
+                """
+                select exists(
+                    select 1 from agro360.portal_external_users u
+                    join agro360.portal_profiles p on p.id=u.profile_id and p.tenant_id=u.tenant_id
+                    join agro360.tenancy_tenants t on t.id=u.tenant_id
+                    where u.id=@UserId and u.tenant_id=@TenantId
+                      and u.status='ACTIVE' and u.deleted_at is null
+                      and p.active and p.deleted_at is null
+                      and t.status in (1, 2) and t.deleted_at is null
+                )
+                """, new { UserId = userId, TenantId = tenantId }, transaction).ConfigureAwait(false);
+            if (portalAuthorized) context.Succeed(requirement);
+            await transaction.CommitAsync().ConfigureAwait(false);
+            return;
+        }
+
         var isSupportSession = context.User.HasClaim("permission", "support_session") || context.User.HasClaim("role", "SUPPORT_SESSION");
+
         if (isSupportSession)
         {
             var sessionIdClaim = context.User.FindFirstValue("support_session_id");

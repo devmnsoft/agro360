@@ -1,3 +1,462 @@
-.factory-shell{padding:28px;max-width:1600px;margin:auto;color:#19342b;background:#f4f7f5}.factory-hero{display:flex;justify-content:space-between;align-items:end;padding:32px;border:1px solid #d7e3dc;border-radius:24px;background:radial-gradient(circle at 90% 10%,#d7f1e4 0,transparent 38%),linear-gradient(135deg,#fff,#edf6f1)}.factory-hero span{font-size:.72rem;letter-spacing:.16em;color:#16734f}.factory-hero h1{font-size:clamp(2rem,4vw,3.7rem);margin:.4rem 0}.factory-hero em{font-style:normal;color:#16734f}.factory-hero p{color:#567066}.primary,.filter button{border:0;border-radius:11px;background:#187d56;color:#fff;font-weight:750;padding:11px 16px;cursor:pointer}.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:18px 0}.kpis article{padding:18px;border:1px solid #dce7e1;border-radius:16px;background:#fff}.kpis small{display:block;color:#60766d}.kpis strong{font-size:1.6rem}.factory-tabs{display:flex;gap:7px;overflow:auto;padding:6px 0 14px}.factory-tabs button{white-space:nowrap;border:1px solid #ccdcd3;background:#fff;color:#36584c;border-radius:20px;padding:8px 13px}.factory-tabs button.active{background:#187d56;color:white}.panel{display:none;padding:22px;border:1px solid #d9e5de;border-radius:20px;background:#fff}.panel.active{display:block}.panel>header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.panel h2{margin:0}.panel p{color:#61776f}.filter{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:14px}.filter input,.filter select,.factory-form input,.factory-form select,.factory-form textarea{border:1px solid #b9cec3;border-radius:10px;background:#fff;color:#19342b;padding:10px;min-width:0}.table{overflow:auto}.table table{width:100%;border-collapse:collapse}.table th,.table td{padding:12px;text-align:left;border-bottom:1px solid #e1e9e4}.badge{padding:5px 8px;border-radius:8px;background:#dff3e9;color:#145c42;font-size:.72rem}.kanban{display:grid;grid-template-columns:repeat(5,minmax(190px,1fr));gap:12px;overflow:auto}.kanban section{background:#f1f6f3;border-radius:14px;padding:12px;min-height:160px}.kanban h3{font-size:.72rem;color:#38745e}.kanban article{display:grid;gap:5px;padding:11px;margin:8px 0;border-left:3px solid #68d3a6;background:#fff;border-radius:8px}.kanban span,.kanban small{color:#61776f}.empty{padding:28px;border:1px dashed #a8beb2;border-radius:14px;text-align:center;color:#61776f}.report-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.report-grid a{padding:18px;border:1px solid #b8cdc2;border-radius:14px;color:#176b4b}.factory-form{width:min(780px,90vw);padding:22px;background:#fff;color:#19342b}.factory-form header{display:flex;justify-content:space-between}.factory-form header button{background:none;border:0;color:#315b4c;font-size:1.6rem}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:15px 0}.form-grid label{display:grid;gap:6px;color:#45675a}.form-grid .wide{grid-column:1/-1}.factory-form textarea{min-height:80px}.message{display:block;margin-top:12px;color:#176b4b}.trace-row{display:grid;grid-template-columns:1fr 1fr 2fr;padding:12px;border-bottom:1px solid #dce7e1}dialog{border:1px solid #b9cec3;border-radius:18px;background:#fff}dialog::backdrop{background:#020a08cc}@media(max-width:760px){.factory-shell{padding:12px}.factory-hero{align-items:start;gap:18px;flex-direction:column}.form-grid{grid-template-columns:1fr}.form-grid .wide{grid-column:auto}.panel{padding:15px}.kanban{grid-template-columns:repeat(5,80vw)}}
+/* ==========================================================================
+   Agro360 - Módulo de Produção Agroindustrial (PCP & Rastreabilidade)
+   ========================================================================== */
 
-.operation-detail{margin-top:18px;padding:20px;border:1px solid #c9ddd2;border-radius:16px;background:#f8fbf9}.operation-detail>header{display:flex;justify-content:space-between;align-items:start}.operation-detail h3{margin:.25rem 0}.balance-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:16px 0}.balance-grid article{display:grid;gap:5px;padding:12px;border-radius:10px;background:#fff;border:1px solid #dce7e1}.balance-grid small{color:#60766d}.detail-actions{display:flex;gap:10px;flex-wrap:wrap}.detail-actions button,.link-button{border:0;background:none;color:#176b4b;font-weight:700;cursor:pointer}.detail-actions button{border:1px solid #b8cdc2;border-radius:10px;padding:10px 14px}.detail-actions .primary{background:#187d56;color:#fff}.timeline{display:grid;gap:8px;padding-left:20px}.timeline li{padding:8px}.timeline span,.timeline time{display:block;color:#60766d;font-size:.88rem}details{margin:0 0 16px;padding:10px 12px;border-radius:10px;background:#f1f6f3}summary{cursor:pointer;font-weight:700;color:#176b4b}
+.factory-shell {
+    padding: 28px;
+    max-width: 1600px;
+    margin: auto;
+    color: #19342b;
+    background: #f4f7f5;
+}
+
+.factory-hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 32px;
+    border: 1px solid #d7e3dc;
+    border-radius: 24px;
+    background: radial-gradient(circle at 90% 10%, #d7f1e4 0, transparent 38%), linear-gradient(135deg, #fff, #edf6f1);
+}
+
+.factory-hero span {
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    color: #16734f;
+    font-weight: 700;
+}
+
+.factory-hero h1 {
+    font-size: clamp(2rem, 4vw, 3.7rem);
+    margin: 0.4rem 0;
+}
+
+.factory-hero em {
+    font-style: normal;
+    color: #16734f;
+}
+
+.factory-hero p {
+    color: #567066;
+}
+
+.factory-shell .primary,
+.factory-shell .filter button {
+    border: 0;
+    border-radius: 11px;
+    background: #187d56;
+    color: #fff;
+    font-weight: 750;
+    padding: 11px 16px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.factory-shell .primary:hover,
+.factory-shell .filter button:hover {
+    background: #136645;
+}
+
+.kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin: 18px 0;
+}
+
+.kpis article {
+    padding: 18px;
+    border: 1px solid #dce7e1;
+    border-radius: 16px;
+    background: #fff;
+}
+
+.kpis small {
+    display: block;
+    color: #60766d;
+}
+
+.kpis strong {
+    font-size: 1.6rem;
+    color: #19342b;
+}
+
+.factory-tabs {
+    display: flex;
+    gap: 7px;
+    overflow-x: auto;
+    padding: 6px 0 14px;
+}
+
+.factory-tabs button {
+    white-space: nowrap;
+    border: 1px solid #ccdcd3;
+    background: #fff;
+    color: #36584c;
+    border-radius: 20px;
+    padding: 8px 13px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.factory-tabs button.active {
+    background: #187d56;
+    color: #fff;
+    border-color: #187d56;
+}
+
+.factory-shell .panel {
+    display: none;
+    padding: 22px;
+    border: 1px solid #d9e5de;
+    border-radius: 20px;
+    background: #fff;
+}
+
+.factory-shell .panel.active {
+    display: block;
+}
+
+.factory-shell .panel > header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+}
+
+.factory-shell .panel h2 {
+    margin: 0;
+    color: #19342b;
+}
+
+.factory-shell .panel p {
+    color: #61776f;
+}
+
+.factory-shell .filter {
+    display: flex;
+    gap: 9px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+}
+
+.factory-shell .filter input,
+.factory-shell .filter select,
+.factory-form input,
+.factory-form select,
+.factory-form textarea {
+    border: 1px solid #b9cec3;
+    border-radius: 10px;
+    background: #fff;
+    color: #19342b;
+    padding: 10px;
+    min-width: 0;
+    font-family: inherit;
+    font-size: 0.95rem;
+}
+
+.factory-shell .table {
+    overflow-x: auto;
+}
+
+.factory-shell .table table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.factory-shell .table th,
+.factory-shell .table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #e1e9e4;
+}
+
+.factory-shell .table th {
+    color: #45675a;
+    font-weight: 700;
+}
+
+.factory-shell .badge {
+    padding: 5px 8px;
+    border-radius: 8px;
+    background: #dff3e9;
+    color: #145c42;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.kanban {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(190px, 1fr));
+    gap: 12px;
+    overflow-x: auto;
+}
+
+.kanban section {
+    background: #f1f6f3;
+    border-radius: 14px;
+    padding: 12px;
+    min-height: 160px;
+}
+
+.kanban h3 {
+    font-size: 0.72rem;
+    color: #38745e;
+    margin-top: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.kanban article {
+    display: grid;
+    gap: 5px;
+    padding: 11px;
+    margin: 8px 0;
+    border-left: 3px solid #68d3a6;
+    background: #fff;
+    border-radius: 8px;
+}
+
+.kanban span,
+.kanban small {
+    color: #61776f;
+}
+
+.factory-shell .empty {
+    padding: 28px;
+    border: 1px dashed #a8beb2;
+    border-radius: 14px;
+    text-align: center;
+    color: #61776f;
+}
+
+.report-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+
+.report-grid a {
+    padding: 18px;
+    border: 1px solid #b8cdc2;
+    border-radius: 14px;
+    color: #176b4b;
+    text-decoration: none;
+    font-weight: 700;
+    background: #fff;
+    display: block;
+    transition: all 0.2s ease;
+}
+
+.report-grid a:hover {
+    border-color: #187d56;
+    background: #edf6f1;
+}
+
+/* Modais do módulo de produção */
+dialog:has(.factory-form) {
+    border: 1px solid #b9cec3;
+    border-radius: 18px;
+    background: #fff;
+    padding: 0;
+}
+
+dialog:has(.factory-form)::backdrop {
+    background: #020a08cc;
+}
+
+.factory-form {
+    width: min(780px, 90vw);
+    padding: 22px;
+    background: #fff;
+    color: #19342b;
+}
+
+.factory-form header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.factory-form header h2 {
+    margin: 0;
+}
+
+.factory-form header button {
+    background: none;
+    border: 0;
+    color: #315b4c;
+    font-size: 1.6rem;
+    cursor: pointer;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 13px;
+    margin: 15px 0;
+}
+
+.form-grid label {
+    display: grid;
+    gap: 6px;
+    color: #45675a;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.form-grid .wide {
+    grid-column: 1 / -1;
+}
+
+.form-grid .check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.factory-form textarea {
+    min-height: 80px;
+    resize: vertical;
+}
+
+.factory-form .message {
+    display: block;
+    margin-top: 12px;
+    color: #176b4b;
+    font-weight: 600;
+}
+
+.trace-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 2fr;
+    padding: 12px;
+    border-bottom: 1px solid #dce7e1;
+}
+
+/* Detalhes operacionais da ordem */
+.operation-detail {
+    margin-top: 18px;
+    padding: 20px;
+    border: 1px solid #c9ddd2;
+    border-radius: 16px;
+    background: #f8fbf9;
+}
+
+.operation-detail > header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.operation-detail h3 {
+    margin: 0.25rem 0;
+}
+
+.balance-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+    gap: 10px;
+    margin: 16px 0;
+}
+
+.balance-grid article {
+    display: grid;
+    gap: 5px;
+    padding: 12px;
+    border-radius: 10px;
+    background: #fff;
+    border: 1px solid #dce7e1;
+}
+
+.balance-grid small {
+    color: #60766d;
+}
+
+.detail-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.detail-actions button,
+.link-button {
+    border: 0;
+    background: none;
+    color: #176b4b;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.detail-actions button {
+    border: 1px solid #b8cdc2;
+    border-radius: 10px;
+    padding: 10px 14px;
+    background: #fff;
+}
+
+.detail-actions .primary {
+    background: #187d56;
+    color: #fff;
+}
+
+.timeline {
+    display: grid;
+    gap: 8px;
+    padding-left: 20px;
+}
+
+.timeline li {
+    padding: 8px;
+}
+
+.timeline span,
+.timeline time {
+    display: block;
+    color: #60766d;
+    font-size: 0.88rem;
+}
+
+.factory-shell details {
+    margin: 0 0 16px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: #f1f6f3;
+}
+
+.factory-shell summary {
+    cursor: pointer;
+    font-weight: 700;
+    color: #176b4b;
+}
+
+@media (max-width: 760px) {
+    .factory-shell {
+        padding: 12px;
+    }
+
+    .factory-hero {
+        align-items: flex-start;
+        gap: 18px;
+        flex-direction: column;
+    }
+
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .form-grid .wide {
+        grid-column: auto;
+    }
+
+    .factory-shell .panel {
+        padding: 15px;
+    }
+
+    .kanban {
+        grid-template-columns: repeat(5, 80vw);
+    }
+}
