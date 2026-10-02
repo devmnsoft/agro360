@@ -48,13 +48,53 @@ public sealed class DeliveryScheduleRulesTests
         var bal2 = CommercialRules.CalculateEligibleScheduleBalance(100m, 20m, 30m, 10m);
         Assert.Equal(40m, bal2);
 
-        // Over-cancelled or over-scheduled clamps to 0
+        // Sobrecomprometimento permanece visível: 100 - 60 cancelados - 50 programados = -10.
         var bal3 = CommercialRules.CalculateEligibleScheduleBalance(100m, 60m, 50m, 0m);
-        Assert.Equal(0m, bal3);
+        Assert.Equal(-10m, bal3);
 
-        // Negative or zero ordered returns 0
         var bal4 = CommercialRules.CalculateEligibleScheduleBalance(0m, 0m, 0m, 0m);
         Assert.Equal(0m, bal4);
+    }
+
+    [Fact]
+    public void ScheduleCapacityAllowsFiftyAndRejectsSixtyWhenOrderIs100CurrentIs30AndOthersAre50()
+    {
+        var capacity = CommercialRules.CalculateEligibleScheduleBalance(100m, 0m, 50m, 0m);
+        Assert.Equal(50m, capacity);
+        Assert.Equal(20m, CommercialRules.AdditionalScheduleQuantity(capacity, 30m));
+
+        CommercialRules.ValidateReschedule("PLANNED", 0m, 0m, 30m, 50m, capacity, "Ajuste dentro da capacidade");
+        var ex = Assert.Throws<DomainException>(() =>
+            CommercialRules.ValidateReschedule("PLANNED", 0m, 0m, 30m, 60m, capacity, "Ajuste acima da capacidade"));
+        Assert.Equal("sales.reschedule_balance_exceeded", ex.Code);
+    }
+
+    [Fact]
+    public void EnsureExpectedVersionRejectsNonPositive()
+    {
+        var ex = Assert.Throws<DomainException>(() => CommercialRules.EnsureExpectedVersion(0));
+        Assert.Equal("sales.schedule_version_invalid", ex.Code);
+    }
+
+    [Fact]
+    public void ValidateDeliveryScheduleRejectsDuplicateOrderItems()
+    {
+        var itemId = Guid.NewGuid();
+        var items = new List<(Guid OrderItemId, decimal Quantity, decimal EligibleBalance, string Unit)>
+        {
+            (itemId, 10m, 40m, "KG"),
+            (itemId, 5m, 40m, "KG")
+        };
+        var ex = Assert.Throws<DomainException>(() => CommercialRules.ValidateDeliverySchedule("Fazenda Boa Vista", items));
+        Assert.Equal("sales.schedule_item_duplicated", ex.Code);
+    }
+
+    [Fact]
+    public void ValidateRescheduleRejectsReductionBelowOpenPreparation()
+    {
+        var ex = Assert.Throws<DomainException>(() =>
+            CommercialRules.ValidateReschedule("PREPARING", 0m, 0m, 20m, 10m, 50m, "Reduzir abaixo da separação", 15m));
+        Assert.Equal("sales.reschedule_below_dispatched", ex.Code);
     }
 
     [Fact]
@@ -201,9 +241,9 @@ public sealed class DeliveryScheduleRulesTests
     [Fact]
     public void ValidateReschedulePreventsIncreaseExceedingRemainingEligibleBalance()
     {
-        // Current 10, wants 25 (delta +15), but available eligible is only 10
+        // Capacidade desta programação = 20 (quantidade atual 10 + incremento 10). 25 excede a capacidade.
         var ex = Assert.Throws<DomainException>(() =>
-            CommercialRules.ValidateReschedule("PLANNED", 0m, 0m, 10m, 25m, 10m, "Aumento de volume"));
+            CommercialRules.ValidateReschedule("PLANNED", 0m, 0m, 10m, 25m, 20m, "Aumento de volume"));
         Assert.Equal("sales.reschedule_balance_exceeded", ex.Code);
     }
 

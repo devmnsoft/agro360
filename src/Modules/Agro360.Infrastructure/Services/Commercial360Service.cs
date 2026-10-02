@@ -258,7 +258,7 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
     {
         var type = CommercialRules.NormalizeContractType(command.Type);
         CommercialRules.ValidateContract(type, command.Quantity, command.UnitPrice, command.ValidFrom, command.ValidTo, command.CommercialTerms, command.Currency, command.Incoterm);
-        var existing = await c.ExecuteScalarAsync<Guid?>("select id from agro360.sales_contracts where x.tenant_id=@TenantId and x.idempotency_key=@IdempotencyKey", new { tenant.TenantId, command.IdempotencyKey }, t);
+        var existing = await c.ExecuteScalarAsync<Guid?>("select id from agro360.sales_contracts where tenant_id=@TenantId and idempotency_key=@IdempotencyKey", new { tenant.TenantId, command.IdempotencyKey }, t);
         if (existing.HasValue) return existing.Value;
         var customerStatus = await c.ExecuteScalarAsync<string?>("select status from agro360.crm_customers where tenant_id=@TenantId and id=@CustomerId and deleted_at is null", new { tenant.TenantId, command.CustomerId }, t);
         if (customerStatus is null) throw new KeyNotFoundException("Cliente não encontrado.");
@@ -505,7 +505,7 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
                    i.unit, i.quantity, i.unit_price UnitPrice, i.discount_percentage DiscountPercentage,
                    i.total_amount TotalAmount, i.price_table_id PriceTableId, i.base_unit_price BaseUnitPrice,
                    coalesce((select sum(si.quantity) from agro360.sales_delivery_schedule_items si join agro360.sales_delivery_schedules s on s.tenant_id=si.tenant_id and s.id=si.schedule_id where si.tenant_id=i.tenant_id and si.order_item_id=i.id and s.status <> 'CANCELLED'), 0) ScheduledQuantity,
-                   greatest(0, i.quantity - i.cancelled_quantity - coalesce((select sum(si.quantity) from agro360.sales_delivery_schedule_items si join agro360.sales_delivery_schedules s on s.tenant_id=si.tenant_id and s.id=si.schedule_id where si.tenant_id=i.tenant_id and si.order_item_id=i.id and s.status <> 'CANCELLED'), 0) - greatest(0, coalesce((select sum(r.consumed_quantity) from agro360.fulfillment_reservations r where r.tenant_id=i.tenant_id and r.order_item_id=i.id), 0) - coalesce((select sum(si.dispatched_quantity) from agro360.sales_delivery_schedule_items si join agro360.sales_delivery_schedules s on s.tenant_id=si.tenant_id and s.id=si.schedule_id where si.tenant_id=i.tenant_id and si.order_item_id=i.id and s.status <> 'CANCELLED'), 0))) EligibleScheduleBalance
+                   i.quantity - i.cancelled_quantity - coalesce((select sum(si.quantity) from agro360.sales_delivery_schedule_items si join agro360.sales_delivery_schedules s on s.tenant_id=si.tenant_id and s.id=si.schedule_id where si.tenant_id=i.tenant_id and si.order_item_id=i.id and s.status <> 'CANCELLED'), 0) - greatest(0, coalesce((select sum(r.consumed_quantity) from agro360.fulfillment_reservations r where r.tenant_id=i.tenant_id and r.order_item_id=i.id), 0) - coalesce((select sum(si.dispatched_quantity) from agro360.sales_delivery_schedule_items si join agro360.sales_delivery_schedules s on s.tenant_id=si.tenant_id and s.id=si.schedule_id where si.tenant_id=i.tenant_id and si.order_item_id=i.id and s.status <> 'CANCELLED'), 0)) EligibleScheduleBalance
             from agro360.sales_order_items i
             left join agro360.inventory_products pr on pr.tenant_id = i.tenant_id and pr.id = i.product_id
             where i.tenant_id = @TenantId and i.order_id = @Id
@@ -678,13 +678,30 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
     {
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey))
             throw new DomainException("Chave de idempotência é obrigatória.", "sales.schedule_idempotency_required");
+        if (command.Items.GroupBy(item => item.OrderItemId).Any(group => group.Count() > 1))
+            throw new DomainException("A programação não pode repetir o mesmo item do pedido.", "sales.schedule_item_duplicated");
+
+        var requestHash = ScheduleHash(new
+        {
+            OrderId = orderId,
+            PlannedDate = command.PlannedDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+            Destination = command.Destination?.Trim() ?? "",
+            command.ResponsibleId,
+            Notes = command.Notes?.Trim(),
+            Items = command.Items.OrderBy(item => item.OrderItemId).Select(item => new { item.OrderItemId, Quantity = decimal.Round(item.Quantity, 6, MidpointRounding.AwayFromZero), Unit = item.Unit.Trim().ToUpperInvariant() })
+        });
 
         await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"schedule:create:{tenant.TenantId}:{command.IdempotencyKey}" }, t, cancellationToken: ct));
 
-        var existing = await c.QuerySingleOrDefaultAsync<Guid?>(
-            "select id from agro360.sales_delivery_schedules where tenant_id=@TenantId and idempotency_key=@Key",
-            new { tenant.TenantId, Key = command.IdempotencyKey }, t);
-        if (existing.HasValue) return existing.Value;
+        var existing = await c.QuerySingleOrDefaultAsync<(Guid Id, string? RequestHash)>(
+            "select id Id, request_hash RequestHash from agro360.sales_delivery_schedules where tenant_id=@TenantId and idempotency_key=@Key",
+            new { tenant.TenantId, Key = command.IdempotencyKey.Trim() }, t);
+        if (existing.Id != Guid.Empty)
+        {
+            if (!string.Equals(existing.RequestHash, requestHash, StringComparison.Ordinal))
+                throw new ConflictException("A mesma chave de idempotência foi reutilizada com conteúdo diferente. Nenhuma programação adicional foi gravada.");
+            return existing.Id;
+        }
 
         var order = await c.QuerySingleOrDefaultAsync<(string Status, string OrderNumber, Guid CustomerId)>(
             "select status, order_number OrderNumber, customer_id CustomerId from agro360.sales_orders where tenant_id=@TenantId and id=@Id and deleted_at is null for update",
@@ -729,21 +746,21 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         CommercialRules.ValidateDeliverySchedule(command.Destination, itemsToValidate);
 
         var scheduleId = Guid.CreateVersion7();
-        var scheduleNumber = await c.ExecuteScalarAsync<string>("select 'PRG-' || nextval('agro360.sales_delivery_schedule_seq')", transaction: t);
+        var scheduleNumber = await c.ExecuteScalarAsync<string>("select 'PRG-' || nextval('agro360.sales_delivery_schedule_number_seq')", transaction: t);
 
         await c.ExecuteAsync(
             """
             insert into agro360.sales_delivery_schedules(
                 id, tenant_id, order_id, schedule_number, destination, responsible_id,
-                planned_date, original_planned_date, status, notes, idempotency_key, version,
+                planned_date, original_planned_date, status, notes, idempotency_key, request_hash, version,
                 created_by, updated_by
             ) values (
                 @Id, @TenantId, @OrderId, @ScheduleNumber, @Destination, @ResponsibleId,
-                @PlannedDate, @PlannedDate, 'PLANNED', @Notes, @Key, 1,
+                @PlannedDate, @PlannedDate, 'PLANNED', @Notes, @Key, @Hash, 1,
                 @UserId, @UserId
             )
             """,
-            new { Id = scheduleId, tenant.TenantId, OrderId = orderId, ScheduleNumber = scheduleNumber, command.Destination, command.ResponsibleId, command.PlannedDate, command.Notes, Key = command.IdempotencyKey, tenant.UserId }, t);
+            new { Id = scheduleId, tenant.TenantId, OrderId = orderId, ScheduleNumber = scheduleNumber, command.Destination, command.ResponsibleId, command.PlannedDate, command.Notes, Key = command.IdempotencyKey.Trim(), Hash = requestHash, tenant.UserId }, t);
 
         foreach (var reqItem in command.Items)
         {
@@ -751,13 +768,13 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
                 """
                 insert into agro360.sales_delivery_schedule_items(
                     id, tenant_id, schedule_id, order_item_id, quantity, original_quantity,
-                    dispatched_quantity, delivered_quantity, unit, created_by, updated_by
+                    dispatched_quantity, delivered_quantity, unit
                 ) values (
                     @Id, @TenantId, @ScheduleId, @OrderItemId, @Quantity, @Quantity,
-                    0, 0, @Unit, @UserId, @UserId
+                    0, 0, @Unit
                 )
                 """,
-                new { Id = Guid.CreateVersion7(), tenant.TenantId, ScheduleId = scheduleId, reqItem.OrderItemId, reqItem.Quantity, Unit = reqItem.Unit.Trim().ToUpperInvariant(), tenant.UserId }, t);
+                new { Id = Guid.CreateVersion7(), tenant.TenantId, ScheduleId = scheduleId, reqItem.OrderItemId, reqItem.Quantity, Unit = reqItem.Unit.Trim().ToUpperInvariant() }, t);
         }
 
         await c.ExecuteAsync(
@@ -771,16 +788,42 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
     {
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey))
             throw new DomainException("Chave de idempotência é obrigatória.", "sales.reschedule_idempotency_required");
+        CommercialRules.EnsureExpectedVersion(command.ExpectedVersion);
+        if (command.Items.GroupBy(item => item.ScheduleItemId).Any(group => group.Count() > 1))
+            throw new DomainException("A reprogramação não pode repetir o mesmo item do compromisso.", "sales.reschedule_item_duplicated");
 
-        await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"schedule:reschedule:{tenant.TenantId}:{command.IdempotencyKey}" }, t, cancellationToken: ct));
+        var requestHash = ScheduleHash(new
+        {
+            ScheduleId = scheduleId,
+            PlannedDate = command.PlannedDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+            command.ExpectedVersion,
+            Reason = command.Reason.Trim(),
+            Destination = string.IsNullOrWhiteSpace(command.Destination) ? null : command.Destination.Trim(),
+            command.ResponsibleId,
+            command.ReplaceResponsible,
+            Items = command.Items.OrderBy(item => item.ScheduleItemId).Select(item => new { item.ScheduleItemId, Quantity = decimal.Round(item.Quantity, 6, MidpointRounding.AwayFromZero) })
+        });
 
-        var existingOp = await c.QuerySingleOrDefaultAsync<(long Version, string Reason)?>(
-            "select version, reason from agro360.sales_delivery_schedule_revisions where tenant_id=@TenantId and schedule_id=@ScheduleId and reason=@Reason and version=@Version",
-            new { tenant.TenantId, ScheduleId = scheduleId, command.Reason, Version = command.ExpectedVersion + 1 }, t);
-        if (existingOp.HasValue) return;
+        await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"schedule:reschedule:{tenant.TenantId}:{scheduleId}:{command.IdempotencyKey}" }, t, cancellationToken: ct));
 
-        var schedule = await c.QuerySingleOrDefaultAsync<(Guid OrderId, string Status, DateOnly PlannedDate, DateOnly OriginalPlannedDate, long Version)>(
-            "select order_id OrderId, status, planned_date PlannedDate, original_planned_date OriginalPlannedDate, version from agro360.sales_delivery_schedules where tenant_id=@TenantId and id=@Id for update",
+        var existingOp = await c.QuerySingleOrDefaultAsync<(string RequestHash, long? ResultVersion)>(
+            "select request_hash RequestHash, result_version ResultVersion from agro360.sales_delivery_schedule_operations where tenant_id=@TenantId and schedule_id=@ScheduleId and operation='RESCHEDULE' and idempotency_key=@Key",
+            new { tenant.TenantId, ScheduleId = scheduleId, Key = command.IdempotencyKey.Trim() }, t);
+        if (!string.IsNullOrWhiteSpace(existingOp.RequestHash))
+        {
+            if (!string.Equals(existingOp.RequestHash, requestHash, StringComparison.Ordinal))
+                throw new ConflictException("A mesma chave de idempotência foi reutilizada com conteúdo diferente. A programação não foi alterada.");
+            return;
+        }
+
+        var linkedOrderItems = (await c.QueryAsync<Guid>(
+            "select order_item_id from agro360.sales_delivery_schedule_items where tenant_id=@TenantId and schedule_id=@ScheduleId order by order_item_id",
+            new { tenant.TenantId, ScheduleId = scheduleId }, t)).Distinct().Order().ToArray();
+        foreach (var itemId in linkedOrderItems)
+            await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{itemId}" }, t, cancellationToken: ct));
+
+        var schedule = await c.QuerySingleOrDefaultAsync<(Guid OrderId, string Status, DateOnly PlannedDate, DateOnly OriginalPlannedDate, long Version, string Destination, Guid? ResponsibleId)>(
+            "select order_id OrderId, status, planned_date PlannedDate, original_planned_date OriginalPlannedDate, version, destination Destination, responsible_id ResponsibleId from agro360.sales_delivery_schedules where tenant_id=@TenantId and id=@Id for update",
             new { tenant.TenantId, Id = scheduleId }, t);
         if (string.IsNullOrWhiteSpace(schedule.Status)) throw new NotFoundException("Programação de entrega", scheduleId);
         if (schedule.Version != command.ExpectedVersion)
@@ -795,10 +838,6 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             throw new DomainException("Todos os itens da programação devem ser informados na reprogramação.", "sales.reschedule_items_incomplete");
 
         var orderItemIds = currentItems.Values.Select(x => x.OrderItemId).Distinct().Order().ToArray();
-        foreach (var itemId in orderItemIds)
-        {
-            await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{itemId}" }, t, cancellationToken: ct));
-        }
 
         var orderItems = (await c.QueryAsync<(Guid Id, decimal Quantity, decimal CancelledQuantity, decimal DispatchedQuantity, decimal ActiveScheduled, decimal ScheduledDispatched)>(
             """
@@ -820,12 +859,22 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             if (!requestedItems.TryGetValue(schItemId, out var reqItem))
                 throw new DomainException("Item da programação ausente.", "sales.reschedule_item_missing");
 
-            var oi = orderItems[curItem.OrderItemId];
+            if (!orderItems.TryGetValue(curItem.OrderItemId, out var oi))
+                throw new DomainException("Um item da programação não pertence ao pedido.", "sales.reschedule_item_not_on_order");
             var unlinkedDispatched = Math.Max(0m, oi.DispatchedQuantity - oi.ScheduledDispatched);
-            var activeScheduledExcludingThis = Math.Max(0m, oi.ActiveScheduled - curItem.Quantity);
-            var eligibleExcludingThis = CommercialRules.CalculateEligibleScheduleBalance(oi.Quantity, oi.CancelledQuantity, activeScheduledExcludingThis, unlinkedDispatched);
+            var otherActiveScheduled = oi.ActiveScheduled - curItem.Quantity;
+            var scheduleCapacity = CommercialRules.CalculateEligibleScheduleBalance(oi.Quantity, oi.CancelledQuantity, otherActiveScheduled, unlinkedDispatched);
+            var openPreparation = await c.ExecuteScalarAsync<decimal>(
+                """
+                select coalesce(sum(greatest(fi.picked_quantity, fi.checked_quantity)), 0)
+                from agro360.fulfillment_shipment_items fi
+                join agro360.fulfillment_shipments fs on fs.tenant_id = fi.tenant_id and fs.id = fi.shipment_id
+                where fi.tenant_id = @TenantId and fi.schedule_item_id = @ScheduleItemId
+                  and fs.deleted_at is null and fs.status in ('PREPARING', 'CHECKED')
+                """,
+                new { tenant.TenantId, ScheduleItemId = schItemId }, t);
 
-            CommercialRules.ValidateReschedule(schedule.Status, curItem.DispatchedQuantity, curItem.DeliveredQuantity, curItem.Quantity, reqItem.Quantity, eligibleExcludingThis, command.Reason);
+            CommercialRules.ValidateReschedule(schedule.Status, curItem.DispatchedQuantity, curItem.DeliveredQuantity, curItem.Quantity, reqItem.Quantity, scheduleCapacity, command.Reason, openPreparation);
 
             previousItemsSnapshot.Add(new { curItem.Id, curItem.OrderItemId, curItem.Quantity, curItem.DispatchedQuantity, curItem.DeliveredQuantity });
             newItemsSnapshot.Add(new { curItem.Id, curItem.OrderItemId, reqItem.Quantity });
@@ -835,20 +884,34 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         await c.ExecuteAsync(
             """
             update agro360.sales_delivery_schedules
-            set planned_date = @PlannedDate, version = @NewVersion, updated_at = now(), updated_by = @UserId
+            set planned_date = @PlannedDate,
+                destination = coalesce(@Destination, destination),
+                responsible_id = case when @ReplaceResponsible then @ResponsibleId else responsible_id end,
+                version = @NewVersion, updated_at = now(), updated_by = @UserId
             where tenant_id = @TenantId and id = @Id and version = @ExpectedVersion
             """,
-            new { tenant.TenantId, Id = scheduleId, command.PlannedDate, NewVersion = newVersion, command.ExpectedVersion, tenant.UserId }, t);
+            new
+            {
+                tenant.TenantId,
+                Id = scheduleId,
+                command.PlannedDate,
+                Destination = string.IsNullOrWhiteSpace(command.Destination) ? null : command.Destination.Trim(),
+                command.ReplaceResponsible,
+                command.ResponsibleId,
+                NewVersion = newVersion,
+                command.ExpectedVersion,
+                tenant.UserId
+            }, t);
 
         foreach (var reqItem in command.Items)
         {
             await c.ExecuteAsync(
                 """
                 update agro360.sales_delivery_schedule_items
-                set quantity = @Quantity, updated_at = now(), updated_by = @UserId
+                set quantity = @Quantity, updated_at = now()
                 where tenant_id = @TenantId and id = @Id
                 """,
-                new { tenant.TenantId, Id = reqItem.ScheduleItemId, reqItem.Quantity, tenant.UserId }, t);
+                new { tenant.TenantId, Id = reqItem.ScheduleItemId, reqItem.Quantity }, t);
         }
 
         await c.ExecuteAsync(
@@ -874,6 +937,14 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             }, t);
 
         await c.ExecuteAsync(
+            """
+            insert into agro360.sales_delivery_schedule_operations(
+                id, tenant_id, schedule_id, operation, idempotency_key, request_hash, result_version, created_by)
+            values (gen_random_uuid(), @TenantId, @ScheduleId, 'RESCHEDULE', @Key, @Hash, @ResultVersion, @UserId)
+            """,
+            new { tenant.TenantId, ScheduleId = scheduleId, Key = command.IdempotencyKey.Trim(), Hash = requestHash, ResultVersion = newVersion, tenant.UserId }, t);
+
+        await c.ExecuteAsync(
             "insert into agro360.sales_commercial_events(id, tenant_id, event_type, aggregate_id, payload, created_by) values(gen_random_uuid(), @TenantId, 'DELIVERY_SCHEDULE_RESCHEDULED', @Id, jsonb_build_object('orderId', @OrderId, 'previousDate', @PreviousDate, 'newDate', @NewDate, 'reason', @Reason, 'version', @NewVersion), @UserId)",
             new { tenant.TenantId, Id = scheduleId, OrderId = schedule.OrderId, PreviousDate = schedule.PlannedDate, NewDate = command.PlannedDate, command.Reason, NewVersion = newVersion, tenant.UserId }, t);
     }, ct);
@@ -882,6 +953,26 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
     {
         if (string.IsNullOrWhiteSpace(command.Reason))
             throw new DomainException("Cancelamento do compromisso de entrega exige motivo.", "sales.schedule_cancel_reason_required");
+        if (string.IsNullOrWhiteSpace(command.IdempotencyKey))
+            throw new DomainException("Chave de idempotência é obrigatória.", "sales.schedule_cancel_idempotency_required");
+        CommercialRules.EnsureExpectedVersion(command.ExpectedVersion);
+        var requestHash = ScheduleHash(new { ScheduleId = scheduleId, command.ExpectedVersion, Reason = command.Reason.Trim() });
+        await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"schedule:cancel:{tenant.TenantId}:{scheduleId}:{command.IdempotencyKey}" }, t, cancellationToken: ct));
+        var existingOp = await c.QuerySingleOrDefaultAsync<(string RequestHash, long? ResultVersion)>(
+            "select request_hash RequestHash, result_version ResultVersion from agro360.sales_delivery_schedule_operations where tenant_id=@TenantId and schedule_id=@ScheduleId and operation='CANCEL' and idempotency_key=@Key",
+            new { tenant.TenantId, ScheduleId = scheduleId, Key = command.IdempotencyKey.Trim() }, t);
+        if (!string.IsNullOrWhiteSpace(existingOp.RequestHash))
+        {
+            if (!string.Equals(existingOp.RequestHash, requestHash, StringComparison.Ordinal))
+                throw new ConflictException("A mesma chave de idempotência foi reutilizada com conteúdo diferente. A programação não foi alterada.");
+            return;
+        }
+
+        var linkedOrderItems = (await c.QueryAsync<Guid>(
+            "select order_item_id from agro360.sales_delivery_schedule_items where tenant_id=@TenantId and schedule_id=@ScheduleId order by order_item_id",
+            new { tenant.TenantId, ScheduleId = scheduleId }, t)).Distinct().Order().ToArray();
+        foreach (var itemId in linkedOrderItems)
+            await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{itemId}" }, t, cancellationToken: ct));
 
         var schedule = await c.QuerySingleOrDefaultAsync<(Guid OrderId, string Status, long Version)>(
             "select order_id OrderId, status, version from agro360.sales_delivery_schedules where tenant_id=@TenantId and id=@Id for update",
@@ -911,6 +1002,46 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         if (prepared)
             throw new ConflictException("Desfaça a separação e conferência logística antes de cancelar a programação.");
 
+        var reservations = (await c.QueryAsync<(Guid Id, Guid LotId, decimal Active)>(
+            """
+            select r.id, r.stock_lot_id LotId, r.quantity - r.consumed_quantity - r.released_quantity Active
+            from agro360.fulfillment_reservations r
+            join agro360.fulfillment_shipment_items i on i.tenant_id = r.tenant_id and i.reservation_id = r.id
+            join agro360.fulfillment_shipments s on s.tenant_id = i.tenant_id and s.id = i.shipment_id
+            where r.tenant_id = @TenantId and s.schedule_id = @Id and r.status = 'ACTIVE' and s.status in ('PREPARING', 'CHECKED')
+            order by r.id
+            for update of r
+            """,
+            new { tenant.TenantId, Id = scheduleId }, t)).ToArray();
+        foreach (var reservation in reservations)
+        {
+            if (reservation.Active <= 0) continue;
+            var released = await c.ExecuteAsync(
+                """
+                update agro360.fulfillment_reservations
+                set released_quantity = released_quantity + @Amount,
+                    status = case when consumed_quantity + released_quantity + @Amount = quantity then 'RELEASED' else status end,
+                    version = version + 1, updated_at = now(), updated_by = @UserId
+                where tenant_id = @TenantId and id = @Reservation and status = 'ACTIVE'
+                  and quantity - consumed_quantity - released_quantity >= @Amount;
+                update agro360.inventory_stock_balances b
+                set reserved = reserved - @Amount, version = version + 1, updated_at = now()
+                from agro360.inventory_stock_lots l
+                where l.tenant_id = b.tenant_id and l.id = @LotId and b.tenant_id = @TenantId
+                  and b.warehouse_id = l.warehouse_id and b.product_id = l.product_id and b.reserved >= @Amount
+                """,
+                new { tenant.TenantId, Reservation = reservation.Id, reservation.LotId, Amount = reservation.Active, tenant.UserId }, t);
+            if (released != 2)
+                throw new ConflictException("A reserva mudou durante o cancelamento da programação. Nada foi confirmado.");
+        }
+        await c.ExecuteAsync(
+            """
+            update agro360.fulfillment_shipments
+            set status = 'CANCELLED', version = version + 1, updated_at = now(), updated_by = @UserId
+            where tenant_id = @TenantId and schedule_id = @Id and status in ('PREPARING', 'CHECKED')
+            """,
+            new { tenant.TenantId, Id = scheduleId, tenant.UserId }, t);
+
         var changed = await c.ExecuteAsync(
             """
             update agro360.sales_delivery_schedules
@@ -920,6 +1051,13 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             new { tenant.TenantId, Id = scheduleId, command.Reason, command.ExpectedVersion, tenant.UserId }, t);
         if (changed != 1) throw new ConflictException("Falha ao cancelar a programação de entrega.");
 
+        await c.ExecuteAsync(
+            """
+            insert into agro360.sales_delivery_schedule_operations(
+                id, tenant_id, schedule_id, operation, idempotency_key, request_hash, result_version, created_by)
+            values (gen_random_uuid(), @TenantId, @ScheduleId, 'CANCEL', @Key, @Hash, @ResultVersion, @UserId)
+            """,
+            new { tenant.TenantId, ScheduleId = scheduleId, Key = command.IdempotencyKey.Trim(), Hash = requestHash, ResultVersion = command.ExpectedVersion + 1, tenant.UserId }, t);
         await c.ExecuteAsync(
             "insert into agro360.sales_commercial_events(id, tenant_id, event_type, aggregate_id, payload, created_by) values(gen_random_uuid(), @TenantId, 'DELIVERY_SCHEDULE_CANCELLED', @Id, jsonb_build_object('orderId', @OrderId, 'reason', @Reason), @UserId)",
             new { tenant.TenantId, Id = scheduleId, OrderId = schedule.OrderId, command.Reason, tenant.UserId }, t);
@@ -941,6 +1079,7 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
               and (@FromDate is null or s.planned_date >= @FromDate)
               and (@ToDate is null or s.planned_date <= @ToDate)
               and (@ProductId is null or exists(select 1 from agro360.sales_delivery_schedule_items si join agro360.sales_order_items oi on oi.tenant_id = si.tenant_id and oi.id = si.order_item_id where si.tenant_id = s.tenant_id and si.schedule_id = s.id and oi.product_id = @ProductId))
+              and (@LateOnly = false or (s.planned_date < current_date and s.status in ('PLANNED', 'PREPARING', 'DISPATCHED', 'PARTIALLY_DELIVERED')))
             """;
 
         var sql = $"""
@@ -956,7 +1095,7 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             join agro360.crm_customers c on c.tenant_id = o.tenant_id and c.id = o.customer_id
             left join agro360.identity_users u on u.tenant_id = s.tenant_id and u.id = s.responsible_id
             {sqlWhere}
-            order by s.planned_date asc, s.created_at desc
+            order by s.planned_date asc, s.schedule_number asc, s.id
             limit @PageSize offset @Offset;
 
             select count(*)
@@ -966,14 +1105,16 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             {sqlWhere};
 
             select
-              count(*) filter(where status in ('PLANNED', 'PREPARING')) TotalOpen,
-              count(*) filter(where planned_date < current_date and status in ('PLANNED', 'PREPARING')) Late,
-              count(*) filter(where planned_date between current_date and current_date + 7 and status in ('PLANNED', 'PREPARING')) DuePeriod,
-              count(*) filter(where status = 'PARTIALLY_DELIVERED') PartiallyDelivered,
-              count(*) filter(where responsible_id is null and status in ('PLANNED', 'PREPARING')) Unassigned,
-              count(*) filter(where status = 'DELIVERED') Completed
-            from agro360.sales_delivery_schedules
-            where tenant_id = @TenantId;
+              count(*) filter(where s.status in ('PLANNED', 'PREPARING')) TotalOpen,
+              count(*) filter(where s.planned_date < current_date and s.status in ('PLANNED', 'PREPARING', 'DISPATCHED', 'PARTIALLY_DELIVERED')) Late,
+              count(*) filter(where s.planned_date between current_date and current_date + 7 and s.status in ('PLANNED', 'PREPARING')) DuePeriod,
+              count(*) filter(where s.status = 'PARTIALLY_DELIVERED') PartiallyDelivered,
+              count(*) filter(where s.responsible_id is null and s.status in ('PLANNED', 'PREPARING', 'DISPATCHED', 'PARTIALLY_DELIVERED')) Unassigned,
+              count(*) filter(where s.status = 'DELIVERED') Completed
+            from agro360.sales_delivery_schedules s
+            join agro360.sales_orders o on o.tenant_id = s.tenant_id and o.id = s.order_id
+            join agro360.crm_customers c on c.tenant_id = o.tenant_id and c.id = o.customer_id
+            {sqlWhere};
             """;
 
         var param = new
@@ -987,6 +1128,7 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             query.FromDate,
             query.ToDate,
             query.ProductId,
+            query.LateOnly,
             PageSize = pageSize,
             Offset = offset
         };
@@ -1007,7 +1149,9 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
               si.id, si.schedule_id ScheduleId, si.order_item_id OrderItemId, oi.product_id ProductId,
               coalesce(p.name, 'Produto') ProductName, si.unit, si.quantity, si.original_quantity OriginalQuantity,
               si.dispatched_quantity DispatchedQuantity, si.delivered_quantity DeliveredQuantity,
-              greatest(0, si.quantity - si.delivered_quantity) PendingQuantity
+              (si.quantity - si.delivered_quantity) PendingQuantity,
+              coalesce((select sum(fi.reserved_quantity) from agro360.fulfillment_shipment_items fi join agro360.fulfillment_shipments fs on fs.tenant_id = fi.tenant_id and fs.id = fi.shipment_id where fi.tenant_id = si.tenant_id and fi.schedule_item_id = si.id and fs.deleted_at is null and fs.status in ('PREPARING', 'CHECKED')), 0) PreparingQuantity,
+              (si.quantity - si.dispatched_quantity - coalesce((select sum(fi.reserved_quantity) from agro360.fulfillment_shipment_items fi join agro360.fulfillment_shipments fs on fs.tenant_id = fi.tenant_id and fs.id = fi.shipment_id where fi.tenant_id = si.tenant_id and fi.schedule_item_id = si.id and fs.deleted_at is null and fs.status in ('PREPARING', 'CHECKED')), 0)) AttendableQuantity
             from agro360.sales_delivery_schedule_items si
             join agro360.sales_order_items oi on oi.tenant_id = si.tenant_id and oi.id = si.order_item_id
             left join agro360.inventory_products p on p.tenant_id = oi.tenant_id and p.id = oi.product_id
@@ -1015,7 +1159,7 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             order by si.created_at, si.id
             """;
         var items = (await c.QueryAsync<ScheduleItemDto>(itemsSql, new { tenant.TenantId, ScheduleIds = scheduleIds }, t)).ToArray();
-        var itemsBySchedule = items.GroupBy(x => x.ScheduleId).ToDictionary(g => g.Key, g => (IReadOnlyList<DeliveryScheduleItemView>)g.Select(i => new DeliveryScheduleItemView(i.Id, i.OrderItemId, i.ProductId, i.ProductName, i.Unit, i.Quantity, i.OriginalQuantity, i.DispatchedQuantity, i.DeliveredQuantity, i.PendingQuantity)).ToArray());
+        var itemsBySchedule = items.GroupBy(x => x.ScheduleId).ToDictionary(g => g.Key, g => (IReadOnlyList<DeliveryScheduleItemView>)g.Select(i => new DeliveryScheduleItemView(i.Id, i.OrderItemId, i.ProductId, i.ProductName, i.Unit, i.Quantity, i.OriginalQuantity, i.DispatchedQuantity, i.DeliveredQuantity, i.PendingQuantity, i.PreparingQuantity, i.AttendableQuantity)).ToArray());
 
         var revisionsSql = """
             select
@@ -1049,7 +1193,7 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             h.UpdatedAt,
             itemsBySchedule.GetValueOrDefault(h.Id) ?? [],
             revisionsBySchedule.GetValueOrDefault(h.Id) ?? []
-        )).ToArray();
+        )).Select(WithActions).ToArray();
 
         return new DeliverySchedulePage(views, page, pageSize, total, indicators);
     }, ct);
@@ -1082,7 +1226,9 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
               si.id, si.schedule_id ScheduleId, si.order_item_id OrderItemId, oi.product_id ProductId,
               coalesce(p.name, 'Produto') ProductName, si.unit, si.quantity, si.original_quantity OriginalQuantity,
               si.dispatched_quantity DispatchedQuantity, si.delivered_quantity DeliveredQuantity,
-              greatest(0, si.quantity - si.delivered_quantity) PendingQuantity
+              (si.quantity - si.delivered_quantity) PendingQuantity,
+              coalesce((select sum(fi.reserved_quantity) from agro360.fulfillment_shipment_items fi join agro360.fulfillment_shipments fs on fs.tenant_id = fi.tenant_id and fs.id = fi.shipment_id where fi.tenant_id = si.tenant_id and fi.schedule_item_id = si.id and fs.deleted_at is null and fs.status in ('PREPARING', 'CHECKED')), 0) PreparingQuantity,
+              (si.quantity - si.dispatched_quantity - coalesce((select sum(fi.reserved_quantity) from agro360.fulfillment_shipment_items fi join agro360.fulfillment_shipments fs on fs.tenant_id = fi.tenant_id and fs.id = fi.shipment_id where fi.tenant_id = si.tenant_id and fi.schedule_item_id = si.id and fs.deleted_at is null and fs.status in ('PREPARING', 'CHECKED')), 0)) AttendableQuantity
             from agro360.sales_delivery_schedule_items si
             join agro360.sales_order_items oi on oi.tenant_id = si.tenant_id and oi.id = si.order_item_id
             left join agro360.inventory_products p on p.tenant_id = oi.tenant_id and p.id = oi.product_id
@@ -1090,7 +1236,7 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             order by si.created_at, si.id
             """;
         var items = (await c.QueryAsync<ScheduleItemDto>(itemsSql, new { tenant.TenantId, ScheduleIds = scheduleIds }, t)).ToArray();
-        var itemsBySchedule = items.GroupBy(x => x.ScheduleId).ToDictionary(g => g.Key, g => (IReadOnlyList<DeliveryScheduleItemView>)g.Select(i => new DeliveryScheduleItemView(i.Id, i.OrderItemId, i.ProductId, i.ProductName, i.Unit, i.Quantity, i.OriginalQuantity, i.DispatchedQuantity, i.DeliveredQuantity, i.PendingQuantity)).ToArray());
+        var itemsBySchedule = items.GroupBy(x => x.ScheduleId).ToDictionary(g => g.Key, g => (IReadOnlyList<DeliveryScheduleItemView>)g.Select(i => new DeliveryScheduleItemView(i.Id, i.OrderItemId, i.ProductId, i.ProductName, i.Unit, i.Quantity, i.OriginalQuantity, i.DispatchedQuantity, i.DeliveredQuantity, i.PendingQuantity, i.PreparingQuantity, i.AttendableQuantity)).ToArray());
 
         var revisionsSql = """
             select
@@ -1124,7 +1270,7 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             h.UpdatedAt,
             itemsBySchedule.GetValueOrDefault(h.Id) ?? [],
             revisionsBySchedule.GetValueOrDefault(h.Id) ?? []
-        )).ToArray();
+        )).Select(WithActions).ToArray();
     }
 
     public Task<IReadOnlyList<DeliveryScheduleView>> ListSchedulesForOrderAsync(Guid orderId, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
@@ -1156,7 +1302,9 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
               si.id, si.schedule_id ScheduleId, si.order_item_id OrderItemId, oi.product_id ProductId,
               coalesce(p.name, 'Produto') ProductName, si.unit, si.quantity, si.original_quantity OriginalQuantity,
               si.dispatched_quantity DispatchedQuantity, si.delivered_quantity DeliveredQuantity,
-              greatest(0, si.quantity - si.delivered_quantity) PendingQuantity
+              (si.quantity - si.delivered_quantity) PendingQuantity,
+              coalesce((select sum(fi.reserved_quantity) from agro360.fulfillment_shipment_items fi join agro360.fulfillment_shipments fs on fs.tenant_id = fi.tenant_id and fs.id = fi.shipment_id where fi.tenant_id = si.tenant_id and fi.schedule_item_id = si.id and fs.deleted_at is null and fs.status in ('PREPARING', 'CHECKED')), 0) PreparingQuantity,
+              (si.quantity - si.dispatched_quantity - coalesce((select sum(fi.reserved_quantity) from agro360.fulfillment_shipment_items fi join agro360.fulfillment_shipments fs on fs.tenant_id = fi.tenant_id and fs.id = fi.shipment_id where fi.tenant_id = si.tenant_id and fi.schedule_item_id = si.id and fs.deleted_at is null and fs.status in ('PREPARING', 'CHECKED')), 0)) AttendableQuantity
             from agro360.sales_delivery_schedule_items si
             join agro360.sales_order_items oi on oi.tenant_id = si.tenant_id and oi.id = si.order_item_id
             left join agro360.inventory_products p on p.tenant_id = oi.tenant_id and p.id = oi.product_id
@@ -1164,7 +1312,7 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             order by si.created_at, si.id
             """;
         var items = (await c.QueryAsync<ScheduleItemDto>(itemsSql, new { tenant.TenantId, Id = scheduleId }, t))
-            .Select(i => new DeliveryScheduleItemView(i.Id, i.OrderItemId, i.ProductId, i.ProductName, i.Unit, i.Quantity, i.OriginalQuantity, i.DispatchedQuantity, i.DeliveredQuantity, i.PendingQuantity))
+            .Select(i => new DeliveryScheduleItemView(i.Id, i.OrderItemId, i.ProductId, i.ProductName, i.Unit, i.Quantity, i.OriginalQuantity, i.DispatchedQuantity, i.DeliveredQuantity, i.PendingQuantity, i.PreparingQuantity, i.AttendableQuantity))
             .ToArray();
 
         var revisionsSql = """
@@ -1181,7 +1329,7 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             .Select(r => new DeliveryScheduleRevisionView(r.Id, r.Version, r.Reason, r.ActorId, r.ActorName, r.PreviousDate, r.NewDate, r.CreatedAt))
             .ToArray();
 
-        return new DeliveryScheduleView(
+        var view = new DeliveryScheduleView(
             h.Id,
             h.OrderId,
             h.OrderNumber,
@@ -1201,7 +1349,40 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             items,
             revisions
         );
+        return WithActions(view);
     }, ct);
+
+    private static DeliveryScheduleView WithActions(DeliveryScheduleView view)
+    {
+        var dispatched = view.Items.Sum(item => item.DispatchedQuantity);
+        var preparing = view.Items.Sum(item => item.PreparingQuantity);
+        var pending = view.Items.Sum(item => item.Quantity - item.DeliveredQuantity);
+        var actions = new List<string>();
+        string? block = null;
+        var status = view.Status.Trim().ToUpperInvariant();
+        if (status is "CANCELLED")
+            block = "Compromisso cancelado. O histórico permanece disponível.";
+        else if (status is "DELIVERED" || pending <= 0 && status is not ("PLANNED" or "PREPARING"))
+            block = pending <= 0 ? "Não há quantidade pendente neste compromisso." : "Compromisso entregue.";
+        else
+        {
+            actions.Add("reschedule");
+            if (dispatched > 0)
+                block = "Cancelamento integral bloqueado porque já existe quantidade expedida.";
+            else if (preparing > 0)
+                block = "Cancelamento integral bloqueado enquanto houver preparação que precisa ser desfeita.";
+            else if (status is "PLANNED" or "PREPARING")
+                actions.Add("cancel");
+            if (pending > 0)
+                actions.Add("fulfill");
+        }
+        if (status is "PLANNED" or "PREPARING" or "DISPATCHED" or "PARTIALLY_DELIVERED" && !actions.Contains("reschedule") && pending > 0)
+            actions.Insert(0, "reschedule");
+        return view with { AllowedActions = actions, BlockReason = block };
+    }
+
+    private static readonly JsonSerializerOptions ScheduleHashJson = new(JsonSerializerDefaults.Web);
+    private static string ScheduleHash<T>(T payload) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, ScheduleHashJson))));
 
     private static string Table(string resource) => Resources.TryGetValue(resource, out var table) ? table : throw new KeyNotFoundException("Recurso comercial não encontrado.");
     private sealed class ProposalHeader { public Guid ProposalId { get; init; } public string Number { get; init; } = ""; public string Status { get; init; } = ""; public long CurrentVersion { get; init; } public long? AcceptedVersion { get; init; } public long Version { get; init; } public Guid CustomerId { get; init; } public string CustomerName { get; init; } = ""; public Guid? OpportunityId { get; init; } public Guid? RepresentativeId { get; init; } public string Currency { get; init; } = "BRL"; public DateOnly ValidUntil { get; init; } public decimal Freight { get; init; } public decimal ItemsTotal { get; init; } public decimal Total { get; init; } public string PaymentTerms { get; init; } = ""; public string? ChangeReason { get; init; } }
@@ -1258,6 +1439,8 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         public decimal DispatchedQuantity { get; init; }
         public decimal DeliveredQuantity { get; init; }
         public decimal PendingQuantity { get; init; }
+        public decimal PreparingQuantity { get; init; }
+        public decimal AttendableQuantity { get; init; }
     }
     private sealed class ScheduleRevisionDto
     {

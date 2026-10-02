@@ -18,7 +18,7 @@ public sealed class Commercial360Controller(ICommercial360Service service) : Con
     [HttpPost("activities"), Authorize(Policy = Permissions.CommercialWrite)] public async Task<IActionResult> Activity(ActivityCommand x, CancellationToken ct) { var id = await service.SaveActivityAsync(null, x, ct); return Created($"api/commercial/activities/{id}", new { id }); }
     [HttpPut("activities/{id:guid}"), Authorize(Policy = Permissions.CommercialWrite)] public async Task<IActionResult> Activity(Guid id, ActivityCommand x, CancellationToken ct) { await service.SaveActivityAsync(id, x, ct); return NoContent(); }
     [HttpPost("orders"), Authorize(Policy = Permissions.CommercialWrite)] public async Task<IActionResult> Order(SalesOrderCommand x, CancellationToken ct) { var id = await service.CreateOrderAsync(x, ct); return Created($"api/commercial/orders/{id}", new { id }); }
-    [HttpGet("orders/{id:guid}")] public Task<SalesOrderDetailView> Order(Guid id, CancellationToken ct) => service.GetOrderAsync(id, ct);
+    [HttpGet("orders/{id:guid}")] public async Task<SalesOrderDetailView> Order(Guid id, CancellationToken ct) { var order = await service.GetOrderAsync(id, ct); return order with { Schedules = order.Schedules?.Select(PresentSchedule).ToArray() }; }
     [HttpPost("proposals"), Authorize(Policy = Permissions.CommercialWrite)] public async Task<IActionResult> Proposal(SalesProposalCommand x, CancellationToken ct) { var id = await service.CreateProposalAsync(x, ct); return Created($"api/commercial/proposals/{id}", new { id }); }
     [HttpPut("proposals/{id:guid}"), Authorize(Policy = Permissions.CommercialWrite)] public async Task<IActionResult> ReviseProposal(Guid id, SalesProposalCommand x, CancellationToken ct) { var version = await service.ReviseProposalAsync(id, x, ct); return Ok(new { id, version }); }
     [HttpGet("proposals/{id:guid}")] public Task<ProposalVersionView> Proposal(Guid id, [FromQuery] long? version, CancellationToken ct) => service.GetProposalAsync(id, version, ct);
@@ -36,9 +36,24 @@ public sealed class Commercial360Controller(ICommercial360Service service) : Con
     [HttpPost("splits"), Authorize(Policy = Permissions.CommercialApproveSplit)] public async Task<IActionResult> Split(SplitAgreementCommand x, CancellationToken ct) { var id = await service.SaveSplitAsync(x, ct); return Created($"api/commercial/splits/{id}", new { id }); }
     [HttpPost("splits/{id:guid}/status"), Authorize(Policy = Permissions.CommercialApproveSplit)] public async Task<IActionResult> SplitStatus(Guid id, StatusCommand x, CancellationToken ct) { await service.ChangeSplitStatusAsync(id, x, ct); return NoContent(); }
     [HttpPost("orders/{id:guid}/schedules"), Authorize(Policy = Permissions.CommercialWrite)] public async Task<IActionResult> CreateSchedule(Guid id, CreateDeliveryScheduleCommand x, CancellationToken ct) { var scheduleId = await service.CreateDeliveryScheduleAsync(id, x, ct); return Created($"api/commercial/schedules/{scheduleId}", new { id = scheduleId }); }
-    [HttpGet("orders/{id:guid}/schedules")] public Task<IReadOnlyList<DeliveryScheduleView>> OrderSchedules(Guid id, CancellationToken ct) => service.ListSchedulesForOrderAsync(id, ct);
-    [HttpGet("schedules")] public Task<DeliverySchedulePage> Schedules([FromQuery] DeliveryScheduleQuery query, CancellationToken ct) => service.ListDeliverySchedulesAsync(query, ct);
-    [HttpGet("schedules/{id:guid}")] public async Task<IActionResult> Schedule(Guid id, CancellationToken ct) { var s = await service.GetDeliveryScheduleByIdAsync(id, ct); return s is null ? NotFound() : Ok(s); }
+    [HttpGet("orders/{id:guid}/schedules")] public async Task<IReadOnlyList<DeliveryScheduleView>> OrderSchedules(Guid id, CancellationToken ct) => (await service.ListSchedulesForOrderAsync(id, ct)).Select(PresentSchedule).ToArray();
+    [HttpGet("schedules")] public async Task<DeliverySchedulePage> Schedules([FromQuery] DeliveryScheduleQuery query, CancellationToken ct) { var page = await service.ListDeliverySchedulesAsync(query, ct); return page with { Items = page.Items.Select(PresentSchedule).ToArray() }; }
+    [HttpGet("schedules/{id:guid}")] public async Task<IActionResult> Schedule(Guid id, CancellationToken ct) { var s = await service.GetDeliveryScheduleByIdAsync(id, ct); return s is null ? NotFound() : Ok(PresentSchedule(s)); }
+    private DeliveryScheduleView PresentSchedule(DeliveryScheduleView view)
+    {
+        var canWrite = User.HasClaim("permission", Permissions.CommercialWrite);
+        var canFulfill = User.HasClaim("permission", Permissions.LogisticsWrite);
+        var actions = (view.AllowedActions ?? []).Where(action => action switch
+        {
+            "reschedule" or "cancel" => canWrite,
+            "fulfill" => canFulfill,
+            _ => false
+        }).ToArray();
+        var block = view.BlockReason;
+        if (actions.Length == 0 && (view.AllowedActions?.Count ?? 0) > 0 && string.IsNullOrWhiteSpace(block))
+            block = "Seu perfil não autoriza a próxima ação deste compromisso.";
+        return view with { AllowedActions = actions, BlockReason = block };
+    }
     [HttpPut("schedules/{id:guid}/reschedule"), Authorize(Policy = Permissions.CommercialWrite)] public async Task<IActionResult> Reschedule(Guid id, RescheduleDeliveryCommand x, CancellationToken ct) { await service.RescheduleDeliveryAsync(id, x, ct); return NoContent(); }
     [HttpPost("schedules/{id:guid}/cancel"), Authorize(Policy = Permissions.CommercialWrite)] public async Task<IActionResult> CancelSchedule(Guid id, CancelDeliveryScheduleCommand x, CancellationToken ct) { await service.CancelDeliveryScheduleAsync(id, x, ct); return NoContent(); }
 }

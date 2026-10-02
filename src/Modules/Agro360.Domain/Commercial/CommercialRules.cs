@@ -283,10 +283,17 @@ public static class CommercialRules
 
     public static decimal CalculateEligibleScheduleBalance(decimal orderedQuantity, decimal cancelledQuantity, decimal activeScheduledQuantity, decimal unlinkedDispatchedQuantity)
     {
-        if (orderedQuantity <= 0) return 0m;
-        var netOrdered = Math.Max(0m, orderedQuantity - Math.Max(0m, cancelledQuantity));
+        var netOrdered = orderedQuantity - Math.Max(0m, cancelledQuantity);
         var alreadyCommitted = Math.Max(0m, activeScheduledQuantity) + Math.Max(0m, unlinkedDispatchedQuantity);
-        return Math.Max(0m, netOrdered - alreadyCommitted);
+        return netOrdered - alreadyCommitted;
+    }
+
+    public static decimal AdditionalScheduleQuantity(decimal scheduleCapacity, decimal currentQuantity) => scheduleCapacity - currentQuantity;
+
+    public static void EnsureExpectedVersion(long expectedVersion)
+    {
+        if (expectedVersion <= 0)
+            throw new DomainException("A versão esperada deve ser positiva.", "sales.schedule_version_invalid");
     }
 
     private static readonly Dictionary<string, string[]> ScheduleTransitions = new(StringComparer.OrdinalIgnoreCase)
@@ -323,6 +330,8 @@ public static class CommercialRules
         var rows = items.ToArray();
         if (rows.Length == 0)
             throw new DomainException("A programação de entrega exige ao menos um item.", "sales.schedule_items_required");
+        if (rows.Select(row => row.OrderItemId).Distinct().Count() != rows.Length)
+            throw new DomainException("A programação não pode repetir o mesmo item do pedido.", "sales.schedule_item_duplicated");
 
         foreach (var item in rows)
         {
@@ -335,7 +344,7 @@ public static class CommercialRules
         }
     }
 
-    public static void ValidateReschedule(string currentStatus, decimal dispatchedQuantity, decimal deliveredQuantity, decimal currentItemQuantity, decimal newQuantity, decimal availableEligibleBalance, string? reason)
+    public static void ValidateReschedule(string currentStatus, decimal dispatchedQuantity, decimal deliveredQuantity, decimal currentItemQuantity, decimal newQuantity, decimal scheduleCapacity, string? reason, decimal openPreparationQuantity = 0)
     {
         var normalized = currentStatus.Trim().ToUpperInvariant();
         if (normalized is "DELIVERED" or "CANCELLED")
@@ -347,13 +356,15 @@ public static class CommercialRules
         if (newQuantity <= 0)
             throw new DomainException("A nova quantidade deve ser positiva.", "sales.reschedule_quantity_invalid");
 
-        var minimumPermitted = Math.Max(dispatchedQuantity, deliveredQuantity);
+        var minimumPermitted = Math.Max(Math.Max(dispatchedQuantity, deliveredQuantity), Math.Max(0m, openPreparationQuantity));
         if (newQuantity < minimumPermitted)
-            throw new DomainException($"Não é permitido reduzir a quantidade abaixo do que já foi atendido/expedido ({minimumPermitted}).", "sales.reschedule_below_dispatched");
+            throw new DomainException($"Não é permitido reduzir a quantidade abaixo do expedido ou da preparação que não pode ser liberada ({minimumPermitted}).", "sales.reschedule_below_dispatched");
 
-        var delta = newQuantity - currentItemQuantity;
-        if (delta > 0 && delta > availableEligibleBalance)
-            throw new DomainException($"Acréscimo de {delta} excede o saldo elegível disponível ({availableEligibleBalance}).", "sales.reschedule_balance_exceeded");
+        if (newQuantity > currentItemQuantity && newQuantity > scheduleCapacity)
+        {
+            var additional = AdditionalScheduleQuantity(scheduleCapacity, currentItemQuantity);
+            throw new DomainException($"A nova quantidade {newQuantity} excede a capacidade desta programação ({scheduleCapacity}). O incremento adicional permitido é {additional}.", "sales.reschedule_balance_exceeded");
+        }
     }
 }
 

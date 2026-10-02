@@ -88,6 +88,32 @@
         return container.innerHTML;
     }
 
+    function civilDate(value) {
+        const match = String(value ?? "").match(/^(\d{4}-\d{2}-\d{2})/);
+        return match ? match[1] : "";
+    }
+
+    function formatCivilDate(value) {
+        const day = civilDate(value);
+        if (!day) return "—";
+        const [year, month, date] = day.split("-");
+        return `${date}/${month}/${year}`;
+    }
+
+    function rememberIntent(storageKey, content) {
+        const hash = JSON.stringify(content);
+        let saved = null;
+        try { saved = JSON.parse(sessionStorage.getItem(storageKey) || "null"); } catch { saved = null; }
+        if (saved && saved.hash === hash && saved.key) return saved.key;
+        const key = crypto.randomUUID();
+        sessionStorage.setItem(storageKey, JSON.stringify({ hash, key }));
+        return key;
+    }
+
+    function forgetIntent(storageKey) {
+        sessionStorage.removeItem(storageKey);
+    }
+
     async function request(path, options = {}) {
         if (!pendingAbortController || pendingAbortController.signal.aborted) {
             pendingAbortController = new AbortController();
@@ -950,8 +976,8 @@
             }
 
             // Botão Nova Programação
-            const canSchedule = ["OPEN", "PARTIALLY_FULFILLED"].includes(order.status) &&
-                (order.items || []).some(i => (i.eligibleScheduleBalance || 0) > 0);
+            const canSchedule = ["APPROVED", "RESERVED", "FULFILLMENT"].includes(order.status) &&
+                (order.items || []).some(i => Number(i.eligibleScheduleBalance) > 0);
             const createScheduleBtn = document.querySelector("#order-create-schedule-btn");
             if (createScheduleBtn) {
                 createScheduleBtn.style.display = canSchedule ? "inline-block" : "none";
@@ -964,19 +990,18 @@
                 schedulesBody.innerHTML = order.schedules.map(s => {
                     const sClass = `status-${(s.status || "").toLowerCase()}`;
                     const sStatusPt = statusTranslations[s.status] || s.status;
-                    const plannedDateFormatted = new Date(s.plannedDate).toLocaleDateString("pt-BR") + " " +
-                        new Date(s.plannedDate).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-                    const isRescheduled = s.originalPlannedDate && s.originalPlannedDate !== s.plannedDate;
-                    const originalDateFormatted = isRescheduled ?
-                        new Date(s.originalPlannedDate).toLocaleDateString("pt-BR") : "";
+                    const plannedDateFormatted = formatCivilDate(s.plannedDate);
+                    const isRescheduled = s.originalPlannedDate && civilDate(s.originalPlannedDate) !== civilDate(s.plannedDate);
+                    const originalDateFormatted = isRescheduled ? formatCivilDate(s.originalPlannedDate) : "";
 
                     const itemsSummary = (s.items || []).map(i =>
                         `${escapeHtml(i.productName)}: ${Number(i.quantity).toLocaleString("pt-BR")} ${escapeHtml(i.unit)}` +
                         (i.dispatchedQuantity > 0 ? ` (${Number(i.dispatchedQuantity).toLocaleString("pt-BR")} exp)` : "")
                     ).join("<br>");
 
-                    const canReschedule = s.canReschedule && ["PLANNED", "PREPARING"].includes(s.status);
-                    const canCancel = s.canCancel && ["PLANNED", "PREPARING"].includes(s.status);
+                    const actions = s.allowedActions || [];
+                    const canReschedule = actions.includes("reschedule");
+                    const canCancel = actions.includes("cancel");
                     const hasRevisions = s.revisions && s.revisions.length > 0;
 
                     return `
@@ -986,7 +1011,7 @@
                             <strong>${plannedDateFormatted}</strong>
                             ${isRescheduled ? `<br><small style="color:var(--muted)">Original: ${originalDateFormatted}</small>` : ""}
                         </td>
-                        <td>${escapeHtml(s.deliveryAddress || s.destinationLocation || "—")}</td>
+                        <td>${escapeHtml(s.destination || "—")}</td>
                         <td>${escapeHtml(s.responsibleName || "Sem responsável")}</td>
                         <td><span class="status-pill ${sClass}">${escapeHtml(sStatusPt)}</span></td>
                         <td style="font-size:0.85rem">${itemsSummary || "—"}</td>
@@ -994,6 +1019,7 @@
                             ${canReschedule ? `<button type="button" class="btn-sm btn-outline schedule-reschedule-btn" data-schedule-id="${s.id}">Reprogramar</button>` : ""}
                             ${canCancel ? `<button type="button" class="btn-sm btn-danger schedule-cancel-btn" data-schedule-id="${s.id}">Cancelar</button>` : ""}
                             ${hasRevisions ? `<button type="button" class="btn-sm btn-outline schedule-revisions-btn" data-schedule-id="${s.id}">Revisões (${s.revisions.length})</button>` : ""}
+                            ${s.blockReason ? `<small class="form-hint">${escapeHtml(s.blockReason)}</small>` : ""}
                         </td>
                     </tr>`;
                 }).join("");
@@ -1070,17 +1096,16 @@
         document.querySelector("#schedule-create-order-number").textContent = order.orderNumber;
         scheduleCreateForm.querySelector(".form-error").textContent = "";
 
-        const d = new Date();
-        d.setDate(d.getDate() + 1);
-        d.setHours(8, 0, 0, 0);
-        scheduleCreateForm.plannedDate.value = d.toISOString().slice(0, 16);
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        scheduleCreateForm.plannedDate.value = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
 
         await loadLookups(scheduleCreateDialog);
 
         const eligibleItems = (order.items || []).filter(i => (i.eligibleScheduleBalance || 0) > 0);
         const tbody = document.querySelector("#schedule-create-items-body");
         tbody.innerHTML = eligibleItems.map(item => `
-            <tr data-order-item-id="${item.id}">
+            <tr data-order-item-id="${item.id}" data-unit="${escapeHtml(item.unit)}">
                 <td><strong>${escapeHtml(item.productName || item.productId)}</strong></td>
                 <td>${escapeHtml(item.unit)}</td>
                 <td>${Number(item.quantity).toLocaleString("pt-BR")}</td>
@@ -1109,7 +1134,7 @@
             const qtyInput = row.querySelector(".schedule-item-qty");
             const quantity = parseFloat(qtyInput?.value) || 0;
             if (quantity > 0) {
-                items.push({ orderItemId, quantity });
+                items.push({ orderItemId, quantity, unit: row.dataset.unit });
             }
         }
 
@@ -1118,30 +1143,41 @@
             return;
         }
 
-        const payload = {
+        const content = {
             plannedDate: scheduleCreateForm.plannedDate.value,
-            deliveryAddress: scheduleCreateForm.deliveryAddress.value.trim(),
-            responsibleUserId: scheduleCreateForm.responsibleUserId.value || null,
-            windowStartTime: scheduleCreateForm.windowStartTime.value ? `${scheduleCreateForm.windowStartTime.value}:00` : null,
-            windowEndTime: scheduleCreateForm.windowEndTime.value ? `${scheduleCreateForm.windowEndTime.value}:00` : null,
+            destination: scheduleCreateForm.destination.value.trim(),
+            responsibleId: scheduleCreateForm.responsibleId.value || null,
             notes: scheduleCreateForm.notes.value.trim() || null,
             items
         };
+        const storageKey = `agro360.commercial.schedule.create.${orderId}`;
+        const payload = { ...content, idempotencyKey: rememberIntent(storageKey, content) };
+        const submitButton = scheduleCreateForm.querySelector("button[type=submit]");
+        submitButton.disabled = true;
 
         try {
             await request(`/api/commercial/orders/${orderId}/schedules`, {
                 method: "POST",
                 body: JSON.stringify(payload)
             });
+            forgetIntent(storageKey);
             scheduleCreateDialog.close();
-            notify("Programação de entrega criada com sucesso!");
+            notify("Programação de entrega criada com sucesso.");
             await openOrderDetails(orderId);
             await load();
         } catch (error) {
-            errElement.textContent = error.message;
-            notify(error.message, true);
+            errElement.textContent = error.status === 409
+                ? `${error.message} Os dados digitados foram mantidos. Atualize o pedido se outro usuário o alterou.`
+                : error.message;
+            notify(errMessage(error), true);
+        } finally {
+            submitButton.disabled = false;
         }
     };
+
+    function errMessage(error) {
+        return error.message || "Falha na operação.";
+    }
 
     async function openScheduleRescheduleModal(schedule, order) {
         if (!scheduleRescheduleDialog) return;
@@ -1152,13 +1188,11 @@
         document.querySelector("#reschedule-version").textContent = schedule.version;
         scheduleRescheduleForm.querySelector(".form-error").textContent = "";
 
-        scheduleRescheduleForm.newPlannedDate.value = new Date(schedule.plannedDate).toISOString().slice(0, 16);
-        if (schedule.deliveryAddress) scheduleRescheduleForm.deliveryAddress.value = schedule.deliveryAddress;
-        if (schedule.windowStartTime) scheduleRescheduleForm.windowStartTime.value = schedule.windowStartTime;
-        if (schedule.windowEndTime) scheduleRescheduleForm.windowEndTime.value = schedule.windowEndTime;
+        scheduleRescheduleForm.plannedDate.value = civilDate(schedule.plannedDate);
+        if (schedule.destination) scheduleRescheduleForm.destination.value = schedule.destination;
 
         await loadLookups(scheduleRescheduleDialog);
-        if (schedule.responsibleUserId) scheduleRescheduleForm.responsibleUserId.value = schedule.responsibleUserId;
+        if (schedule.responsibleId) scheduleRescheduleForm.responsibleId.value = schedule.responsibleId;
 
         const tbody = document.querySelector("#schedule-reschedule-items-body");
         tbody.innerHTML = (schedule.items || []).map(item => {
@@ -1196,35 +1230,55 @@
         for (const row of rows) {
             const scheduleItemId = row.dataset.scheduleItemId;
             const qtyInput = row.querySelector(".reschedule-item-qty");
-            const newQuantity = parseFloat(qtyInput?.value) || 0;
-            items.push({ scheduleItemId, newQuantity });
+            const quantity = parseFloat(qtyInput?.value) || 0;
+            items.push({ scheduleItemId, quantity });
         }
 
-        const payload = {
-            newPlannedDate: scheduleRescheduleForm.newPlannedDate.value,
+        const content = {
+            plannedDate: scheduleRescheduleForm.plannedDate.value,
             reason: scheduleRescheduleForm.reason.value.trim(),
             expectedVersion,
-            deliveryAddress: scheduleRescheduleForm.deliveryAddress.value.trim() || null,
-            responsibleUserId: scheduleRescheduleForm.responsibleUserId.value || null,
-            windowStartTime: scheduleRescheduleForm.windowStartTime.value ? `${scheduleRescheduleForm.windowStartTime.value}:00` : null,
-            windowEndTime: scheduleRescheduleForm.windowEndTime.value ? `${scheduleRescheduleForm.windowEndTime.value}:00` : null,
+            destination: scheduleRescheduleForm.destination.value.trim() || null,
+            responsibleId: scheduleRescheduleForm.responsibleId.value || null,
+            replaceResponsible: true,
             items
         };
+        const storageKey = `agro360.commercial.schedule.reschedule.${scheduleId}`;
+        const payload = { ...content, idempotencyKey: rememberIntent(storageKey, content) };
+        const submitButton = scheduleRescheduleForm.querySelector("button[type=submit]");
+        submitButton.disabled = true;
 
         try {
             await request(`/api/commercial/schedules/${scheduleId}/reschedule`, {
                 method: "PUT",
                 body: JSON.stringify(payload)
             });
+            forgetIntent(storageKey);
             scheduleRescheduleDialog.close();
-            notify("Entrega reprogramada com sucesso!");
+            notify("Entrega reprogramada com sucesso.");
             if (currentDetailedOrder) await openOrderDetails(currentDetailedOrder.id);
             await load();
         } catch (error) {
-            errElement.textContent = error.message;
+            errElement.textContent = error.status === 409
+                ? `${error.message} Os dados digitados foram mantidos.`
+                : error.message;
+            if (error.status === 409) {
+                const refresh = document.createElement("button");
+                refresh.type = "button";
+                refresh.className = "btn-sm btn-outline";
+                refresh.textContent = "Atualizar dados do servidor";
+                refresh.onclick = () => openOrderDetails(currentDetailedOrder?.id || orderIdFromSchedule());
+                errElement.append(" ", refresh);
+            }
             notify(error.message, true);
+        } finally {
+            submitButton.disabled = false;
         }
     };
+
+    function orderIdFromSchedule() {
+        return scheduleCreateForm?.orderId?.value || "";
+    }
 
     function openScheduleCancelModal(schedule, order) {
         if (!scheduleCancelDialog) return;
@@ -1244,12 +1298,17 @@
         const scheduleId = scheduleCancelForm.scheduleId.value;
         const expectedVersion = parseInt(scheduleCancelForm.expectedVersion.value, 10);
         const reason = scheduleCancelForm.reason.value.trim();
+        const content = { reason, expectedVersion };
+        const storageKey = `agro360.commercial.schedule.cancel.${scheduleId}`;
+        const submitButton = scheduleCancelForm.querySelector("button[type=submit]");
+        submitButton.disabled = true;
 
         try {
             await request(`/api/commercial/schedules/${scheduleId}/cancel`, {
                 method: "POST",
-                body: JSON.stringify({ reason, expectedVersion })
+                body: JSON.stringify({ ...content, idempotencyKey: rememberIntent(storageKey, content) })
             });
+            forgetIntent(storageKey);
             scheduleCancelDialog.close();
             notify("Programação de entrega cancelada.");
             if (currentDetailedOrder) await openOrderDetails(currentDetailedOrder.id);
@@ -1257,6 +1316,8 @@
         } catch (error) {
             errElement.textContent = error.message;
             notify(error.message, true);
+        } finally {
+            submitButton.disabled = false;
         }
     };
 
@@ -1272,20 +1333,22 @@
                     <thead>
                         <tr>
                             <th>Versão</th>
-                            <th>Data</th>
-                            <th>Motivo Auditável</th>
-                            <th>Data Prevista Anterior</th>
-                            <th>Nova Data Prevista</th>
+                            <th>Quando</th>
+                            <th>Quem</th>
+                            <th>Motivo</th>
+                            <th>Data anterior</th>
+                            <th>Nova data</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${schedule.revisions.map(r => `
                             <tr>
                                 <td><span class="version-chip">V${r.version}</span></td>
-                                <td>${new Date(r.revisedAt).toLocaleDateString("pt-BR")} ${new Date(r.revisedAt).toLocaleTimeString("pt-BR")}</td>
+                                <td>${formatCivilDate(r.createdAt)} ${new Date(r.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</td>
+                                <td>${escapeHtml(r.actorName || "Usuário")}</td>
                                 <td><strong>${escapeHtml(r.reason)}</strong></td>
-                                <td>${r.previousPlannedDate ? new Date(r.previousPlannedDate).toLocaleDateString("pt-BR") : "—"}</td>
-                                <td>${r.newPlannedDate ? new Date(r.newPlannedDate).toLocaleDateString("pt-BR") : "—"}</td>
+                                <td>${formatCivilDate(r.previousDate)}</td>
+                                <td>${formatCivilDate(r.newDate)}</td>
                             </tr>
                         `).join("")}
                     </tbody>

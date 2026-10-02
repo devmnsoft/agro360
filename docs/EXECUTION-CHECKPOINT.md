@@ -1,3 +1,85 @@
+## Gates de jornada, idempotência e qualidade de frontend (AG-OPS-MVP-003) — 2026-10-01
+
+Branch `main`, HEAD `fcf3253907a5ba27ef7ce17094b44b02e02ed183`, sobre a árvore não commitada de AG-OPS-MVP-002. Ao fechar esta rodada: 16 arquivos modificados e dois novos não rastreados (`database/migrations/117_delivery_schedule_operation_identity.sql` e `scripts/verify-dispatch-confirmation.mjs`). Duas das modificações (`appsettings.Development.json`, `PostgreSqlConnectionConfiguration.cs`) são alterações locais pré-existentes do usuário; continuam preservadas e não entram na diff desta entrega. Nada foi commitado, publicado ou mesclado.
+
+**Corrigido nesta rodada**
+- Gate de confirmação da expedição em `logistics.js`: o guard antigo `if(!confirmation?.confirmed&&!confirmation)` expediía quando o diálogo era cancelado (`{confirmed:false}`). Agora `if(!confirmation||!confirmation.confirmed)` exige confirmação positiva explícita: cancelar ou fechar sem responder não dispara o POST; confirmar envia uma única vez `version` + `idempotencyKey` para `/api/logistics/trips/fulfillment/{id}/dispatch`, payload que confere com `DispatchFulfillmentCommand(long Version, string IdempotencyKey)` em `StorageContracts.cs`.
+- Teste executável do gate: `scripts/verify-dispatch-confirmation.mjs` executa o `logistics.js` real num sandbox Node (vm) com DOM/fetch falsos, no padrão do `verify-offline-shell.mjs`. Quatro cenários: cancela → 0 POST; diálogo ausente → 0 POST; confirma → exatamente 1 POST com a versão correta e a chave idempotente; reenvio com o mesmo conteúdo reutiliza a chave.
+- Gate de permissão na Logística: sem `commercial.read` o botão "Compromissos" é ocultado na navegação e `loadSchedules` mostra mensagem acionável em vez de pedir a lista (normalização de permissões segue o padrão de `agro360.js`/`saas.js`). O GET mantém a política de classe `CommercialRead` no servidor; como política de classe e ação se combinam por AND, um OR de leitura no servidor inviabilizaria a restrição, então o gating ficou no cliente sobre dados já autorizados pela política do endpoint.
+- Selo ATRASADO derivado no cliente exatamente com o critério do servidor (`Commercial360Service`): status em PLANNED, PREPARING, DISPATCHED ou PARTIALLY_DELIVERED e `planned_date < current_date` (data civil). O DTO não traz o campo; nada foi inventado.
+- CSS da Logística: seletores genéricos `.indicator`, `.status-pill` e `.toolbar` escopados sob `.logistics-page` (incluindo a media query); cores de atraso/qualidade/sucesso saíram de estilos inline para classes escopadas com tokens (`var(--red,#b91c1c)` onde o token existe): `status-pill--late`, `row--late`, `.is-late`, `.success/.danger/.warning/.attention`, `.warning-banner`.
+- `forms.js`: ajuda contextual específica para a tela Comercial (que não tinha) e lookup da chave do módulo case-insensitive; a inicialização continua idempotente (guard `.screen-help,.contextual-help`, uma única passagem de aprimoramento).
+
+**Evidência executada**
+- `dotnet build MNSOFT.Agro360.sln -c Release`: 0 avisos, 0 erros (SDK instalado 10.0.400).
+- Testes via `dotnet exec` dos assemblies Release (neste ambiente `dotnet test` sai com código 5 "Zero testes executados" independentemente das mudanças; a execução direta do assembly é o comando dos gates):
+  - `Agro360.UnitTests`: 264/264 aprovados.
+  - `Agro360.ArchitectureTests`: 168/169 aprovados; a única falha é pré-existente e fora deste diff (abaixo).
+  - `Agro360.IntegrationTests`: 5 pendurados, exigem `AGRO360_TEST_CONNECTION_STRING`, indisponível neste ambiente.
+- `node scripts/verify-dispatch-confirmation.mjs`: PASS nos quatro cenários.
+- `node --check` em `logistics.js`, `forms.js` e `commercial.js`: aprovado.
+- `git diff --check`: limpo (apenas aviso LF/CRLF nos arquivos que o Git normalizará).
+
+**Matriz de aceite desta rodada**
+
+| Item | Classificação |
+|---|---|
+| Build Release da solução | Aprovado (0 avisos, 0 erros) |
+| Testes unitários (264) | Aprovado |
+| Arquitetura (168/169) | Aprovado; falha conhecida pré-existente fora do diff registrada |
+| Gate de confirmação da expedição (cancelar/silêncio ≠ POST) | Aprovado por teste executável; navegador real pendente |
+| Contrato canônico + idempotência por hash + saldo 100/30/50 | Aprovado por unidade; PostgreSQL pendente |
+| Instalação limpa e upgrade com a migration 117 pelo migrador | Não executado (bloqueio: PostgreSQL descartável) |
+| HTTP real: criar/reprogramar/cancelar/expedir e reenvio idempotente | Não executado (bloqueio: PostgreSQL + API no ar) |
+| Concorrência: duas expedições; falha parcial sem saldo residual | Não executado (bloqueio: PostgreSQL) |
+| Isolamento entre dois tenants | Não executado (bloqueio: PostgreSQL) |
+| Navegador 360/768/1280/1920 px, teclado e zoom 200%, sem erro de console | Não executado (bloqueio: navegador) |
+
+Nenhum item foi classificado como falho nesta rodada.
+
+**Não executado — não é homologação**
+- PostgreSQL descartável, instalação limpa de `database/agro360-postgres-full.sql` e upgrade com a migration 117 aplicada pelo migrador.
+- HTTP real de criação, reprogramação, cancelamento e expedição; reenvio idempotente confirmado no banco; duas expedições concorrentes sem estoque negativo nem estouro de compromisso; falha no meio da transação sem saldo parcial.
+- Tenant A não lê nem grava recurso do tenant B com o papel da aplicação.
+- Navegador real: expedição com rede visível (cancelar não gera POST), telas Comercial e Logística em 360/768/1280/1920 px, teclado e zoom 200%.
+
+**Falha pré-existente, fora deste diff**
+- `LoginExperienceTests.ApiDoesNotCarryACompetingDatabaseOrVersionedPassword` falha porque `src/Hosts/Agro360.Api/appsettings.json` versionado contém `DefaultConnection` local do usuário. O arquivo não foi alterado aqui.
+
+**Fora do domínio (manutenido)**
+- Pacientes, minutas clínicas, PDF assistencial e assinatura eletrônica não existem no Agro360; nenhum módulo foi criado. NF, crédito e pagamento continuam não simulados.
+
+## Consolidação da programação de entrega (AG-OPS-MVP-002) — 2026-09-30
+
+Branch `main`, HEAD `fcf3253907a5ba27ef7ce17094b44b02e02ed183` (o mesmo commit citado como referência). Alterações locais pré-existentes em `appsettings.Development.json` e `PostgreSqlConnectionConfiguration.cs` foram preservadas e não entram nesta entrega.
+
+`PROMPT-PROXIMA-EXECUCAO.md` ainda descrevia o lote antigo do shell (AG-TPL-001). Foi reconciliado com o estado real: o shell já está na main e o lote corrente é a jornada operacional.
+
+**Corrigido no código canônico**
+- Contrato único de criação, reprogramação e cancelamento: `destination`, `responsibleId`, `plannedDate` (data civil `YYYY-MM-DD`), `quantity` e `idempotencyKey`. Janelas de horário saíram da tela porque não havia persistência.
+- A tela usa `allowedActions` e `blockReason` devolvidos pela API, já filtrados por `commercial.write` e `logistics.write`.
+- `CreateContractAsync` não referencia mais o alias `x`. A sequence usada é `agro360.sales_delivery_schedule_number_seq`. Itens da programação não gravam `created_by`/`updated_by`, colunas que o schema não possui.
+- Criação compara `request_hash`. Reprogramação e cancelamento persistem a operação em `sales_delivery_schedule_operations` (migration `117`, schema 11.7.0). Mesma chave e mesmo conteúdo repetem; conteúdo diferente conflita. A chave da tela só é descartada depois da confirmação do servidor.
+- Saldo elegível pode ficar negativo. Capacidade da programação atual = pedido líquido − outras programações ativas − saída desvinculada. No exemplo 100 / atual 30 / outras 50, 50 é aceito e 60 é rejeitado.
+- Expedição agrega `checked_quantity` por `schedule_item_id` antes de somar. Saída parcial mantém o compromisso em preparação enquanto houver saldo. Preparação nova exige programação do mesmo pedido, item correspondente e recusa compromisso cancelado ou entregue. Cancelamento libera reservas ainda não separadas na mesma transação.
+- Atender compromisso lista todos os itens com saldo atendível e vários lotes do mesmo depósito. A reserva só nasce na confirmação.
+
+**Evidência executada**
+- `dotnet build` Release dos projetos de produção concluiu depois do ajuste de cultura no hash da data. O projeto de testes foi recompilado em seguida, após renomear o teste para o padrão sem sublinhado exigido pelo analisador.
+- `Agro360.UnitTests.exe`: 264 aprovados, 0 falhas. Inclui o exemplo 100/30/50, versão não positiva, item duplicado e redução abaixo da preparação.
+- `node --check` em `commercial.js` e `logistics.js`: aprovado.
+- `git diff --check`: aprovado (apenas aviso de LF/CRLF nos arquivos que o Git normalizará).
+
+**Não executado — não é homologação**
+- PostgreSQL descartável, instalação limpa e upgrade da migration 117.
+- HTTP real de criação, reprogramação, cancelamento, concorrência e isolamento entre dois tenants.
+- Navegador em 360, 768, 1280 e 1920 px.
+- Jornada de pacientes, minutas, PDF e assinatura: o Agro360 não tem esse domínio. Não foi criado módulo novo para isso.
+- Governança de superadministrador não foi rehomologada nesta rodada. O mecanismo existente de suporte assistido permanece.
+
+**Falha pré-existente, fora deste diff**
+- `LoginExperienceTests.ApiDoesNotCarryACompetingDatabaseOrVersionedPassword` falha porque `src/Hosts/Agro360.Api/appsettings.json` já versionado contém `DefaultConnection`. O arquivo não foi alterado aqui.
+
 ## MVP Operacional — Pedido, Programação e Atendimento Rastreável (AG-OPS-MVP-001) — 2026-09-30
 
 Branch `main` (`868440aa12835666bc067901da1e4958f8d56cd9`).

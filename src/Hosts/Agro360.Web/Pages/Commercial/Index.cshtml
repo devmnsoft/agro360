@@ -409,28 +409,24 @@
    <button value="cancel" formmethod="dialog" aria-label="Fechar" type="button" data-close>×</button>
   </header>
   <input type="hidden" name="orderId" />
-  <p style="color:#9bb7ad">Defina os compromissos de data e entrega para o pedido <strong id="schedule-create-order-number"></strong>.</p>
+  <details class="form-hint">
+   <summary>Como usar esta tela</summary>
+   <p>Informe a data civil, o destino e as quantidades. Programar não reserva nem movimenta estoque. A mesma tentativa reutiliza a chave já enviada até o servidor confirmar.</p>
+  </details>
+  <p class="form-hint">Compromisso do pedido <strong id="schedule-create-order-number"></strong>.</p>
   <div class="form-row">
-   <label style="flex:1">Data/Hora Prevista *
-    <input type="datetime-local" name="plannedDate" required />
+   <label style="flex:1">Data prevista *
+    <input type="date" name="plannedDate" required />
    </label>
-   <label style="flex:1">Responsável Operacional
-    <select name="responsibleUserId" data-lookup="responsible">
+   <label style="flex:1">Responsável operacional
+    <select name="responsibleId" data-lookup="responsible">
      <option value="">Sem responsável atribuído</option>
     </select>
    </label>
   </div>
-  <label>Local / Endereço de Entrega *
-   <input name="deliveryAddress" required maxlength="500" placeholder="Fazenda / Propriedade / Silo / Galpão de destino" />
+  <label>Destino *
+   <input name="destination" required maxlength="255" placeholder="Fazenda, silo ou galpão de destino" />
   </label>
-  <div class="form-row">
-   <label style="flex:1">Início da Janela (opcional)
-    <input type="time" name="windowStartTime" />
-   </label>
-   <label style="flex:1">Fim da Janela (opcional)
-    <input type="time" name="windowEndTime" />
-   </label>
-  </div>
   <label>Observações Operacionais
    <textarea name="notes" maxlength="1000" placeholder="Instruções para o transportador, contato no local ou restrições de descarga"></textarea>
   </label>
@@ -467,28 +463,20 @@
   </header>
   <input type="hidden" name="scheduleId" />
   <input type="hidden" name="expectedVersion" />
-  <p style="color:#9bb7ad">Programação <strong id="reschedule-number"></strong> · Versão <span id="reschedule-version"></span></p>
+  <p class="form-hint">Programação <strong id="reschedule-number"></strong> · Versão <span id="reschedule-version"></span>. A nova quantidade não pode passar da capacidade desta programação nem ficar abaixo do que já foi expedido ou separado.</p>
   <div class="form-row">
-   <label style="flex:1">Nova Data/Hora Prevista *
-    <input type="datetime-local" name="newPlannedDate" required />
+   <label style="flex:1">Nova data prevista *
+    <input type="date" name="plannedDate" required />
    </label>
-   <label style="flex:1">Responsável Operacional
-    <select name="responsibleUserId" data-lookup="responsible">
+   <label style="flex:1">Responsável operacional
+    <select name="responsibleId" data-lookup="responsible">
      <option value="">Sem responsável atribuído</option>
     </select>
    </label>
   </div>
-  <label>Local de Entrega
-   <input name="deliveryAddress" maxlength="500" />
+  <label>Destino
+   <input name="destination" maxlength="255" />
   </label>
-  <div class="form-row">
-   <label style="flex:1">Início da Janela
-    <input type="time" name="windowStartTime" />
-   </label>
-   <label style="flex:1">Fim da Janela
-    <input type="time" name="windowEndTime" />
-   </label>
-  </div>
   <label>Motivo da Reprogramação * <span class="help" title="Justificativa auditável para alteração do compromisso original.">?</span>
    <textarea name="reason" required maxlength="500" placeholder="Explique o motivo da alteração de data, quantidades ou local"></textarea>
   </label>
@@ -525,7 +513,7 @@
   </header>
   <input type="hidden" name="scheduleId" />
   <input type="hidden" name="expectedVersion" />
-  <p style="color:#f87171">Atenção: A programação <strong id="cancel-schedule-number"></strong> será cancelada e as quantidades não expedidas serão liberadas para novas programações no pedido.</p>
+  <p class="form-hint">A programação <strong id="cancel-schedule-number"></strong> será cancelada. Reservas ainda não separadas deste compromisso são liberadas na mesma operação. Quantidade já expedida impede o cancelamento integral.</p>
   <label>Motivo do Cancelamento *
    <textarea name="reason" required maxlength="500" placeholder="Informe a justificativa do cancelamento"></textarea>
   </label>
