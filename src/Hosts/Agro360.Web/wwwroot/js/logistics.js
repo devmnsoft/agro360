@@ -202,69 +202,243 @@
         const host = document.createElement('div');
         host.className = 'operation-review';
         host.innerHTML = `<h3>Atender compromisso ${escapeHtml(value(schedule, 'schedule_number', 'scheduleNumber'))}</h3>
-            <p>Selecione um ou mais itens. Vários lotes do mesmo depósito podem compor a quantidade. Reservar não é saída física. Lotes de depósitos diferentes exigem outra confirmação.</p>
-            <form>
+            <p>Selecione os itens e adicione alocações por lote. Lotes de depósitos diferentes exigem confirmações separadas. Reservar não efetua saída física do estoque.</p>
+            <form novalidate>
             ${enriched.map((entry, index) => {
                 const line = entry.line;
-                const attendable = value(line, 'attendable_quantity', 'attendableQuantity');
-                return `<fieldset>
-                    <legend><label><input type="checkbox" name="take" value="${index}" checked> ${escapeHtml(value(line, 'product'))} · ${escapeHtml(value(line, 'unit'))}</label></legend>
-                    <p>Programada ${escapeHtml(value(line, 'quantity'))} · em preparação ${escapeHtml(value(line, 'preparing_quantity', 'preparingQuantity'))} · expedida ${escapeHtml(value(line, 'dispatched_quantity', 'dispatchedQuantity'))} · entregue ${escapeHtml(value(line, 'delivered_quantity', 'deliveredQuantity'))} · saldo atendível ${escapeHtml(attendable)}</p>
-                    ${entry.lots.length ? `<label>Lote e depósito<select name="lot-${index}" data-lots>${entry.lots.map(lot => `<option value="${escapeHtml(value(lot, 'lot_id', 'lotId'))}" data-warehouse="${escapeHtml(value(lot, 'warehouse_id', 'warehouseId'))}">${escapeHtml(value(lot, 'warehouse'))} · lote ${escapeHtml(value(lot, 'lot_number', 'lotNumber'))} · saldo ${escapeHtml(value(lot, 'eligible_quantity', 'eligibleQuantity'))}</option>`).join('')}</select></label>
-                    <label>Quantidade (${escapeHtml(value(line, 'unit'))})<input name="qty-${index}" type="number" min="0.000001" max="${escapeHtml(attendable)}" step="any" value="${escapeHtml(attendable)}" required></label>` : '<p role="status">Nenhum lote aprovado e com saldo para este produto.</p>'}
+                const attendable = Number(value(line, 'attendable_quantity', 'attendableQuantity')) || 0;
+                const unit = escapeHtml(value(line, 'unit'));
+                const hasLots = entry.lots && entry.lots.length > 0;
+                return `<fieldset data-item-idx="${index}">
+                    <legend>
+                        <label>
+                            <input type="checkbox" name="take" value="${index}" ${hasLots ? 'checked' : 'disabled'}>
+                            <strong>${escapeHtml(value(line, 'product'))}</strong> · ${unit}
+                        </label>
+                    </legend>
+                    <p class="item-meta">Programada: ${escapeHtml(value(line, 'quantity'))} · Em preparação: ${escapeHtml(value(line, 'preparing_quantity', 'preparingQuantity'))} · Expedida: ${escapeHtml(value(line, 'dispatched_quantity', 'dispatchedQuantity'))} · Entregue: ${escapeHtml(value(line, 'delivered_quantity', 'deliveredQuantity'))} · Saldo atendível: <strong>${attendable}</strong> ${unit}</p>
+                    ${hasLots ? `
+                    <div class="allocations-container" data-container-idx="${index}">
+                        <div class="alloc-rows" data-rows-idx="${index}"></div>
+                        <div style="display:flex;gap:.5rem;align-items:center;margin-top:.5rem;">
+                            <button type="button" class="secondary-button add-lot-btn" data-add-for="${index}">+ Adicionar lote</button>
+                        </div>
+                        <div class="alloc-summary" id="alloc-summary-${index}">
+                            Total alocado: <strong class="summary-allocated">0</strong> ${unit} · Saldo atendível: <strong>${attendable}</strong> ${unit} · Restante: <strong class="summary-remaining">${attendable}</strong> ${unit}
+                        </div>
+                        <div class="alloc-error text-danger" id="alloc-error-${index}" role="alert" style="display:none;margin-top:.25rem;font-weight:600;"></div>
+                    </div>` : `
+                    <p class="empty-state text-warning" role="status">
+                        Nenhum lote aprovado e com saldo disponível para este produto.
+                        <br><small>Próxima ação: Realizar recebimento ou liberação de qualidade no módulo de Estoque.</small>
+                    </p>`}
                 </fieldset>`;
             }).join('')}
-            <label>Destino<input name="destination" maxlength="200" required value="${escapeHtml(value(schedule, 'destination') || ('Cliente ' + (value(order, 'customer') || '')))}"></label>
-            <button class="primary-button">Confirmar reserva</button>
-            <button type="button" class="secondary-button" data-dismiss>Cancelar</button>
-            <p role="alert"></p>
+            <label style="grid-column:1 / -1">Destino da entrega
+                <input name="destination" maxlength="200" required value="${escapeHtml(value(schedule, 'destination') || ('Cliente ' + (value(order, 'customer') || '')))}">
+            </label>
+            <div style="grid-column:1 / -1;display:flex;gap:.5rem;align-items:center;">
+                <button type="submit" class="primary-button">Confirmar reserva</button>
+                <button type="button" class="secondary-button" data-dismiss>Cancelar</button>
+            </div>
+            <p role="alert" style="grid-column:1 / -1" class="form-alert"></p>
             </form>`;
         content.prepend(host);
+
+        function createAllocRow(itemIdx, defaultQty) {
+            const entry = enriched[itemIdx];
+            const row = document.createElement('div');
+            row.className = 'alloc-row';
+            row.innerHTML = `
+                <label style="margin:0">Lote e depósito
+                    <select class="lot-select" required>
+                        <option value="">Selecione o lote...</option>
+                        ${entry.lots.map(l => `<option value="${escapeHtml(value(l, 'lot_id', 'lotId'))}" data-warehouse="${escapeHtml(value(l, 'warehouse_id', 'warehouseId'))}" data-balance="${escapeHtml(value(l, 'eligible_quantity', 'eligibleQuantity'))}">${escapeHtml(value(l, 'warehouse'))} · Lote ${escapeHtml(value(l, 'lot_number', 'lotNumber'))} · Saldo: ${escapeHtml(value(l, 'eligible_quantity', 'eligibleQuantity'))}</option>`).join('')}
+                    </select>
+                </label>
+                <label style="margin:0">Quantidade
+                    <input type="number" class="lot-qty" min="0.000001" step="any" required placeholder="0.00" value="${defaultQty > 0 ? defaultQty : ''}">
+                </label>
+                <button type="button" class="icon-button danger remove-lot-btn" title="Remover alocação">×</button>
+            `;
+            const removeBtn = row.querySelector('.remove-lot-btn');
+            removeBtn.onclick = () => {
+                const parent = row.parentElement;
+                if (parent && parent.children.length > 1) {
+                    row.remove();
+                    recalcItem(itemIdx);
+                } else {
+                    window.agro360Feedback?.toast('warning', 'Atenção', 'Mantenha ao menos uma alocação para o item.');
+                }
+            };
+            row.querySelector('.lot-select').onchange = () => recalcItem(itemIdx);
+            row.querySelector('.lot-qty').oninput = () => recalcItem(itemIdx);
+            return row;
+        }
+
+        function recalcItem(itemIdx) {
+            const entry = enriched[itemIdx];
+            const fieldset = host.querySelector(`fieldset[data-item-idx="${itemIdx}"]`);
+            if (!fieldset) return;
+            const attendable = Number(value(entry.line, 'attendable_quantity', 'attendableQuantity')) || 0;
+            const rows = fieldset.querySelectorAll('.alloc-row');
+            let sum = 0;
+            let lotError = '';
+            rows.forEach(r => {
+                const sel = r.querySelector('.lot-select');
+                const opt = sel.selectedOptions[0];
+                const qtyInput = r.querySelector('.lot-qty');
+                const qtyVal = Number(qtyInput.value) || 0;
+                sum += qtyVal;
+                if (opt && opt.value) {
+                    const balance = Number(opt.dataset.balance) || 0;
+                    if (qtyVal > balance) {
+                        lotError = `Quantidade informada (${qtyVal}) excede o saldo do lote (${balance}).`;
+                    }
+                }
+            });
+            const summaryDiv = fieldset.querySelector('.alloc-summary');
+            if (summaryDiv) {
+                summaryDiv.querySelector('.summary-allocated').textContent = sum.toFixed(2);
+                const rem = attendable - sum;
+                summaryDiv.querySelector('.summary-remaining').textContent = rem.toFixed(2);
+                summaryDiv.querySelector('.summary-remaining').style.color = rem < 0 ? '#b91c1c' : '#17643b';
+            }
+            const errDiv = fieldset.querySelector('.alloc-error');
+            if (errDiv) {
+                if (sum > attendable) {
+                    errDiv.textContent = `Total alocado (${sum}) excede o saldo atendível (${attendable}).`;
+                    errDiv.style.display = 'block';
+                } else if (lotError) {
+                    errDiv.textContent = lotError;
+                    errDiv.style.display = 'block';
+                } else {
+                    errDiv.textContent = '';
+                    errDiv.style.display = 'none';
+                }
+            }
+        }
+
+        enriched.forEach((entry, idx) => {
+            if (entry.lots && entry.lots.length > 0) {
+                const rowsContainer = host.querySelector(`.alloc-rows[data-rows-idx="${idx}"]`);
+                const attendable = Number(value(entry.line, 'attendable_quantity', 'attendableQuantity')) || 0;
+                const firstLot = entry.lots[0];
+                const firstLotBal = Number(value(firstLot, 'eligible_quantity', 'eligibleQuantity')) || 0;
+                const initialQty = Math.min(attendable, firstLotBal);
+                const row = createAllocRow(idx, initialQty);
+                if (firstLot) {
+                    row.querySelector('.lot-select').value = value(firstLot, 'lot_id', 'lotId');
+                }
+                rowsContainer.appendChild(row);
+                recalcItem(idx);
+
+                const addBtn = host.querySelector(`.add-lot-btn[data-add-for="${idx}"]`);
+                addBtn.onclick = () => {
+                    const newRow = createAllocRow(idx, 0);
+                    rowsContainer.appendChild(newRow);
+                    recalcItem(idx);
+                };
+            }
+        });
+
         host.querySelector('[data-dismiss]').onclick = () => host.remove();
         host.querySelector('input,select')?.focus();
-        host.querySelector('form').onsubmit = async event => {
+
+        const form = host.querySelector('form');
+        window.agro360Forms?.enhanceForm(form);
+
+        form.onsubmit = async event => {
             event.preventDefault();
-            const form = event.currentTarget;
+            const alertBox = form.querySelector('.form-alert');
+            alertBox.textContent = '';
             const button = form.querySelector('.primary-button');
-            const selected = [...form.querySelectorAll('[name=take]:checked')];
-            if (!selected.length) { form.querySelector('[role=alert]').textContent = 'Selecione ao menos um item.'; return; }
-            const picked = selected.map(box => {
-                const index = box.value;
-                const entry = enriched[Number(index)];
-                const select = form.querySelector(`[name=lot-${index}]`);
-                const option = select?.selectedOptions?.[0];
-                return {
-                    orderItemId: value(entry.line, 'order_item_id', 'orderItemId'),
-                    scheduleItemId: value(entry.line, 'id'),
-                    stockLotId: option?.value,
-                    warehouseId: option?.dataset.warehouse,
-                    quantity: Number(form.querySelector(`[name=qty-${index}]`).value),
-                    unit: value(entry.line, 'unit'),
-                    attendable: Number(value(entry.line, 'attendable_quantity', 'attendableQuantity'))
-                };
-            });
-            if (picked.some(line => !line.stockLotId || !(line.quantity > 0))) {
-                form.querySelector('[role=alert]').textContent = 'Cada item selecionado precisa de lote e quantidade positiva.';
+            const selectedCheckboxes = [...form.querySelectorAll('input[name=take]:checked')];
+            if (!selectedCheckboxes.length) {
+                alertBox.textContent = 'Selecione ao menos um item com lote para atender.';
                 return;
             }
-            if (picked.some(line => line.quantity > line.attendable)) {
-                form.querySelector('[role=alert]').textContent = 'A quantidade não pode passar do saldo ainda atendível.';
-                return;
+            const picked = [];
+            for (const chk of selectedCheckboxes) {
+                const idx = Number(chk.value);
+                const entry = enriched[idx];
+                const fieldset = form.querySelector(`fieldset[data-item-idx="${idx}"]`);
+                const attendable = Number(value(entry.line, 'attendable_quantity', 'attendableQuantity')) || 0;
+                const rows = fieldset.querySelectorAll('.alloc-row');
+                if (!rows.length) {
+                    alertBox.textContent = `O item ${value(entry.line, 'product')} não possui lotes alocados.`;
+                    return;
+                }
+                let itemSum = 0;
+                for (const r of rows) {
+                    const select = r.querySelector('.lot-select');
+                    const opt = select.selectedOptions[0];
+                    const qtyVal = Number(r.querySelector('.lot-qty').value) || 0;
+                    if (!opt || !opt.value || qtyVal <= 0) {
+                        alertBox.textContent = `Cada alocação precisa de um lote válido e quantidade maior que zero.`;
+                        return;
+                    }
+                    const lotBal = Number(opt.dataset.balance) || 0;
+                    if (qtyVal > lotBal) {
+                        alertBox.textContent = `Quantidade alocada (${qtyVal}) excede o saldo disponível do lote (${lotBal}).`;
+                        return;
+                    }
+                    itemSum += qtyVal;
+                    picked.push({
+                        orderItemId: value(entry.line, 'order_item_id', 'orderItemId'),
+                        scheduleItemId: value(entry.line, 'id'),
+                        stockLotId: opt.value,
+                        warehouseId: opt.dataset.warehouse,
+                        quantity: qtyVal,
+                        unit: value(entry.line, 'unit'),
+                        attendable
+                    });
+                }
+                if (itemSum > attendable) {
+                    alertBox.textContent = `O item ${value(entry.line, 'product')} excede o saldo atendível (${attendable}).`;
+                    return;
+                }
             }
+
             const warehouses = [...new Set(picked.map(line => line.warehouseId))];
             if (warehouses.length !== 1) {
-                form.querySelector('[role=alert]').textContent = 'Nesta confirmação use lotes do mesmo depósito. Repita a operação para o outro depósito.';
+                alertBox.textContent = 'Nesta confirmação use lotes do mesmo depósito. Repita a operação para o outro depósito.';
                 return;
             }
-            const fingerprint = JSON.stringify(picked.map(line => ({ line: line.scheduleItemId, lot: line.stockLotId, quantity: line.quantity })));
-            const storageKey = `agro360.fulfillment.schedule.${scheduleId}`;
+
+            const destination = form.destination.value.trim();
+            if (!destination) {
+                alertBox.textContent = 'Informe o destino da entrega.';
+                return;
+            }
+
+            const tenantId = window.agro360Context?.tenantId || sessionStorage.getItem('agro360.tenant_id') || 'tenant';
+            const storageKey = `agro360.fulfillment.schedule.${tenantId}.${scheduleId}`;
+            const fingerprintPayload = {
+                tenantId,
+                scheduleId,
+                customerId: value(order, 'customer_id', 'customerId'),
+                originWarehouseId: warehouses[0],
+                destination,
+                items: picked.map(p => ({
+                    orderItemId: p.orderItemId,
+                    scheduleItemId: p.scheduleItemId,
+                    stockLotId: p.stockLotId,
+                    quantity: p.quantity,
+                    unit: p.unit
+                })).sort((a,b) => (a.orderItemId + a.stockLotId).localeCompare(b.orderItemId + b.stockLotId))
+            };
+            const fingerprint = JSON.stringify(fingerprintPayload);
+
             let draft = null;
             try { draft = JSON.parse(sessionStorage.getItem(storageKey) || 'null'); } catch { draft = null; }
             if (!draft || draft.fingerprint !== fingerprint) {
                 draft = { fingerprint, key: crypto.randomUUID(), number: `SEP-${crypto.randomUUID().slice(0, 8).toUpperCase()}` };
                 sessionStorage.setItem(storageKey, JSON.stringify(draft));
             }
+
             button.disabled = true;
+            form.setAttribute('aria-busy', 'true');
             try {
                 await request('/api/logistics/trips/fulfillment', {
                     method: 'POST',
@@ -272,7 +446,7 @@
                         number: draft.number,
                         originWarehouseId: warehouses[0],
                         customerId: value(order, 'customer_id', 'customerId'),
-                        destination: form.destination.value,
+                        destination,
                         scheduleId,
                         idempotencyKey: draft.key,
                         items: picked.map(line => ({
@@ -291,8 +465,9 @@
                 window.agro360Feedback?.toast('success', 'Reserva criada', 'Saldo comprometido sem saída física.');
                 await loadOrderDetail(orderId);
             } catch (err) {
-                form.querySelector('[role=alert]').textContent = err.message;
+                alertBox.textContent = err.message || 'Falha ao criar reserva operacional.';
                 button.disabled = false;
+                form.removeAttribute('aria-busy');
             }
         };
     }

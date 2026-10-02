@@ -138,6 +138,7 @@ try {
     $restrictedPassword = 'Usr4!' + [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(24))
     $totpBytes = [Security.Cryptography.RandomNumberGenerator]::GetBytes(20)
     Set-TaskEnvironment ConnectionStrings__Agro360 $connection
+    Set-TaskEnvironment ConnectionStrings__DefaultConnection $connection
     Set-TaskEnvironment ASPNETCORE_ENVIRONMENT 'Development'
     Set-TaskEnvironment Jwt__SigningKey ([Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(48)))
     Set-TaskEnvironment Cors__AllowedOrigins__0 'http://127.0.0.1:1'

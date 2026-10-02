@@ -866,7 +866,7 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             var scheduleCapacity = CommercialRules.CalculateEligibleScheduleBalance(oi.Quantity, oi.CancelledQuantity, otherActiveScheduled, unlinkedDispatched);
             var openPreparation = await c.ExecuteScalarAsync<decimal>(
                 """
-                select coalesce(sum(greatest(fi.picked_quantity, fi.checked_quantity)), 0)
+                select coalesce(sum(fi.reserved_quantity), 0)
                 from agro360.fulfillment_shipment_items fi
                 join agro360.fulfillment_shipments fs on fs.tenant_id = fi.tenant_id and fs.id = fi.shipment_id
                 where fi.tenant_id = @TenantId and fi.schedule_item_id = @ScheduleItemId

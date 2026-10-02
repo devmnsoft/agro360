@@ -107,6 +107,7 @@ try {
     Set-TaskEnvironment PGDATABASE 'agro360_e0_test'
     $connection = "Host=127.0.0.1;Port=$databasePort;Database=agro360_e0_test;Username=postgres;Password=$password"
     Set-TaskEnvironment ConnectionStrings__Agro360 $connection
+    Set-TaskEnvironment ConnectionStrings__DefaultConnection $connection
     Set-TaskEnvironment AGRO360_TEST_CONNECTION_STRING $connection
     Set-TaskEnvironment ASPNETCORE_ENVIRONMENT 'Development'
     Set-TaskEnvironment Jwt__SigningKey ([Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(48)))
@@ -156,7 +157,9 @@ try {
         # Independent clean target: never replay legacy migrations over the
         # installed fixture, and never silently mark them as applied.
         Invoke-Sql 'create database agro360_incremental_test;'
-        Set-TaskEnvironment ConnectionStrings__Agro360 ($connection.Replace('Database=agro360_e0_test;', 'Database=agro360_incremental_test;'))
+        $migConn = $connection.Replace('Database=agro360_e0_test;', 'Database=agro360_incremental_test;')
+        Set-TaskEnvironment ConnectionStrings__Agro360 $migConn
+        Set-TaskEnvironment ConnectionStrings__DefaultConnection $migConn
         dotnet src/Hosts/Agro360.Migrator/bin/Release/net10.0/Agro360.Migrator.dll migrate --migrations "$root\database\migrations" > "$evidence\migrator.log" 2>&1
         Assert-Exit 'migrations em banco independente'
     }

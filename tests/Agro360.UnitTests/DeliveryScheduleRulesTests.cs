@@ -98,6 +98,34 @@ public sealed class DeliveryScheduleRulesTests
     }
 
     [Fact]
+    public void ValidateRescheduleRejectsReductionBelowDispatchedPlusOpenPreparationScenarioFiftyTwentyFifteen()
+    {
+        // Cenário obrigatório: programação 50; expedido 20; preparação aberta 15.
+        // Mínimo permitido = 20 + 15 = 35.
+        // Redução para 25 deve ser negada com sales.reschedule_below_dispatched.
+        var ex25 = Assert.Throws<DomainException>(() =>
+            CommercialRules.ValidateReschedule("PREPARING", 20m, 0m, 50m, 25m, 50m, "Tentativa de redução para 25", 15m));
+        Assert.Equal("sales.reschedule_below_dispatched", ex25.Code);
+
+        // Redução para 30 também é negada (30 < 35)
+        var ex30 = Assert.Throws<DomainException>(() =>
+            CommercialRules.ValidateReschedule("PREPARING", 20m, 0m, 50m, 30m, 50m, "Tentativa de redução para 30", 15m));
+        Assert.Equal("sales.reschedule_below_dispatched", ex30.Code);
+
+        // Redução para 35 é permitida (35 >= 35)
+        CommercialRules.ValidateReschedule("PREPARING", 20m, 0m, 50m, 35m, 50m, "Redução válida para 35", 15m);
+
+        // Redução para 40 é permitida (40 >= 35)
+        CommercialRules.ValidateReschedule("PREPARING", 20m, 0m, 50m, 40m, 50m, "Redução válida para 40", 15m);
+
+        // Reserva aberta de 15 sem separação física ainda iniciada (dispatched 0, openPreparation 15, current 50):
+        // Redução para 10 é negada (10 < 15)
+        var exOpenRes = Assert.Throws<DomainException>(() =>
+            CommercialRules.ValidateReschedule("PREPARING", 0m, 0m, 50m, 10m, 50m, "Tentativa abaixo de reserva aberta", 15m));
+        Assert.Equal("sales.reschedule_below_dispatched", exOpenRes.Code);
+    }
+
+    [Fact]
     public void NormalizeScheduleStatusValidatesWhitelistedStatuses()
     {
         Assert.Equal("PLANNED", CommercialRules.NormalizeScheduleStatus("planned"));

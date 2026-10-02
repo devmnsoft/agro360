@@ -356,9 +356,11 @@ public static class CommercialRules
         if (newQuantity <= 0)
             throw new DomainException("A nova quantidade deve ser positiva.", "sales.reschedule_quantity_invalid");
 
-        var minimumPermitted = Math.Max(Math.Max(dispatchedQuantity, deliveredQuantity), Math.Max(0m, openPreparationQuantity));
+        var effectiveDispatched = Math.Max(dispatchedQuantity, deliveredQuantity);
+        var effectiveOpenPreparation = Math.Max(0m, openPreparationQuantity);
+        var minimumPermitted = effectiveDispatched + effectiveOpenPreparation;
         if (newQuantity < minimumPermitted)
-            throw new DomainException($"Não é permitido reduzir a quantidade abaixo do expedido ou da preparação que não pode ser liberada ({minimumPermitted}).", "sales.reschedule_below_dispatched");
+            throw new DomainException($"Não é permitido reduzir a quantidade abaixo do expedido ({effectiveDispatched}) somado à preparação aberta ({effectiveOpenPreparation}). Mínimo permitido: {minimumPermitted}.", "sales.reschedule_below_dispatched");
 
         if (newQuantity > currentItemQuantity && newQuantity > scheduleCapacity)
         {
