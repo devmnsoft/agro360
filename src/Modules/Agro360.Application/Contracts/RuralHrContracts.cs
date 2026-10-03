@@ -9,6 +9,8 @@ public sealed record TimeEntryCommand([Required] Guid PersonId, Guid? TeamId, [R
 public sealed record TransportCommand([Required, MaxLength(180)] string Name, [Required] Guid TeamId, [Required] Guid VehicleId, [Required] Guid DriverId, [Range(1, 500)] int Capacity, [Range(1, 500)] int PassengerCount, DateTimeOffset StartsAt, DateTimeOffset EndsAt, [MaxLength(500)] string? Route);
 public sealed record RuralHrDashboard(int ActivePeople, int ActiveTeams, decimal WorkedHours, decimal LaborCost, int ExpiredTrainings, int ExpiredPpe, int OpenIncidents, int OverdueActions, int TeamsInField, int CriticalAlerts);
 
+public sealed record RuralHrStatusChangeCommand([Required] string Status, [MaxLength(1000)] string? Reason = null);
+
 public interface IRuralHrService
 {
     Task<IReadOnlyList<RuralHrRecord>> ListAsync(string kind, string? status, CancellationToken ct);
@@ -19,6 +21,7 @@ public interface IRuralHrService
     Task<Guid> AddTransportAsync(TransportCommand command, CancellationToken ct);
     Task ChangeStatusAsync(Guid id, string kind, string status, CancellationToken ct);
     Task ChangeStatusAsync(Guid id, string status, CancellationToken ct);
+    Task<IReadOnlyList<LookupOption>> LookupAsync(string kind, CancellationToken ct);
     Task<RuralHrDashboard> DashboardAsync(CancellationToken ct);
     Task<byte[]> ExportAsync(string kind, CancellationToken ct);
 }

@@ -52,7 +52,7 @@ public sealed class DocumentService(DatabaseExecutor db, ITenantContext tenant, 
     }
 
 
-    public Task<DocumentDetails?> DocumentAsync(Guid id, CancellationToken ct) => Tx(async (c, t) => { var d = await c.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition("select d.id,d.name,d.description,d.document_type_id,dt.name type_name,d.status from agro360.documents d join agro360.documents_document_types dt on dt.id=d.document_type_id where d.id=@Id and d.tenant_id=@TenantId and d.deleted_at is null", new { Id = id, tenant.TenantId }, t, cancellationToken: ct)); if (d is null) return null; var versions = (await c.QueryAsync<DocumentVersionRow>(new CommandDefinition("select id,version_number versionnumber,original_name originalname,size_bytes sizebytes,mime_type mimetype,sha256,change_reason changereason,created_at createdat from agro360.documents_document_versions where tenant_id=@TenantId and document_id=@Id order by version_number desc", new { Id = id, tenant.TenantId }, t, cancellationToken: ct))).ToArray(); var links = (await c.QueryAsync<DocumentLinkRow>(new CommandDefinition("select id,entity_type entitytype,entity_label entitylabel from agro360.documents_document_links where tenant_id=@TenantId and document_id=@Id and deleted_at is null", new { Id = id, tenant.TenantId }, t, cancellationToken: ct))).ToArray(); var tags = (await c.QueryAsync<string>(new CommandDefinition("select tag from agro360.documents_document_tags where tenant_id=@TenantId and document_id=@Id order by tag", new { Id = id, tenant.TenantId }, t, cancellationToken: ct))).ToArray(); return new DocumentDetails(d.id, d.name, d.description, d.document_type_id, d.type_name, d.status, versions, links, tags); }, ct);
+    public Task<DocumentDetails?> DocumentAsync(Guid id, CancellationToken ct) => Tx(async (c, t) => { var d = await c.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition("select d.id,d.name,d.description,d.document_type_id,dt.name type_name,d.status,d.current_version from agro360.documents d join agro360.documents_document_types dt on dt.id=d.document_type_id where d.id=@Id and d.tenant_id=@TenantId and d.deleted_at is null", new { Id = id, tenant.TenantId }, t, cancellationToken: ct)); if (d is null) return null; var versions = (await c.QueryAsync<DocumentVersionRow>(new CommandDefinition("select id,version_number versionnumber,original_name originalname,size_bytes sizebytes,mime_type mimetype,sha256,change_reason changereason,created_at createdat from agro360.documents_document_versions where tenant_id=@TenantId and document_id=@Id order by version_number desc", new { Id = id, tenant.TenantId }, t, cancellationToken: ct))).ToArray(); var links = (await c.QueryAsync<DocumentLinkRow>(new CommandDefinition("select id,entity_type entitytype,entity_label entitylabel from agro360.documents_document_links where tenant_id=@TenantId and document_id=@Id and deleted_at is null", new { Id = id, tenant.TenantId }, t, cancellationToken: ct))).ToArray(); var tags = (await c.QueryAsync<string>(new CommandDefinition("select tag from agro360.documents_document_tags where tenant_id=@TenantId and document_id=@Id order by tag", new { Id = id, tenant.TenantId }, t, cancellationToken: ct))).ToArray(); return new DocumentDetails(d.id, d.name, d.description, d.document_type_id, d.type_name, d.status, (int)d.current_version, versions, links, tags); }, ct);
     public Task<StoredDownload> DownloadAsync(Guid documentId, Guid? versionId, CancellationToken ct) => Tx(async (c, t) => { var row = await c.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition("select v.storage_key,v.mime_type,v.original_name from agro360.documents d join agro360.documents_document_versions v on v.document_id=d.id and v.tenant_id=d.tenant_id where d.id=@Id and d.tenant_id=@TenantId and d.deleted_at is null and (@VersionId is null and v.version_number=d.current_version or v.id=@VersionId)", new { Id = documentId, VersionId = versionId, tenant.TenantId }, t, cancellationToken: ct)) ?? throw new NotFoundException("Documento", documentId); var path = SafePath((string)row.storage_key); if (!File.Exists(path)) throw new NotFoundException("Arquivo", documentId); await c.ExecuteAsync(new CommandDefinition("insert into agro360.documents_document_access_logs(id,tenant_id,document_id,version_id,action,accessed_by) values(gen_random_uuid(),@TenantId,@Id,@VersionId,'DOWNLOAD',@UserId)", new { tenant.TenantId, Id = documentId, VersionId = versionId, tenant.UserId }, t, cancellationToken: ct)); return new StoredDownload(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read), row.mime_type, row.original_name); }, ct);
     public Task ArchiveAsync(Guid id, CancellationToken ct) => Tx(async (c, t) => { if (await c.ExecuteAsync(new CommandDefinition("update agro360.documents set status='ARCHIVED',updated_at=now(),updated_by=@UserId where id=@Id and tenant_id=@TenantId and deleted_at is null", new { Id = id, tenant.TenantId, tenant.UserId }, t, cancellationToken: ct)) == 0) throw new NotFoundException("Documento", id); }, ct);
 
@@ -90,35 +90,58 @@ public sealed class DocumentService(DatabaseExecutor db, ITenantContext tenant, 
     private static async Task<long> SaveStreamSafelyAsync(Stream content, string physicalPath, string extension, long maxBytes, CancellationToken ct)
     {
         long totalRead = 0;
-        var buffer = new byte[81920];
+        const int minHeaderToAccumulate = 1024;
+        using var headerAccumulator = new MemoryStream();
+        var tempBuffer = new byte[81920];
         int read;
-        var headerChecked = false;
 
         try
         {
+            // Acumula bytes suficientes para identificação inequívoca de assinatura, mesmo se o stream estiver fragmentado
+            while (headerAccumulator.Length < minHeaderToAccumulate &&
+                   (read = await content.ReadAsync(tempBuffer.AsMemory(0, tempBuffer.Length), ct).ConfigureAwait(false)) > 0)
+            {
+                totalRead += read;
+                if (totalRead > maxBytes)
+                    throw new DomainException($"O arquivo excede o limite máximo permitido de {maxBytes / 1024 / 1024} MB.", "documents.invalid_size");
+
+                await headerAccumulator.WriteAsync(tempBuffer.AsMemory(0, read), ct).ConfigureAwait(false);
+            }
+
+            if (totalRead == 0 || headerAccumulator.Length == 0)
+                throw new DomainException("O arquivo enviado está vazio.", "documents.empty_file");
+
+            var headerBytes = headerAccumulator.ToArray();
+            DocumentRules.ValidateContentSignature(extension, headerBytes);
+
             await using (var output = new FileStream(physicalPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
             {
-                while ((read = await content.ReadAsync(buffer.AsMemory(0, buffer.Length), ct).ConfigureAwait(false)) > 0)
+                await output.WriteAsync(headerBytes.AsMemory(0, headerBytes.Length), ct).ConfigureAwait(false);
+
+                while ((read = await content.ReadAsync(tempBuffer.AsMemory(0, tempBuffer.Length), ct).ConfigureAwait(false)) > 0)
                 {
                     totalRead += read;
                     if (totalRead > maxBytes)
                         throw new DomainException($"O arquivo excede o limite máximo permitido de {maxBytes / 1024 / 1024} MB.", "documents.invalid_size");
 
-                    if (!headerChecked)
-                    {
-                        var headerLen = Math.Min(read, 512);
-                        var header = new byte[headerLen];
-                        Array.Copy(buffer, 0, header, 0, headerLen);
-                        DocumentRules.ValidateContentSignature(extension, header);
-                        headerChecked = true;
-                    }
-
-                    await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                    await output.WriteAsync(tempBuffer.AsMemory(0, read), ct).ConfigureAwait(false);
                 }
+
+                await output.FlushAsync(ct).ConfigureAwait(false);
             }
 
-            if (totalRead == 0)
-                throw new DomainException("O arquivo enviado está vazio.", "documents.empty_file");
+            // Validação estrutural profunda de integridade
+            var ext = (extension ?? "").Trim().ToLowerInvariant();
+            if (ext is ".docx" or ".xlsx")
+            {
+                await using var verifyStream = new FileStream(physicalPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                DocumentRules.ValidateOfficeStructure(ext, verifyStream);
+            }
+            else if (ext is ".xml")
+            {
+                await using var verifyStream = new FileStream(physicalPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                DocumentRules.ValidateXmlContent(verifyStream);
+            }
 
             return totalRead;
         }

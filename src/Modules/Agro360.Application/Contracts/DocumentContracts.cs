@@ -21,7 +21,7 @@ public sealed record DocumentRow
         : this(Id, Name, TypeName, Status, OriginalName, SizeBytes, Sha256, CurrentVersion, new DateTimeOffset(UploadedAt)) { }
 }
 
-public sealed record DocumentDetails(Guid Id, string Name, string? Description, Guid DocumentTypeId, string TypeName, string Status, IReadOnlyList<DocumentVersionRow> Versions, IReadOnlyList<DocumentLinkRow> Links, IReadOnlyList<string> Tags);
+public sealed record DocumentDetails(Guid Id, string Name, string? Description, Guid DocumentTypeId, string TypeName, string Status, int CurrentVersion, IReadOnlyList<DocumentVersionRow> Versions, IReadOnlyList<DocumentLinkRow> Links, IReadOnlyList<string> Tags);
 
 public sealed record DocumentVersionRow
 {

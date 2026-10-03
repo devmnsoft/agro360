@@ -4,11 +4,26 @@
     const root = document.querySelector('.rural-hr-shell');
     if (!root) return;
 
-    const api = root.dataset.api;
+    const api = root.dataset.api || '/api/rural-hr';
     const content = document.querySelector('#hr-content');
     const feedback = document.querySelector('#hr-feedback');
-    const dialog = document.querySelector('#hr-editor');
-    const form = document.querySelector('#hr-form');
+    const helpBtn = document.querySelector('#toggle-hr-help');
+    const helpPanel = document.querySelector('#hr-help-panel');
+    const exportBtn = document.querySelector('#hr-export-csv');
+
+    // Dialogs
+    const personDialog = document.querySelector('#hr-person-dialog');
+    const personForm = document.querySelector('#hr-person-form');
+    const timeDialog = document.querySelector('#hr-time-dialog');
+    const timeForm = document.querySelector('#hr-time-form');
+    const endTimeDialog = document.querySelector('#hr-end-time-dialog');
+    const endTimeForm = document.querySelector('#hr-end-time-form');
+    const transportDialog = document.querySelector('#hr-transport-dialog');
+    const transportForm = document.querySelector('#hr-transport-form');
+    const recordDialog = document.querySelector('#hr-record-dialog');
+    const recordForm = document.querySelector('#hr-record-form');
+    const actionDialog = document.querySelector('#hr-action-dialog');
+    const actionForm = document.querySelector('#hr-action-form');
 
     const routes = {
         'Pessoas': 'people',
@@ -26,11 +41,35 @@
         'Dashboard RH Rural/SST': 'dashboard'
     };
 
-    let route = 'dashboard';
+    let activeTab = 'Pessoas';
+    let route = 'people';
+    const lookupsCache = {};
+
+    const esc = (text) => {
+        if (!text) return '';
+        const d = document.createElement('div');
+        d.textContent = text;
+        return d.innerHTML;
+    };
+
+    const notify = (message, isError = false) => {
+        if (!feedback) return;
+        feedback.textContent = message;
+        feedback.className = `feedback-container ${isError ? 'error' : 'success'}`;
+        if (!isError) {
+            setTimeout(() => {
+                if (feedback.textContent === message) {
+                    feedback.textContent = '';
+                    feedback.className = 'feedback-container';
+                }
+            }, 6000);
+        }
+    };
 
     const request = async (path, options = {}) => {
         const token = localStorage.getItem('agro360.accessToken');
-        const response = await fetch(`${api}/${path}`, {
+        const url = path.startsWith('http') || path.startsWith('/api') ? path : `${api}/${path}`;
+        const response = await fetch(url, {
             ...options,
             headers: {
                 'Content-Type': 'application/json',
@@ -38,100 +77,339 @@
                 ...options.headers
             }
         });
+
         if (!response.ok) {
-            throw new Error((await response.text()) || 'Não foi possível concluir a operação.');
+            let errorText = 'Não foi possível concluir a operação.';
+            try {
+                const json = await response.json();
+                errorText = json.detail || json.title || json.message || JSON.stringify(json);
+            } catch {
+                errorText = (await response.text()) || errorText;
+            }
+            throw new Error(errorText);
         }
-        return response.status === 204 ? null : response.json();
+
+        if (response.status === 204) return null;
+        const ct = response.headers.get('content-type') || '';
+        return ct.includes('application/json') ? response.json() : response.text();
+    };
+
+    const loadLookup = async (kind) => {
+        if (lookupsCache[kind]) return lookupsCache[kind];
+        try {
+            const data = await request(`lookups/${kind}`);
+            lookupsCache[kind] = Array.isArray(data) ? data : [];
+        } catch {
+            lookupsCache[kind] = [];
+        }
+        return lookupsCache[kind];
+    };
+
+    const populateLookupsInContainer = async (container) => {
+        const selects = container.querySelectorAll('select[data-lookup]');
+        for (const select of selects) {
+            const kind = select.dataset.lookup;
+            const currentVal = select.value;
+            const options = await loadLookup(kind);
+            const firstPlaceholder = select.querySelector('option[value=""]')?.textContent || 'Selecione…';
+
+            select.innerHTML = `<option value="">${esc(firstPlaceholder)}</option>` +
+                options.map(opt => `<option value="${esc(opt.id)}">${esc(opt.label)}</option>`).join('');
+
+            if (currentVal) select.value = currentVal;
+        }
     };
 
     const renderEmpty = (message) => {
-        const p = document.createElement('p');
-        p.className = 'empty';
-        p.textContent = message;
-        content.replaceChildren(p);
+        if (!content) return;
+        content.innerHTML = `<div class="empty-state"><p class="empty">${esc(message)}</p></div>`;
+    };
+
+    const statusBadge = (status) => {
+        const s = (status || '').toUpperCase();
+        let cls = 'badge-neutral';
+        let label = s;
+
+        switch (s) {
+            case 'ACTIVE':
+            case 'OPEN':
+            case 'AVAILABLE':
+                cls = 'badge-success';
+                label = s === 'AVAILABLE' ? 'Disponível' : (s === 'OPEN' ? 'Aberto' : 'Ativo');
+                break;
+            case 'IN_FIELD':
+            case 'IN_PROGRESS':
+            case 'INVESTIGATING':
+            case 'IN_TRANSIT':
+                cls = 'badge-warning';
+                label = s === 'IN_FIELD' ? 'Em Campo' : (s === 'IN_TRANSIT' ? 'Em Trânsito' : (s === 'INVESTIGATING' ? 'Investigando' : 'Em Andamento'));
+                break;
+            case 'COMPLETED':
+            case 'CLOSED':
+                cls = 'badge-info';
+                label = s === 'CLOSED' ? 'Encerrado' : 'Concluído';
+                break;
+            case 'INACTIVE':
+            case 'CANCELLED':
+            case 'DISCARDED':
+                cls = 'badge-danger';
+                label = s === 'DISCARDED' ? 'Descartado' : (s === 'CANCELLED' ? 'Cancelado' : 'Inativo');
+                break;
+            case 'DELIVERED':
+                cls = 'badge-accent';
+                label = 'Entregue';
+                break;
+            case 'RETURNED':
+                cls = 'badge-neutral';
+                label = 'Devolvido';
+                break;
+        }
+
+        return `<span class="badge ${cls}">${esc(label)}</span>`;
     };
 
     const renderDashboard = (data) => {
+        if (!content) return;
+        const labels = {
+            activePeople: 'Pessoas Ativas',
+            activeTeams: 'Equipes Ativas',
+            workedHours: 'Horas Trabalhadas',
+            laborCost: 'Custo de Mão de Obra (R$)',
+            expiredTrainings: 'Treinamentos Vencidos',
+            expiredPpe: 'EPIs Vencidos',
+            openIncidents: 'Incidentes em Aberto',
+            overdueActions: 'Ações Corretivas em Atraso',
+            teamsInField: 'Equipes em Campo',
+            criticalAlerts: 'Alertas Críticos'
+        };
+
         const grid = document.createElement('div');
         grid.className = 'metric-grid';
 
         if (data && typeof data === 'object') {
             for (const [key, value] of Object.entries(data)) {
                 const article = document.createElement('article');
+                article.className = 'metric-card';
+
                 const strong = document.createElement('strong');
-                strong.textContent = String(value ?? 0);
+                strong.textContent = typeof value === 'number' && key === 'laborCost'
+                    ? value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                    : String(value ?? 0);
+
                 const span = document.createElement('span');
-                span.textContent = key;
+                span.textContent = labels[key] || key;
+
                 article.appendChild(strong);
                 article.appendChild(span);
                 grid.appendChild(article);
             }
         }
+
         content.replaceChildren(grid);
     };
 
+    const getActionsForItem = (item, currentRoute) => {
+        const id = item.id;
+        const status = (item.status || '').toUpperCase();
+        const actions = [];
+
+        if (currentRoute === 'people') {
+            if (status === 'ACTIVE') {
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-danger" data-action="deactivate" data-id="${id}">Inativar</button>`);
+            } else if (status === 'INACTIVE') {
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-success" data-action="activate" data-id="${id}">Ativar</button>`);
+            }
+        } else if (currentRoute === 'time-entries') {
+            if (status === 'OPEN') {
+                actions.push(`<button type="button" class="btn btn-sm btn-primary" data-action="end-journey" data-id="${id}">Encerrar Jornada</button>`);
+            }
+        } else if (currentRoute === 'teams') {
+            if (status === 'ACTIVE') {
+                actions.push(`<button type="button" class="btn btn-sm btn-primary" data-action="dispatch" data-id="${id}">Despachar p/ Campo</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-danger" data-action="deactivate" data-id="${id}">Inativar</button>`);
+            } else if (status === 'IN_FIELD') {
+                actions.push(`<button type="button" class="btn btn-sm btn-success" data-action="activate" data-id="${id}">Retornar do Campo</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-danger" data-action="deactivate" data-id="${id}">Inativar</button>`);
+            } else if (status === 'INACTIVE') {
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-success" data-action="activate" data-id="${id}">Ativar</button>`);
+            }
+        } else if (currentRoute === 'trainings') {
+            if (status === 'PLANNED') {
+                actions.push(`<button type="button" class="btn btn-sm btn-primary" data-action="start" data-id="${id}">Iniciar</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-success" data-action="complete" data-id="${id}">Concluir</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-danger" data-action="cancel" data-id="${id}">Cancelar</button>`);
+            } else if (status === 'ACTIVE') {
+                actions.push(`<button type="button" class="btn btn-sm btn-success" data-action="complete" data-id="${id}">Concluir</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-danger" data-action="cancel" data-id="${id}">Cancelar</button>`);
+            }
+        } else if (currentRoute === 'ppe') {
+            if (status === 'AVAILABLE' || status === 'ACTIVE') {
+                actions.push(`<button type="button" class="btn btn-sm btn-primary" data-action="deliver" data-id="${id}">Entregar EPI</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-danger" data-action="deactivate" data-id="${id}">Inativar</button>`);
+            } else if (status === 'DELIVERED') {
+                actions.push(`<button type="button" class="btn btn-sm btn-success" data-action="return" data-id="${id}">Devolver EPI</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-danger" data-action="discard" data-id="${id}">Descartar</button>`);
+            } else if (status === 'RETURNED') {
+                actions.push(`<button type="button" class="btn btn-sm btn-primary" data-action="activate" data-id="${id}">Disponibilizar</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-danger" data-action="discard" data-id="${id}">Descartar</button>`);
+            }
+        } else if (currentRoute === 'incidents') {
+            if (status === 'OPEN') {
+                actions.push(`<button type="button" class="btn btn-sm btn-primary" data-action="investigate" data-id="${id}">Investigar</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-secondary" data-action="close" data-id="${id}">Encerrar</button>`);
+            } else if (status === 'INVESTIGATING') {
+                actions.push(`<button type="button" class="btn btn-sm btn-success" data-action="complete" data-id="${id}">Concluir</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-secondary" data-action="close" data-id="${id}">Encerrar</button>`);
+            }
+        } else if (currentRoute === 'corrective-actions') {
+            if (status === 'OPEN') {
+                actions.push(`<button type="button" class="btn btn-sm btn-primary" data-action="start" data-id="${id}">Iniciar Ação</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-success" data-action="complete" data-id="${id}">Concluir</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-danger" data-action="cancel" data-id="${id}">Cancelar</button>`);
+            } else if (status === 'IN_PROGRESS') {
+                actions.push(`<button type="button" class="btn btn-sm btn-success" data-action="complete" data-id="${id}">Concluir</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-danger" data-action="cancel" data-id="${id}">Cancelar</button>`);
+            }
+        } else if (currentRoute === 'transport') {
+            if (status === 'SCHEDULED') {
+                actions.push(`<button type="button" class="btn btn-sm btn-primary" data-action="start" data-id="${id}">Iniciar Viagem</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-success" data-action="complete" data-id="${id}">Concluir</button>`);
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-danger" data-action="cancel" data-id="${id}">Cancelar</button>`);
+            } else if (status === 'IN_TRANSIT') {
+                actions.push(`<button type="button" class="btn btn-sm btn-success" data-action="complete" data-id="${id}">Concluir Viagem</button>`);
+            }
+        } else {
+            // General resources (allocations, labor-costs, safety-risks, accommodations)
+            if (status === 'ACTIVE' || status === 'OPEN') {
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-danger" data-action="deactivate" data-id="${id}">Inativar</button>`);
+            } else if (status === 'INACTIVE') {
+                actions.push(`<button type="button" class="btn btn-sm btn-outline-success" data-action="activate" data-id="${id}">Ativar</button>`);
+            }
+        }
+
+        return actions.join(' ');
+    };
+
     const renderList = (rows) => {
+        if (!content) return;
         if (!rows || rows.length === 0) {
             renderEmpty('Nenhum registro encontrado para os filtros selecionados.');
             return;
         }
 
-        const container = document.createElement('div');
-        container.className = 'data-list';
+        const table = document.createElement('div');
+        table.className = 'table-responsive';
+        table.innerHTML = `
+            <table class="table hr-table">
+                <thead>
+                    <tr>
+                        <th>Identificação / Nome</th>
+                        <th>Status</th>
+                        <th>Início / Lançamento</th>
+                        <th>Término / Previsão</th>
+                        <th>Valor / Custo</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map(item => `
+                        <tr>
+                            <td>
+                                <strong>${esc(item.name || '(Sem nome)')}</strong>
+                                ${item.kind ? `<small class="d-block text-muted">${esc(item.kind)}</small>` : ''}
+                            </td>
+                            <td>${statusBadge(item.status)}</td>
+                            <td>${item.startsAt ? new Date(item.startsAt).toLocaleString('pt-BR') : '—'}</td>
+                            <td>${item.endsAt ? new Date(item.endsAt).toLocaleString('pt-BR') : '—'}</td>
+                            <td>${item.amount ? Number(item.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}</td>
+                            <td class="table-actions">
+                                ${getActionsForItem(item, route)}
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
 
-        for (const item of rows) {
-            const article = document.createElement('article');
-
-            const h3 = document.createElement('h3');
-            h3.textContent = item.name || '(Sem nome)';
-            article.appendChild(h3);
-
-            const p = document.createElement('p');
-            p.textContent = item.status || 'PENDING';
-            article.appendChild(p);
-
-            if (item.id) {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.dataset.critical = item.id;
-                btn.textContent = 'Inativar';
-                article.appendChild(btn);
-            }
-
-            container.appendChild(article);
-        }
-
-        content.replaceChildren(container);
+        content.replaceChildren(table);
     };
 
     const show = async () => {
-        renderEmpty('Carregando dados…');
-        if (feedback) feedback.textContent = '';
+        renderEmpty('Carregando dados operacionais…');
+        const filterStatus = document.querySelector('#hr-filter-status')?.value;
+        const filterSearch = document.querySelector('#hr-filter-search')?.value?.trim().toLowerCase();
 
         try {
-            const data = await request(route);
             if (route === 'dashboard') {
+                const data = await request('dashboard');
                 renderDashboard(data);
                 return;
             }
-            const rows = Array.isArray(data) ? data : [];
+
+            const query = filterStatus ? `?status=${encodeURIComponent(filterStatus)}` : '';
+            const data = await request(`${route}${query}`);
+            let rows = Array.isArray(data) ? data : [];
+
+            if (filterSearch) {
+                rows = rows.filter(r => (r.name || '').toLowerCase().includes(filterSearch));
+            }
+
             renderList(rows);
         } catch (e) {
             renderEmpty('Não foi possível carregar os dados.');
-            if (feedback) feedback.textContent = e.message;
+            notify(e.message, true);
         }
     };
 
+    // Toggle Help Guide
+    if (helpBtn && helpPanel) {
+        helpBtn.addEventListener('click', () => {
+            const isHidden = helpPanel.hidden;
+            helpPanel.hidden = !isHidden;
+            helpBtn.setAttribute('aria-expanded', String(!isHidden));
+        });
+    }
+
+    // Export CSV
+    if (exportBtn) {
+        exportBtn.addEventListener('click', async () => {
+            if (route === 'dashboard') {
+                notify('Aba dashboard não possui exportação tabular.', true);
+                return;
+            }
+            try {
+                const token = localStorage.getItem('agro360.accessToken');
+                const resp = await fetch(`${api}/${route}/export`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (!resp.ok) throw new Error('Falha ao exportar CSV.');
+                const blob = await resp.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${route}-rh-rural.csv`;
+                a.click();
+                notify('CSV exportado com sucesso.');
+            } catch (err) {
+                notify(err.message, true);
+            }
+        });
+    }
+
+    // Tab Navigation
     document.querySelectorAll('[data-tab]').forEach(btn => {
         btn.addEventListener('click', () => {
-            const tabName = btn.dataset.tab;
-            if (routes[tabName]) {
-                route = routes[tabName];
+            document.querySelectorAll('[data-tab]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            activeTab = btn.dataset.tab;
+            if (routes[activeTab]) {
+                route = routes[activeTab];
                 show();
             }
         });
     });
 
+    // Filters
     const filters = document.querySelector('#hr-filters');
     if (filters) {
         filters.addEventListener('submit', e => {
@@ -140,45 +418,216 @@
         });
     }
 
+    // New Record Button Opens Specific Dialog
     const newRecordBtn = document.querySelector('#new-hr-record');
-    if (newRecordBtn && dialog) {
-        newRecordBtn.addEventListener('click', () => dialog.showModal());
-    }
+    if (newRecordBtn) {
+        newRecordBtn.addEventListener('click', async () => {
+            if (route === 'dashboard') {
+                notify('Selecione uma área operacional (Pessoas, Jornada, etc.) para criar registros.');
+                return;
+            }
 
-    const closeBtn = document.querySelector('[data-close]');
-    if (closeBtn && dialog) {
-        closeBtn.addEventListener('click', () => dialog.close());
-    }
-
-    if (content) {
-        content.addEventListener('click', async e => {
-            const id = e.target.dataset?.critical;
-            if (!id || !confirm('Confirma esta ação crítica?')) return;
-            try {
-                await request(`${route}/${id}/deactivate`, { method: 'POST' });
-                await show();
-            } catch (err) {
-                if (feedback) feedback.textContent = err.message;
+            if (route === 'people') {
+                if (personDialog && personForm) {
+                    personForm.reset();
+                    await populateLookupsInContainer(personForm);
+                    personDialog.showModal();
+                }
+            } else if (route === 'time-entries') {
+                if (timeDialog && timeForm) {
+                    timeForm.reset();
+                    await populateLookupsInContainer(timeForm);
+                    const now = new Date();
+                    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                    const startedInput = timeForm.querySelector('[name="startedAt"]');
+                    if (startedInput) startedInput.value = now.toISOString().slice(0, 16);
+                    timeDialog.showModal();
+                }
+            } else if (route === 'transport') {
+                if (transportDialog && transportForm) {
+                    transportForm.reset();
+                    await populateLookupsInContainer(transportForm);
+                    const now = new Date();
+                    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                    const startInp = transportForm.querySelector('[name="startsAt"]');
+                    const endInp = transportForm.querySelector('[name="endsAt"]');
+                    if (startInp) startInp.value = now.toISOString().slice(0, 16);
+                    const future = new Date(now.getTime() + 2 * 3600 * 1000);
+                    if (endInp) endInp.value = future.toISOString().slice(0, 16);
+                    transportDialog.showModal();
+                }
+            } else {
+                if (recordDialog && recordForm) {
+                    recordForm.reset();
+                    await populateLookupsInContainer(recordForm);
+                    const title = document.querySelector('#hr-record-title');
+                    if (title) title.textContent = `Novo Registro: ${activeTab}`;
+                    recordDialog.showModal();
+                }
             }
         });
     }
 
-    if (form) {
-        form.addEventListener('submit', async e => {
+    // Modal Close Buttons
+    document.querySelectorAll('[data-close]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            btn.closest('dialog')?.close();
+        });
+    });
+
+    // Form Submissions
+    if (personForm) {
+        personForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (!form.reportValidity()) return;
-            const body = Object.fromEntries(new FormData(form));
-            body.amount = Number(body.amount || 0);
+            if (!personForm.reportValidity()) return;
+            const data = Object.fromEntries(new FormData(personForm));
             try {
-                await request(route, { method: 'POST', body: JSON.stringify(body) });
-                if (dialog) dialog.close();
-                form.reset();
+                await request('people', { method: 'POST', body: JSON.stringify(data) });
+                personDialog?.close();
+                notify('Trabalhador cadastrado com sucesso!');
+                delete lookupsCache['people'];
                 await show();
             } catch (err) {
-                if (feedback) feedback.textContent = err.message;
+                notify(err.message, true);
             }
         });
     }
 
+    if (timeForm) {
+        timeForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!timeForm.reportValidity()) return;
+            const data = Object.fromEntries(new FormData(timeForm));
+            data.breakMinutes = Number(data.breakMinutes || 0);
+            if (!data.teamId) data.teamId = null;
+            if (!data.resourceId) data.resourceId = null;
+            try {
+                await request('time-entries/register', { method: 'POST', body: JSON.stringify(data) });
+                timeDialog?.close();
+                notify('Jornada de trabalho aberta com sucesso!');
+                await show();
+            } catch (err) {
+                notify(err.message, true);
+            }
+        });
+    }
+
+    if (endTimeForm) {
+        endTimeForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!endTimeForm.reportValidity()) return;
+            const id = document.querySelector('#hr-end-time-id')?.value;
+            const endedAt = document.querySelector('#hr-end-time-val')?.value;
+            if (!id || !endedAt) return;
+            try {
+                await request(`time-entries/${id}/end`, {
+                    method: 'POST',
+                    body: JSON.stringify(endedAt)
+                });
+                endTimeDialog?.close();
+                notify('Jornada encerrada com sucesso!');
+                await show();
+            } catch (err) {
+                notify(err.message, true);
+            }
+        });
+    }
+
+    if (transportForm) {
+        transportForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!transportForm.reportValidity()) return;
+            const data = Object.fromEntries(new FormData(transportForm));
+            data.capacity = Number(data.capacity || 20);
+            data.passengerCount = Number(data.passengerCount || 0);
+            try {
+                await request('transport/schedule', { method: 'POST', body: JSON.stringify(data) });
+                transportDialog?.close();
+                notify('Transporte programado com sucesso!');
+                await show();
+            } catch (err) {
+                notify(err.message, true);
+            }
+        });
+    }
+
+    if (recordForm) {
+        recordForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!recordForm.reportValidity()) return;
+            const data = Object.fromEntries(new FormData(recordForm));
+            data.amount = Number(data.amount || 0);
+            if (!data.personId) data.personId = null;
+            if (!data.teamId) data.teamId = null;
+            if (!data.propertyId) data.propertyId = null;
+            if (!data.resourceId) data.resourceId = null;
+            if (!data.startsAt) data.startsAt = null;
+            if (!data.endsAt) data.endsAt = null;
+
+            try {
+                await request(route, { method: 'POST', body: JSON.stringify(data) });
+                recordDialog?.close();
+                notify('Registro salvo com sucesso!');
+                if (route === 'teams') delete lookupsCache['teams'];
+                await show();
+            } catch (err) {
+                notify(err.message, true);
+            }
+        });
+    }
+
+    // Contextual Action Buttons Click Handler
+    if (content) {
+        content.addEventListener('click', async (e) => {
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+
+            const action = btn.dataset.action;
+            const id = btn.dataset.id;
+            if (!id || !action) return;
+
+            if (action === 'end-journey') {
+                if (endTimeDialog && endTimeForm) {
+                    const idInp = document.querySelector('#hr-end-time-id');
+                    const valInp = document.querySelector('#hr-end-time-val');
+                    if (idInp) idInp.value = id;
+                    if (valInp) {
+                        const now = new Date();
+                        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                        valInp.value = now.toISOString().slice(0, 16);
+                    }
+                    endTimeDialog.showModal();
+                }
+                return;
+            }
+
+            const actionLabels = {
+                'activate': 'ativar',
+                'deactivate': 'inativar',
+                'dispatch': 'despachar para o campo',
+                'start': 'iniciar',
+                'investigate': 'iniciar investigação',
+                'complete': 'concluir',
+                'close': 'encerrar',
+                'cancel': 'cancelar',
+                'deliver': 'entregar EPI',
+                'return': 'devolver EPI',
+                'discard': 'descartar'
+            };
+
+            const label = actionLabels[action] || action;
+            if (!confirm(`Confirma a operação "${label}" para este registro?`)) return;
+
+            try {
+                await request(`${route}/${id}/${action}`, { method: 'POST' });
+                notify(`Operação "${label}" concluída com sucesso!`);
+                await show();
+            } catch (err) {
+                notify(err.message, true);
+            }
+        });
+    }
+
+    // Initial Load
     show();
 })();

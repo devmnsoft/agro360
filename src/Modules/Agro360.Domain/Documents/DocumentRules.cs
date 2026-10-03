@@ -40,6 +40,13 @@ public static class DocumentRules
         if (!valid) throw new DomainException($"Tipo MIME '{contentType}' incompatível com a extensão '{extension}'.", "documents.invalid_mime");
     }
 
+    /// <summary>
+    /// Política de identificação de arquivos do Agro360:
+    /// Valida assinaturas mágicas iniciais, tipos MIME e regras estruturais profundas (OpenXML e XML seguro).
+    /// LIMITAÇÃO: A identificação estrutural e a verificação de assinatura garantem integridade de formato e barram
+    /// contêineres arbitrários ou exploits comuns (DTD/XXE/zip bomb), mas não substituem inspeção antivírus completa
+    /// contra cargas maliciosas embutidas em fluxos binários complexos.
+    /// </summary>
     public static void ValidateContentSignature(string extension, byte[] header)
     {
         if (header is null || header.Length == 0)
@@ -60,6 +67,67 @@ public static class DocumentRules
 
         if (!valid)
             throw new DomainException($"O conteúdo do arquivo é incompatível com a extensão '{extension}'.", "documents.invalid_content");
+    }
+
+    public static void ValidateOfficeStructure(string extension, Stream stream)
+    {
+        var ext = (extension ?? "").Trim().ToLowerInvariant();
+        if (ext is not (".docx" or ".xlsx")) return;
+
+        try
+        {
+            using var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read, leaveOpen: true);
+            if (archive.Entries.Count > 500)
+                throw new DomainException("O arquivo Office contém mais de 500 entradas, excedendo o limite de segurança.", "documents.invalid_content");
+
+            long totalUncompressed = 0;
+            const long maxUncompressedBytes = 100 * 1024 * 1024; // 100 MB
+            bool hasContentTypes = false;
+            bool hasOfficeSpecificPart = false;
+
+            foreach (var entry in archive.Entries)
+            {
+                totalUncompressed += entry.Length;
+                if (totalUncompressed > maxUncompressedBytes)
+                    throw new DomainException("O conteúdo descompactado excede o limite máximo permitido de 100 MB.", "documents.invalid_content");
+
+                var fullName = entry.FullName.Replace('\\', '/');
+                if (fullName.Equals("[Content_Types].xml", StringComparison.OrdinalIgnoreCase))
+                    hasContentTypes = true;
+
+                if (ext == ".docx" && fullName.StartsWith("word/", StringComparison.OrdinalIgnoreCase))
+                    hasOfficeSpecificPart = true;
+                else if (ext == ".xlsx" && fullName.StartsWith("xl/", StringComparison.OrdinalIgnoreCase))
+                    hasOfficeSpecificPart = true;
+            }
+
+            if (!hasContentTypes || !hasOfficeSpecificPart)
+                throw new DomainException($"O arquivo não possui uma estrutura válida de pacote Office OpenXML ({extension}). Arquivos ZIP arbitrários não são aceitos.", "documents.invalid_content");
+        }
+        catch (System.IO.InvalidDataException)
+        {
+            throw new DomainException("O arquivo ZIP/Office está corrompido ou possui cabeçalho inválido.", "documents.invalid_content");
+        }
+    }
+
+    public static void ValidateXmlContent(Stream stream)
+    {
+        try
+        {
+            var settings = new System.Xml.XmlReaderSettings
+            {
+                DtdProcessing = System.Xml.DtdProcessing.Prohibit,
+                XmlResolver = null,
+                MaxCharactersInDocument = 10 * 1024 * 1024
+            };
+
+            using var reader = System.Xml.XmlReader.Create(stream, settings);
+            while (reader.Read()) { }
+        }
+        catch (System.Xml.XmlException ex)
+        {
+            throw new DomainException($"Arquivo XML inválido ou malformado: {ex.Message}", "documents.invalid_content");
+        }
     }
 
     private static bool IsValidXmlHeader(byte[] header)

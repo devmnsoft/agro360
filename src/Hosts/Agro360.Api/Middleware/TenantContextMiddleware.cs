@@ -44,8 +44,84 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
                 transaction: tx,
                 cancellationToken: context.RequestAborted)).ConfigureAwait(false);
 
+            var isSupportSession = context.User.HasClaim("permission", "support_session") || context.User.HasClaim("role", "SUPPORT_SESSION");
             var isPortalUser = context.User.Claims.Any(c => c.Value.StartsWith("agro360.portal_profile.", StringComparison.OrdinalIgnoreCase));
-            if (isPortalUser)
+
+            if (isSupportSession)
+            {
+                var sessionIdClaim = context.User.FindFirstValue("support_session_id");
+                if (!Guid.TryParse(sessionIdClaim, out var sessionId))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        type = "invalid_support_session",
+                        title = "Sessão de suporte inválida ou ausente no token",
+                        status = 403,
+                        traceId = context.TraceIdentifier
+                    }, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                    return;
+                }
+
+                var supportState = await Dapper.SqlMapper.QuerySingleOrDefaultAsync<(bool IsSuperAdmin, bool SessionValid, string Scope, bool TenantActive)>(
+                    conn, new Dapper.CommandDefinition(
+                        """
+                        select
+                            exists(
+                                select 1 from agro360.platform_super_admins a
+                                join agro360.identity_users u on u.id = a.user_id
+                                where a.user_id = @UserId and a.active and a.deleted_at is null
+                                  and u.status = 'ACTIVE' and u.deleted_at is null
+                            ) as IsSuperAdmin,
+                            exists(
+                                select 1 from agro360.saas_support_sessions s
+                                where s.id = @SessionId and s.tenant_id = @TenantId and s.actor_id = @UserId
+                                  and s.started_at <= now() and s.expires_at > now() and s.ended_at is null
+                            ) as SessionValid,
+                            coalesce((
+                                select s.scope from agro360.saas_support_sessions s
+                                where s.id = @SessionId and s.tenant_id = @TenantId and s.actor_id = @UserId
+                                  and s.started_at <= now() and s.expires_at > now() and s.ended_at is null
+                            ), '') as Scope,
+                            exists(
+                                select 1 from agro360.tenancy_tenants t
+                                where t.id = @TenantId and t.status in (1, 2) and t.deleted_at is null
+                            ) as TenantActive
+                        """,
+                        new { UserId = userId, TenantId = tenantId, SessionId = sessionId },
+                        transaction: tx,
+                        cancellationToken: context.RequestAborted)).ConfigureAwait(false);
+
+                if (!supportState.IsSuperAdmin || !supportState.SessionValid || !supportState.TenantActive)
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        type = "forbidden_support_session",
+                        title = "Sessão de suporte inválida, expirada, revogada ou operador sem permissão",
+                        status = 403,
+                        traceId = context.TraceIdentifier
+                    }, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                    return;
+                }
+
+                var isEndingSupport = context.Request.Path.StartsWithSegments("/api/platform/support-session/end", StringComparison.OrdinalIgnoreCase);
+                var isMutation = HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method) || HttpMethods.IsPatch(context.Request.Method) || HttpMethods.IsDelete(context.Request.Method);
+
+                if (!isEndingSupport && isMutation && !string.Equals(supportState.Scope, "SUPPORT_OPERATIONAL", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        type = "read_only_support_session",
+                        title = "Sessão de suporte em modo somente leitura não permite mutações",
+                        status = 403,
+                        traceId = context.TraceIdentifier
+                    }, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                    return;
+                }
+            }
+            else if (isPortalUser)
             {
                 var portalUserActive = await Dapper.SqlMapper.ExecuteScalarAsync<bool>(conn, new Dapper.CommandDefinition(
                     """

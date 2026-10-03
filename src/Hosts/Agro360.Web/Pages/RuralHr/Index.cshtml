@@ -1,11 +1,317 @@
 @page
 @model Agro360.Web.Pages.RuralHr.IndexModel
 @{ViewData["Title"]="RH Rural e SST";}
+
+<link rel="stylesheet" href="~/css/rural-hr.css" asp-append-version="true" />
+
 <section class="rural-hr-shell" data-api="/api/rural-hr">
-<header><p class="eyebrow">Sprint 19 · pessoas e segurança</p><h1>Dashboard RH Rural/SST</h1><p>Jornada, produtividade, conformidade e segurança das equipes em campo.</p></header>
-<nav class="tabs" aria-label="Áreas de RH">@foreach(var x in new[]{"Pessoas","Equipes","Jornada","Alocações","Custos de Mão de Obra","Treinamentos","EPIs","Segurança","Incidentes","Ações Corretivas","Alojamento","Transporte","Dashboard RH Rural/SST"}){<button type="button" data-tab="@x">@x</button>}</nav>
-<form id="hr-filters"><label>Buscar<input type="search" name="search" maxlength="100" /></label><label>Status<select name="status"><option value="">Todos</option><option>ACTIVE</option><option>OPEN</option><option>COMPLETED</option><option>EXPIRED</option></select></label><button type="submit">Filtrar</button></form>
-<div id="hr-feedback" role="status" aria-live="polite"></div><div id="hr-content"><p class="empty">Carregando dados…</p></div><button id="new-hr-record" type="button">Novo registro</button>
-<dialog id="hr-editor"><form id="hr-form"><h2>Novo registro</h2><label>Nome<input name="name" required minlength="3" maxlength="180" /></label><label>Pessoa<select name="personId" data-lookup="people"><option value="">Pesquise e selecione</option></select></label><label>Equipe<select name="teamId" data-lookup="teams"><option value="">Selecione</option></select></label><label>Propriedade / unidade<select name="propertyId" data-lookup="properties" required><option value="">Selecione</option></select></label><label>Atividade, talhão, lote ou máquina<select name="resourceId" data-lookup="operational-resources"><option value="">Selecione quando aplicável</option></select></label><label>Início<input name="startsAt" type="datetime-local" required /></label><label>Fim<input name="endsAt" type="datetime-local" /></label><label>Valor<input name="amount" type="number" min="0" step="0.01" value="0" /></label><label>Observações<textarea name="notes" maxlength="2000"></textarea></label><menu><button type="button" data-close>Cancelar</button><button type="submit">Salvar</button></menu></form></dialog>
+    <header class="rural-hr-header">
+        <div>
+            <p class="eyebrow">Gestão de Pessoas, Jornadas e SST Operacional</p>
+            <h1>RH Rural e Segurança do Trabalho</h1>
+            <p>Controle de equipes, registro de jornadas, entregas de EPIs, rastreabilidade de incidentes e logística de campo.</p>
+        </div>
+        <div class="header-actions">
+            <button id="toggle-hr-help" type="button" class="btn-help" aria-expanded="false" aria-controls="hr-help-panel">
+                Como usar
+            </button>
+        </div>
+    </header>
+
+    <div id="hr-help-panel" class="help-panel" hidden>
+        <h3>Guia de Operação do RH Rural e SST</h3>
+        <ul>
+            <li><strong>Pessoas:</strong> Cadastre trabalhadores vinculados à função e fazenda de lotação, com CPF/documento e qualificações.</li>
+            <li><strong>Jornadas:</strong> Abertura e encerramento de ponto com controle estrito de horas trabalhadas e intervalos.</li>
+            <li><strong>EPIs:</strong> Controle de disponibilidade, entrega ao colaborador, devolução e descarte conforme normas vigentes.</li>
+            <li><strong>SST &amp; Incidentes:</strong> Registro de não conformidades, investigação e acompanhamento de ações corretivas.</li>
+            <li><strong>Transporte:</strong> Programação de veículos, itinerários e lotação para transporte seguro das frentes de trabalho.</li>
+        </ul>
+    </div>
+
+    <nav class="tabs" aria-label="Módulos de RH Rural">
+        @foreach(var x in new[]{"Pessoas","Equipes","Jornada","Alocações","Custos de Mão de Obra","Treinamentos","EPIs","Segurança","Incidentes","Ações Corretivas","Alojamento","Transporte","Dashboard RH Rural/SST"}){
+            <button type="button" data-tab="@x" class="@(x == "Pessoas" ? "active" : "")">@x</button>
+        }
+    </nav>
+
+    <div class="toolbar">
+        <form id="hr-filters" class="filter-form">
+            <label>
+                Buscar por nome
+                <input type="search" name="search" id="hr-filter-search" placeholder="Digite para filtrar..." maxlength="100" />
+            </label>
+            <label>
+                Status
+                <select name="status" id="hr-filter-status">
+                    <option value="">Todos os status</option>
+                    <option value="ACTIVE">Ativo / Aberto</option>
+                    <option value="IN_FIELD">Em Campo</option>
+                    <option value="IN_PROGRESS">Em Andamento</option>
+                    <option value="INVESTIGATING">Em Investigação</option>
+                    <option value="AVAILABLE">Disponível</option>
+                    <option value="DELIVERED">Entregue</option>
+                    <option value="RETURNED">Devolvido</option>
+                    <option value="COMPLETED">Concluído</option>
+                    <option value="CLOSED">Encerrado</option>
+                    <option value="INACTIVE">Inativo</option>
+                    <option value="CANCELLED">Cancelado</option>
+                </select>
+            </label>
+            <button type="submit" class="btn btn-filter">Filtrar</button>
+        </form>
+
+        <div class="toolbar-actions">
+            <button id="hr-export-csv" type="button" class="btn btn-secondary">Exportar CSV</button>
+            <button id="new-hr-record" type="button" class="btn btn-primary">+ Novo registro</button>
+        </div>
+    </div>
+
+    <div id="hr-feedback" role="status" aria-live="polite" class="feedback-container"></div>
+
+    <div id="hr-content" class="content-container">
+        <p class="empty">Carregando dados operacionais…</p>
+    </div>
+
+    <!-- DIALOG: Pessoas -->
+    <dialog id="hr-person-dialog" class="hr-modal">
+        <form id="hr-person-form" method="dialog">
+            <h2>Cadastrar Pessoa / Trabalhador</h2>
+            <p class="modal-desc">Cadastre o colaborador no quadro da fazenda.</p>
+            <label>
+                Nome completo *
+                <input name="name" required minlength="3" maxlength="180" placeholder="Nome completo do trabalhador" />
+            </label>
+            <label>
+                CPF / Documento (somente números) *
+                <input name="document" required pattern="^[0-9]{11,14}$" maxlength="14" placeholder="Ex: 11122233344" />
+            </label>
+            <label>
+                Função / Cargo *
+                <select name="roleId" data-lookup="roles" required>
+                    <option value="">Carregando cargos…</option>
+                </select>
+            </label>
+            <label>
+                Fazenda / Lotação *
+                <select name="propertyId" data-lookup="properties" required>
+                    <option value="">Carregando propriedades…</option>
+                </select>
+            </label>
+            <label>
+                E-mail
+                <input name="email" type="email" maxlength="254" placeholder="email@exemplo.com" />
+            </label>
+            <label>
+                Telefone / WhatsApp
+                <input name="phone" type="tel" maxlength="30" placeholder="(00) 00000-0000" />
+            </label>
+            <label>
+                Habilidades / Qualificações (separadas por vírgula)
+                <input name="skills" maxlength="1000" placeholder="Ex.: Tratorista, Aplicação defensivos, NR-31" />
+            </label>
+            <menu>
+                <button type="button" data-close class="btn btn-secondary">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Salvar Trabalhador</button>
+            </menu>
+        </form>
+    </dialog>
+
+    <!-- DIALOG: Jornada -->
+    <dialog id="hr-time-dialog" class="hr-modal">
+        <form id="hr-time-form" method="dialog">
+            <h2>Registrar Ponto / Jornada de Trabalho</h2>
+            <p class="modal-desc">Abertura de jornada para apontamento de horas de campo.</p>
+            <label>
+                Trabalhador *
+                <select name="personId" data-lookup="people" required>
+                    <option value="">Selecione o trabalhador</option>
+                </select>
+            </label>
+            <label>
+                Equipe (opcional)
+                <select name="teamId" data-lookup="teams">
+                    <option value="">Nenhuma equipe vinculada</option>
+                </select>
+            </label>
+            <label>
+                Fazenda / Propriedade *
+                <select name="propertyId" data-lookup="properties" required>
+                    <option value="">Selecione a fazenda</option>
+                </select>
+            </label>
+            <label>
+                Talhão / Máquina / Recurso (opcional)
+                <select name="resourceId" data-lookup="operational-resources">
+                    <option value="">Nenhum recurso específico</option>
+                </select>
+            </label>
+            <label>
+                Horário de Início *
+                <input name="startedAt" type="datetime-local" required />
+            </label>
+            <label>
+                Pausa / Intervalo (minutos) *
+                <input name="breakMinutes" type="number" min="0" max="1440" value="60" required />
+            </label>
+            <label>
+                Tipo de Atividade *
+                <input name="activityType" required maxlength="40" placeholder="Ex.: Colheita, Plantio, Manutenção, Pulverização" />
+            </label>
+            <label>
+                Observações
+                <textarea name="notes" maxlength="1000" placeholder="Anotações sobre a jornada"></textarea>
+            </label>
+            <menu>
+                <button type="button" data-close class="btn btn-secondary">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Abrir Jornada</button>
+            </menu>
+        </form>
+    </dialog>
+
+    <!-- DIALOG: Encerrar Jornada -->
+    <dialog id="hr-end-time-dialog" class="hr-modal">
+        <form id="hr-end-time-form" method="dialog">
+            <h2>Encerrar Jornada de Trabalho</h2>
+            <p class="modal-desc" id="hr-end-time-desc">Informe o horário de saída do colaborador.</p>
+            <input type="hidden" name="entryId" id="hr-end-time-id" />
+            <label>
+                Horário de Saída *
+                <input name="endedAt" id="hr-end-time-val" type="datetime-local" required />
+            </label>
+            <menu>
+                <button type="button" data-close class="btn btn-secondary">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Confirmar Encerramento</button>
+            </menu>
+        </form>
+    </dialog>
+
+    <!-- DIALOG: Transporte -->
+    <dialog id="hr-transport-dialog" class="hr-modal">
+        <form id="hr-transport-form" method="dialog">
+            <h2>Programar Transporte de Campo</h2>
+            <p class="modal-desc">Agende itinerários e lotações para movimentação de equipes.</p>
+            <label>
+                Identificação do Trajeto / Linha *
+                <input name="name" required maxlength="180" placeholder="Ex.: Rota Sede -> Talhão Sul" />
+            </label>
+            <label>
+                Motorista *
+                <select name="driverId" data-lookup="people" required>
+                    <option value="">Selecione o motorista</option>
+                </select>
+            </label>
+            <label>
+                Equipe Transportada *
+                <select name="teamId" data-lookup="teams" required>
+                    <option value="">Selecione a equipe</option>
+                </select>
+            </label>
+            <label>
+                Veículo *
+                <select name="vehicleId" data-lookup="vehicles" required>
+                    <option value="">Selecione o veículo</option>
+                </select>
+            </label>
+            <label>
+                Horário de Saída *
+                <input name="startsAt" type="datetime-local" required />
+            </label>
+            <label>
+                Chegada Prevista *
+                <input name="endsAt" type="datetime-local" required />
+            </label>
+            <label>
+                Capacidade do Veículo *
+                <input name="capacity" type="number" min="1" max="500" value="20" required />
+            </label>
+            <label>
+                Quantidade de Passageiros *
+                <input name="passengerCount" type="number" min="1" max="500" value="15" required />
+            </label>
+            <label>
+                Itinerário / Rota
+                <input name="route" maxlength="500" placeholder="Ex.: Ponto A -> Parada Talhão 4 -> Ponto B" />
+            </label>
+            <menu>
+                <button type="button" data-close class="btn btn-secondary">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Programar Transporte</button>
+            </menu>
+        </form>
+    </dialog>
+
+    <!-- DIALOG: Registros Gerais (Equipes, Treinamentos, EPIs, Incidentes, etc.) -->
+    <dialog id="hr-record-dialog" class="hr-modal">
+        <form id="hr-record-form" method="dialog">
+            <h2 id="hr-record-title">Novo Registro</h2>
+            <p class="modal-desc" id="hr-record-desc">Preencha os dados do registro operacional.</p>
+            <label>
+                Título / Descrição *
+                <input name="name" required minlength="3" maxlength="180" placeholder="Nome ou identificação do registro" />
+            </label>
+            <label id="lbl-record-person">
+                Pessoa Responsável / Vinculada
+                <select name="personId" data-lookup="people">
+                    <option value="">Selecione (opcional)</option>
+                </select>
+            </label>
+            <label id="lbl-record-team">
+                Equipe
+                <select name="teamId" data-lookup="teams">
+                    <option value="">Selecione (opcional)</option>
+                </select>
+            </label>
+            <label id="lbl-record-prop">
+                Fazenda / Unidade
+                <select name="propertyId" data-lookup="properties">
+                    <option value="">Selecione a fazenda (opcional)</option>
+                </select>
+            </label>
+            <label id="lbl-record-res">
+                Talhão / Recurso
+                <select name="resourceId" data-lookup="operational-resources">
+                    <option value="">Selecione o recurso (opcional)</option>
+                </select>
+            </label>
+            <label id="lbl-record-start">
+                Início / Data
+                <input name="startsAt" type="datetime-local" />
+            </label>
+            <label id="lbl-record-end">
+                Conclusão / Validade
+                <input name="endsAt" type="datetime-local" />
+            </label>
+            <label id="lbl-record-amount">
+                Valor / Custo (R$)
+                <input name="amount" type="number" min="0" step="0.01" value="0" />
+            </label>
+            <label>
+                Observações
+                <textarea name="notes" maxlength="2000" placeholder="Observações e apontamentos adicionais"></textarea>
+            </label>
+            <menu>
+                <button type="button" data-close class="btn btn-secondary">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Salvar Registro</button>
+            </menu>
+        </form>
+    </dialog>
+
+    <!-- DIALOG: Ação com Justificativa -->
+    <dialog id="hr-action-dialog" class="hr-modal">
+        <form id="hr-action-form" method="dialog">
+            <h2 id="hr-action-title">Confirmar Ação</h2>
+            <p class="modal-desc" id="hr-action-prompt">Esta operação será registrada no histórico de auditoria.</p>
+            <input type="hidden" name="actionUrl" id="hr-action-url" />
+            <label>
+                Justificativa / Motivo
+                <textarea name="reason" id="hr-action-reason" maxlength="1000" placeholder="Informe a justificativa desta operação..."></textarea>
+            </label>
+            <menu>
+                <button type="button" data-close class="btn btn-secondary">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Confirmar</button>
+            </menu>
+        </form>
+    </dialog>
 </section>
+
 <script src="~/js/rural-hr.js" asp-append-version="true"></script>

@@ -77,7 +77,9 @@ public sealed class RuralHrService(DatabaseExecutor db, ITenantContext tenant) :
     public Task<Guid> AddPersonAsync(PersonCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { if (await c.ExecuteScalarAsync<bool>("select exists(select 1 from agro360.rural_hr_people where tenant_id=@TenantId and document=@Document)", new { tenant.TenantId, command.Document }, t)) throw new ArgumentException("Documento já cadastrado neste tenant."); var id = Guid.NewGuid(); await c.ExecuteAsync("insert into agro360.rural_hr_people(id,tenant_id,name,document,role_id,property_id,email,phone,skills,status,created_by,updated_by) values(@Id,@TenantId,@Name,@Document,@RoleId,@PropertyId,@Email,@Phone,@Skills::jsonb,'ACTIVE',@UserId,@UserId)", new { Id = id, tenant.TenantId, command.Name, command.Document, command.RoleId, command.PropertyId, command.Email, command.Phone, Skills = JsonSerializer.Serialize((command.Skills ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries)), tenant.UserId }, t); return id; }, ct);
     public Task<Guid> RegisterTimeAsync(TimeEntryCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) => { if (command.EndedAt is not null) RuralHrRules.WorkedHours(command.StartedAt, command.EndedAt.Value, command.BreakMinutes); if (await c.ExecuteScalarAsync<bool>("select exists(select 1 from agro360.rural_hr_time_entries where tenant_id=@TenantId and person_id=@PersonId and ended_at is null)", new { tenant.TenantId, command.PersonId }, t)) throw new ArgumentException("A pessoa já possui jornada aberta."); var id = Guid.NewGuid(); await c.ExecuteAsync("insert into agro360.rural_hr_time_entries(id,tenant_id,person_id,team_id,property_id,resource_id,started_at,ended_at,break_minutes,activity_type,notes,offline_id,status,created_by) values(@Id,@TenantId,@PersonId,@TeamId,@PropertyId,@ResourceId,@StartedAt,@EndedAt,@BreakMinutes,@ActivityType,@Notes,@OfflineId,case when @EndedAt is null then 'OPEN' else 'CLOSED' end,@UserId)", new { Id = id, tenant.TenantId, command.PersonId, command.TeamId, command.PropertyId, command.ResourceId, command.StartedAt, command.EndedAt, command.BreakMinutes, command.ActivityType, command.Notes, command.OfflineId, tenant.UserId }, t); return id; }, ct);
 
-    public Task EndTimeAsync(Guid id, DateTimeOffset endedAt, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    public Task EndTimeAsync(Guid id, DateTimeOffset endedAt, CancellationToken ct) => db.InTenantTransactionAsync((c, t) => EndTimeInternalAsync(c, t, id, endedAt, ct), ct);
+
+    private async Task EndTimeInternalAsync(System.Data.Common.DbConnection c, System.Data.Common.DbTransaction t, Guid id, DateTimeOffset endedAt, CancellationToken ct)
     {
         var entry = await c.QuerySingleOrDefaultAsync<(DateTimeOffset StartedAt, int BreakMinutes, string Status)>(new CommandDefinition(
             "select started_at as StartedAt, break_minutes as BreakMinutes, status as Status from agro360.rural_hr_time_entries where tenant_id=@TenantId and id=@Id for update",
@@ -93,7 +95,7 @@ public sealed class RuralHrService(DatabaseExecutor db, ITenantContext tenant) :
             new { tenant.TenantId, Id = id, EndedAt = endedAt }, transaction: t, cancellationToken: ct)).ConfigureAwait(false);
 
         if (updated == 0) throw new ConflictException("Concorrência ao encerrar jornada.");
-    }, ct);
+    }
 
     public Task<Guid> AddTransportAsync(TransportCommand command, CancellationToken ct) { RuralHrRules.EnsureCapacity(command.Capacity, command.PassengerCount); return SaveAsync(null, new("TRANSPORT", command.Name, command.DriverId, command.TeamId, null, command.VehicleId, command.StartsAt, command.EndsAt, command.PassengerCount, command.Route), ct); }
 
@@ -119,18 +121,25 @@ public sealed class RuralHrService(DatabaseExecutor db, ITenantContext tenant) :
         }
         else if (targetKind == "TIME_ENTRY")
         {
-            var current = await c.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
-                "select status from agro360.rural_hr_time_entries where tenant_id=@TenantId and id=@Id for update",
-                new { tenant.TenantId, Id = id }, transaction: t, cancellationToken: ct)).ConfigureAwait(false)
-                ?? throw new KeyNotFoundException("Jornada não encontrada.");
+            if (targetStatus == "CLOSED")
+            {
+                await EndTimeInternalAsync(c, t, id, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                var current = await c.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
+                    "select status from agro360.rural_hr_time_entries where tenant_id=@TenantId and id=@Id for update",
+                    new { tenant.TenantId, Id = id }, transaction: t, cancellationToken: ct)).ConfigureAwait(false)
+                    ?? throw new KeyNotFoundException("Jornada não encontrada.");
 
-            RuralHrRules.ValidateStatusTransition("TIME_ENTRY", current, targetStatus);
+                RuralHrRules.ValidateStatusTransition("TIME_ENTRY", current, targetStatus);
 
-            var updated = await c.ExecuteAsync(new CommandDefinition(
-                "update agro360.rural_hr_time_entries set status=@Status,updated_at=now() where tenant_id=@TenantId and id=@Id and status=@Current",
-                new { tenant.TenantId, Id = id, Status = targetStatus, Current = current }, transaction: t, cancellationToken: ct)).ConfigureAwait(false);
+                var updated = await c.ExecuteAsync(new CommandDefinition(
+                    "update agro360.rural_hr_time_entries set status=@Status,updated_at=now() where tenant_id=@TenantId and id=@Id and status=@Current",
+                    new { tenant.TenantId, Id = id, Status = targetStatus, Current = current }, transaction: t, cancellationToken: ct)).ConfigureAwait(false);
 
-            if (updated == 0) throw new ConflictException("O status da jornada foi alterado concorrentemente.");
+                if (updated == 0) throw new ConflictException("O status da jornada foi alterado concorrentemente.");
+            }
         }
         else
         {
@@ -191,22 +200,57 @@ public sealed class RuralHrService(DatabaseExecutor db, ITenantContext tenant) :
         }
 
         // 3. Check rural_hr_time_entries
-        var entryStatus = await c.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
-            "select status from agro360.rural_hr_time_entries where tenant_id=@TenantId and id=@Id for update",
+        var entryExists = await c.ExecuteScalarAsync<bool>(new CommandDefinition(
+            "select exists(select 1 from agro360.rural_hr_time_entries where tenant_id=@TenantId and id=@Id)",
             new { tenant.TenantId, Id = id }, transaction: t, cancellationToken: ct)).ConfigureAwait(false);
 
-        if (entryStatus is not null)
+        if (entryExists)
         {
-            RuralHrRules.ValidateStatusTransition("TIME_ENTRY", entryStatus, targetStatus);
+            if (targetStatus == "CLOSED")
+            {
+                await EndTimeInternalAsync(c, t, id, DateTimeOffset.UtcNow, ct).ConfigureAwait(false);
+                return;
+            }
+
+            var current = await c.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
+                "select status from agro360.rural_hr_time_entries where tenant_id=@TenantId and id=@Id for update",
+                new { tenant.TenantId, Id = id }, transaction: t, cancellationToken: ct)).ConfigureAwait(false)
+                ?? throw new KeyNotFoundException("Jornada não encontrada.");
+
+            RuralHrRules.ValidateStatusTransition("TIME_ENTRY", current, targetStatus);
             var updated = await c.ExecuteAsync(new CommandDefinition(
                 "update agro360.rural_hr_time_entries set status=@Status,updated_at=now() where tenant_id=@TenantId and id=@Id and status=@Current",
-                new { tenant.TenantId, Id = id, Status = targetStatus, Current = entryStatus }, transaction: t, cancellationToken: ct)).ConfigureAwait(false);
+                new { tenant.TenantId, Id = id, Status = targetStatus, Current = current }, transaction: t, cancellationToken: ct)).ConfigureAwait(false);
 
             if (updated == 0) throw new ConflictException("O status da jornada foi alterado concorrentemente.");
             return;
         }
 
         throw new KeyNotFoundException("Registro não encontrado.");
+    }, ct);
+
+    public Task<IReadOnlyList<LookupOption>> LookupAsync(string kind, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        var k = (kind ?? "").Trim().ToLowerInvariant();
+        var (sql, param) = k switch
+        {
+            "people" => ("select id, name as label from agro360.rural_hr_people where tenant_id=@TenantId and status='ACTIVE' order by name limit 100", (object)new { tenant.TenantId }),
+            "teams" => ("select id, name as label from agro360.rural_hr_records where tenant_id=@TenantId and kind='TEAM' and status in ('ACTIVE','IN_FIELD') order by name limit 100", (object)new { tenant.TenantId }),
+            "properties" => ("select id, name as label from agro360.geo_farms where tenant_id=@TenantId and deleted_at is null order by name limit 100", (object)new { tenant.TenantId }),
+            "roles" => ("select id, name as label from agro360.rural_hr_roles where tenant_id=@TenantId and active order by name limit 100", (object)new { tenant.TenantId }),
+            "operational-resources" or "resources" => (
+                """
+                select id, name as label from agro360.geo_plots where tenant_id=@TenantId and deleted_at is null
+                union all
+                select id, name as label from agro360.regional_logistics_vehicles where tenant_id=@TenantId and active
+                order by label limit 100
+                """, (object)new { tenant.TenantId }),
+            "vehicles" => ("select id, name || ' (' || coalesce(registration, type) || ')' as label from agro360.regional_logistics_vehicles where tenant_id=@TenantId and active order by name limit 100", (object)new { tenant.TenantId }),
+            _ => throw new DomainException($"Tipo de consulta '{kind}' não suportado.", "rural_hr.invalid_lookup")
+        };
+
+        var items = await c.QueryAsync<LookupOption>(new CommandDefinition(sql, param, transaction: t, cancellationToken: ct)).ConfigureAwait(false);
+        return (IReadOnlyList<LookupOption>)items.ToArray();
     }, ct);
 
     public Task<RuralHrDashboard> DashboardAsync(CancellationToken ct) => db.InTenantTransactionAsync((c, t) => c.QuerySingleAsync<RuralHrDashboard>("select (select count(*) from agro360.rural_hr_people where tenant_id=@TenantId and status='ACTIVE') activepeople,count(*) filter(where kind='TEAM' and status='ACTIVE') activeteams,coalesce((select sum(extract(epoch from(coalesce(ended_at,now())-started_at))/3600-break_minutes/60.0) from agro360.rural_hr_time_entries where tenant_id=@TenantId),0) workedhours,coalesce(sum(amount) filter(where kind='LABOR_COST'),0) laborcost,count(*) filter(where kind='TRAINING' and ends_at<now()) expiredtrainings,count(*) filter(where kind='PPE' and ends_at<now()) expiredppe,count(*) filter(where kind='INCIDENT' and status not in('CLOSED','COMPLETED')) openincidents,count(*) filter(where kind='CORRECTIVE_ACTION' and ends_at<now() and status!='COMPLETED') overdueactions,count(*) filter(where kind='TEAM' and status='IN_FIELD') teamsinfield,count(*) filter(where kind in('INCIDENT','RISK','PPE','TRAINING') and status='CRITICAL') criticalalerts from agro360.rural_hr_records where tenant_id=@TenantId", new { tenant.TenantId }, t), ct);

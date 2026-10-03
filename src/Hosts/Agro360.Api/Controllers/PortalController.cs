@@ -104,11 +104,11 @@ public sealed class PortalController(IPortalService service) : ControllerBase
         return trace is not null ? Ok(trace) : NotFound();
     }
 
-    [HttpGet("documents")]
+    [HttpGet("documents"), ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public Task<IReadOnlyList<PortalDocumentItemDto>> Documents(CancellationToken ct) =>
         service.DocumentsAsync(ct);
 
-    [HttpGet("documents/{id:guid}/download")]
+    [HttpGet("documents/{id:guid}/download"), ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> DownloadDocument(Guid id, CancellationToken ct)
     {
         var download = await service.DownloadDocumentAsync(id, ct);

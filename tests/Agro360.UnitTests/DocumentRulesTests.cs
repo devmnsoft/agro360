@@ -73,4 +73,69 @@ public sealed class DocumentRulesTests
         var ex = Assert.Throws<DomainException>(() => DocumentRules.ValidateContentSignature(".csv", binaryCsv));
         Assert.Equal("documents.invalid_content", ex.Code);
     }
+
+    [Fact]
+    public void RejectsArbitraryZipAsDocxOrXlsx()
+    {
+        using var ms = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
+        {
+            var entry = zip.CreateEntry("payload.txt");
+            using var writer = new StreamWriter(entry.Open());
+            writer.Write("not an office document");
+        }
+        ms.Position = 0;
+
+        var ex = Assert.Throws<DomainException>(() => DocumentRules.ValidateOfficeStructure(".docx", ms));
+        Assert.Equal("documents.invalid_content", ex.Code);
+    }
+
+    [Fact]
+    public void AcceptsValidDocxStructure()
+    {
+        using var ms = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
+        {
+            var ctEntry = zip.CreateEntry("[Content_Types].xml");
+            using (var writer = new StreamWriter(ctEntry.Open())) writer.Write("<Types/>");
+            var wordEntry = zip.CreateEntry("word/document.xml");
+            using (var writer = new StreamWriter(wordEntry.Open())) writer.Write("<document/>");
+        }
+        ms.Position = 0;
+
+        DocumentRules.ValidateOfficeStructure(".docx", ms);
+    }
+
+    [Fact]
+    public void AcceptsValidXlsxStructure()
+    {
+        using var ms = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
+        {
+            var ctEntry = zip.CreateEntry("[Content_Types].xml");
+            using (var writer = new StreamWriter(ctEntry.Open())) writer.Write("<Types/>");
+            var xlEntry = zip.CreateEntry("xl/workbook.xml");
+            using (var writer = new StreamWriter(xlEntry.Open())) writer.Write("<workbook/>");
+        }
+        ms.Position = 0;
+
+        DocumentRules.ValidateOfficeStructure(".xlsx", ms);
+    }
+
+    [Fact]
+    public void RejectsMalformedXmlContent()
+    {
+        var malformedXml = "<root><unclosedTag></root>"u8.ToArray();
+        using var ms = new MemoryStream(malformedXml);
+        var ex = Assert.Throws<DomainException>(() => DocumentRules.ValidateXmlContent(ms));
+        Assert.Equal("documents.invalid_content", ex.Code);
+    }
+
+    [Fact]
+    public void AcceptsValidXmlContent()
+    {
+        var validXml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><root><item>OK</item></root>"u8.ToArray();
+        using var ms = new MemoryStream(validXml);
+        DocumentRules.ValidateXmlContent(ms);
+    }
 }

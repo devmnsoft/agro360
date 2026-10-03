@@ -55,6 +55,35 @@ function Create-PasswordHash([string]$PlainText) {
     return $res.Trim()
 }
 
+function New-JwtToken([string]$SecretKey, [hashtable]$PayloadClaims) {
+    function To-Base64Url([byte[]]$b) {
+        return [Convert]::ToBase64String($b).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+    }
+    $headerJson = '{"alg":"HS256","typ":"JWT"}'
+    $headerB64 = To-Base64Url ([System.Text.Encoding]::UTF8.GetBytes($headerJson))
+
+    $nowSec = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $claims = [ordered]@{
+        nbf = $nowSec - 10
+        exp = $nowSec + 3600
+        iss = "MNSOFT.Agro360"
+        aud = "MNSOFT.Agro360.Clients"
+    }
+    foreach ($k in $PayloadClaims.Keys) { $claims[$k] = $PayloadClaims[$k] }
+    $payloadJson = $claims | ConvertTo-Json -Compress
+    $payloadB64 = To-Base64Url ([System.Text.Encoding]::UTF8.GetBytes($payloadJson))
+
+    $toSign = "$headerB64.$payloadB64"
+    $hmac = [System.Security.Cryptography.HMACSHA256]::new([System.Text.Encoding]::UTF8.GetBytes($SecretKey))
+    try {
+        $sigBytes = $hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($toSign))
+        $sigB64 = To-Base64Url $sigBytes
+    } finally {
+        $hmac.Dispose()
+    }
+    return "$toSign.$sigB64"
+}
+
 function Exec-Sql([string]$DbName, [string]$Sql, [string]$User = 'postgres', [string]$Pass = $null) {
     $tempFile = Join-Path $evidenceDir ("cmd-" + [guid]::NewGuid().ToString('N') + ".sql")
     [System.IO.File]::WriteAllText($tempFile, $Sql, [System.Text.Encoding]::UTF8)
@@ -438,7 +467,8 @@ insert into agro360.platform_tenant_module_entitlements(tenant_id, module_id, st
     Set-EnvVar AGRO360_TEST_CONNECTION_STRING $connApi
 
     Set-EnvVar ASPNETCORE_ENVIRONMENT 'Development'
-    Set-EnvVar Jwt__SigningKey (Get-RandomBase64 48)
+    $jwtSigningKey = Get-RandomBase64 48
+    Set-EnvVar Jwt__SigningKey $jwtSigningKey
     Set-EnvVar ApiBaseUrl $apiUrl
     Set-EnvVar Bootstrap__Enabled 'false'
 
@@ -978,8 +1008,260 @@ insert into agro360.inventory_stock_lots(id, tenant_id, warehouse_id, product_id
     }
     Assert-Step "18. Pool de conexoes: Requisicoes alternadas preservam isolamento estrito sem vazamento de contexto" $poolConsistent
 
+    # -------------------------------------------------------------
+    # 19. SESSAO DE SUPORTE ASSISTIDO DO SUPER-ADMINISTRADOR
+    # Operador global atua no tenant atendido; read-only restrito; encerramento invalida token imediatamente
+    # -------------------------------------------------------------
+    $platformTenantId = (Query-Sql $dbFull "select id from agro360.tenancy_tenants where slug in ('agro360-platform', 'platform') limit 1;").Trim()
+    if (-not $platformTenantId) {
+        $platformTenantId = [guid]::NewGuid().ToString()
+        $null = Exec-Sql $dbFull "insert into agro360.tenancy_tenants(id, name, slug, timezone_id, status, plan_code) values('$platformTenantId', 'Agro360 Plataforma', 'agro360-platform', 'America/Sao_Paulo', 1, 'ENTERPRISE');"
+    }
+
+    $superUserId = (Query-Sql $dbFull "select id from agro360.identity_users where email = 'superadmin@agro360.local' limit 1;").Trim()
+    if (-not $superUserId) {
+        $superUserId = [guid]::NewGuid().ToString()
+        $null = Exec-Sql $dbFull "insert into agro360.identity_users(id, tenant_id, name, email, password_hash, status, must_change_password) values('$superUserId', '$platformTenantId', 'Super Admin Agro360', 'superadmin@agro360.local', '$adminHash', 'ACTIVE', false);"
+    } else {
+        $null = Exec-Sql $dbFull "update agro360.identity_users set status = 'ACTIVE', must_change_password = false where id = '$superUserId';"
+    }
+
+    $superRoleId = (Query-Sql $dbFull "select id from agro360.identity_roles where tenant_id = '$platformTenantId' and code = 'SUPER_ADMIN' limit 1;").Trim()
+    if (-not $superRoleId) {
+        $superRoleId = [guid]::NewGuid().ToString()
+        $null = Exec-Sql $dbFull "insert into agro360.identity_roles(id, tenant_id, code, name, is_system) values('$superRoleId', '$platformTenantId', 'SUPER_ADMIN', 'SuperAdmin', true);"
+    }
+    $null = Exec-Sql $dbFull "insert into agro360.identity_user_roles(tenant_id, user_id, role_id) values('$platformTenantId', '$superUserId', '$superRoleId') on conflict do nothing;"
+    $null = Exec-Sql $dbFull "insert into agro360.identity_role_permissions(tenant_id, role_id, permission_id) select '$platformTenantId', '$superRoleId', id from agro360.identity_permissions on conflict do nothing;"
+    $null = Exec-Sql $dbFull "insert into agro360.platform_super_admins(id, user_id, active) values(gen_random_uuid(), '$superUserId', true) on conflict(user_id) do update set active = true, deleted_at = null;"
+
+    # Super Admin Global: Emissao do token de plataforma assinado com claim platform.admin
+    $superClaims = @{
+        sub = $superUserId
+        email = 'superadmin@agro360.local'
+        tenant_id = $platformTenantId
+        role = 'SUPER_ADMIN'
+        permission = 'platform.admin'
+    }
+    $superToken = New-JwtToken $jwtSigningKey $superClaims
+    Assert-Step "19. Sessao assistida: Super-admin global autenticado com claim platform.admin" ($superToken.Length -gt 20)
+
+    # Inicia sessao de suporte assistido para Tenant A em escopo somente leitura (default)
+    $supportRes = Http-Call $apiUrl "/api/platform/tenants/$tenantAId/support-session" 'POST' @{
+        reason = "Auditoria e suporte operacional assistido para homologacao e2e"
+        scope = "SUPPORT_READ_OPERATIONAL"
+    } $superToken @(200)
+    $supportResult = $supportRes.Content | ConvertFrom-Json
+    $supportToken = $supportResult.token
+    $supportSessionId = $supportResult.sessionId
+    Assert-Step "19. Sessao assistida: Sessao iniciada com sucesso (token emitido com claims de suporte)" ($supportToken.Length -gt 20 -and $supportSessionId.Length -gt 10)
+
+    # 19.1 Leitura autorizada de dados do tenant atendido com token de suporte
+    $supportDocDash = Http-Call $apiUrl '/api/documents/dashboard' 'GET' $null $supportToken @(200)
+    Assert-Step "19. Sessao assistida: Operador global acessa dados do Tenant A sob papel restrito (200 OK)" ($supportDocDash.StatusCode -eq 200)
+
+    # 19.2 Tentativa de mutacao sob SUPPORT_READ_OPERATIONAL bloqueada com 403 Forbidden
+    $supportMutate = Http-Call $apiUrl '/api/rural-hr/records' 'POST' @{
+        kind = "TEAM"
+        name = "Equipe Nao Autorizada Suporte"
+        status = "ACTIVE"
+    } $supportToken @(403)
+    Assert-Step "19. Sessao assistida: Tentativa de mutacao sob escopo read-only bloqueada pelo middleware (403 Forbidden)" ($supportMutate.StatusCode -eq 403)
+
+    # 19.3 Encerramento da propria sessao de suporte pelo operador assistido
+    $endSupportRes = Http-Call $apiUrl '/api/platform/support-session/end' 'POST' @{
+        sessionId = $supportSessionId
+    } $supportToken @(204)
+    Assert-Step "19. Sessao assistida: Operador encerra a propria sessao de suporte (204 NoContent)" ($endSupportRes.StatusCode -eq 204)
+
+    # 19.4 Requisicao subsequente com o token da sessao encerrada e imediatamente negada
+    $supportAfterEnd = Http-Call $apiUrl '/api/documents/dashboard' 'GET' $null $supportToken @(403)
+    Assert-Step "19. Sessao assistida: Token de sessao encerrada imediatamente rejeitado pelo middleware (403 Forbidden)" ($supportAfterEnd.StatusCode -eq 403)
+
+    # -------------------------------------------------------------
+    # 20. ENDURECIMENTO DE ARQUIVOS, STREAM FRAGMENTADO E VALIDACAO OPENXML/XML
+    # -------------------------------------------------------------
+    Add-Type -AssemblyName System.IO.Compression
+    $httpHardenClient = [System.Net.Http.HttpClient]::new()
+    try {
+        $httpHardenClient.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $tokenA)
+
+        # 20.1 Upload de documento com acumulacao de stream seguro
+        $fragPdfBytes = [System.Text.Encoding]::ASCII.GetBytes("%PDF-1.7`n%Stream de laudo fragmentado com buffer acumulado`n%%EOF")
+        $mpFrag = [System.Net.Http.MultipartFormDataContent]::new()
+        $mpFrag.Add([System.Net.Http.StringContent]::new("Laudo Tecnico Fragmentado"), "name")
+        $mpFrag.Add([System.Net.Http.StringContent]::new($docTypeId), "documentTypeId")
+        $fragFile = [System.Net.Http.ByteArrayContent]::new($fragPdfBytes)
+        $fragFile.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/pdf")
+        $mpFrag.Add($fragFile, "file", "laudo-fragmentado.pdf")
+
+        $resFrag = $httpHardenClient.PostAsync("$apiUrl/api/documents", $mpFrag).Result
+        Assert-Step "20. Upload com buffer acumulado e assinatura PDF valida aceito (201 Created)" ([int]$resFrag.StatusCode -eq 201)
+
+        # 20.2 ZIP arbitrario renomeado para .docx rejeitado na inspecao de estrutura OpenXML
+        $zipMs = [System.IO.MemoryStream]::new()
+        $archive = [System.IO.Compression.ZipArchive]::new($zipMs, [System.IO.Compression.ZipArchiveMode]::Create, $true)
+        $zipEntry = $archive.CreateEntry("payload_executavel.txt")
+        $sw = [System.IO.StreamWriter]::new($zipEntry.Open())
+        $sw.WriteLine("Arbitrary non-OpenXML zip content")
+        $sw.Dispose()
+        $archive.Dispose()
+        $fakeDocxBytes = $zipMs.ToArray()
+        $zipMs.Dispose()
+
+        $mpFakeDocx = [System.Net.Http.MultipartFormDataContent]::new()
+        $mpFakeDocx.Add([System.Net.Http.StringContent]::new("Relatorio Fake Docx"), "name")
+        $mpFakeDocx.Add([System.Net.Http.StringContent]::new($docTypeId), "documentTypeId")
+        $fakeDocxFile = [System.Net.Http.ByteArrayContent]::new($fakeDocxBytes)
+        $fakeDocxFile.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        $mpFakeDocx.Add($fakeDocxFile, "file", "relatorio-fake.docx")
+
+        $resFakeDocx = $httpHardenClient.PostAsync("$apiUrl/api/documents", $mpFakeDocx).Result
+        Assert-Step "20. Fake Office container (ZIP arbitrario sem OpenXML partes) rejeitado (400/422)" ([int]$resFakeDocx.StatusCode -in @(400, 422)) "Status: $([int]$resFakeDocx.StatusCode)"
+
+        # 20.3 XML com DTD proibido (ataque XXE prevenido por XmlReaderSettings)
+        $xxeBytes = [System.Text.Encoding]::UTF8.GetBytes("<?xml version=`"1.0`"?><!DOCTYPE root [<!ENTITY xxe SYSTEM `"file:///c:/windows/win.ini`">]><root>&xxe;</root>")
+        $mpXxe = [System.Net.Http.MultipartFormDataContent]::new()
+        $mpXxe.Add([System.Net.Http.StringContent]::new("XML com DTD"), "name")
+        $mpXxe.Add([System.Net.Http.StringContent]::new($docTypeId), "documentTypeId")
+        $xxeFile = [System.Net.Http.ByteArrayContent]::new($xxeBytes)
+        $xxeFile.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/xml")
+        $mpXxe.Add($xxeFile, "file", "ataque-dtd.xml")
+
+        $resXxe = $httpHardenClient.PostAsync("$apiUrl/api/documents", $mpXxe).Result
+        Assert-Step "20. XML com declaracao DTD proibida rejeitado com seguranca (400/422)" ([int]$resXxe.StatusCode -in @(400, 422)) "Status: $([int]$resXxe.StatusCode)"
+
+        # 20.4 XML seguro e integro aceito
+        $safeXmlBytes = [System.Text.Encoding]::UTF8.GetBytes("<?xml version=`"1.0`" encoding=`"utf-8`"?><laudo><resultado>CONFORME</resultado><safra>2026</safra></laudo>")
+        $mpSafeXml = [System.Net.Http.MultipartFormDataContent]::new()
+        $mpSafeXml.Add([System.Net.Http.StringContent]::new("Laudo XML Seguro"), "name")
+        $mpSafeXml.Add([System.Net.Http.StringContent]::new($docTypeId), "documentTypeId")
+        $safeXmlFile = [System.Net.Http.ByteArrayContent]::new($safeXmlBytes)
+        $safeXmlFile.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/xml")
+        $mpSafeXml.Add($safeXmlFile, "file", "laudo-seguro.xml")
+
+        $resSafeXml = $httpHardenClient.PostAsync("$apiUrl/api/documents", $mpSafeXml).Result
+        Assert-Step "20. XML integro e livre de DTD aceito com sucesso (201 Created)" ([int]$resSafeXml.StatusCode -eq 201)
+    } finally {
+        $httpHardenClient.Dispose()
+    }
+
+    # -------------------------------------------------------------
+    # 21. JORNADAS TIPADAS DE RH RURAL E UNIFICACAO DO ENCERRAMENTO DE JORNADA
+    # Lookups tipados, criacao de pessoa, jornada de trabalho e disputa concorrente atomica
+    # -------------------------------------------------------------
+    # 21.1 Consultar lookups tipados
+    $lkRoles = Http-Call $apiUrl '/api/rural-hr/lookups/roles' 'GET' $null $tokenA @(200)
+    $lkProps = Http-Call $apiUrl '/api/rural-hr/lookups/properties' 'GET' $null $tokenA @(200)
+    $lkTeams = Http-Call $apiUrl '/api/rural-hr/lookups/teams' 'GET' $null $tokenA @(200)
+    $lkPeople = Http-Call $apiUrl '/api/rural-hr/lookups/people' 'GET' $null $tokenA @(200)
+    Assert-Step "21. Lookups de RH Rural (cargos, propriedades, equipes, pessoas) respondem com sucesso (200 OK)" ($lkRoles.StatusCode -eq 200 -and $lkProps.StatusCode -eq 200 -and $lkTeams.StatusCode -eq 200 -and $lkPeople.StatusCode -eq 200)
+
+    # 21.2 Cadastrar pessoa (PERSON)
+    $personRes = Http-Call $apiUrl '/api/rural-hr/records' 'POST' @{
+        kind = "PERSON"
+        name = "Carlos Eduardo Tratorista"
+        status = "ACTIVE"
+        role = "Tratorista Agricola"
+    } $tokenA @(201)
+    $personId = ($personRes.Content | ConvertFrom-Json).id
+    Assert-Step "21. Registro tipado de Pessoa cadastrado com sucesso (201 Created)" ($personId.Length -gt 10)
+
+    # 21.3 Iniciar jornada (TIME_ENTRY)
+    $journeyStart = (Get-Date).ToUniversalTime().AddHours(-4).ToString("yyyy-MM-ddTHH:mm:ssZ")
+    $journeyRes = Http-Call $apiUrl '/api/rural-hr/records' 'POST' @{
+        kind = "TIME_ENTRY"
+        name = "Jornada Operacional Turno Manha"
+        personId = $personId
+        status = "ACTIVE"
+        startedAt = $journeyStart
+    } $tokenA @(201)
+    $journeyId = ($journeyRes.Content | ConvertFrom-Json).id
+    Assert-Step "21. Jornada de trabalho iniciada (status ACTIVE, startedAt registrado)" ($journeyId.Length -gt 10)
+
+    # 21.4 Disputa concorrente de encerramento de jornada: lock pessimista garante encerramento unico
+    $clientJ1 = [System.Net.Http.HttpClient]::new()
+    $clientJ2 = [System.Net.Http.HttpClient]::new()
+    try {
+        $clientJ1.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $tokenA)
+        $clientJ2.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $tokenA)
+
+        $contentJ1 = [System.Net.Http.StringContent]::new(($(@{ justification = "Encerramento normal de turno pelo ponto" } | ConvertTo-Json -Depth 5)), [System.Text.Encoding]::UTF8, "application/json")
+        $contentJ2 = [System.Net.Http.StringContent]::new(($(@{ status = "CLOSED"; justification = "Fechamento concorrente de jornada pelo supervisor" } | ConvertTo-Json -Depth 5)), [System.Text.Encoding]::UTF8, "application/json")
+
+        $taskJ1 = $clientJ1.PostAsync("$apiUrl/api/rural-hr/time-entries/$journeyId/end", $contentJ1)
+        $taskJ2 = $clientJ2.PostAsync("$apiUrl/api/rural-hr/records/$journeyId/change-status", $contentJ2)
+
+        [System.Threading.Tasks.Task]::WaitAll($taskJ1, $taskJ2)
+
+        $jCodes = @([int]$taskJ1.Result.StatusCode, [int]$taskJ2.Result.StatusCode)
+        $hasClosedOk = ($jCodes -contains 200) -or ($jCodes -contains 204)
+        $hasClosedConflict = ($jCodes -contains 400) -or ($jCodes -contains 409)
+        Assert-Step "21. Disputa concorrente de encerramento: Lock pessimista garante encerramento atomico sem inconsistencia" ($hasClosedOk -and $hasClosedConflict) "Codigos: $($jCodes -join ', ')"
+
+        # 21.5 Verificar no banco que ended_at esta preenchido e status e CLOSED
+        $jDbState = (Query-Sql $dbFull "select status || ':' || (ended_at is not null) from agro360.rural_hr_records where id = '$journeyId';").Trim()
+        Assert-Step "21. Encerramento unificado: Registro gravado com status CLOSED e ended_at preenchido" ($jDbState -eq 'CLOSED:True' -or $jDbState -eq 'CLOSED:t') "Estado no banco: $jDbState"
+    } finally {
+        $clientJ1.Dispose()
+        $clientJ2.Dispose()
+    }
+
+    # -------------------------------------------------------------
+    # 22. ACESSO EXTERNO DO PORTAL E REVOGACAO IMEDIATA DE DOCUMENTO
+    # Usuario externo acessa documento autorizado com cache-control no-store e tem acesso revogado em tempo real
+    # -------------------------------------------------------------
+    # 22.1 Configurar perfil e usuario externo do Portal
+    $portalProfileId = (Query-Sql $dbFull "select id from agro360.portal_profiles where tenant_id = '$tenantAId' and code = 'PRODUCER' limit 1;").Trim()
+    if (-not $portalProfileId) {
+        $portalProfileId = [guid]::NewGuid().ToString()
+        $null = Exec-Sql $dbFull "insert into agro360.portal_profiles(id, tenant_id, code, name, active) values('$portalProfileId', '$tenantAId', 'PRODUCER', 'Produtor Integrado', true);"
+    }
+
+    $portalUserId = [guid]::NewGuid().ToString()
+    $portalEmail = 'produtor.externo@parceiro.local'
+    $portalPassword = $adminPassword
+    $portalHash = $adminHash
+    $null = Exec-Sql $dbFull @"
+insert into agro360.portal_external_users(id, tenant_id, profile_id, name, email, password_hash, status, terms_accepted_at, created_by, updated_by)
+values('$portalUserId', '$tenantAId', '$portalProfileId', 'Produtor Rural Parceiro', '$portalEmail', '$portalHash', 'ACTIVE', now(), '$fixtureUserId', '$fixtureUserId')
+on conflict (tenant_id, email) do update set password_hash = '$portalHash', status = 'ACTIVE', profile_id = '$portalProfileId';
+"@
+
+    # Login como Usuario Externo do Portal
+    $pLoginRes = Http-Call $apiUrl '/api/portal/access/login' 'POST' @{
+        tenantSlug = 'santa-clara'
+        email = $portalEmail
+        password = $portalPassword
+    } $null @(200)
+    $portalToken = ($pLoginRes.Content | ConvertFrom-Json).token
+    Assert-Step "22. Portal: Autenticacao de usuario externo bem-sucedida (token com claim portal.access)" ($portalToken.Length -gt 20)
+
+    # 22.2 Vincular permissao explicita ao documento criado no cenario 17
+    $null = Exec-Sql $dbFull @"
+insert into agro360.portal_document_permissions(id, tenant_id, document_id, external_user_id, can_view, can_download, created_by, updated_by)
+values(gen_random_uuid(), '$tenantAId', '$createdDocId', '$portalUserId', true, true, '$fixtureUserId', '$fixtureUserId')
+on conflict do nothing;
+"@
+
+    # 22.3 Listar documentos no Portal
+    $pDocsRes = Http-Call $apiUrl '/api/portal/documents' 'GET' $null $portalToken @(200)
+    $pDocs = $pDocsRes.Content | ConvertFrom-Json
+    Assert-Step "22. Portal: Usuario externo lista documentos autorizados (200 OK)" ($pDocs.Count -ge 1)
+
+    # 22.4 Download autorizado de documento pelo Portal
+    $pDlRes = Http-Call $apiUrl "/api/portal/documents/$createdDocId/download" 'GET' $null $portalToken @(200)
+    Assert-Step "22. Portal: Download do documento pelo usuario externo bem-sucedido (200 OK)" ($pDlRes.StatusCode -eq 200)
+
+    # 22.5 Revogacao em tempo real: Desativa o usuario externo no banco
+    $null = Exec-Sql $dbFull "update agro360.portal_external_users set status = 'INACTIVE' where id = '$portalUserId';"
+
+    # 22.6 Tentativa subsequente de download com o mesmo token DEVE retornar 403 Forbidden imediatamente
+    $pDlRevoked = Http-Call $apiUrl "/api/portal/documents/$createdDocId/download" 'GET' $null $portalToken @(403)
+    Assert-Step "22. Portal: Usuario externo inativado tem acesso revogado em tempo real (403 Forbidden)" ($pDlRevoked.StatusCode -eq 403)
+
     Write-Host "`n=================================================================" -ForegroundColor Green
-    Write-Host "  TODOS OS 18 CENARIOS DE HOMOLOGACAO PASSARAM COM SUCESSO!" -ForegroundColor Green
+    Write-Host "  TODOS OS 22 CENARIOS DE HOMOLOGACAO PASSARAM COM SUCESSO!" -ForegroundColor Green
     Write-Host "=================================================================" -ForegroundColor Green
 
 } finally {

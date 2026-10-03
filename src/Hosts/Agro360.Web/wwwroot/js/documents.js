@@ -178,8 +178,8 @@
             const badge = document.querySelector('#detail-badge');
             badge.textContent = doc.status;
             badge.className = `badge ${(doc.status || '').toLowerCase()}`;
-            document.querySelector('#detail-type').textContent = doc.typeName || 'Geral';
-            document.querySelector('#detail-current-version').textContent = `v${doc.Versions?.length || 1}`;
+            const currentVer = doc.currentVersion ?? (doc.versions?.[0]?.versionNumber || 1);
+            document.querySelector('#detail-current-version').textContent = `v${currentVer}`;
             document.querySelector('#detail-desc').textContent = doc.description || 'Nenhuma descrição informada.';
             document.querySelector('#detail-tags').textContent = (doc.tags || []).length ? doc.tags.join(', ') : '—';
             document.querySelector('#detail-links').textContent = (doc.links || []).length

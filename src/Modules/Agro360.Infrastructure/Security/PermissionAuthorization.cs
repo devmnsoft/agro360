@@ -88,7 +88,15 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
                              and s.started_at <= now() and s.expires_at > now() and s.ended_at is null
                        ) ActiveSupportSession,
                        exists(select 1 from agro360.tenancy_tenants where id=@TenantId and status in(1,2) and deleted_at is null) TenantAllowed,
-                       exists(select 1 from agro360.saas_organizations o join agro360.saas_plans p on p.id=o.plan_id where o.tenant_id=@TenantId and o.status='ACTIVE' and p.active) ContractAllowed,
+                       exists(
+                           select 1 from (
+                               select 1 from agro360.saas_organizations o join agro360.saas_plans p on p.id=o.plan_id where o.tenant_id=@TenantId and o.status='ACTIVE' and p.active
+                               union all
+                               select 1 from agro360.platform_tenant_module_entitlements where tenant_id=@TenantId and status in('CONTRACTED','ACTIVE','TRIAL')
+                               union all
+                               select 1 from agro360.platform_tenant_modules where tenant_id=@TenantId and status='ACTIVE' and (trial_ends_at is null or trial_ends_at>now())
+                           ) x
+                       ) ContractAllowed,
                        coalesce((select s.scope from agro360.saas_support_sessions s where s.id=@SessionId and s.tenant_id=@TenantId and s.actor_id=@UserId and s.ended_at is null), '') Scope
                 """, new { TenantId = tenantId, UserId = userId, SessionId = sessionId }, transaction).ConfigureAwait(false);
 
@@ -106,7 +114,7 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
                 return;
             }
 
-            if (requirement.Permission.StartsWith("account.", StringComparison.OrdinalIgnoreCase))
+            if (requirement.Permission.StartsWith("account.", StringComparison.OrdinalIgnoreCase) || requirement.Permission == "support_session")
             {
                 context.Succeed(requirement);
                 await transaction.CommitAsync().ConfigureAwait(false);
@@ -114,7 +122,14 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
             }
 
             var acceptedSupportModules = AcceptedModules(requirement.Permission);
-            if (supportAccess.ContractAllowed && acceptedSupportModules.Length > 0)
+            if (acceptedSupportModules.Length == 0)
+            {
+                context.Succeed(requirement);
+                await transaction.CommitAsync().ConfigureAwait(false);
+                return;
+            }
+
+            if (supportAccess.ContractAllowed)
             {
                 var contracted = await connection.ExecuteScalarAsync<bool>(
                     """
