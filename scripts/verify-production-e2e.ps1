@@ -264,6 +264,12 @@ try {
     $ver120 = (Query-Sql $dbFull "select count(*) from agro360.platform_schema_versions where version = '11.10.0';").Trim()
     Assert-Step "1. Versao 11.10.0 presente em platform_schema_versions" ($ver120 -eq '1')
 
+    $ver121 = (Query-Sql $dbFull "select count(*) from agro360.platform_schema_versions where version = '11.11.0';").Trim()
+    Assert-Step "1. Versao 11.11.0 presente em platform_schema_versions" ($ver121 -eq '1')
+
+    $ver122 = (Query-Sql $dbFull "select count(*) from agro360.platform_schema_versions where version = '11.12.0';").Trim()
+    Assert-Step "1. Versao 11.12.0 presente em platform_schema_versions" ($ver122 -eq '1')
+
     $colIdemp = (Query-Sql $dbFull "select count(*) from information_schema.columns where table_schema='agro360' and table_name='production_material_consumptions' and column_name in ('idempotency_key','request_hash');").Trim()
     Assert-Step "1. Colunas de idempotencia em production_material_consumptions" ($colIdemp -eq '2')
 
@@ -292,7 +298,7 @@ try {
     # Popula historico de migrations para as 117 migrations ja consolidadas na base
     $migFiles = Get-ChildItem (Join-Path $root 'database/migrations') -Filter "*.sql" | Sort-Object Name
     foreach ($mf in $migFiles) {
-        if ($mf.Name -match '^(118|119|120)_') { continue }
+        if ($mf.Name -match '^(118|119|120|121|122)_') { continue }
         $content = [System.IO.File]::ReadAllText($mf.FullName, [System.Text.Encoding]::UTF8)
         $sha = [System.Security.Cryptography.SHA256]::Create()
         $contentBytes = [System.Text.Encoding]::UTF8.GetBytes($content)
@@ -310,9 +316,9 @@ try {
     $migOutput = & dotnet $migratorDll migrate --migrations (Join-Path $root 'database/migrations') 2>&1
     $migExit = $LASTEXITCODE
     [System.IO.File]::WriteAllText((Join-Path $evidenceDir 'migrator-run.log'), ($migOutput -join "`r`n"), [System.Text.Encoding]::UTF8)
-    Assert-Step "2. Execucao de upgrade pelo migrador real (migrations 118, 119, 120)" ($migExit -eq 0) "Exit code: $migExit"
+    Assert-Step "2. Execucao de upgrade pelo migrador real (migrations 118, 119, 120, 121, 122)" ($migExit -eq 0) "Exit code: $migExit"
 
-    # Verifica que migrations 118, 119 e 120 foram registradas
+    # Verifica que migrations 118, 119, 120, 121 e 122 foram registradas
     $hasMig118 = (Query-Sql $dbUpgrade "select count(*) from agro360.platform_schema_migrations where version = '118_production_material_consumption_integrity.sql';").Trim()
     Assert-Step "2. Migration 118 registrada em platform_schema_migrations" ($hasMig118 -eq '1')
 
@@ -322,8 +328,17 @@ try {
     $hasMig120 = (Query-Sql $dbUpgrade "select count(*) from agro360.platform_schema_migrations where version = '120_rural_hr_status_alignment.sql';").Trim()
     Assert-Step "2. Migration 120 registrada em platform_schema_migrations" ($hasMig120 -eq '1')
 
-    $hasVer120 = (Query-Sql $dbUpgrade "select count(*) from agro360.platform_schema_versions where version = '11.10.0';").Trim()
-    Assert-Step "2. Versao 11.10.0 registrada em platform_schema_versions" ($hasVer120 -eq '1')
+    $hasMig121 = (Query-Sql $dbUpgrade "select count(*) from agro360.platform_schema_migrations where version = '121_saas_platform_context_rls.sql';").Trim()
+    Assert-Step "2. Migration 121 registrada em platform_schema_migrations" ($hasMig121 -eq '1')
+
+    $hasMig122 = (Query-Sql $dbUpgrade "select count(*) from agro360.platform_schema_migrations where version = '122_rural_hr_unified_journey_and_operations.sql';").Trim()
+    Assert-Step "2. Migration 122 registrada em platform_schema_migrations" ($hasMig122 -eq '1')
+
+    $hasVer121 = (Query-Sql $dbUpgrade "select count(*) from agro360.platform_schema_versions where version = '11.11.0';").Trim()
+    Assert-Step "2. Versao 11.11.0 registrada em platform_schema_versions" ($hasVer121 -eq '1')
+
+    $hasVer122 = (Query-Sql $dbUpgrade "select count(*) from agro360.platform_schema_versions where version = '11.12.0';").Trim()
+    Assert-Step "2. Versao 11.12.0 registrada em platform_schema_versions" ($hasVer122 -eq '1')
 
     # Verifica preservacao de dados anteriores
     $preserved = (Query-Sql $dbUpgrade "select count(*) from agro360.production_material_consumptions where id = '$preExistingId';").Trim()
@@ -449,7 +464,7 @@ set session_replication_role = 'origin';
 
     # Configura modulos e credenciais
     $setupSql = @"
-update agro360.saas_plans set modules = array['properties','agriculture','livestock','inventory','finance','reports','logistics','traceability','intelligence','environment-esg','agroindustry','purchasing','commercial','orders','documents'] where name in ('Profissional', 'Cooperativa', 'Agroindústria', 'Enterprise');
+update agro360.saas_plans set modules = array['properties','agriculture','livestock','inventory','finance','reports','logistics','traceability','intelligence','environment-esg','agroindustry','purchasing','commercial','orders','documents','rural-hr','verticals'] where name in ('Profissional', 'Cooperativa', 'Agroindústria', 'Enterprise');
 update agro360.identity_users set password_hash = '$adminHash', status = 'ACTIVE', must_change_password = false where email in ('admin.santaclara@agro360.local', 'admin@santaclara.agro360.local', 'admin.valeverde@agro360.local');
 insert into agro360.identity_role_permissions(tenant_id, role_id, permission_id) select r.tenant_id, r.id, p.id from agro360.identity_roles r cross join agro360.identity_permissions p where r.tenant_id in ('$tenantAId', '$tenantBId') and lower(r.code) = 'tenant-administrator' on conflict do nothing;
 insert into agro360.saas_organizations(tenant_id, organization_type, document, responsible_name, responsible_email, plan_id, status, activated_at, onboarding_status)
@@ -471,6 +486,9 @@ insert into agro360.platform_tenant_module_entitlements(tenant_id, module_id, st
     Set-EnvVar Jwt__SigningKey $jwtSigningKey
     Set-EnvVar ApiBaseUrl $apiUrl
     Set-EnvVar Bootstrap__Enabled 'false'
+    $testStorageDir = Join-Path $evidenceDir 'documents'
+    New-Item -ItemType Directory -Path $testStorageDir | Out-Null
+    Set-EnvVar Storage__RootPath $testStorageDir
 
     Start-HostProcess Api $apiUrl
     Assert-Step "4. API iniciada em ambiente isolado" $true "URL: $apiUrl"
@@ -1046,13 +1064,28 @@ insert into agro360.inventory_stock_lots(id, tenant_id, warehouse_id, product_id
     $superToken = New-JwtToken $jwtSigningKey $superClaims
     Assert-Step "19. Sessao assistida: Super-admin global autenticado com claim platform.admin" ($superToken.Length -gt 20)
 
+    # Garante organizacao ativa no SaaS para Tenant A
+    $null = Exec-Sql $dbFull @"
+insert into agro360.saas_organizations(tenant_id, organization_type, document, responsible_name, responsible_email, plan_id, status, activated_at, onboarding_status)
+select '$tenantAId', 'PRODUCER', '11222333000181', 'Administrador Santa Clara', 'admin@santaclara.agro360.local', id, 'ACTIVE', now(), 'COMPLETED'
+from agro360.saas_plans where name in ('Profissional', 'Enterprise') limit 1
+on conflict (tenant_id) do update set status = 'ACTIVE', plan_id = excluded.plan_id;
+"@
+
+    $debugTenant = Query-Sql $dbFull "select id || '|' || name || '|' || (deleted_at is null) from agro360.tenancy_tenants where id = '$tenantAId';"
+    Write-Host "DEBUG TENANT: $debugTenant"
+    $debugOrg = Query-Sql $dbFull "select tenant_id || '|' || status from agro360.saas_organizations where tenant_id = '$tenantAId';"
+    Write-Host "DEBUG ORG: $debugOrg"
+    $debugJoin = Query-Sql $dbFull "select t.name || '|' || t.slug || '|' || s.status from agro360.tenancy_tenants t join agro360.saas_organizations s on s.tenant_id=t.id where t.id='$tenantAId' and t.deleted_at is null;"
+    Write-Host "DEBUG JOIN: $debugJoin"
+
     # Inicia sessao de suporte assistido para Tenant A em escopo somente leitura (default)
     $supportRes = Http-Call $apiUrl "/api/platform/tenants/$tenantAId/support-session" 'POST' @{
         reason = "Auditoria e suporte operacional assistido para homologacao e2e"
         scope = "SUPPORT_READ_OPERATIONAL"
     } $superToken @(200)
     $supportResult = $supportRes.Content | ConvertFrom-Json
-    $supportToken = $supportResult.token
+    $supportToken = if ($supportResult.accessToken) { $supportResult.accessToken } else { $supportResult.token }
     $supportSessionId = $supportResult.sessionId
     Assert-Step "19. Sessao assistida: Sessao iniciada com sucesso (token emitido com claims de suporte)" ($supportToken.Length -gt 20 -and $supportSessionId.Length -gt 10)
 
@@ -1234,13 +1267,15 @@ on conflict (tenant_id, email) do update set password_hash = '$portalHash', stat
         email = $portalEmail
         password = $portalPassword
     } $null @(200)
-    $portalToken = ($pLoginRes.Content | ConvertFrom-Json).token
+    $pAuthObj = $pLoginRes.Content | ConvertFrom-Json
+    $portalToken = if ($pAuthObj.token) { $pAuthObj.token } else { $pAuthObj.accessToken }
     Assert-Step "22. Portal: Autenticacao de usuario externo bem-sucedida (token com claim portal.access)" ($portalToken.Length -gt 20)
 
     # 22.2 Vincular permissao explicita ao documento criado no cenario 17
     $null = Exec-Sql $dbFull @"
-insert into agro360.portal_document_permissions(id, tenant_id, document_id, external_user_id, can_view, can_download, created_by, updated_by)
-values(gen_random_uuid(), '$tenantAId', '$createdDocId', '$portalUserId', true, true, '$fixtureUserId', '$fixtureUserId')
+update agro360.documents set status = 'ACTIVE' where id = '$createdDocId';
+insert into agro360.portal_document_permissions(id, tenant_id, document_id, external_user_id, can_download, created_by, updated_by)
+values(gen_random_uuid(), '$tenantAId', '$createdDocId', '$portalUserId', true, '$fixtureUserId', '$fixtureUserId')
 on conflict do nothing;
 "@
 

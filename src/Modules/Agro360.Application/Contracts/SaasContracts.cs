@@ -37,6 +37,22 @@ public sealed record TenantCreated(Guid Id, InvitationCreated AdministratorInvit
 public sealed record TenantUpdateCommand(string Name, string Type, string ResponsibleName, string ResponsibleEmail, Guid PlanId);
 public sealed record SupportSessionCommand(string Reason, string? Scope = null);
 public sealed record SupportSessionResult(Guid SessionId, Guid TenantId, string TenantName, string TenantSlug, string AccessToken, DateTimeOffset ExpiresAt, string[] Permissions, string Scope);
+public sealed class SupportSessionOrgRow
+{
+    public string Name { get; init; } = string.Empty;
+    public string Slug { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+}
+public sealed class SupportSessionActorRow
+{
+    public string Email { get; init; } = string.Empty;
+    public bool Active { get; init; }
+}
+public sealed class SupportSessionSummaryRow
+{
+    public Guid Id { get; init; }
+    public Guid TenantId { get; init; }
+}
 public sealed record EndSupportSessionRequest(Guid? SessionId = null, Guid? TenantId = null);
 public sealed class ModuleCatalogItem { public Guid Id { get; init; } public string Code { get; init; } = string.Empty; public string Name { get; init; } = string.Empty; public string Description { get; init; } = string.Empty; }
 public sealed record ReasonCommand(string Reason);

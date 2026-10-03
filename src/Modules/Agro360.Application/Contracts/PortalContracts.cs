@@ -5,8 +5,13 @@ public sealed record PortalInvitationCreated(Guid Id, string AcceptanceToken, Da
 public sealed record PortalInvitationRow(Guid Id, string Name, string Email, string Profile, string EntityType, string EntityLabel, string Status, DateTimeOffset ExpiresAt, DateTimeOffset CreatedAt);
 public sealed record AcceptPortalInvitationCommand(string Token, string Password, bool AcceptTerms);
 public sealed record PortalLoginCommand(string TenantSlug, string Email, string Password);
-public sealed record PortalAuthentication(Guid TenantId, Guid UserId, string Name, string Profile, string AccessToken, string RefreshToken, DateTimeOffset ExpiresAt);
+public sealed record PortalAuthentication(Guid TenantId, Guid UserId, string Name, string Profile, string AccessToken, string RefreshToken, DateTimeOffset ExpiresAt)
+{
+    public string Token => AccessToken;
+}
 public sealed record PortalChangePasswordCommand(string CurrentPassword, string NewPassword);
+
+
 public sealed record PortalDashboard(string Name, string Profile, IReadOnlyList<PortalMetric> Metrics, IReadOnlyList<PortalAnnouncement> Announcements, IReadOnlyList<PortalActivity> Activities);
 public sealed record PortalMetric(string Code, string Label, long Value, string? Target);
 public sealed record PortalActivity(string Type, string Description, DateTimeOffset OccurredAt);
@@ -24,8 +29,49 @@ public sealed record PortalRequestEventDto(Guid Id, string EventType, string Mes
 public sealed record CancelPortalRequestCommand(string Reason);
 public sealed record ResolvePortalRequestCommand(string Resolution);
 public sealed record RejectPortalRequestCommand(string Reason);
-public sealed record PortalDocumentItemDto(Guid DocumentId, string Name, string DocumentType, string? EntityType, DateTimeOffset CreatedAt, long FileSize, string MimeType);
-public sealed record PortalSupportArticleDto(Guid Id, string Title, string Content, string? Category, DateTimeOffset PublishedAt);
+public sealed record PortalDocumentItemDto
+{
+    public Guid DocumentId { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string DocumentType { get; init; } = string.Empty;
+    public string? EntityType { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public long FileSize { get; init; }
+    public string MimeType { get; init; } = string.Empty;
+
+    public PortalDocumentItemDto() { }
+
+    public PortalDocumentItemDto(Guid documentId, string name, string documentType, string? entityType, DateTimeOffset createdAt, long fileSize, string mimeType)
+    {
+        DocumentId = documentId;
+        Name = name;
+        DocumentType = documentType;
+        EntityType = entityType;
+        CreatedAt = createdAt;
+        FileSize = fileSize;
+        MimeType = mimeType;
+    }
+}
+
+public sealed record PortalSupportArticleDto
+{
+    public Guid Id { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public string Content { get; init; } = string.Empty;
+    public string? Category { get; init; }
+    public DateTimeOffset PublishedAt { get; init; }
+
+    public PortalSupportArticleDto() { }
+
+    public PortalSupportArticleDto(Guid id, string title, string content, string? category, DateTimeOffset publishedAt)
+    {
+        Id = id;
+        Title = title;
+        Content = content;
+        Category = category;
+        PublishedAt = publishedAt;
+    }
+}
 
 public interface IPortalService
 {

@@ -9,15 +9,43 @@ public sealed record TimeEntryCommand([Required] Guid PersonId, Guid? TeamId, [R
 public sealed record TransportCommand([Required, MaxLength(180)] string Name, [Required] Guid TeamId, [Required] Guid VehicleId, [Required] Guid DriverId, [Range(1, 500)] int Capacity, [Range(1, 500)] int PassengerCount, DateTimeOffset StartsAt, DateTimeOffset EndsAt, [MaxLength(500)] string? Route);
 public sealed record RuralHrDashboard(int ActivePeople, int ActiveTeams, decimal WorkedHours, decimal LaborCost, int ExpiredTrainings, int ExpiredPpe, int OpenIncidents, int OverdueActions, int TeamsInField, int CriticalAlerts);
 
-public sealed record RuralHrStatusChangeCommand([Required] string Status, [MaxLength(1000)] string? Reason = null);
+public sealed record RuralHrStatusChangeCommand([Required] string Status, [MaxLength(1000)] string? Reason = null, string? Justification = null);
+
+public sealed record EndTimeRequest(DateTimeOffset? EndedAt = null, string? Justification = null);
+
+public sealed record RuralHrGenericRecordCommand(
+    [Required, MaxLength(40)] string Kind,
+    [Required, MaxLength(180)] string Name,
+    Guid? PersonId = null,
+    Guid? TeamId = null,
+    Guid? PropertyId = null,
+    Guid? ResourceId = null,
+    DateTimeOffset? StartsAt = null,
+    DateTimeOffset? StartedAt = null,
+    DateTimeOffset? EndsAt = null,
+    DateTimeOffset? EndedAt = null,
+    [Range(0, double.MaxValue)] decimal Amount = 0,
+    [MaxLength(2000)] string? Notes = null,
+    string? Status = null,
+    string? Role = null,
+    string? ActivityType = null,
+    [Range(0, 1440)] int BreakMinutes = 0,
+    Guid? OrderId = null,
+    Guid? SeasonId = null,
+    Guid? PlotId = null,
+    string? RateType = null,
+    decimal? RateValue = null
+);
 
 public interface IRuralHrService
 {
     Task<IReadOnlyList<RuralHrRecord>> ListAsync(string kind, string? status, CancellationToken ct);
     Task<Guid> SaveAsync(Guid? id, RuralHrCommand command, CancellationToken ct);
+    Task<Guid> SaveGenericAsync(Guid? id, RuralHrGenericRecordCommand command, CancellationToken ct);
     Task<Guid> AddPersonAsync(PersonCommand command, CancellationToken ct);
     Task<Guid> RegisterTimeAsync(TimeEntryCommand command, CancellationToken ct);
     Task EndTimeAsync(Guid id, DateTimeOffset endedAt, CancellationToken ct);
+    Task EndTimeAsync(Guid id, DateTimeOffset? endedAt, string? justification, CancellationToken ct);
     Task<Guid> AddTransportAsync(TransportCommand command, CancellationToken ct);
     Task ChangeStatusAsync(Guid id, string kind, string status, CancellationToken ct);
     Task ChangeStatusAsync(Guid id, string status, CancellationToken ct);

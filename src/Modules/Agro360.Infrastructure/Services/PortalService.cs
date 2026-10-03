@@ -190,19 +190,31 @@ public sealed class PortalService(
         }, ct);
     }
 
-    public Task<PortalAuthentication> LoginAsync(PortalLoginCommand command, CancellationToken ct) =>
-        db.InSystemTransactionAsync(async (c, t) =>
+    public async Task<PortalAuthentication> LoginAsync(PortalLoginCommand command, CancellationToken ct)
+    {
+        var email = PortalRules.Email(command.Email);
+        var slug = command.TenantSlug.Trim().ToLowerInvariant();
+
+        var tenant = await db.InSystemTransactionAsync(async (c, t) =>
+            await c.QuerySingleOrDefaultAsync<(Guid Id, short Status)?>(new CommandDefinition(
+                "select id as \"Id\", status as \"Status\" from agro360.tenancy_tenants where slug = @Slug and deleted_at is null",
+                new { Slug = slug }, t, cancellationToken: ct)), ct);
+
+        if (tenant is null || (tenant.Value.Status != 1 && tenant.Value.Status != 2))
+            throw new ForbiddenException("E-mail, organização ou senha inválidos.");
+
+        Guid tenantId = tenant.Value.Id;
+
+        return await db.InTenantTransactionAsync(tenantId, async (c, t) =>
         {
-            var email = PortalRules.Email(command.Email);
             var row = await c.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition(
                 """
                 select u.id, u.tenant_id, u.name, u.email, u.password_hash, u.status, p.code profile
                 from agro360.portal_external_users u
                 join agro360.portal_profiles p on p.id = u.profile_id and p.tenant_id = u.tenant_id and p.active and p.deleted_at is null
-                join agro360.tenancy_tenants tn on tn.id = u.tenant_id and tn.status in (1, 2) and tn.deleted_at is null
-                where tn.slug = @Slug and u.email = @Email and u.status = 'ACTIVE' and u.deleted_at is null
+                where u.tenant_id = @TenantId and u.email = @Email and u.status = 'ACTIVE' and u.deleted_at is null
                 """,
-                new { Slug = command.TenantSlug.Trim().ToLowerInvariant(), Email = email }, t, cancellationToken: ct));
+                new { TenantId = tenantId, Email = email }, t, cancellationToken: ct));
 
             if (row is null || !passwords.Verify(command.Password, (string)row.password_hash))
                 throw new ForbiddenException("E-mail, organização ou senha inválidos.");
@@ -217,6 +229,8 @@ public sealed class PortalService(
 
             return Auth((Guid)row.tenant_id, (Guid)row.id, (string)row.name, (string)row.email, (string)row.profile);
         }, ct);
+    }
+
 
     public Task ChangePasswordAsync(PortalChangePasswordCommand command, CancellationToken ct)
     {

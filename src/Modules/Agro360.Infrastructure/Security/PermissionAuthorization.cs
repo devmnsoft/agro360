@@ -74,6 +74,8 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
                 return;
             }
 
+            await connection.ExecuteAsync("select set_config('app.platform_context', 'true', true);", transaction: transaction).ConfigureAwait(false);
+
             var supportAccess = await connection.QuerySingleAsync<SupportAccessState>(
                 """
                 select exists(

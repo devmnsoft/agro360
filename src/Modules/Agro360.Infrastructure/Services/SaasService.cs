@@ -586,20 +586,21 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
     {
         if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length < 5)
             throw new ArgumentException("Motivo obrigatório com ao menos 5 caracteres.");
-        var org = await c.QuerySingleOrDefaultAsync<(string Name, string Slug, string Status)>(
-            "select t.name, t.slug, s.status from agro360.tenancy_tenants t join agro360.saas_organizations s on s.tenant_id=t.id where t.id=@TenantId and t.deleted_at is null for update",
+        var org = await c.QuerySingleOrDefaultAsync<SupportSessionOrgRow>(
+            "select t.name as Name, t.slug as Slug, s.status as Status from agro360.tenancy_tenants t join agro360.saas_organizations s on s.tenant_id=t.id where t.id=@TenantId and t.deleted_at is null",
             new { TenantId = tenantId }, t);
-        if (org == default) throw new KeyNotFoundException("Organização não encontrada.");
+        if (org is null)
+            throw new KeyNotFoundException($"Organização não encontrada para o tenant {tenantId}.");
         if (org.Status is "BLOCKED")
             throw new InvalidOperationException("Não é possível iniciar contexto de suporte em organização bloqueada.");
-        var actor = await c.QuerySingleOrDefaultAsync<(string Email, bool Active)>(
+        var actor = await c.QuerySingleOrDefaultAsync<SupportSessionActorRow>(
             """
-            select u.email, a.active from agro360.platform_super_admins a
+            select u.email as Email, a.active as Active from agro360.platform_super_admins a
             join agro360.identity_users u on u.id=a.user_id
             where a.user_id=@Actor and a.active and a.deleted_at is null
               and u.status='ACTIVE' and u.deleted_at is null
             """, new { Actor = superAdminUserId }, t);
-        if (actor == default || !actor.Active) throw new UnauthorizedAccessException("Super-admin global não encontrado ou inativo.");
+        if (actor is null || !actor.Active) throw new UnauthorizedAccessException("Super-admin global não encontrado ou inativo.");
 
         await c.QueryAsync<Guid>("select id from agro360.saas_support_sessions where tenant_id = @TenantId and actor_id = @Actor and ended_at is null for update", new { TenantId = tenantId, Actor = superAdminUserId }, t);
         await c.ExecuteAsync(
@@ -701,9 +702,9 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
 
         return System("support-session-end-active", async (c, t) =>
         {
-            var activeSessions = (await c.QueryAsync<(Guid Id, Guid TenantId)>(
+            var activeSessions = (await c.QueryAsync<SupportSessionSummaryRow>(
                 """
-                select id, tenant_id
+                select id as Id, tenant_id as TenantId
                 from agro360.saas_support_sessions
                 where actor_id = @Actor
                   and id = @SessionId
@@ -740,9 +741,9 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
 
     public Task EndAllActiveSupportSessionsAsync(Guid actorId, string reason, CancellationToken ct) => System("support-session-end-all", async (c, t) =>
     {
-        var activeSessions = (await c.QueryAsync<(Guid Id, Guid TenantId)>(
+        var activeSessions = (await c.QueryAsync<SupportSessionSummaryRow>(
             """
-            select id, tenant_id
+            select id as Id, tenant_id as TenantId
             from agro360.saas_support_sessions
             where actor_id = @Actor
               and ended_at is null
@@ -830,6 +831,7 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
     private sealed class InvitationUserLookup { public Guid Id { get; init; } public string Status { get; init; } = string.Empty; }
     private sealed class PlanProvisioningLookup { public Guid Id { get; init; } public string Name { get; init; } = string.Empty; public decimal MonthlyPrice { get; init; } public string[] Modules { get; init; } = []; }
     private sealed class ChargePaymentLookup { public Guid TenantId { get; init; } public decimal Amount { get; init; } public decimal PaidAmount { get; init; } public string Status { get; init; } = string.Empty; }
+
 
     [GeneratedRegex("^[a-z0-9]+(?:-[a-z0-9]+)*$")] private static partial Regex SlugRegex();
     [GeneratedRegex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")] private static partial Regex EmailRegex();

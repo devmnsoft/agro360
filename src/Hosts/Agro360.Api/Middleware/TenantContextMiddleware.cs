@@ -63,7 +63,12 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
                     return;
                 }
 
-                var supportState = await Dapper.SqlMapper.QuerySingleOrDefaultAsync<(bool IsSuperAdmin, bool SessionValid, string Scope, bool TenantActive)>(
+                await Dapper.SqlMapper.ExecuteAsync(conn, new Dapper.CommandDefinition(
+                    "select set_config('app.platform_context', 'true', true);",
+                    transaction: tx,
+                    cancellationToken: context.RequestAborted)).ConfigureAwait(false);
+
+                var supportState = await Dapper.SqlMapper.QuerySingleOrDefaultAsync<SupportSessionStateRow>(
                     conn, new Dapper.CommandDefinition(
                         """
                         select
@@ -92,7 +97,7 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
                         transaction: tx,
                         cancellationToken: context.RequestAborted)).ConfigureAwait(false);
 
-                if (!supportState.IsSuperAdmin || !supportState.SessionValid || !supportState.TenantActive)
+                if (supportState is null || !supportState.IsSuperAdmin || !supportState.SessionValid || !supportState.TenantActive)
                 {
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     await context.Response.WriteAsJsonAsync(new
@@ -315,5 +320,13 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
         }
 
         return parsed;
+    }
+
+    private sealed class SupportSessionStateRow
+    {
+        public bool IsSuperAdmin { get; init; }
+        public bool SessionValid { get; init; }
+        public string Scope { get; init; } = string.Empty;
+        public bool TenantActive { get; init; }
     }
 }

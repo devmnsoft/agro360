@@ -522,7 +522,7 @@
             try {
                 await request(`time-entries/${id}/end`, {
                     method: 'POST',
-                    body: JSON.stringify(endedAt)
+                    body: JSON.stringify({ endedAt: endedAt })
                 });
                 endTimeDialog?.close();
                 notify('Jornada encerrada com sucesso!');
