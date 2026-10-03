@@ -43,4 +43,34 @@ public sealed class DocumentRulesTests
         var ex = Assert.Throws<DomainException>(() => DocumentRules.ValidateFile("relatorio.pdf", "application/pdf", 30 * 1024 * 1024, 25 * 1024 * 1024));
         Assert.Equal("documents.invalid_size", ex.Code);
     }
+
+    [Fact]
+    public void ValidatesPdfMagicBytesCorrectly()
+    {
+        var pdfHeader = "%PDF-1.7\r\n"u8.ToArray();
+        DocumentRules.ValidateContentSignature(".pdf", pdfHeader);
+    }
+
+    [Fact]
+    public void RejectsDisguisedExecutableWithPdfExtension()
+    {
+        var mzHeader = "MZ\x90\x00\x03\x00\x00\x00"u8.ToArray();
+        var ex = Assert.Throws<DomainException>(() => DocumentRules.ValidateContentSignature(".pdf", mzHeader));
+        Assert.Equal("documents.invalid_content", ex.Code);
+    }
+
+    [Fact]
+    public void RejectsEmptyHeaderSignature()
+    {
+        var ex = Assert.Throws<DomainException>(() => DocumentRules.ValidateContentSignature(".pdf", Array.Empty<byte>()));
+        Assert.Equal("documents.empty_file", ex.Code);
+    }
+
+    [Fact]
+    public void RejectsBinaryContentInCsv()
+    {
+        var binaryCsv = new byte[] { (byte)'a', (byte)',', (byte)'b', 0x00, (byte)'c' };
+        var ex = Assert.Throws<DomainException>(() => DocumentRules.ValidateContentSignature(".csv", binaryCsv));
+        Assert.Equal("documents.invalid_content", ex.Code);
+    }
 }

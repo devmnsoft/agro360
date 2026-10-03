@@ -199,10 +199,10 @@ public sealed class IdentityService(
             var isGlobalAdministrator = await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
                 "select exists(select 1 from agro360.platform_super_admins where user_id=@UserId and active and deleted_at is null)",
                 new { UserId = user.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
-            if (isGlobalAdministrator && user.MfaEnabled)
+            if (isGlobalAdministrator)
             {
-                if (string.IsNullOrWhiteSpace(user.MfaSecretEncrypted))
-                    throw new ForbiddenException("O acesso global exige MFA configurado por segredo local.");
+                if (!user.MfaEnabled || string.IsNullOrWhiteSpace(user.MfaSecretEncrypted))
+                    throw new ForbiddenException("O acesso global exige MFA ativo e configurado por segredo local.");
                 string secret;
                 try { secret = _mfaProtector.Unprotect(user.MfaSecretEncrypted); }
                 catch (System.Security.Cryptography.CryptographicException) { throw new ForbiddenException("A configuração MFA global não pode ser validada neste host."); }

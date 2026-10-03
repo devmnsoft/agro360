@@ -14,6 +14,21 @@
         <a class="primary button" href="/Portal/Requests?new=true">+ Solicitar Documento</a>
     </div>
 
+    <article class="portal-help-card" style="margin-bottom: 1.2rem; background: rgba(16, 40, 32, 0.4); border: 1px solid rgba(120, 220, 170, 0.2); border-radius: 12px; padding: 1rem 1.2rem;">
+        <h3 style="margin: 0 0 0.35rem; font-size: 0.98rem; color: #8cd2af;">Como usar o repositório documental</h3>
+        <p style="margin: 0; font-size: 0.88rem; color: #c9e8dc; line-height: 1.45;">
+            Os laudos técnicos, certificados e comprovantes disponíveis abaixo são restritos à sua unidade/organização vinculada. Apenas documentos ativos e liberados pela governança técnica aparecem nesta listagem. Todo download gera trilha auditável de acesso.
+        </p>
+    </article>
+
+    <div class="portal-filter-bar" style="display: flex; gap: 0.8rem; margin-bottom: 1.2rem; flex-wrap: wrap; align-items: center;">
+        <input id="portal-doc-search" type="search" placeholder="Filtrar por nome do documento…" style="flex: 1; min-width: 220px; padding: 0.65rem 0.9rem; border-radius: 8px; border: 1px solid rgba(140, 210, 175, 0.3); background: #0b1c17; color: inherit;" />
+        <select id="portal-doc-type" aria-label="Filtrar por tipo" style="padding: 0.65rem 0.9rem; border-radius: 8px; border: 1px solid rgba(140, 210, 175, 0.3); background: #0b1c17; color: inherit;">
+            <option value="">Todos os tipos</option>
+        </select>
+        <span id="portal-doc-count" style="font-size: 0.85rem; color: #8cd2af;"></span>
+    </div>
+
     <div class="document-list" id="portal-documents-list" aria-live="polite">
         <div class="empty">Carregando seus documentos liberados…</div>
     </div>

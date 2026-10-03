@@ -8,6 +8,22 @@ public static class RuralHrRules
     public static void EnsureCapacity(int capacity, int passengers) { if (capacity <= 0 || passengers < 0 || passengers > capacity) throw new ArgumentException("A lotação excede a capacidade do transporte."); }
     public static bool IsExpired(DateOnly expiresOn, DateOnly today) => expiresOn < today;
 
+    public static string InitialStatus(string kind) => (kind ?? "").Trim().ToUpperInvariant() switch
+    {
+        "TEAM" => "ACTIVE",
+        "TRAINING" => "PLANNED",
+        "PPE" => "AVAILABLE",
+        "INCIDENT" => "OPEN",
+        "CORRECTIVE_ACTION" => "OPEN",
+        "TRANSPORT" => "SCHEDULED",
+        "INSPECTION" => "PLANNED",
+        "RISK" => "OPEN",
+        "ACCOMMODATION" => "AVAILABLE",
+        "ALLOCATION" => "ACTIVE",
+        "LABOR_COST" => "ACTIVE",
+        _ => "ACTIVE"
+    };
+
     public static void ValidateStatusTransition(string kind, string currentStatus, string targetStatus)
     {
         var cur = (currentStatus ?? "").Trim().ToUpperInvariant();
@@ -50,6 +66,7 @@ public static class RuralHrRules
             {
                 ("AVAILABLE", "DELIVERED") => true,
                 ("AVAILABLE", "INACTIVE") => true,
+                ("ACTIVE", "AVAILABLE") => true,
                 ("ACTIVE", "DELIVERED") => true,
                 ("ACTIVE", "INACTIVE") => true,
                 ("DELIVERED", "RETURNED") => true,
@@ -64,6 +81,10 @@ public static class RuralHrRules
                 ("OPEN", "INVESTIGATING") => true,
                 ("OPEN", "CLOSED") => true,
                 ("OPEN", "COMPLETED") => true,
+                ("ACTIVE", "OPEN") => true,
+                ("ACTIVE", "INVESTIGATING") => true,
+                ("ACTIVE", "CLOSED") => true,
+                ("ACTIVE", "COMPLETED") => true,
                 ("INVESTIGATING", "CLOSED") => true,
                 ("INVESTIGATING", "COMPLETED") => true,
                 _ => false
@@ -73,6 +94,10 @@ public static class RuralHrRules
                 ("OPEN", "IN_PROGRESS") => true,
                 ("OPEN", "COMPLETED") => true,
                 ("OPEN", "CANCELLED") => true,
+                ("ACTIVE", "OPEN") => true,
+                ("ACTIVE", "IN_PROGRESS") => true,
+                ("ACTIVE", "COMPLETED") => true,
+                ("ACTIVE", "CANCELLED") => true,
                 ("IN_PROGRESS", "COMPLETED") => true,
                 ("IN_PROGRESS", "CANCELLED") => true,
                 _ => false
@@ -82,10 +107,37 @@ public static class RuralHrRules
                 ("SCHEDULED", "IN_TRANSIT") => true,
                 ("SCHEDULED", "COMPLETED") => true,
                 ("SCHEDULED", "CANCELLED") => true,
+                ("ACTIVE", "SCHEDULED") => true,
                 ("ACTIVE", "IN_TRANSIT") => true,
                 ("ACTIVE", "COMPLETED") => true,
                 ("ACTIVE", "CANCELLED") => true,
                 ("IN_TRANSIT", "COMPLETED") => true,
+                _ => false
+            },
+            "RISK" => (cur, tgt) switch
+            {
+                ("OPEN", "MITIGATED") => true,
+                ("OPEN", "CLOSED") => true,
+                ("ACTIVE", "MITIGATED") => true,
+                ("ACTIVE", "CLOSED") => true,
+                _ => false
+            },
+            "INSPECTION" => (cur, tgt) switch
+            {
+                ("PLANNED", "COMPLETED") => true,
+                ("PLANNED", "CANCELLED") => true,
+                ("ACTIVE", "COMPLETED") => true,
+                ("ACTIVE", "CANCELLED") => true,
+                _ => false
+            },
+            "ACCOMMODATION" => (cur, tgt) switch
+            {
+                ("AVAILABLE", "OCCUPIED") => true,
+                ("OCCUPIED", "AVAILABLE") => true,
+                ("AVAILABLE", "MAINTENANCE") => true,
+                ("MAINTENANCE", "AVAILABLE") => true,
+                ("ACTIVE", "OCCUPIED") => true,
+                ("ACTIVE", "AVAILABLE") => true,
                 _ => false
             },
             _ => (cur, tgt) switch

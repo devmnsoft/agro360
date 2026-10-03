@@ -27,7 +27,7 @@ public sealed class DocumentService(DatabaseExecutor db, ITenantContext tenant, 
         var physical = SafePath(relative); Directory.CreateDirectory(Path.GetDirectoryName(physical)!);
         try
         {
-            var written = await SaveStreamSafelyAsync(content, physical, maximumBytes, ct).ConfigureAwait(false);
+            var written = await SaveStreamSafelyAsync(content, physical, extension, maximumBytes, ct).ConfigureAwait(false);
             await using var input = File.OpenRead(physical); var hash = await DocumentRules.Sha256Async(input, ct).ConfigureAwait(false);
             await Tx(async (c, t) => { await c.ExecuteAsync(new CommandDefinition("insert into agro360.documents(id,tenant_id,document_type_id,name,description,status,current_version,created_by,updated_by) values(@Id,@TenantId,@DocumentTypeId,@Name,@Description,'ACTIVE',1,@UserId,@UserId); insert into agro360.documents_document_versions(id,tenant_id,document_id,version_number,original_name,storage_key,extension,mime_type,size_bytes,sha256,created_by) values(@VersionId,@TenantId,@Id,1,@OriginalName,@Relative,@Extension,@MimeType,@Length,@Hash,@UserId); insert into agro360.documents_document_tags(id,tenant_id,document_id,tag,created_by) select gen_random_uuid(),@TenantId,@Id,trim(value),@UserId from unnest(string_to_array(coalesce(@Tags,''),',')) value where trim(value)<>''; insert into agro360.documents_document_links(id,tenant_id,document_id,entity_type,entity_id,entity_label,created_by) select gen_random_uuid(),@TenantId,@Id,@EntityType,@EntityId,@EntityLabel,@UserId where @EntityId is not null", new { Id = id, VersionId = versionId, tenant.TenantId, command.DocumentTypeId, Name = command.Name.Trim(), Description = Clean(command.Description), OriginalName = Path.GetFileName(originalName), Relative = relative.Replace('\\', '/'), Extension = extension, MimeType = mimeType, Length = written, Hash = hash, tenant.UserId, command.Tags, command.EntityType, command.EntityId, EntityLabel = command.EntityType }, t, cancellationToken: ct)); }, ct).ConfigureAwait(false);
             return id;
@@ -40,7 +40,7 @@ public sealed class DocumentService(DatabaseExecutor db, ITenantContext tenant, 
         DocumentRules.RequireReason(reason, "criar uma nova versão"); var extension = DocumentRules.ValidateFile(originalName, mimeType, length, maximumBytes); var versionId = Guid.CreateVersion7(); var relative = Path.Combine(tenant.TenantId.ToString("N"), documentId.ToString("N"), $"{versionId:N}{extension}"); var physical = SafePath(relative); Directory.CreateDirectory(Path.GetDirectoryName(physical)!);
         try
         {
-            var written = await SaveStreamSafelyAsync(content, physical, maximumBytes, ct).ConfigureAwait(false);
+            var written = await SaveStreamSafelyAsync(content, physical, extension, maximumBytes, ct).ConfigureAwait(false);
             await using var input = File.OpenRead(physical); var hash = await DocumentRules.Sha256Async(input, ct).ConfigureAwait(false);
             await Tx(async (c, t) =>
             {
@@ -87,22 +87,46 @@ public sealed class DocumentService(DatabaseExecutor db, ITenantContext tenant, 
         return Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
     }
 
-    private static async Task<long> SaveStreamSafelyAsync(Stream content, string physicalPath, long maxBytes, CancellationToken ct)
+    private static async Task<long> SaveStreamSafelyAsync(Stream content, string physicalPath, string extension, long maxBytes, CancellationToken ct)
     {
         long totalRead = 0;
         var buffer = new byte[81920];
         int read;
-        await using (var output = new FileStream(physicalPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
+        var headerChecked = false;
+
+        try
         {
-            while ((read = await content.ReadAsync(buffer.AsMemory(0, buffer.Length), ct).ConfigureAwait(false)) > 0)
+            await using (var output = new FileStream(physicalPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
             {
-                totalRead += read;
-                if (totalRead > maxBytes)
-                    throw new DomainException($"O arquivo excede o limite máximo de {maxBytes / 1024 / 1024} MB.", "documents.invalid_size");
-                await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                while ((read = await content.ReadAsync(buffer.AsMemory(0, buffer.Length), ct).ConfigureAwait(false)) > 0)
+                {
+                    totalRead += read;
+                    if (totalRead > maxBytes)
+                        throw new DomainException($"O arquivo excede o limite máximo permitido de {maxBytes / 1024 / 1024} MB.", "documents.invalid_size");
+
+                    if (!headerChecked)
+                    {
+                        var headerLen = Math.Min(read, 512);
+                        var header = new byte[headerLen];
+                        Array.Copy(buffer, 0, header, 0, headerLen);
+                        DocumentRules.ValidateContentSignature(extension, header);
+                        headerChecked = true;
+                    }
+
+                    await output.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                }
             }
+
+            if (totalRead == 0)
+                throw new DomainException("O arquivo enviado está vazio.", "documents.empty_file");
+
+            return totalRead;
         }
-        return totalRead;
+        catch
+        {
+            try { if (File.Exists(physicalPath)) File.Delete(physicalPath); } catch { }
+            throw;
+        }
     }
 
     public Task<IReadOnlyList<LookupOption>> EntityLookupAsync(string entityType, string? search, CancellationToken ct) => Tx(async (c, t) => { var (table, label) = EntitySource(entityType); var sql = $"select id,{label} label from {table} where tenant_id=@TenantId and (@Search is null or {label} ilike '%'||@Search||'%') order by {label} limit 50"; return (IReadOnlyList<LookupOption>)(await c.QueryAsync<LookupOption>(new CommandDefinition(sql, new { tenant.TenantId, Search = Clean(search) }, t, cancellationToken: ct))).ToArray(); }, ct);

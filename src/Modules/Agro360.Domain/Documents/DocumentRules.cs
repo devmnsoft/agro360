@@ -40,6 +40,48 @@ public static class DocumentRules
         if (!valid) throw new DomainException($"Tipo MIME '{contentType}' incompatível com a extensão '{extension}'.", "documents.invalid_mime");
     }
 
+    public static void ValidateContentSignature(string extension, byte[] header)
+    {
+        if (header is null || header.Length == 0)
+            throw new DomainException("O arquivo enviado está vazio ou não pôde ser lido.", "documents.empty_file");
+
+        var ext = (extension ?? "").Trim().ToLowerInvariant();
+        bool valid = ext switch
+        {
+            ".pdf" => header.Length >= 5 && header[0] == 0x25 && header[1] == 0x50 && header[2] == 0x44 && header[3] == 0x46 && header[4] == 0x2D, // %PDF-
+            ".png" => header.Length >= 8 && header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47 && header[4] == 0x0D && header[5] == 0x0A && header[6] == 0x1A && header[7] == 0x0A,
+            ".jpg" or ".jpeg" => header.Length >= 3 && header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF,
+            ".webp" => header.Length >= 12 && header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46 && header[8] == 0x57 && header[9] == 0x45 && header[10] == 0x42 && header[11] == 0x50, // RIFF....WEBP
+            ".docx" or ".xlsx" => header.Length >= 4 && header[0] == 0x50 && header[1] == 0x4B && (header[2] == 0x03 || header[2] == 0x05 || header[2] == 0x07) && (header[3] == 0x04 || header[3] == 0x06 || header[3] == 0x08), // PK zip container
+            ".xml" => IsValidXmlHeader(header),
+            ".csv" or ".txt" => IsValidTextHeader(header),
+            _ => false
+        };
+
+        if (!valid)
+            throw new DomainException($"O conteúdo do arquivo é incompatível com a extensão '{extension}'.", "documents.invalid_content");
+    }
+
+    private static bool IsValidXmlHeader(byte[] header)
+    {
+        var text = System.Text.Encoding.UTF8.GetString(header).TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
+        return text.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) || text.StartsWith('<');
+    }
+
+    private static bool IsValidTextHeader(byte[] header)
+    {
+        // Rejeita executáveis DOS/PE (MZ) e ELF
+        if (header.Length >= 2 && header[0] == 0x4D && header[1] == 0x5A) return false;
+        if (header.Length >= 4 && header[0] == 0x7F && header[1] == 0x45 && header[2] == 0x4C && header[3] == 0x46) return false;
+
+        // Arquivos de texto não devem conter bytes nulos no início
+        for (int i = 0; i < Math.Min(header.Length, 512); i++)
+        {
+            if (header[i] == 0x00) return false;
+        }
+        return true;
+    }
+
 
     public static async Task<string> Sha256Async(Stream stream, CancellationToken cancellationToken = default)
     {

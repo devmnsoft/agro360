@@ -8035,4 +8035,14 @@ insert into agro360.platform_schema_versions(version, description, installed_at)
 values('11.9.0', 'Hardening de Seguranca, Protecao de Logs Imutaveis e Privilegios de Runtime (AG-SEC-AUDIT-001)', now())
 on conflict(version) do update set description = excluded.description;
 
+-- Migration 120: Alinhamento de estados legados de RH Rural e integridade de transicoes
+update agro360.rural_hr_records set status = 'OPEN', updated_at = now() where kind = 'INCIDENT' and status = 'ACTIVE';
+update agro360.rural_hr_records set status = 'OPEN', updated_at = now() where kind = 'CORRECTIVE_ACTION' and status = 'ACTIVE';
+update agro360.rural_hr_records set status = 'AVAILABLE', updated_at = now() where kind = 'PPE' and status = 'ACTIVE';
+update agro360.rural_hr_records set status = 'SCHEDULED', updated_at = now() where kind = 'TRANSPORT' and status = 'ACTIVE';
+
+insert into agro360.platform_schema_versions(version, description, installed_at)
+values('11.10.0', 'Alinhamento de estados legados de RH Rural e integridade de transicoes (AG-HR-STATUS-001)', now())
+on conflict(version) do update set description = excluded.description;
+
 commit;

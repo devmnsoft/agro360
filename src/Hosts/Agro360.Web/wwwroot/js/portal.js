@@ -557,29 +557,66 @@ if (traceSection) {
 // Documentos
 const docSection = document.querySelector('#portal-documents');
 if (docSection) {
+    let allDocs = [];
+    const searchInput = document.querySelector('#portal-doc-search');
+    const typeSelect = document.querySelector('#portal-doc-type');
+    const countBadge = document.querySelector('#portal-doc-count');
+
+    function renderDocuments() {
+        const root = document.querySelector('#portal-documents-list');
+        const search = (searchInput?.value || '').trim().toLowerCase();
+        const type = (typeSelect?.value || '');
+        const filtered = allDocs.filter(d => {
+            const matchesSearch = !search || (d.name || '').toLowerCase().includes(search) || (d.documentType || '').toLowerCase().includes(search);
+            const matchesType = !type || (d.documentType === type);
+            return matchesSearch && matchesType;
+        });
+
+        if (countBadge) {
+            countBadge.textContent = allDocs.length ? `Exibindo ${filtered.length} de ${allDocs.length} documento(s)` : '';
+        }
+
+        root.innerHTML = filtered.length
+            ? filtered.map(d =>
+                `<article class="request-card">
+                    <div>
+                        <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.25rem;">
+                            <span class="status success">${escapeHtml(d.documentType || 'Documento')}</span>
+                            <span class="status available" style="font-size:0.75rem;">✓ Disponível</span>
+                        </div>
+                        <h2>${escapeHtml(d.name)}</h2>
+                        <p>Tamanho: ${(d.fileSize / 1024).toFixed(1)} KB · Liberado em ${new Date(d.createdAt).toLocaleDateString('pt-BR')}</p>
+                    </div>
+                    <button class="primary button" data-download="${d.documentId}" type="button">
+                        Baixar Arquivo
+                    </button>
+                </article>`
+            ).join('')
+            : `<div class="empty"><strong>${allDocs.length ? 'Nenhum documento corresponde aos filtros.' : 'Nenhum documento liberado no momento.'}</strong><span>${allDocs.length ? 'Tente alterar os termos de busca ou o tipo selecionado.' : 'Seus certificados, laudos e comprovantes aparecerão aqui assim que emitidos.'}</span></div>`;
+    }
+
     async function loadDocuments() {
         const root = document.querySelector('#portal-documents-list');
         try {
-            const docs = await request('/api/portal/documents');
-            root.innerHTML = docs.length
-                ? docs.map(d =>
-                    `<article class="request-card">
-                        <div>
-                            <span class="status success">${escapeHtml(d.documentType || 'Documento')}</span>
-                            <h2>${escapeHtml(d.name)}</h2>
-                            <p>Tamanho: ${(d.fileSize / 1024).toFixed(1)} KB · Liberado em ${new Date(d.createdAt).toLocaleDateString('pt-BR')}</p>
-                        </div>
-                        <button class="primary button" data-download="${d.documentId}" type="button">
-                            Baixar Arquivo
-                        </button>
-                    </article>`
-                ).join('')
-                : '<div class="empty"><strong>Nenhum documento liberado no momento.</strong><span>Seus certificados, laudos e comprovantes aparecerão aqui assim que emitidos.</span></div>';
+            allDocs = await request('/api/portal/documents');
+            if (typeSelect && allDocs.length) {
+                const uniqueTypes = [...new Set(allDocs.map(d => d.documentType).filter(Boolean))];
+                typeSelect.length = 1;
+                uniqueTypes.forEach(t => typeSelect.add(new Option(t, t)));
+            }
+            renderDocuments();
         } catch (e) {
             root.innerHTML = `<div class="empty error">${escapeHtml(e.message)}</div>`;
         }
     }
     loadDocuments();
+
+    let searchTimer;
+    searchInput?.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(renderDocuments, 200);
+    });
+    typeSelect?.addEventListener('change', renderDocuments);
 
     docSection.addEventListener('click', async e => {
         const btn = e.target.closest('[data-download]');

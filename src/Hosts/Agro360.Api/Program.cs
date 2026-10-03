@@ -98,9 +98,13 @@ builder.Services.AddRateLimiter(options =>
     {
         var path = context.Request.Path.Value?.ToLowerInvariant() ?? "";
         var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        var user = context.User.FindFirst("sub")?.Value ?? ip;
+        var isAuth = context.User.Identity?.IsAuthenticated == true;
+        var sub = context.User.FindFirst("sub")?.Value;
+        var tenantClaim = context.User.FindFirst("tenant_id")?.Value;
 
-        if (path.Contains("/auth/login", StringComparison.Ordinal) || path.Contains("/portal/login", StringComparison.Ordinal))
+        // Login interno (/api/v1/auth/login) e externo (/api/portal/access/login)
+        if (path.Equals("/api/v1/auth/login", StringComparison.OrdinalIgnoreCase) ||
+            path.Equals("/api/portal/access/login", StringComparison.OrdinalIgnoreCase))
         {
             return RateLimitPartition.GetFixedWindowLimiter($"login_{ip}", _ => new FixedWindowRateLimiterOptions
             {
@@ -110,7 +114,8 @@ builder.Services.AddRateLimiter(options =>
             });
         }
 
-        if (path.Contains("/auth/mfa", StringComparison.Ordinal))
+        // Fluxo de autenticacao multifator (MFA)
+        if (path.Contains("/mfa", StringComparison.OrdinalIgnoreCase) || path.EndsWith("/auth/mfa", StringComparison.OrdinalIgnoreCase))
         {
             return RateLimitPartition.GetFixedWindowLimiter($"mfa_{ip}", _ => new FixedWindowRateLimiterOptions
             {
@@ -120,19 +125,36 @@ builder.Services.AddRateLimiter(options =>
             });
         }
 
-        if (path.Contains("/auth/refresh", StringComparison.Ordinal) || path.Contains("/portal/refresh", StringComparison.Ordinal))
+        // Renovacao de tokens (/api/v1/auth/refresh)
+        if (path.Equals("/api/v1/auth/refresh", StringComparison.OrdinalIgnoreCase))
         {
             return RateLimitPartition.GetFixedWindowLimiter($"refresh_{ip}", _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 40,
+                PermitLimit = 30,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
             });
         }
 
-        if (path.Contains("/invitations", StringComparison.Ordinal))
+        // Aceite de convite do portal externo (/api/portal/access/accept-invitation)
+        if (path.Equals("/api/portal/access/accept-invitation", StringComparison.OrdinalIgnoreCase))
         {
-            return RateLimitPartition.GetFixedWindowLimiter($"invite_{user}", _ => new FixedWindowRateLimiterOptions
+            return RateLimitPartition.GetFixedWindowLimiter($"accept_invite_{ip}", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            });
+        }
+
+        // Gestao e envio de convites (/api/portal/invitations)
+        if (path.StartsWith("/api/portal/invitations", StringComparison.OrdinalIgnoreCase))
+        {
+            var partitionKey = isAuth && !string.IsNullOrWhiteSpace(sub)
+                ? $"invite_user_{sub}_{tenantClaim}"
+                : $"invite_anon_{ip}";
+
+            return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 20,
                 Window = TimeSpan.FromMinutes(1),
@@ -140,7 +162,8 @@ builder.Services.AddRateLimiter(options =>
             });
         }
 
-        if (path.Contains("/bootstrap", StringComparison.Ordinal))
+        // Bootstrap do sistema (/api/v1/bootstrap)
+        if (path.Equals("/api/v1/bootstrap", StringComparison.OrdinalIgnoreCase))
         {
             return RateLimitPartition.GetFixedWindowLimiter($"bootstrap_{ip}", _ => new FixedWindowRateLimiterOptions
             {
@@ -150,7 +173,9 @@ builder.Services.AddRateLimiter(options =>
             });
         }
 
-        if (path.Contains("/public/", StringComparison.Ordinal))
+        // Consultas publicas (certificados e rastreabilidade)
+        if (path.StartsWith("/api/documents/public", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/api/public-traceability", StringComparison.OrdinalIgnoreCase))
         {
             return RateLimitPartition.GetFixedWindowLimiter($"public_{ip}", _ => new FixedWindowRateLimiterOptions
             {
@@ -160,9 +185,14 @@ builder.Services.AddRateLimiter(options =>
             });
         }
 
-        return RateLimitPartition.GetFixedWindowLimiter(user, _ => new FixedWindowRateLimiterOptions
+        // Demais rotas: se autenticado, particiona por usuario/tenant; se anonimo, particiona por IP
+        var userPartition = isAuth && !string.IsNullOrWhiteSpace(sub)
+            ? $"auth_user_{sub}_{tenantClaim}"
+            : $"anon_{ip}";
+
+        return RateLimitPartition.GetFixedWindowLimiter(userPartition, _ => new FixedWindowRateLimiterOptions
         {
-            PermitLimit = 180,
+            PermitLimit = isAuth ? 180 : 60,
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
             AutoReplenishment = true
@@ -179,11 +209,21 @@ builder.Services.AddCors(options => options.AddPolicy("web", policy => policy
 
 var app = builder.Build();
 
-app.UseForwardedHeaders(new Microsoft.AspNetCore.Builder.ForwardedHeadersOptions
+var forwardedOptions = new Microsoft.AspNetCore.Builder.ForwardedHeadersOptions
 {
     ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
-});
-
+};
+forwardedOptions.KnownIPNetworks.Clear();
+forwardedOptions.KnownProxies.Clear();
+forwardedOptions.KnownProxies.Add(System.Net.IPAddress.Loopback);
+forwardedOptions.KnownProxies.Add(System.Net.IPAddress.IPv6Loopback);
+var configuredProxies = builder.Configuration.GetSection("ReverseProxy:KnownProxies").Get<string[]>() ?? [];
+foreach (var p in configuredProxies)
+{
+    if (System.Net.IPAddress.TryParse(p, out var parsedIp))
+        forwardedOptions.KnownProxies.Add(parsedIp);
+}
+app.UseForwardedHeaders(forwardedOptions);
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseSerilogRequestLogging();
@@ -193,10 +233,10 @@ if (!app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Ht
     app.UseHttpsRedirection();
 }
 app.UseCors("web");
-app.UseRateLimiter();
 app.UseAuthentication();
 app.UseMiddleware<TenantContextMiddleware>();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 
 if (app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Swagger:Enabled"))

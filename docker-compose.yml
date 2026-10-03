@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT_BINDING:-127.0.0.1:5432}:5432"
     volumes:
       - agro360-postgres:/var/lib/postgresql/data
       - ./deploy/postgres/init-app-role.sh:/docker-entrypoint-initdb.d/010-init-app-role.sh:ro
@@ -39,7 +39,7 @@ services:
       ASPNETCORE_HTTP_PORTS: 8080
       ConnectionStrings__Agro360: Host=postgres;Port=5432;Database=${POSTGRES_DB:-agro360};Username=agro360_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env};Include Error Detail=false
       Jwt__SigningKey: ${JWT_SIGNING_KEY:?set JWT_SIGNING_KEY in .env}
-      Bootstrap__Enabled: "true"
+      Bootstrap__Enabled: "${BOOTSTRAP_ENABLED:-false}"
       Cors__AllowedOrigins__0: http://localhost:8080
     ports:
       - "8081:8080"

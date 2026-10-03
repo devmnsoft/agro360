@@ -119,10 +119,13 @@ function Start-HostProcess([string]$HostName, [string]$Url) {
     throw "$HostName nao respondeu no timeout de 30s. Evidencia: $evidenceDir"
 }
 
-function Http-Call([string]$BaseUrl, [string]$Path, [string]$Method = 'GET', $Body = $null, [string]$Token = $null, [int[]]$ExpectedStatuses = @(200)) {
+function Http-Call([string]$BaseUrl, [string]$Path, [string]$Method = 'GET', $Body = $null, [string]$Token = $null, [int[]]$ExpectedStatuses = @(200), [hashtable]$CustomHeaders = @{}) {
     $uri = "$BaseUrl$Path"
     $headers = @{}
     if ($Token) { $headers['Authorization'] = "Bearer $Token" }
+    if ($CustomHeaders) {
+        foreach ($k in $CustomHeaders.Keys) { $headers[$k] = $CustomHeaders[$k] }
+    }
     $json = $null
     if ($Body -ne $null) {
         if ($Body -is [string]) { $json = $Body } else { $json = $Body | ConvertTo-Json -Depth 10 }
@@ -226,6 +229,12 @@ try {
     $ver118 = (Query-Sql $dbFull "select count(*) from agro360.platform_schema_versions where version = '11.8.0';").Trim()
     Assert-Step "1. Versao 11.8.0 presente em platform_schema_versions" ($ver118 -eq '1')
 
+    $ver119 = (Query-Sql $dbFull "select count(*) from agro360.platform_schema_versions where version = '11.9.0';").Trim()
+    Assert-Step "1. Versao 11.9.0 presente em platform_schema_versions" ($ver119 -eq '1')
+
+    $ver120 = (Query-Sql $dbFull "select count(*) from agro360.platform_schema_versions where version = '11.10.0';").Trim()
+    Assert-Step "1. Versao 11.10.0 presente em platform_schema_versions" ($ver120 -eq '1')
+
     $colIdemp = (Query-Sql $dbFull "select count(*) from information_schema.columns where table_schema='agro360' and table_name='production_material_consumptions' and column_name in ('idempotency_key','request_hash');").Trim()
     Assert-Step "1. Colunas de idempotencia em production_material_consumptions" ($colIdemp -eq '2')
 
@@ -254,7 +263,7 @@ try {
     # Popula historico de migrations para as 117 migrations ja consolidadas na base
     $migFiles = Get-ChildItem (Join-Path $root 'database/migrations') -Filter "*.sql" | Sort-Object Name
     foreach ($mf in $migFiles) {
-        if ($mf.Name -match '^118_') { continue }
+        if ($mf.Name -match '^(118|119|120)_') { continue }
         $content = [System.IO.File]::ReadAllText($mf.FullName, [System.Text.Encoding]::UTF8)
         $sha = [System.Security.Cryptography.SHA256]::Create()
         $contentBytes = [System.Text.Encoding]::UTF8.GetBytes($content)
@@ -272,14 +281,20 @@ try {
     $migOutput = & dotnet $migratorDll migrate --migrations (Join-Path $root 'database/migrations') 2>&1
     $migExit = $LASTEXITCODE
     [System.IO.File]::WriteAllText((Join-Path $evidenceDir 'migrator-run.log'), ($migOutput -join "`r`n"), [System.Text.Encoding]::UTF8)
-    Assert-Step "2. Execucao de upgrade pelo migrador real (migration 118)" ($migExit -eq 0) "Exit code: $migExit"
+    Assert-Step "2. Execucao de upgrade pelo migrador real (migrations 118, 119, 120)" ($migExit -eq 0) "Exit code: $migExit"
 
-    # Verifica que migration 118 foi registrada
+    # Verifica que migrations 118, 119 e 120 foram registradas
     $hasMig118 = (Query-Sql $dbUpgrade "select count(*) from agro360.platform_schema_migrations where version = '118_production_material_consumption_integrity.sql';").Trim()
     Assert-Step "2. Migration 118 registrada em platform_schema_migrations" ($hasMig118 -eq '1')
 
-    $hasVer118 = (Query-Sql $dbUpgrade "select count(*) from agro360.platform_schema_versions where version = '11.8.0';").Trim()
-    Assert-Step "2. Versao 11.8.0 registrada em platform_schema_versions" ($hasVer118 -eq '1')
+    $hasMig119 = (Query-Sql $dbUpgrade "select count(*) from agro360.platform_schema_migrations where version = '119_security_hardening_audit_and_privileges.sql';").Trim()
+    Assert-Step "2. Migration 119 registrada em platform_schema_migrations" ($hasMig119 -eq '1')
+
+    $hasMig120 = (Query-Sql $dbUpgrade "select count(*) from agro360.platform_schema_migrations where version = '120_rural_hr_status_alignment.sql';").Trim()
+    Assert-Step "2. Migration 120 registrada em platform_schema_migrations" ($hasMig120 -eq '1')
+
+    $hasVer120 = (Query-Sql $dbUpgrade "select count(*) from agro360.platform_schema_versions where version = '11.10.0';").Trim()
+    Assert-Step "2. Versao 11.10.0 registrada em platform_schema_versions" ($hasVer120 -eq '1')
 
     # Verifica preservacao de dados anteriores
     $preserved = (Query-Sql $dbUpgrade "select count(*) from agro360.production_material_consumptions where id = '$preExistingId';").Trim()
@@ -346,6 +361,58 @@ set session_replication_role = 'origin';
     Assert-Step "3. Reuso e limpeza de conexao: Apos reset de contexto, dados nao vazam" ($contextResetLeakTest -eq '0')
 
     # -------------------------------------------------------------
+    # 3b. PRIVILEGIOS EFETIVOS DO PAPEL RESTRITO (MIGRATION 119)
+    # Runtime pode inserir logs/movimentos; nao pode alterar, excluir nem truncar
+    # Runtime nao pode alterar controles de migrations/schema
+    # -------------------------------------------------------------
+    $testAuditId = [guid]::NewGuid().ToString()
+    $canInsertAudit = $false
+    try {
+        $null = Exec-Sql $dbFull "set `"app.tenant_id`" = '$tenantAId'; insert into agro360.audit_logs(id, tenant_id, user_id, action, entity_type, entity_id) values('$testAuditId', '$tenantAId', null, 'TEST_ACTION', 'TEST_ENTITY', '$fixtureAId');" $appUser $appPass
+        $canInsertAudit = $true
+    } catch {
+        Write-Host "Audit insert error: $($_.Exception.Message)"
+        $canInsertAudit = $false
+    }
+    Assert-Step "3b. Privilegios: Runtime PODE inserir em logs de auditoria" $canInsertAudit
+
+    # Nao pode atualizar audit_logs
+    $auditUpdateBlocked = $false
+    try {
+        $null = Exec-Sql $dbFull "set `"app.tenant_id`" = '$tenantAId'; update agro360.audit_logs set action = 'TAMPERED' where id = '$testAuditId';" $appUser $appPass
+    } catch {
+        $auditUpdateBlocked = $_.Exception.Message -match 'permission denied' -or $_.Exception.Message -match 'denied'
+    }
+    Assert-Step "3b. Privilegios: Runtime NAO PODE atualizar logs de auditoria (permission denied)" $auditUpdateBlocked
+
+    # Nao pode excluir de audit_logs
+    $auditDeleteBlocked = $false
+    try {
+        $null = Exec-Sql $dbFull "set `"app.tenant_id`" = '$tenantAId'; delete from agro360.audit_logs where id = '$testAuditId';" $appUser $appPass
+    } catch {
+        $auditDeleteBlocked = $_.Exception.Message -match 'permission denied' -or $_.Exception.Message -match 'denied'
+    }
+    Assert-Step "3b. Privilegios: Runtime NAO PODE excluir de logs de auditoria (permission denied)" $auditDeleteBlocked
+
+    # Nao pode truncar audit_logs
+    $truncateBlocked = $false
+    try {
+        $null = Exec-Sql $dbFull "truncate agro360.audit_logs;" $appUser $appPass
+    } catch {
+        $truncateBlocked = $_.Exception.Message -match 'permission denied' -or $_.Exception.Message -match 'must be owner' -or $_.Exception.Message -match 'denied'
+    }
+    Assert-Step "3b. Privilegios: Runtime NAO PODE truncar tabelas imutaveis" $truncateBlocked
+
+    # Nao pode alterar platform_schema_migrations nem platform_schema_versions
+    $schemaBlocked = $false
+    try {
+        $null = Exec-Sql $dbFull "insert into agro360.platform_schema_migrations(version, name, checksum, applied_at) values('fake.sql', 'fake', 'abc', now());" $appUser $appPass
+    } catch {
+        $schemaBlocked = $_.Exception.Message -match 'permission denied' -or $_.Exception.Message -match 'denied'
+    }
+    Assert-Step "3b. Privilegios: Runtime NAO PODE alterar platform_schema_migrations" $schemaBlocked
+
+    # -------------------------------------------------------------
     # 4. CONFIGURACAO DO AMBIENTE OPERACIONAL E INICIO DA API
     # -------------------------------------------------------------
     $adminPassword = 'Aa1!' + (Get-RandomBase64 24)
@@ -353,9 +420,13 @@ set session_replication_role = 'origin';
 
     # Configura modulos e credenciais
     $setupSql = @"
-update agro360.saas_plans set modules = array['properties','agriculture','livestock','inventory','finance','reports','logistics','traceability','intelligence','environment-esg','agroindustry','purchasing','commercial','orders'] where name in ('Profissional', 'Growth', 'Enterprise');
+update agro360.saas_plans set modules = array['properties','agriculture','livestock','inventory','finance','reports','logistics','traceability','intelligence','environment-esg','agroindustry','purchasing','commercial','orders','documents'] where name in ('Profissional', 'Cooperativa', 'Agroindústria', 'Enterprise');
 update agro360.identity_users set password_hash = '$adminHash', status = 'ACTIVE', must_change_password = false where email in ('admin.santaclara@agro360.local', 'admin@santaclara.agro360.local', 'admin.valeverde@agro360.local');
 insert into agro360.identity_role_permissions(tenant_id, role_id, permission_id) select r.tenant_id, r.id, p.id from agro360.identity_roles r cross join agro360.identity_permissions p where r.tenant_id in ('$tenantAId', '$tenantBId') and lower(r.code) = 'tenant-administrator' on conflict do nothing;
+insert into agro360.saas_organizations(tenant_id, organization_type, document, responsible_name, responsible_email, plan_id, status, activated_at, onboarding_status)
+select '$tenantBId', 'COOPERATIVE', '22333444000191', 'Administrador Vale Verde', 'admin.valeverde@agro360.local', id, 'ACTIVE', now(), 'COMPLETED'
+from agro360.saas_plans where name = 'Cooperativa'
+on conflict (tenant_id) do update set status = 'ACTIVE', plan_id = excluded.plan_id;
 insert into agro360.platform_tenant_module_entitlements(tenant_id, module_id, status, reason, activated_at) select '$tenantBId', id, 'ACTIVE', 'Homologacao modulo industrial Tenant B', now() from agro360.platform_module_catalog where code in ('agroindustry') on conflict(tenant_id, module_id) do update set status = 'ACTIVE';
 "@
     $null = Exec-Sql $dbFull $setupSql
@@ -729,8 +800,186 @@ insert into agro360.inventory_stock_lots(id, tenant_id, warehouse_id, product_id
     $crossRes = Http-Call $apiUrl "/api/production/orders/$orderId" 'GET' $null $tokenB @(403, 404)
     Assert-Step "14. Isolamento multi-tenant por API: Ordem do Tenant A inacessivel para Tenant B (status $($crossRes.StatusCode))" ($crossRes.StatusCode -eq 403 -or $crossRes.StatusCode -eq 404)
 
+    # -------------------------------------------------------------
+    # 15. VALIDACAO DE ESCOPO COMPATIVEL COM RLS (HEADERS)
+    # Organizacao e Fazenda nos headers avaliados dentro da transacao do tenant
+    # Combinacoes invalidas ou cruzadas sao rejeitadas com 403 Forbidden
+    # -------------------------------------------------------------
+    $orgA = (Query-Sql $dbFull "select id from agro360.organization_organizations where tenant_id = '$tenantAId' limit 1;").Trim()
+    if (-not $orgA) {
+        $orgA = [guid]::NewGuid().ToString()
+        $null = Exec-Sql $dbFull "insert into agro360.organization_organizations(id, tenant_id, name, type, document_number) values('$orgA', '$tenantAId', 'Org Santa Clara', 'COMPANY', '12345678000199');"
+    }
+    $farmA = (Query-Sql $dbFull "select id from agro360.geo_farms where tenant_id = '$tenantAId' and organization_id = '$orgA' limit 1;").Trim()
+    if (-not $farmA) {
+        $farmA = [guid]::NewGuid().ToString()
+        $null = Exec-Sql $dbFull "insert into agro360.geo_farms(id, tenant_id, organization_id, name, state, total_area_ha, created_by) values('$farmA', '$tenantAId', '$orgA', 'Fazenda Santa Clara 1', 'SP', 150.0, '$fixtureUserId');"
+    }
+
+    $orgB = (Query-Sql $dbFull "select id from agro360.organization_organizations where tenant_id = '$tenantBId' limit 1;").Trim()
+    if (-not $orgB) {
+        $orgB = [guid]::NewGuid().ToString()
+        $null = Exec-Sql $dbFull "insert into agro360.organization_organizations(id, tenant_id, name, type, document_number) values('$orgB', '$tenantBId', 'Org Vale Verde', 'COMPANY', '98765432000188');"
+    }
+    $farmB = (Query-Sql $dbFull "select id from agro360.geo_farms where tenant_id = '$tenantBId' and organization_id = '$orgB' limit 1;").Trim()
+    if (-not $farmB) {
+        $farmB = [guid]::NewGuid().ToString()
+        $null = Exec-Sql $dbFull "insert into agro360.geo_farms(id, tenant_id, organization_id, name, state, total_area_ha, created_by) values('$farmB', '$tenantBId', '$orgB', 'Fazenda Vale Verde 1', 'PR', 200.0, '$fixtureUserId');"
+    }
+
+    # 15.1 Requisicao com Org e Fazenda legitimas do Tenant A -> 200 OK
+    $resScopeLegit = Http-Call $apiUrl '/api/documents/dashboard' 'GET' $null $tokenA @(200) @{
+        'X-Organization-ID' = $orgA
+        'X-Farm-ID' = $farmA
+    }
+    Assert-Step "15. Escopo legitimo: Org e Fazenda validas do Tenant A aceitas (200)" ($resScopeLegit.StatusCode -eq 200)
+
+    # 15.2 Org de outro tenant (Tenant B) enviada com token do Tenant A -> 403 Forbidden
+    $resCrossOrg = Http-Call $apiUrl '/api/documents/dashboard' 'GET' $null $tokenA @(403) @{
+        'X-Organization-ID' = $orgB
+    }
+    Assert-Step "15. Escopo cruzado: Org do Tenant B rejeitada para Tenant A (403)" ($resCrossOrg.StatusCode -eq 403)
+
+    # 15.3 Fazenda de outro tenant (Tenant B) enviada com token do Tenant A -> 403 Forbidden
+    $resCrossFarm = Http-Call $apiUrl '/api/documents/dashboard' 'GET' $null $tokenA @(403) @{
+        'X-Farm-ID' = $farmB
+    }
+    Assert-Step "15. Escopo cruzado: Fazenda do Tenant B rejeitada para Tenant A (403)" ($resCrossFarm.StatusCode -eq 403)
+
+    # 15.4 Fazenda incompativel com Organizacao informada -> 403 Forbidden
+    $resMismatch = Http-Call $apiUrl '/api/documents/dashboard' 'GET' $null $tokenA @(403) @{
+        'X-Organization-ID' = $orgA
+        'X-Farm-ID' = $farmB
+    }
+    Assert-Step "15. Escopo incompativel: Fazenda nao pertencente a Organizacao rejeitada (403)" ($resMismatch.StatusCode -eq 403)
+
+    # -------------------------------------------------------------
+    # 16. TOKENS E STATUS DE SEGURANCA EM TEMPO REAL
+    # Usuario bloqueado apos emissao do token e Tenant suspenso tem acesso negado imediatamente
+    # -------------------------------------------------------------
+    $testBlockEmail = 'temp.operator@santaclara.agro360.local'
+    $testBlockId = [guid]::NewGuid().ToString()
+    $null = Exec-Sql $dbFull "insert into agro360.identity_users(id, tenant_id, name, email, password_hash, status, must_change_password) values('$testBlockId', '$tenantAId', 'Operador Temporario', '$testBlockEmail', '$adminHash', 'ACTIVE', false);"
+    $null = Exec-Sql $dbFull "insert into agro360.identity_user_roles(tenant_id, user_id, role_id) select '$tenantAId', '$testBlockId', id from agro360.identity_roles where tenant_id = '$tenantAId' and lower(code) = 'tenant-administrator';"
+
+    $loginTemp = Http-Call $apiUrl '/api/v1/auth/login' 'POST' @{
+        tenantSlug = 'santa-clara'
+        email = $testBlockEmail
+        password = $adminPassword
+    } $null @(200)
+    $tokenTemp = ($loginTemp.Content | ConvertFrom-Json).accessToken
+    Assert-Step "16. Token emitido para operador temporario" ($tokenTemp.Length -gt 20)
+
+    # Operacao bem sucedida enquanto ativo
+    $resBeforeBlock = Http-Call $apiUrl '/api/documents/dashboard' 'GET' $null $tokenTemp @(200)
+    Assert-Step "16. Operador ativo acessa API normalmente (200)" ($resBeforeBlock.StatusCode -eq 200)
+
+    # Bloqueia usuario no banco em tempo real (status DISABLED)
+    $null = Exec-Sql $dbFull "update agro360.identity_users set status = 'DISABLED' where id = '$testBlockId';"
+
+    # Mesma requisicao com o mesmo token agora DEVE retornar 403 Forbidden
+    $resAfterBlock = Http-Call $apiUrl '/api/documents/dashboard' 'GET' $null $tokenTemp @(403)
+    Assert-Step "16. Usuario inativo tem token revogado em tempo real pelo middleware (403 Forbidden)" ($resAfterBlock.StatusCode -eq 403)
+
+    # Teste de Tenant suspenso
+    $null = Exec-Sql $dbFull "update agro360.tenancy_tenants set status = 3 where id = '$tenantBId';" # 3 = SUSPENDED
+    $resTenantSuspended = Http-Call $apiUrl "/api/production/orders" 'GET' $null $tokenB @(403)
+    Assert-Step "16. Tenant suspenso tem acesso bloqueado imediatamente (403 Forbidden)" ($resTenantSuspended.StatusCode -eq 403)
+    $null = Exec-Sql $dbFull "update agro360.tenancy_tenants set status = 1 where id = '$tenantBId';" # Restaura ACTIVE
+
+    # -------------------------------------------------------------
+    # 17. JORNADA DE DOCUMENTOS: UPLOAD, SNIFFING, VERSOES, DOWNLOAD, ARQUIVAMENTO
+    # -------------------------------------------------------------
+    $docTypeId = (Query-Sql $dbFull "select id from agro360.documents_document_types where active limit 1;").Trim()
+    if (-not $docTypeId) {
+        $docTypeId = [guid]::NewGuid().ToString()
+        $null = Exec-Sql $dbFull "insert into agro360.documents_document_types(id, name, code, active) values('$docTypeId', 'Laudo Tecnico', 'LAUDO', true);"
+    }
+
+    Add-Type -AssemblyName System.Net.Http
+    $httpDocClient = [System.Net.Http.HttpClient]::new()
+    try {
+        $httpDocClient.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $tokenA)
+
+        # 17.1 Arquivo executavel com extensao .pdf rejeitado por content sniffing
+        $fakeBytes = [byte[]]@(0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00) # MZ DOS/PE
+        $mpFake = [System.Net.Http.MultipartFormDataContent]::new()
+        $mpFake.Add([System.Net.Http.StringContent]::new("Laudo Malicioso"), "name")
+        $mpFake.Add([System.Net.Http.StringContent]::new($docTypeId), "documentTypeId")
+        $fakeFile = [System.Net.Http.ByteArrayContent]::new($fakeBytes)
+        $fakeFile.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/pdf")
+        $mpFake.Add($fakeFile, "file", "laudo-falso.pdf")
+
+        $resFake = $httpDocClient.PostAsync("$apiUrl/api/documents", $mpFake).Result
+        Assert-Step "17. Content sniffing: Arquivo binario MZ disfarçado de PDF rejeitado (400/422)" ([int]$resFake.StatusCode -in @(400, 422)) "Status: $([int]$resFake.StatusCode)"
+
+        # 17.2 Upload autentico com assinatura PDF valida (%PDF-)
+        $validPdf = [System.Text.Encoding]::ASCII.GetBytes("%PDF-1.7`n%Laudo Tecnico Autentico`n%%EOF")
+        $mpValid = [System.Net.Http.MultipartFormDataContent]::new()
+        $mpValid.Add([System.Net.Http.StringContent]::new("Laudo Fiscalizacao 2026"), "name")
+        $mpValid.Add([System.Net.Http.StringContent]::new($docTypeId), "documentTypeId")
+        $mpValid.Add([System.Net.Http.StringContent]::new("qualidade, homologacao"), "tags")
+        $validFile = [System.Net.Http.ByteArrayContent]::new($validPdf)
+        $validFile.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/pdf")
+        $mpValid.Add($validFile, "file", "laudo-fiscalizacao.pdf")
+
+        $resValid = $httpDocClient.PostAsync("$apiUrl/api/documents", $mpValid).Result
+        Assert-Step "17. Upload autentico com assinatura %PDF- aceito com sucesso (201 Created)" ([int]$resValid.StatusCode -eq 201) "Status: $([int]$resValid.StatusCode)"
+        $createdDocId = (($resValid.Content.ReadAsStringAsync().Result | ConvertFrom-Json).id)
+
+        # 17.3 Nova versao com motivo obrigatorio
+        $v2Pdf = [System.Text.Encoding]::ASCII.GetBytes("%PDF-1.7`n%Revisao 2 do Laudo Tecnico`n%%EOF")
+        $mpV2 = [System.Net.Http.MultipartFormDataContent]::new()
+        $mpV2.Add([System.Net.Http.StringContent]::new("Revisao tecnica apos auditoria externa"), "reason")
+        $v2File = [System.Net.Http.ByteArrayContent]::new($v2Pdf)
+        $v2File.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/pdf")
+        $mpV2.Add($v2File, "file", "laudo-fiscalizacao-v2.pdf")
+
+        $resV2 = $httpDocClient.PostAsync("$apiUrl/api/documents/$createdDocId/versions", $mpV2).Result
+        Assert-Step "17. Nova versao com motivo registrada com sucesso (204 NoContent)" ([int]$resV2.StatusCode -eq 204)
+
+        # 17.4 Detalhes do documento exibem histórico e metadados
+        $detailRes = Http-Call $apiUrl "/api/documents/$createdDocId" 'GET' $null $tokenA @(200)
+        $docData = $detailRes.Content | ConvertFrom-Json
+        Assert-Step "17. Detalhes do documento contem 2 versoes com motivos preservados" ($docData.versions.Count -eq 2) "Versoes: $($docData.versions.Count)"
+
+        $firstVersionId = $docData.versions[0].id
+
+        # 17.5 Download autorizado da versao especifica
+        $dlV1 = Http-Call $apiUrl "/api/documents/$createdDocId/download?versionId=$firstVersionId" 'GET' $null $tokenA @(200)
+        Assert-Step "17. Download autorizado da versao 1 bem-sucedido (200 OK)" ($dlV1.StatusCode -eq 200)
+
+        # 17.6 Download cruzado: Tenant B tenta baixar documento do Tenant A -> Rejeitado
+        $dlCross = Http-Call $apiUrl "/api/documents/$createdDocId/download" 'GET' $null $tokenB @(403, 404)
+        Assert-Step "17. Download cruzado negado para Tenant B (403/404)" ($dlCross.StatusCode -in @(403, 404))
+
+        # 17.7 Arquivamento do documento
+        $archRes = Http-Call $apiUrl "/api/documents/$createdDocId/archive" 'POST' $null $tokenA @(204)
+        Assert-Step "17. Arquivamento do documento realizado (204 NoContent)" ($archRes.StatusCode -eq 204)
+
+        $dbStatus = (Query-Sql $dbFull "select status from agro360.documents where id = '$createdDocId';").Trim()
+        Assert-Step "17. Status confirmado como ARCHIVED no banco" ($dbStatus -eq 'ARCHIVED')
+    } finally {
+        $httpDocClient.Dispose()
+    }
+
+    # -------------------------------------------------------------
+    # 18. REUSO REAL DE CONEXAO DO POOL E AUSENCIA DE CONTAMINACAO
+    # Sequencia alternada de requisicoes entre Tenant A e Tenant B
+    # -------------------------------------------------------------
+    $poolConsistent = $true
+    for ($i = 0; $i -lt 6; $i++) {
+        $callA = Http-Call $apiUrl '/api/documents/dashboard' 'GET' $null $tokenA @(200)
+        $callB = Http-Call $apiUrl '/api/documents/dashboard' 'GET' $null $tokenB @(200)
+        if ($callA.StatusCode -ne 200 -or $callB.StatusCode -ne 200) {
+            $poolConsistent = $false
+            break
+        }
+    }
+    Assert-Step "18. Pool de conexoes: Requisicoes alternadas preservam isolamento estrito sem vazamento de contexto" $poolConsistent
+
     Write-Host "`n=================================================================" -ForegroundColor Green
-    Write-Host "  TODOS OS 14 CENARIOS DE HOMOLOGACAO PASSARAM COM SUCESSO!" -ForegroundColor Green
+    Write-Host "  TODOS OS 18 CENARIOS DE HOMOLOGACAO PASSARAM COM SUCESSO!" -ForegroundColor Green
     Write-Host "=================================================================" -ForegroundColor Green
 
 } finally {

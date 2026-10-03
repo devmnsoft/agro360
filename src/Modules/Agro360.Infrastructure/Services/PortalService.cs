@@ -285,7 +285,7 @@ public sealed class PortalService(
                 left join agro360.portal_document_permissions dp on dp.document_id = d.id and dp.tenant_id = d.tenant_id and dp.deleted_at is null
                 left join agro360.portal_external_user_links ul on ul.tenant_id = d.tenant_id and ul.external_user_id = @UserId
                 where d.tenant_id = @TenantId
-                  and d.status = 'APPROVED'
+                  and d.status in ('ACTIVE', 'APPROVED')
                   and d.deleted_at is null
                   and (
                       dp.external_user_id = @UserId
@@ -636,7 +636,7 @@ public sealed class PortalService(
                 left join agro360.portal_document_permissions dp on dp.document_id = d.id and dp.tenant_id = d.tenant_id and dp.deleted_at is null
                 left join agro360.portal_external_user_links ul on ul.tenant_id = d.tenant_id and ul.external_user_id = @UserId
                 where d.tenant_id = @TenantId
-                  and d.status = 'APPROVED'
+                  and d.status in ('ACTIVE', 'APPROVED')
                   and d.deleted_at is null
                   and (
                       (dp.external_user_id = @UserId and dp.can_download)
@@ -666,7 +666,7 @@ public sealed class PortalService(
                     left join agro360.portal_external_user_links ul on ul.tenant_id = d.tenant_id and ul.external_user_id = @UserId
                     where d.id = @DocumentId
                       and d.tenant_id = @TenantId
-                      and d.status = 'APPROVED'
+                      and d.status in ('ACTIVE', 'APPROVED')
                       and d.deleted_at is null
                       and (
                           (dp.external_user_id = @UserId and dp.can_download)
