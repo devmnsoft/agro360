@@ -1,5 +1,7 @@
 namespace Agro360.Domain.People;
 
+public readonly record struct RuralHrTariffCandidate(Guid Id, Guid? RoleId, string? ActivityType, string RateType, decimal RateValue, DateOnly ValidFrom);
+
 public static class RuralHrRules
 {
     public static decimal WorkedHours(DateTimeOffset start, DateTimeOffset end, int breakMinutes)
@@ -10,6 +12,8 @@ public static class RuralHrRules
 
     public static string InitialStatus(string kind) => (kind ?? "").Trim().ToUpperInvariant() switch
     {
+        "PERSON" => "ACTIVE",
+        "TIME_ENTRY" => "OPEN",
         "TEAM" => "ACTIVE",
         "TRAINING" => "PLANNED",
         "PPE" => "AVAILABLE",
@@ -23,6 +27,76 @@ public static class RuralHrRules
         "LABOR_COST" => "ACTIVE",
         _ => "ACTIVE"
     };
+
+    /// <summary>
+    /// Períodos [início, fim) conflitam quando se cruzam. Extremos encostados não conflitam.
+    /// Política de alocação: a mesma pessoa, ou a mesma equipe, não pode ter duas alocações ACTIVE sobrepostas.
+    /// </summary>
+    public static bool PeriodsOverlap(DateTimeOffset start, DateTimeOffset end, DateTimeOffset otherStart, DateTimeOffset otherEnd)
+        => start < otherEnd && end > otherStart;
+
+    /// <summary>
+    /// Precedência da tarifa na data da jornada: papel+atividade (3), só papel (2), só atividade (1), genérica (0).
+    /// Empate de especificidade com o mesmo valor usa a vigência mais recente e, depois, o menor id.
+    /// Empate com valores diferentes é ambíguo e não escolhe uma tarifa.
+    /// </summary>
+    public static bool TrySelectTariff(IReadOnlyList<RuralHrTariffCandidate> candidates, Guid? roleId, string? activity, out RuralHrTariffCandidate selected)
+    {
+        selected = default;
+        if (candidates.Count == 0) return false;
+        var ranked = new List<(RuralHrTariffCandidate Tariff, int Score)>();
+        foreach (var candidate in candidates)
+        {
+            var score = TariffScore(candidate, roleId, activity);
+            if (score >= 0) ranked.Add((candidate, score));
+        }
+        if (ranked.Count == 0) return false;
+        var best = ranked.Max(x => x.Score);
+        var top = ranked.Where(x => x.Score == best).Select(x => x.Tariff).ToArray();
+        if (top.Select(x => (Normalize(x.RateType), x.RateValue)).Distinct().Count() > 1)
+            throw new InvalidOperationException("Há mais de uma tarifa com a mesma precedência e valores diferentes.");
+        selected = top.OrderByDescending(x => x.ValidFrom).ThenBy(x => x.Id).First();
+        return true;
+    }
+
+    /// <summary>
+    /// Quatro casas, AwayFromZero, alinhado ao lançamento de custo da safra.
+    /// PIECEWORK sem quantidade informada devolve nulo: ausência não vira zero.
+    /// </summary>
+    public static decimal? QuoteLabor(string rateType, decimal rate, decimal hours, decimal? pieceQuantity)
+    {
+        var type = Normalize(rateType);
+        if (rate < 0) throw new ArgumentException("A tarifa não pode ser negativa.");
+        decimal quantity = 1m;
+        if (type == "PIECEWORK")
+        {
+            if (pieceQuantity is null) return null;
+            if (pieceQuantity < 0) throw new ArgumentException("A quantidade de produção não pode ser negativa.");
+            quantity = pieceQuantity.Value;
+        }
+        var raw = LaborCost(hours, rate, type, quantity);
+        return decimal.Round(raw, 4, MidpointRounding.AwayFromZero);
+    }
+
+    public static string TariffUnit(string rateType) => Normalize(rateType) switch
+    {
+        "HOURLY" => "HOUR",
+        "DAILY" => "DAY",
+        "PIECEWORK" => "UNIT",
+        "FIXED" => "CONTRACT",
+        _ => throw new ArgumentException("Modalidade de custo inválida.")
+    };
+
+    private static int TariffScore(RuralHrTariffCandidate candidate, Guid? roleId, string? activity)
+    {
+        var roleSpecific = candidate.RoleId.HasValue;
+        var activitySpecific = !string.IsNullOrWhiteSpace(candidate.ActivityType);
+        if (roleSpecific && candidate.RoleId != roleId) return -1;
+        if (activitySpecific && !string.Equals(Normalize(candidate.ActivityType), Normalize(activity), StringComparison.Ordinal)) return -1;
+        return (roleSpecific ? 2 : 0) + (activitySpecific ? 1 : 0);
+    }
+
+    private static string Normalize(string? value) => (value ?? "").Trim().ToUpperInvariant();
 
     public static void ValidateStatusTransition(string kind, string currentStatus, string targetStatus)
     {
@@ -138,6 +212,13 @@ public static class RuralHrRules
                 ("MAINTENANCE", "AVAILABLE") => true,
                 ("ACTIVE", "OCCUPIED") => true,
                 ("ACTIVE", "AVAILABLE") => true,
+                _ => false
+            },
+            "ALLOCATION" => (cur, tgt) switch
+            {
+                ("ACTIVE", "CANCELLED") => true,
+                ("ACTIVE", "COMPLETED") => true,
+                ("ACTIVE", "INACTIVE") => true,
                 _ => false
             },
             _ => (cur, tgt) switch

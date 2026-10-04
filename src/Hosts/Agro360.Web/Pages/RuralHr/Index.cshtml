@@ -9,7 +9,7 @@
         <div>
             <p class="eyebrow">Gestão de Pessoas, Jornadas e SST Operacional</p>
             <h1>RH Rural e Segurança do Trabalho</h1>
-            <p>Controle de equipes, registro de jornadas, entregas de EPIs, rastreabilidade de incidentes e logística de campo.</p>
+            <p>Planeje a alocação, execute a jornada, confira as horas e aproprie o custo na safra.</p>
         </div>
         <div class="header-actions">
             <button id="toggle-hr-help" type="button" class="btn-help" aria-expanded="false" aria-controls="hr-help-panel">
@@ -21,8 +21,10 @@
     <div id="hr-help-panel" class="help-panel" hidden>
         <h3>Guia de Operação do RH Rural e SST</h3>
         <ul>
-            <li><strong>Pessoas:</strong> Cadastre trabalhadores vinculados à função e fazenda de lotação, com CPF/documento e qualificações.</li>
-            <li><strong>Jornadas:</strong> Abertura e encerramento de ponto com controle estrito de horas trabalhadas e intervalos.</li>
+            <li><strong>Painel:</strong> Pessoas alocadas, jornadas abertas, conferência pendente, conflitos, custo conferido, custo sem tarifa, valor apropriado e saldo. O indicador abre a lista correspondente.</li>
+            <li><strong>Alocação:</strong> Escolha pessoa ou equipe, propriedade, talhão, safra, ordem e período. O cancelamento não apaga a jornada já executada.</li>
+            <li><strong>Jornada:</strong> Vincule uma alocação. Encerre com saída válida, confira e corrija com justificativa. Sem tarifa, o custo fica indisponível — zero informado continua visível como zero.</li>
+            <li><strong>Pessoas:</strong> Cadastre trabalhadores com documento real, cargo do cadastro e propriedade selecionada.</li>
             <li><strong>EPIs:</strong> Controle de disponibilidade, entrega ao colaborador, devolução e descarte conforme normas vigentes.</li>
             <li><strong>SST &amp; Incidentes:</strong> Registro de não conformidades, investigação e acompanhamento de ações corretivas.</li>
             <li><strong>Transporte:</strong> Programação de veículos, itinerários e lotação para transporte seguro das frentes de trabalho.</li>
@@ -30,13 +32,18 @@
     </div>
 
     <nav class="tabs" aria-label="Módulos de RH Rural">
-        @foreach(var x in new[]{"Pessoas","Equipes","Jornada","Alocações","Custos de Mão de Obra","Treinamentos","EPIs","Segurança","Incidentes","Ações Corretivas","Alojamento","Transporte","Dashboard RH Rural/SST"}){
-            <button type="button" data-tab="@x" class="@(x == "Pessoas" ? "active" : "")">@x</button>
+        @foreach(var x in new[]{"Painel","Pessoas","Equipes","Alocações","Jornada","Tarifas","Revisões","Custos de Mão de Obra","Treinamentos","EPIs","Segurança","Incidentes","Ações Corretivas","Alojamento","Transporte","Dashboard RH Rural/SST"}){
+            <button type="button" data-tab="@x" class="@(x == "Painel" ? "active" : "")">@x</button>
         }
     </nav>
 
     <div class="toolbar">
         <form id="hr-filters" class="filter-form">
+            <label>De <input type="date" id="hr-filter-from" name="from" /></label>
+            <label>Até <input type="date" id="hr-filter-to" name="to" /></label>
+            <label>Propriedade <select id="hr-filter-property" data-lookup="properties"><option value="">Todas</option></select></label>
+            <label>Safra <select id="hr-filter-season" data-lookup="seasons"><option value="">Todas</option></select></label>
+            <label>Equipe <select id="hr-filter-team" data-lookup="teams"><option value="">Todas</option></select></label>
             <label>
                 Buscar por nome
                 <input type="search" name="search" id="hr-filter-search" placeholder="Digite para filtrar..." maxlength="100" />
@@ -121,7 +128,14 @@
     <dialog id="hr-time-dialog" class="hr-modal">
         <form id="hr-time-form" method="dialog">
             <h2>Registrar Ponto / Jornada de Trabalho</h2>
-            <p class="modal-desc">Abertura de jornada para apontamento de horas de campo.</p>
+            <p class="modal-desc">Abertura de jornada para apontamento de horas de campo. A alocação é o vínculo com a operação; sem ela a jornada não recebe destino de safra.</p>
+            <input type="hidden" name="idempotencyKey" />
+            <label>
+                Alocação
+                <select name="allocationId" data-lookup="allocations">
+                    <option value="">Sem alocação — a jornada fica sem destino de safra</option>
+                </select>
+            </label>
             <label>
                 Trabalhador *
                 <select name="personId" data-lookup="people" required>
@@ -292,6 +306,65 @@
             <menu>
                 <button type="button" data-close class="btn btn-secondary">Cancelar</button>
                 <button type="submit" class="btn btn-primary">Salvar Registro</button>
+            </menu>
+        </form>
+    </dialog>
+
+    <dialog id="hr-allocation-dialog" class="hr-modal">
+        <form id="hr-allocation-form" method="dialog">
+            <h2>Planejar alocação agrícola</h2>
+            <p class="modal-desc">A pessoa ou a equipe, a propriedade e o período são obrigatórios. Talhão, safra e ordem precisam ser compatíveis.</p>
+            <input type="hidden" name="idempotencyKey" />
+            <label>Nome da frente * <input name="name" required minlength="3" maxlength="180" /></label>
+            <label>Pessoa <select name="personId" data-lookup="people"><option value="">Sem pessoa específica</option></select></label>
+            <label>Equipe <select name="teamId" data-lookup="teams"><option value="">Sem equipe</option></select></label>
+            <label>Propriedade * <select name="propertyId" data-lookup="properties" required><option value="">Selecione</option></select></label>
+            <label>Talhão <select name="plotId" data-lookup="plots"><option value="">Sem talhão</option></select></label>
+            <label>Safra <select name="seasonId" data-lookup="seasons"><option value="">Sem safra</option></select></label>
+            <label>Ordem de campo <select name="orderId" data-lookup="work-orders"><option value="">Sem ordem</option></select></label>
+            <label>Atividade * <input name="activityType" required maxlength="60" placeholder="Ex.: Colheita" /></label>
+            <label>Início * <input name="startsAt" type="datetime-local" required /></label>
+            <label>Fim * <input name="endsAt" type="datetime-local" required /></label>
+            <label>Observações <textarea name="notes" maxlength="2000"></textarea></label>
+            <div id="hr-allocation-summary" class="confirm-summary" hidden></div>
+            <menu>
+                <button type="button" data-close class="btn btn-secondary">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Revisar e salvar</button>
+            </menu>
+        </form>
+    </dialog>
+
+    <dialog id="hr-tariff-dialog" class="hr-modal">
+        <form id="hr-tariff-form" method="dialog">
+            <h2>Nova vigência de tarifa</h2>
+            <p class="modal-desc">A tarifa mais específica prevalece. Empate de valor diferente é bloqueado. A edição cria nova vigência e não reescreve jornada já conferida.</p>
+            <input type="hidden" name="idempotencyKey" />
+            <label>Cargo <select name="roleId" data-lookup="roles"><option value="">Qualquer cargo</option></select></label>
+            <label>Atividade <input name="activityType" maxlength="60" placeholder="Vazio vale para qualquer atividade" /></label>
+            <label>Modalidade * <select name="rateType" required><option value="HOURLY">Por hora</option><option value="DAILY">Diária</option><option value="PIECEWORK">Por produção</option><option value="FIXED">Valor fixo</option></select></label>
+            <label>Valor (R$) * <input name="rateValue" type="number" min="0" max="999999.9999" step="0.0001" required /></label>
+            <label>Vigência inicial * <input name="validFrom" type="date" required /></label>
+            <label>Vigência final <input name="validTo" type="date" /></label>
+            <div id="hr-tariff-summary" class="confirm-summary" hidden></div>
+            <menu>
+                <button type="button" data-close class="btn btn-secondary">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Revisar e salvar</button>
+            </menu>
+        </form>
+    </dialog>
+
+    <dialog id="hr-correct-dialog" class="hr-modal">
+        <form id="hr-correct-form" method="dialog">
+            <h2>Corrigir jornada</h2>
+            <p class="modal-desc">A correção preserva o valor anterior, exige justificativa e volta a jornada para conferência. Período fechado e apropriação confirmada bloqueiam a alteração.</p>
+            <input type="hidden" name="entryId" id="hr-correct-id" />
+            <label>Saída <input name="endedAt" type="datetime-local" /></label>
+            <label>Pausa (minutos) * <input name="breakMinutes" type="number" min="0" max="1440" value="0" required /></label>
+            <label>Quantidade produzida <input name="pieceQuantity" type="number" min="0" step="0.0001" placeholder="Obrigatória só na modalidade por produção" /></label>
+            <label>Justificativa * <textarea name="justification" required minlength="5" maxlength="1000"></textarea></label>
+            <menu>
+                <button type="button" data-close class="btn btn-secondary">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Registrar correção</button>
             </menu>
         </form>
     </dialog>

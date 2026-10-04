@@ -1,3 +1,29 @@
+## Jornada de RH, alocação, custo e apropriação (AG-HR-OP-002) — 2026-10-03
+
+Branch `main`. HEAD confirmado `4f0bebd2a7ccf15ca175fc136ef0ae04438915a3` (baseline pedido). Não há `AGENTS.md`. A entrega está na árvore de trabalho, sem commit, push ou merge. `appsettings.Development.json` não foi alterado.
+
+**Entregue**
+- Fonte canônica: pessoa em `rural_hr_people`, jornada em `rural_hr_time_entries`. `rural_hr_records` PERSON/TIME_ENTRY é projeção com `canonical_table`/`canonical_id`, sincronizada na mesma transação e conferida pelo trigger adiado `rural_hr_assert_projection`.
+- `SaveGenericAsync` deixa de escolher a primeira propriedade, de inventar documento e de aceitar status do cliente. Cargo por nome canônico, com releitura após conflito. Documento `^[0-9]{11,14}$` é obrigatório no cadastro genérico de pessoa.
+- Migration incremental `database/migrations/123_rural_hr_canonical_integrity.sql`, schema `11.13.0`, também embutida em `database/agro360-postgres-full.sql`. A 122 não foi reescrita. Planos semeados que só tinham o catálogo mais `rural-hr`/`verticals` voltam ao catálogo. Os demais ficam em `saas_plan_module_reviews`.
+- Registros suspeitos (documento sintético `1########00` com projeção de mesmo id, projeção órfã, cargo duplicado) entram em `rural_hr_data_reviews`. Nada é apagado nem reescrito.
+- Alocação, conferência, correção, tarifa, memória de custo e apropriação em `RuralHrService.Journey.cs`, reusando `cost_management_entries` / `cost_allocation_batches`. Sem folha e sem conta a pagar automática.
+- Painel e formulários em `Pages/RuralHr/Index.cshtml`, `wwwroot/js/rural-hr.js` e `wwwroot/css/rural-hr.css`.
+
+**Evidência executada**
+- `dotnet build MNSOFT.Agro360.sln` (Debug): 0 erros, 0 avisos.
+- `Agro360.UnitTests.exe`: 335/335. `Agro360.ArchitectureTests.exe`: 169/169. `node --check` em `rural-hr.js`: aprovado. `git diff --check`: sem erro de whitespace (aviso de LF/CRLF).
+- PostgreSQL 16.14 descartável (`postgres:16`, porta 55432, banco removido ao final):
+  - Instalação limpa de `agro360-postgres-full.sql`: commit final, versões `11.12.0` e `11.13.0`. Planos semeados sem `rural-hr` e sem `verticals`. Papel `agro360_app` com `rolsuper=f` e `rolbypassrls=f`, com INSERT em `rural_hr_time_entries`.
+  - Upgrade: schema pré-123 (Essencial ainda com `rural-hr`), histórico de checksum das 92 migrations anteriores, depois `Agro360.Migrator` aplicou só `123_rural_hr_canonical_integrity.sql`. Segunda leitura: 93 aplicadas, 0 pendentes, Essencial restaurado para `{properties,agriculture,inventory}`, versão `11.13.0`.
+  - RLS forçado em `rural_hr_data_reviews`: com `agro360_app`, tenant A viu 1 e vazou 0 do tenant B; sem `app.tenant_id`, viu 0; tenant B viu 1. Transação desfeita.
+  - Reenvio da mesma chave em `rural_hr_command_replays` violou a chave primária. Projeção PERSON sem pessoa canônica falhou no commit com `Projeção de pessoa divergente da fonte canônica rural_hr_people`.
+
+**Não executado**
+- Jornada HTTP autenticada, concorrência de duas requisições da API e navegador em 360/768/1440. Não há ferramenta de navegador nesta sessão e a página exige sessão do tenant.
+- Homologação ao vivo de suporte/Portal e regressão HTTP de Comercial, Logística, estoque, Produção e genealogia. A leitura de `TenantContextMiddleware` (linhas 47–127) confirma sessão persistida, escopo e bloqueio de mutação somente leitura; isso não substitui o ensaio com papel restrito nesses fluxos.
+- `fk_rural_hr_tariffs_tenant_role` e `fk_rural_hr_time_allocation` ficam `NOT VALID` de propósito, para não recusar legado. Na instalação limpa, `convalidated=false`. Linhas novas continuam validadas pelo PostgreSQL.
+
 ## Homologação E2E Integrada da Produção, Consumo, Estoque e Qualidade (AG-PROD-INT-001) — 2026-10-02
 
 Branch `main`, HEAD de referência `35aaf6040664e7ed42e1b5cb0d63c60883478cef`.
