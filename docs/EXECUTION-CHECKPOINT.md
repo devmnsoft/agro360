@@ -1,22 +1,17 @@
-## Reexecução do pedido — 2026-10-06
+## Reexecução e responsividade — 2026-10-06
 
-HEAD verificado: `edc1e6372da367c174a2e7bd9c88da3a6eeb10a8`. A implementação de escopos, transferência de titularidade e contexto operacional já estava presente; não foi criada nova migration. A execução alterou somente o harness E2E para verificar explicitamente a presença da versão `11.17.0` (a consulta anterior usava `max()` textual, que podia reportar uma versão incorreta).
+HEAD verificado durante a execução: `3b71b72946d81286a63e302f991d50cde097ce40`. As funcionalidades de escopo, transferência e contexto já estavam presentes; a migration 127 / schema `11.17.0` já existia. Ajustei estilos responsivos no shell e na tela SaaS para conter overflow em viewport estreito, permitir quebra de cabeçalhos e manter cartões/formulários e diálogo dentro do viewport. O overflow na tela SaaS e o texto intrínseco do cabeçalho foram reproduzidos e corrigidos.
 
-**Validações executadas**
-- .NET SDK `10.0.400`; `dotnet restore MNSOFT.Agro360.sln`: sucesso.
-- `dotnet build MNSOFT.Agro360.sln --configuration Release --no-restore`: 0 avisos, 0 erros.
-- `dotnet format MNSOFT.Agro360.sln --verify-no-changes --no-restore`: exit code 0.
-- `dotnet test --solution MNSOFT.Agro360.sln --configuration Release --no-build`: 540 aprovados, 0 falhas, 5 ignorados por ausência de `AGRO360_TEST_CONNECTION_STRING`.
-- `python tools/check-api-routes.py`: 929 rotas; verificações Node do shell offline e confirmação de expedição: PASS.
-- Validadores SQL do consolidado e dos assets: PASS. O WSL emitiu aviso de inicialização da sessão systemd, mas ambos os validadores terminaram com sucesso.
-- `scripts/verify-remaining-homologation.ps1`: 44 asserções PASS em PostgreSQL 18 descartável, com a versão exigida `11.17.0`; sem fallback sequencial. Incluiu disputa HTTP pela última vaga (1 sucesso, 1 HTTP 409), RLS com `agro360_app` sem superuser/BYPASSRLS, isolamento A/B e sem contexto, INSERT cruzado negado, rollback sem efeito parcial, HTTP de retorno/liquidação, versão esperada e replay idempotente/conflitante de escopos e transferência. Evidência: `artifacts/remaining-homologation-e2e-a6c2312e84794fcca92d58e4c679e904/SUMMARY.txt`.
-- `git diff --check`: sem erros.
+**Verificações**
+- Build Release do projeto Web: 0 erros, 0 avisos. `dotnet format --verify-no-changes`, `git diff --check` e `node --check` de `agro360.js`/`saas.js`: sucesso.
+- Rotas: 929; verificações offline shell e confirmação de expedição: PASS.
+- `scripts/verify-remaining-homologation.ps1`: 44 asserções PASS em PostgreSQL 18 descartável, schema `11.17.0`; sem fallback sequencial. Inclui disputa HTTP simultânea pela última vaga (1 sucesso, 1 HTTP 409), RLS com `agro360_app` sem superuser/BYPASSRLS, isolamento de tenant, INSERT negado, rollback, fluxos HTTP de retorno/liquidação, versão esperada e replay idempotente/conflitante de escopos e transferência. Evidência: `artifacts/remaining-homologation-e2e-ddf54f35e3124d4790bc203cfef3ad75/SUMMARY.txt`.
+- Browser: largura do documento igual à área visível nos viewports 180 (equivalente estreito usado para aproximar zoom 200%), 360, 768 e 1440 px, na página inicial e num fixture representativo da tela SaaS. No diálogo representativo a 180 px, ficou dentro do viewport e 12 avanços de Tab não escaparam do diálogo.
 
-**Navegador e pendências**
-- O host Web local abriu a tela inicial. A 360, 768 e 1440 px, a página não apresentou overflow horizontal no teste de viewport normal; 12 avanços por Tab permaneceram dentro do diálogo de acesso.
-- A emulação por CSS de zoom 200% em viewport móvel mediu `scrollWidth=390` contra `clientWidth=345`, indicando possível overflow que precisa de confirmação em zoom real e correção, se reproduzido.
-- A captura de screenshot não ficou disponível no browser integrado. Sem sessão autenticada de teste isolada para a aplicação Web, as telas autenticadas de administração, a transferência, os temas e a matriz completa de UX não foram homologadas visualmente. Não classificar a aceitação visual como concluída.
-- Os cinco testes de integração da suíte .NET permaneceram ignorados sem `AGRO360_TEST_CONNECTION_STRING`; a homologação E2E acima foi executada separadamente contra banco PostgreSQL descartável. Não houve alteração de banco persistente, commit, push ou publicação.
+**Limites da homologação**
+- O browser redirecionou `/saas` para a página inicial sem sessão. O teste do layout SaaS foi feito com estrutura representativa e os CSS reais, não com dados/ações da tela autenticada. Sem sessão de teste isolada não foi possível homologar visualmente a interação autenticada, a transferência pela UI, temas ou todas as ações de teclado. O browser integrado também não forneceu captura de screenshot.
+- A largura de 180 px é um ensaio de viewport estreito para aproximar zoom; não é evidência de zoom nativo em navegador real. Não declarar a matriz visual completa nem WCAG AA como aprovadas.
+- A E2E usou PostgreSQL descartável e deixou evidência local; não houve alteração em banco persistente ou produção. Não fiz commit, push ou publicação.
 
 ---
 
