@@ -218,6 +218,25 @@
     </div>
 
     <div class="toast-region" id="toast-region" aria-live="polite"></div>
+    <dialog class="action-confirmation" id="context-switcher-dialog" aria-labelledby="context-switcher-title">
+        <form method="dialog" id="context-switcher-form">
+            <span class="eyebrow">Filtro de Unidade</span>
+            <h2 id="context-switcher-title">Alternar contexto operacional</h2>
+            <p>Selecione a fazenda ou unidade de trabalho. A seleção filtra o conjunto autorizado e atualiza consultas e lançamentos nesta sessão.</p>
+            <div id="context-switcher-fields">
+                <label for="context-farm-select">Unidade / Fazenda ativa
+                    <select id="context-farm-select" name="farmId" style="width:100%;padding:0.5rem;margin-top:0.35rem">
+                        <option value="">Todas as unidades autorizadas (união do escopo)</option>
+                    </select>
+                </label>
+                <div id="context-switcher-preview" style="margin-top:0.5rem;font-size:0.85rem;color:var(--color-muted,#555)"></div>
+            </div>
+            <div class="form-actions" style="margin-top:1rem">
+                <button type="submit" value="cancel" class="secondary-button">Cancelar</button>
+                <button type="submit" value="apply" class="primary-button" id="context-switcher-apply">Aplicar contexto</button>
+            </div>
+        </form>
+    </dialog>
     <dialog class="action-confirmation" id="action-confirmation" aria-labelledby="confirmation-title" aria-describedby="confirmation-consequence">
         <form method="dialog" id="confirmation-form">
             <span class="eyebrow" data-confirmation-kind>Ação sensível</span>

@@ -2,7 +2,10 @@
 -- Schema 11.17.0.
 set local search_path to agro360, public;
 
--- 1. Tabela de escopos de unidade por usuário (Organização / Fazenda / Todas)
+-- 1. Versionamento otimista na organização para governança de titularidade
+alter table agro360.saas_organizations add column if not exists version bigint not null default 1;
+
+-- 2. Tabela de escopos de unidade por usuário (Organização / Fazenda / Todas)
 create table if not exists agro360.identity_user_unit_scopes (
     id uuid primary key default gen_random_uuid(),
     tenant_id uuid not null references agro360.platform_tenants(id),
@@ -68,7 +71,7 @@ begin
         execute 'grant select, insert, update, delete on agro360.fulfillment_delivery_attempts to agro360_app';
         execute 'grant select, insert, update, delete on agro360.fulfillment_return_receipts to agro360_app';
         execute 'grant select, insert, update, delete on agro360.fulfillment_operation_requests to agro360_app';
-        execute 'grant select, insert, update, delete on agro360.fulfillment_return_dispositions to agro360_app';
+        execute 'grant select, insert, update, delete on agro360.fulfillment_return_decisions to agro360_app';
 
         -- Entregas comerciais e eventos
         execute 'grant select, insert, update, delete on agro360.commercial_deliveries to agro360_app';

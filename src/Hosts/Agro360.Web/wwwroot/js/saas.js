@@ -29,7 +29,7 @@
         billing: "Acompanhe vencimentos e inadimplência. Baixas são manuais, justificadas e auditadas; nunca há pagamento automático.",
         features: "Selecione uma organização para conferir recursos do plano e liberações temporárias justificadas.",
         audit: "Consulte ações críticas e seus responsáveis. Filtre pela organização durante o atendimento.",
-        users: "Inative ou reative usuários desta organização com justificativa. O próprio acesso e o último administrador ativo são protegidos; sessões do usuário alterado são revogadas.",
+        users: "Gerencie usuários, perfis, alcance de unidades e titularidade. A matriz de unidades restringe o escopo de atuação operacional; a transferência do administrador principal exige confirmação e justificativa auditada.",
         roles: "Combine permissões por função. Alterações afetam usuários vinculados e são registradas na auditoria.",
         usage: "Compare consumo e limites contratados. Um limite atingido bloqueia novos registros sem apagar dados.",
         account: "Consulte plano e consumo da sua organização. Mudanças de plano são solicitações sujeitas à aprovação.",
@@ -98,23 +98,36 @@
             `<tr>${columns.map(column => `<td>${escapeHtml(row[column[0]])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
     }
 
-    function usersTable(rows) {
+    function usersTable(rows, primaryAdminEmail = "") {
         if (!rows.length) return '<div class="empty">Nenhum usuário encontrado.</div>';
         const canManage = permissions.has("account.users.manage") || isSuperAdministrator;
         return `<div class="saas-card"><table class="saas-table"><thead><tr><th>Nome</th><th>E-mail</th><th>Status</th><th>Perfis</th><th>Último acesso</th>${canManage ? "<th>Ações</th>" : ""}</tr></thead><tbody>${rows.map(user => {
             const action = user.status === "ACTIVE" ? "deactivate" : user.status === "DISABLED" ? "activate" : null;
             const actionLabel = action === "deactivate" ? "Inativar" : "Reativar";
             const isCurrentUser = String(user.id).toLowerCase() === String(session?.userId ?? "").toLowerCase();
-            const actionButton = canManage && action && !isCurrentUser
-                ? `<button type="button" class="${action === "deactivate" ? "danger-button" : "primary-button"}" data-user-status="${action}" data-user-id="${escapeHtml(user.id)}" data-user-name="${escapeHtml(user.name)}">${actionLabel}</button>`
-                : isCurrentUser ? "Seu usuário" : "";
-            return `<tr><td>${escapeHtml(user.name)}</td><td>${escapeHtml(user.email)}</td><td>${escapeHtml(user.status)}</td><td>${escapeHtml(user.roles)}</td><td>${escapeHtml(user.lastAccess ?? "Nunca")}</td>${canManage ? `<td class="saas-actions">${actionButton}</td>` : ""}</tr>`;
+            const isPrimary = primaryAdminEmail && user.email && user.email.toLowerCase() === primaryAdminEmail.toLowerCase();
+            const primaryBadge = isPrimary ? '<span class="status-badge" style="background:#e8f5e9;color:#1b5e20;font-size:11px;margin-left:6px;font-weight:600">Titular</span>' : '';
+
+            const actionButtons = [];
+            if (canManage) {
+                actionButtons.push(`<button type="button" class="secondary-button" data-user-scopes="${escapeHtml(user.id)}" data-user-name="${escapeHtml(user.name)}" title="Consultar e editar alcance de unidades">Unidades</button>`);
+                if (action && !isCurrentUser && !isPrimary) {
+                    actionButtons.push(`<button type="button" class="${action === "deactivate" ? "danger-button" : "primary-button"}" data-user-status="${action}" data-user-id="${escapeHtml(user.id)}" data-user-name="${escapeHtml(user.name)}">${actionLabel}</button>`);
+                }
+            }
+            return `<tr><td>${escapeHtml(user.name)}${primaryBadge}</td><td>${escapeHtml(user.email)}</td><td>${escapeHtml(user.status)}</td><td>${escapeHtml(user.roles)}</td><td>${escapeHtml(user.lastAccess ?? "Nunca")}</td>${canManage ? `<td class="saas-actions">${actionButtons.join(" ")}</td>` : ""}</tr>`;
         }).join("")}</tbody></table></div>`;
     }
 
     function wireUserActions() {
         content.querySelectorAll("[data-user-status]").forEach(button => button.addEventListener("click", () => {
             openUserStatusDialog(button.dataset.userId, button.dataset.userName, button.dataset.userStatus === "activate");
+        }));
+        content.querySelectorAll("[data-user-scopes]").forEach(button => button.addEventListener("click", () => {
+            openUserScopesDialog(button.dataset.userScopes, button.dataset.userName);
+        }));
+        content.querySelectorAll("[data-transfer-admin]").forEach(button => button.addEventListener("click", () => {
+            openTransferPrimaryAdminDialog();
         }));
     }
 
@@ -233,6 +246,276 @@
         };
         dialog.showModal();
         dialogForm.elements.reason.focus();
+    }
+
+    async function openUserScopesDialog(userId, userName) {
+        document.querySelector("#dialog-title").textContent = `Alcance de Unidades: ${userName}`;
+        dialogMessage.textContent = "";
+        dialogFields.innerHTML = "<p>Carregando concessões de unidade...</p>";
+        dialog.showModal();
+
+        try {
+            const [scopes, orgs, farmsResult, users] = await Promise.all([
+                request(`/api/users/${encodeURIComponent(userId)}/scopes`),
+                request("/api/v1/property-organizations").catch(() => []),
+                request("/api/v1/properties").catch(() => ({ items: [] })),
+                request("/api/users").catch(() => [])
+            ]);
+
+            const targetUser = users.find(u => String(u.id).toLowerCase() === String(userId).toLowerCase());
+            const farms = farmsResult?.items ?? (Array.isArray(farmsResult) ? farmsResult : []);
+
+            let currentScopeType = "ALL";
+            let selectedOrgId = "";
+            let selectedFarmId = "";
+
+            if (scopes && scopes.length > 0) {
+                const first = scopes[0];
+                currentScopeType = first.scopeType || "ALL";
+                selectedOrgId = first.organizationId || "";
+                selectedFarmId = first.farmId || "";
+            } else if (scopes && scopes.length === 0) {
+                currentScopeType = "NONE";
+            }
+
+            const currentSummary = scopes && scopes.length > 0
+                ? scopes.map(s => {
+                    if (s.scopeType === "ALL") return "Todas as unidades do tenant (concessão ampla)";
+                    if (s.scopeType === "ORGANIZATION") return `Organização: ${s.organizationName || s.organizationId}`;
+                    return `Fazenda: ${s.farmName || s.farmId}`;
+                }).join("; ")
+                : "Nenhuma unidade vinculada (acesso operacional restrito)";
+
+            dialogFields.innerHTML = `
+                <div style="margin-bottom:0.75rem;padding:0.6rem;background:var(--color-surface-subtle,#f8f9fa);border-radius:4px;font-size:0.85rem">
+                    <p style="margin:0 0 0.35rem 0"><strong>Dimensões de Governança:</strong></p>
+                    <ul style="margin:0;padding-left:1.2rem">
+                        <li><strong>Permissões de ação:</strong> ${escapeHtml(targetUser?.roles ?? "Perfis do usuário")}</li>
+                        <li><strong>Alcance atual:</strong> ${escapeHtml(currentSummary)}</li>
+                    </ul>
+                </div>
+                <label for="scope-type">Tipo de concessão operacional
+                    <select id="scope-type" name="scopeType" required>
+                        <option value="ALL" ${currentScopeType === "ALL" ? "selected" : ""}>Todas as unidades da organização (ALL)</option>
+                        <option value="ORGANIZATION" ${currentScopeType === "ORGANIZATION" ? "selected" : ""}>Organização específica e suas fazendas (ORGANIZATION)</option>
+                        <option value="FARM" ${currentScopeType === "FARM" ? "selected" : ""}>Fazenda específica (FARM)</option>
+                        <option value="NONE" ${currentScopeType === "NONE" ? "selected" : ""}>Sem alcance operacional (apenas áreas pessoais)</option>
+                    </select>
+                </label>
+                <div id="scope-org-group" ${currentScopeType === "ORGANIZATION" ? "" : 'style="display:none"'}>
+                    <label for="scope-org">Organização
+                        <select id="scope-org" name="organizationId">
+                            <option value="">Selecione a organização…</option>
+                            ${orgs.map(o => `<option value="${escapeHtml(o.id)}" ${o.id === selectedOrgId ? "selected" : ""}>${escapeHtml(o.name)}</option>`).join("")}
+                        </select>
+                    </label>
+                </div>
+                <div id="scope-farm-group" ${currentScopeType === "FARM" ? "" : 'style="display:none"'}>
+                    <label for="scope-farm">Fazenda
+                        <select id="scope-farm" name="farmId">
+                            <option value="">Selecione a fazenda…</option>
+                            ${farms.map(f => `<option value="${escapeHtml(f.id)}" ${f.id === selectedFarmId ? "selected" : ""}>${escapeHtml(f.name)}</option>`).join("")}
+                        </select>
+                    </label>
+                </div>
+                <div id="scope-summary-box" style="margin:0.75rem 0;padding:0.5rem;border-left:3px solid var(--color-primary,#2e7d32);background:var(--color-surface-subtle,#f4f7f5);font-size:0.85rem">
+                    <strong id="scope-summary-text">Resumo da concessão: Concede acesso a todas as unidades do tenant.</strong>
+                </div>
+                <label for="scope-reason">Motivo da revisão/concessão (auditado)
+                    <textarea id="scope-reason" name="reason" minlength="5" maxlength="1000" placeholder="Justifique a concessão ou restrição de alcance (mínimo 5 caracteres)..."></textarea>
+                </label>
+            `;
+
+            const typeSelect = dialogFields.querySelector("#scope-type");
+            const orgGroup = dialogFields.querySelector("#scope-org-group");
+            const farmGroup = dialogFields.querySelector("#scope-farm-group");
+            const orgSelect = dialogFields.querySelector("#scope-org");
+            const farmSelect = dialogFields.querySelector("#scope-farm");
+            const summaryText = dialogFields.querySelector("#scope-summary-text");
+
+            function updateScopeUi() {
+                const val = typeSelect.value;
+                orgGroup.style.display = val === "ORGANIZATION" ? "block" : "none";
+                farmGroup.style.display = val === "FARM" ? "block" : "none";
+                if (val === "ALL") {
+                    summaryText.textContent = "Resumo da concessão: Concede acesso a todas as unidades do tenant (exclusivo).";
+                } else if (val === "ORGANIZATION") {
+                    const opt = orgSelect.options[orgSelect.selectedIndex];
+                    summaryText.textContent = `Resumo da concessão: Restrito à organização ${opt?.text || "selecionada"} e suas fazendas ativas.`;
+                } else if (val === "FARM") {
+                    const opt = farmSelect.options[farmSelect.selectedIndex];
+                    summaryText.textContent = `Resumo da concessão: Restrito exclusivamente à fazenda ${opt?.text || "selecionada"}.`;
+                } else {
+                    summaryText.textContent = "Resumo da concessão: Nenhuma unidade operacional concedida (apenas áreas pessoais/sessão).";
+                }
+            }
+
+            typeSelect.addEventListener("change", updateScopeUi);
+            orgSelect.addEventListener("change", updateScopeUi);
+            farmSelect.addEventListener("change", updateScopeUi);
+            updateScopeUi();
+
+            dialogForm.onsubmit = async event => {
+                event.preventDefault();
+                if (event.submitter?.value === "cancel") { dialog.close(); return; }
+
+                const type = typeSelect.value;
+                const reason = dialogFields.querySelector("#scope-reason").value.trim();
+                const newScopes = [];
+
+                if (type === "ALL") {
+                    newScopes.push({ scopeType: "ALL" });
+                } else if (type === "ORGANIZATION") {
+                    if (!orgSelect.value) {
+                        dialogMessage.textContent = "Selecione uma organização válida.";
+                        orgSelect.focus();
+                        return;
+                    }
+                    newScopes.push({ scopeType: "ORGANIZATION", organizationId: orgSelect.value });
+                } else if (type === "FARM") {
+                    if (!farmSelect.value) {
+                        dialogMessage.textContent = "Selecione uma fazenda válida.";
+                        farmSelect.focus();
+                        return;
+                    }
+                    newScopes.push({ scopeType: "FARM", farmId: farmSelect.value });
+                }
+
+                const submit = event.submitter;
+                submit.disabled = true;
+                dialogMessage.textContent = "Salvando concessões de unidade…";
+
+                try {
+                    const payload = {
+                        expectedVersion: targetUser?.version,
+                        scopes: newScopes,
+                        reason: reason || undefined,
+                        idempotencyKey: crypto.randomUUID()
+                    };
+                    await request(`/api/users/${encodeURIComponent(userId)}/scopes`, {
+                        method: "PUT",
+                        body: JSON.stringify(payload)
+                    });
+                    dialog.close();
+                    status.textContent = "Alcance de unidades atualizado com sucesso.";
+                    await load();
+                } catch (err) {
+                    dialogMessage.textContent = err.message;
+                } finally {
+                    submit.disabled = false;
+                }
+            };
+
+        } catch (err) {
+            dialogFields.innerHTML = `<p class="error">${escapeHtml(err.message)}</p>`;
+        }
+    }
+
+    async function openTransferPrimaryAdminDialog() {
+        document.querySelector("#dialog-title").textContent = "Transferir Administrador Principal da Conta";
+        dialogMessage.textContent = "";
+        dialogFields.innerHTML = "<p>Carregando dados da organização e usuários elegíveis...</p>";
+        dialog.showModal();
+
+        try {
+            const [org, users] = await Promise.all([
+                request("/api/account/organization"),
+                request("/api/users")
+            ]);
+
+            const currentRespEmail = (org.responsibleEmail || "").toLowerCase();
+            const eligibleUsers = users.filter(u => u.status === "ACTIVE" && (u.email || "").toLowerCase() !== currentRespEmail);
+
+            if (!eligibleUsers.length) {
+                dialogFields.innerHTML = "<p>Não há outros usuários ativos disponíveis nesta organização para assumir a titularidade principal. Convide ou ative outro usuário primeiro.</p>";
+                return;
+            }
+
+            dialogFields.innerHTML = `
+                <div style="margin-bottom:0.75rem;padding:0.75rem;background:var(--color-surface-subtle,#f8f9fa);border-radius:4px;font-size:0.9rem">
+                    <p style="margin:0 0 0.35rem 0"><strong>Titular atual:</strong> ${escapeHtml(org.responsibleName)} &lt;${escapeHtml(org.responsibleEmail)}&gt;</p>
+                    <p style="margin:0;font-size:0.85rem;color:var(--color-muted,#666)">Organização: ${escapeHtml(org.name)} (${escapeHtml(org.slug)})</p>
+                </div>
+
+                <label for="transfer-target">Novo administrador titular
+                    <select id="transfer-target" name="targetUserId" required>
+                        <option value="">Selecione o destinatário…</option>
+                        ${eligibleUsers.map(u => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.name)} (${escapeHtml(u.email)})</option>`).join("")}
+                    </select>
+                </label>
+
+                <div style="margin:0.75rem 0;padding:0.75rem;border-left:3px solid #d32f2f;background:#fff8f8;font-size:0.85rem;color:#5a1111">
+                    <strong>Atenção às consequências da transferência:</strong>
+                    <ul style="margin:0.35rem 0 0 0;padding-left:1.2rem">
+                        <li>O novo usuário passará a responder como titular administrativo principal da conta.</li>
+                        <li>O titular atual continuará como administrador, mas perderá o papel de administrador principal.</li>
+                        <li>Esta ação é irrevogável unilateralmente e gera evento auditado de governança.</li>
+                    </ul>
+                </div>
+
+                <label for="transfer-reason">Justificativa da transferência <span aria-hidden="true">*</span>
+                    <textarea id="transfer-reason" name="reason" minlength="5" maxlength="1000" required placeholder="Explique o motivo da alteração de titularidade (5 a 1000 caracteres)..."></textarea>
+                    <small>Mínimo de 5 caracteres. Ficará registrado na auditoria da conta.</small>
+                </label>
+
+                <div style="margin-top:0.75rem">
+                    <label style="display:flex;align-items:flex-start;gap:0.5rem;cursor:pointer">
+                        <input type="checkbox" id="transfer-confirm" name="confirmed" required style="margin-top:0.25rem">
+                        <span><strong>Confirmo expressamente</strong> a transferência definitiva da administração principal para o usuário selecionado.</span>
+                    </label>
+                </div>
+            `;
+
+            dialogForm.onsubmit = async event => {
+                event.preventDefault();
+                if (event.submitter?.value === "cancel") { dialog.close(); return; }
+
+                const targetUserId = dialogFields.querySelector("#transfer-target").value;
+                const reason = dialogFields.querySelector("#transfer-reason").value.trim();
+                const confirmed = dialogFields.querySelector("#transfer-confirm").checked;
+
+                if (!targetUserId) {
+                    dialogMessage.textContent = "Selecione o novo administrador titular.";
+                    return;
+                }
+                if (reason.length < 5 || reason.length > 1000) {
+                    dialogMessage.textContent = "A justificativa deve ter entre 5 e 1000 caracteres.";
+                    return;
+                }
+                if (!confirmed) {
+                    dialogMessage.textContent = "É necessária confirmação explícita para prosseguir.";
+                    return;
+                }
+
+                const submit = event.submitter;
+                submit.disabled = true;
+                dialogMessage.textContent = "Processando transferência de titularidade…";
+
+                try {
+                    const payload = {
+                        targetUserId,
+                        confirmed: true,
+                        reason,
+                        expectedVersion: org.version,
+                        idempotencyKey: crypto.randomUUID()
+                    };
+                    await request("/api/users/transfer-primary-admin", {
+                        method: "POST",
+                        body: JSON.stringify(payload)
+                    });
+                    dialog.close();
+                    status.textContent = "Administrador principal transferido com sucesso.";
+                    await load();
+                } catch (err) {
+                    dialogMessage.textContent = err.message;
+                } finally {
+                    submit.disabled = false;
+                }
+            };
+
+        } catch (err) {
+            dialogFields.innerHTML = `<p class="error">${escapeHtml(err.message)}</p>`;
+        }
     }
 
     function openForm(title, fields, submitAction) {
@@ -463,7 +746,16 @@
             } else if (view === "usage") {
                 content.innerHTML = table(await get("/api/platform/usage"), [["tenantName", "Organização"], ["activeUsers", "Usuários atuais"], ["userLimit", "Limite"], ["properties", "Propriedades"], ["propertyLimit", "Limite propriedades"], ["storageUsedMb", "Armazenamento MB"]]);
             } else if (view === "users") {
-                content.innerHTML = (permissions.has("account.users.manage") ? '<button class="primary-button" data-create="user">Novo usuário</button>' : "") + usersTable(await get("/api/users"));
+                const org = await get("/api/account/organization").catch(() => null);
+                const users = await get("/api/users");
+                const canManage = permissions.has("account.users.manage") || isSuperAdministrator;
+                const toolbar = canManage
+                    ? `<div class="saas-toolbar" style="margin-bottom:1rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+                         <button class="primary-button" data-create="user">Novo usuário</button>
+                         <button class="secondary-button" data-transfer-admin="true">Transferir titularidade da conta</button>
+                       </div>`
+                    : "";
+                content.innerHTML = toolbar + usersTable(users, org?.responsibleEmail);
                 wireUserActions();
             } else if (view === "roles") {
                 const rows = await get("/api/roles");

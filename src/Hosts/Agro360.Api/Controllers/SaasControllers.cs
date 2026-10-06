@@ -100,9 +100,9 @@ public sealed class UsersController(ISaasService service) : SaasControllerBase(s
         Service.GetUserScopesAsync(id, ct);
 
     [HttpPut("{id:guid}/scopes"), Authorize(Policy = Permissions.AccountUsersManage)]
-    public async Task<IActionResult> SetScopes(Guid id, [FromBody] UserUnitScopeInput[] scopes, CancellationToken ct)
+    public async Task<IActionResult> SetScopes(Guid id, [FromBody] SetUserUnitScopesCommand command, CancellationToken ct)
     {
-        await Service.SetUserScopesAsync(id, scopes, UserId(), ct).ConfigureAwait(false);
+        await Service.SetUserScopesAsync(id, command, UserId(), ct).ConfigureAwait(false);
         return NoContent();
     }
 }

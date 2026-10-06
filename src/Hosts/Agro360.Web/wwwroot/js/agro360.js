@@ -158,10 +158,14 @@
         element("user-initials").textContent = user?.name
             ? user.name.split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase()
             : "A3";
+        let activeFarm = null;
+        try { activeFarm = JSON.parse(localStorage.getItem("agro360.active_farm") || "null"); } catch { }
         if (user?.supportSession) {
             element("active-farm").textContent = `${user.supportSession.tenantName || user.activeOrganization} (Suporte)`;
+        } else if (activeFarm?.name) {
+            element("active-farm").textContent = `${activeFarm.name}`;
         } else {
-            element("active-farm").textContent = user?.activeOrganization ?? "Organização não selecionada";
+            element("active-farm").textContent = user?.activeOrganization ? `${user.activeOrganization} · Todas as unidades` : "Organização não selecionada";
         }
     }
 
@@ -172,6 +176,10 @@
         if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
         if (state.session?.accessToken) headers.set("Authorization", `Bearer ${state.session.accessToken}`);
         headers.set("X-Timezone", Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Belem");
+        try {
+            const activeFarm = JSON.parse(localStorage.getItem("agro360.active_farm") || "null");
+            if (activeFarm?.id) headers.set("X-Farm-Id", activeFarm.id);
+        } catch { }
         const response = await fetch(`${apiBase}${path}`, { ...options, headers });
 
         if (response.status === 401 && canReplay && retry && !state.refreshStopped) {
@@ -610,12 +618,72 @@
         const livestock = new Set(["weighing", "animals", "herds", "pastures", "handling", "health", "reproduction", "nutrition", "production"]);
         const traceability = new Set(["traceability-lots", "lot-timeline", "processing-compliance", "immutable-ledger", "certificates", "regional-routes", "regional-trips", "sales-partners", "commissions", "revenue-split"]);
         let route = "/Agriculture";
-        if (feature === "context") route = "/Saas";
+        if (feature === "context") {
+            openContextSwitcherDialog();
+            return;
+        }
         else if (finance.has(feature)) route = "/Intelligence";
         else if (storage.has(feature)) route = "/#storage";
         else if (livestock.has(feature)) route = feature === "weighing" ? "/livestock?tab=weighings" : "/livestock";
         else if (traceability.has(feature)) route = feature === "processing-compliance" ? "/Compliance" : "/Maps";
         window.location.assign(route);
+    }
+
+    async function openContextSwitcherDialog() {
+        if (!state.session) { showLogin(); return; }
+        const dialog = element("context-switcher-dialog");
+        if (!dialog) {
+            window.location.assign("/Saas?view=users");
+            return;
+        }
+        const select = element("context-farm-select");
+        const preview = element("context-switcher-preview");
+        let activeFarm = null;
+        try { activeFarm = JSON.parse(localStorage.getItem("agro360.active_farm") || "null"); } catch { }
+
+        preview.textContent = "Carregando unidades autorizadas…";
+        select.innerHTML = '<option value="">Todas as unidades autorizadas (união do escopo)</option>';
+
+        try {
+            const properties = await api("/api/v1/properties").catch(() => ({ items: [] }));
+            const farms = properties?.items ?? (Array.isArray(properties) ? properties : []);
+            farms.forEach(f => {
+                const opt = document.createElement("option");
+                opt.value = f.id;
+                opt.textContent = `${f.name} (${f.state || ""})`;
+                if (activeFarm && activeFarm.id === f.id) opt.selected = true;
+                select.appendChild(opt);
+            });
+            preview.textContent = activeFarm
+                ? `Contexto ativo: ${activeFarm.name}. O filtro afeta consultas e relatórios.`
+                : "Sem filtro individual: exibindo a união autorizada de unidades.";
+        } catch {
+            preview.textContent = "Não foi possível carregar a lista de unidades autorizadas.";
+        }
+
+        const form = element("context-switcher-form");
+        const onDialogSubmit = (e) => {
+            e.preventDefault();
+            form.removeEventListener("submit", onDialogSubmit);
+            if (e.submitter?.value === "apply") {
+                const selectedId = select.value;
+                if (!selectedId) {
+                    localStorage.removeItem("agro360.active_farm");
+                    toastSuccess("Contexto atualizado", "Exibindo união de todas as unidades autorizadas.");
+                } else {
+                    const selectedName = select.options[select.selectedIndex]?.text || "Fazenda";
+                    localStorage.setItem("agro360.active_farm", JSON.stringify({ id: selectedId, name: selectedName }));
+                    toastSuccess("Contexto atualizado", `Unidade ativa definida como: ${selectedName}`);
+                }
+                renderUser();
+                window.dispatchEvent(new CustomEvent("agro360:unit-changed", { detail: select.value }));
+                if (typeof load === "function") { load(); }
+            }
+            dialog.close();
+        };
+
+        form.addEventListener("submit", onDialogSubmit);
+        dialog.showModal();
     }
 
     function toggleTheme() {

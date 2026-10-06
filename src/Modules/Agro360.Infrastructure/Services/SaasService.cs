@@ -564,15 +564,39 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
             if (reason.Length is < 5 or > 1000)
                 throw new ArgumentException("Motivo da transferência deve ter entre 5 e 1000 caracteres.");
 
-            await connection.ExecuteAsync(
-                "select pg_advisory_xact_lock(hashtextextended(@Key,0))",
-                new { Key = $"saas-user-management:{tenant.TenantId:N}" },
-                transaction).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(command.IdempotencyKey))
+            {
+                var existingDetails = await connection.QuerySingleOrDefaultAsync<string>(
+                    """
+                    select details::text from agro360.audit_saas_events
+                    where tenant_id = @TenantId and event_type = 'PRIMARY_ADMIN_TRANSFERRED'
+                      and details->>'idempotencyKey' = @Key
+                    """,
+                    new { tenant.TenantId, Key = command.IdempotencyKey.Trim() },
+                    transaction).ConfigureAwait(false);
+
+                if (existingDetails is not null)
+                {
+                    using var doc = global::System.Text.Json.JsonDocument.Parse(existingDetails);
+                    var prevTarget = Guid.Empty;
+                    if (doc.RootElement.TryGetProperty("newResponsibleUserId", out var uid) &&
+                        Guid.TryParse(uid.GetString(), out prevTarget) && prevTarget == command.TargetUserId)
+                    {
+                        return; // Replay idêntico
+                    }
+                    throw new ConflictException("Chave de idempotência já utilizada para outro destinatário.", "idempotency_conflict");
+                }
+            }
 
             var org = await connection.QuerySingleOrDefaultAsync<PrimaryAdminOrgLookup>(
-                "select responsible_name as ResponsibleName, responsible_email as ResponsibleEmail from agro360.saas_organizations where tenant_id=@TenantId for update",
+                "select responsible_name as ResponsibleName, responsible_email as ResponsibleEmail, version as Version from agro360.saas_organizations where tenant_id=@TenantId for update",
                 new { tenant.TenantId },
                 transaction).ConfigureAwait(false);
+
+            if (command.ExpectedVersion.HasValue && org is not null && org.Version != command.ExpectedVersion.Value)
+            {
+                throw new ConflictException("A organização foi modificada concorrentemente. Recarregue os dados e tente novamente.", "organization_version_conflict");
+            }
 
             var target = await connection.QuerySingleOrDefaultAsync<PrimaryAdminTargetLookup>(
                 "select id as Id, name as Name, email as Email, status as Status from agro360.identity_users where tenant_id=@TenantId and id=@Id and deleted_at is null for update",
@@ -606,12 +630,13 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
                     transaction).ConfigureAwait(false);
             }
 
-            // Atualiza a titularidade na organização
+            // Atualiza a titularidade na organização com incremento de versão
             await connection.ExecuteAsync(
                 """
                 update agro360.saas_organizations
                 set responsible_name = @Name,
                     responsible_email = @Email,
+                    version = version + 1,
                     updated_at = now()
                 where tenant_id = @TenantId;
                 """,
@@ -629,7 +654,8 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
                            'newResponsibleUserId', @TargetId,
                            'newResponsibleEmail', @TargetEmail,
                            'newResponsibleName', @TargetName,
-                           'reason', @Reason
+                           'reason', @Reason,
+                           'idempotencyKey', @IdempotencyKey
                        ));
                 """,
                 new
@@ -641,7 +667,8 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
                     TargetId = target.Id,
                     TargetEmail = target.Email,
                     TargetName = target.Name,
-                    Reason = reason
+                    Reason = reason,
+                    IdempotencyKey = command.IdempotencyKey
                 },
                 transaction).ConfigureAwait(false);
         }, ct);
@@ -664,76 +691,177 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
             return (IReadOnlyList<UserUnitScopeDto>)scopes.ToArray();
         }, ct);
 
-    public Task SetUserScopesAsync(Guid userId, UserUnitScopeInput[] scopes, Guid actorId, CancellationToken ct) =>
+    public Task SetUserScopesAsync(Guid userId, SetUserUnitScopesCommand command, Guid actorId, CancellationToken ct) =>
         Tenant("set-user-scopes", async (c, t) =>
         {
-            var userExists = await c.ExecuteScalarAsync<bool>(
-                "select exists(select 1 from agro360.identity_users where tenant_id=@TenantId and id=@UserId and deleted_at is null)",
+            var user = await c.QuerySingleOrDefaultAsync<(long Version, string Name)>(
+                "select version as Version, name as Name from agro360.identity_users where tenant_id=@TenantId and id=@UserId and deleted_at is null for update",
                 new { tenant.TenantId, UserId = userId },
                 t).ConfigureAwait(false);
-            if (!userExists) throw new NotFoundException("Usuario", userId);
+            if (user == default) throw new NotFoundException("Usuario", userId);
 
-            await c.ExecuteAsync(
-                "select pg_advisory_xact_lock(hashtextextended(@Key,0))",
-                new { Key = $"saas-user-management:{tenant.TenantId:N}" },
-                t).ConfigureAwait(false);
+            if (command.ExpectedVersion.HasValue && user.Version != command.ExpectedVersion.Value)
+            {
+                throw new ConflictException("O usuário foi modificado concorrentemente por outro administrador. Recarregue os dados e tente novamente.", "user_version_conflict");
+            }
+
+            // Normaliza e valida escopos
+            var scopes = command.Scopes ?? [];
+            var normalizedScopes = new List<UserUnitScopeInput>();
+            var hasAll = false;
+
+            foreach (var s in scopes)
+            {
+                var type = s.ScopeType?.Trim().ToUpperInvariant() ?? "ALL";
+                if (type is not ("ALL" or "ORGANIZATION" or "FARM"))
+                    throw new ArgumentException($"Tipo de escopo inválido: {s.ScopeType}");
+
+                if (type == "ALL")
+                {
+                    hasAll = true;
+                    normalizedScopes.Add(new UserUnitScopeInput("ALL", null, null));
+                }
+                else if (type == "ORGANIZATION")
+                {
+                    if (!s.OrganizationId.HasValue) throw new ArgumentException("OrganizationId é obrigatório para escopo ORGANIZATION.");
+                    var orgValid = await c.ExecuteScalarAsync<bool>(
+                        "select exists(select 1 from agro360.organization_organizations where tenant_id=@TenantId and id=@Id and deleted_at is null)",
+                        new { tenant.TenantId, Id = s.OrganizationId.Value }, t).ConfigureAwait(false);
+                    if (!orgValid) throw InvalidReferences("OrganizationId", "Organização não encontrada no tenant.");
+                    normalizedScopes.Add(new UserUnitScopeInput("ORGANIZATION", s.OrganizationId.Value, null));
+                }
+                else if (type == "FARM")
+                {
+                    if (!s.FarmId.HasValue) throw new ArgumentException("FarmId é obrigatório para escopo FARM.");
+                    var farmValid = await c.ExecuteScalarAsync<bool>(
+                        "select exists(select 1 from agro360.geo_farms where tenant_id=@TenantId and id=@Id and deleted_at is null)",
+                        new { tenant.TenantId, Id = s.FarmId.Value }, t).ConfigureAwait(false);
+                    if (!farmValid) throw InvalidReferences("FarmId", "Fazenda não encontrada no tenant.");
+                    normalizedScopes.Add(new UserUnitScopeInput("FARM", null, s.FarmId.Value));
+                }
+            }
+
+            // Regra: ALL é exclusivo, não pode coexistir com escopos específicos
+            if (hasAll && normalizedScopes.Count > 1)
+            {
+                throw new ArgumentException("O escopo 'Todas as unidades' (ALL) é exclusivo e não pode ser combinado com escopos específicos.");
+            }
+
+            // Deduplicação e ordenação canônica
+            var distinctScopes = normalizedScopes
+                .GroupBy(s => (s.ScopeType, s.OrganizationId, s.FarmId))
+                .Select(g => g.First())
+                .OrderBy(s => s.ScopeType).ThenBy(s => s.OrganizationId).ThenBy(s => s.FarmId)
+                .ToList();
+
+            var currentFingerprint = $"{userId}:" + string.Join(";", distinctScopes.Select(s => $"{s.ScopeType}:{s.OrganizationId}:{s.FarmId}"));
+
+            if (!string.IsNullOrWhiteSpace(command.IdempotencyKey))
+            {
+                var existingDetails = await c.QuerySingleOrDefaultAsync<string>(
+                    """
+                    select details::text from agro360.audit_saas_events
+                    where tenant_id = @TenantId and event_type = 'USER_UNIT_SCOPES_UPDATED'
+                      and details->>'idempotencyKey' = @Key
+                    """,
+                    new { tenant.TenantId, Key = command.IdempotencyKey.Trim() },
+                    t).ConfigureAwait(false);
+
+                if (existingDetails is not null)
+                {
+                    using var doc = global::System.Text.Json.JsonDocument.Parse(existingDetails);
+                    var prevFp = doc.RootElement.TryGetProperty("fingerprint", out var fp) ? fp.GetString() : null;
+                    if (prevFp == currentFingerprint)
+                    {
+                        return; // Replay idêntico
+                    }
+                    throw new ConflictException("Chave de idempotência já utilizada com parâmetros diferentes.", "idempotency_conflict");
+                }
+            }
+
+            // Validação de autoridade de delegação do ator:
+            var actorIsAdmin = await c.ExecuteScalarAsync<bool>(
+                """
+                select exists(
+                    select 1 from agro360.identity_user_roles ur
+                    join agro360.identity_roles r on r.id = ur.role_id and r.tenant_id = ur.tenant_id
+                    where ur.tenant_id = @TenantId and ur.user_id = @Actor
+                      and lower(r.code) in ('tenant-administrator', 'super_admin', 'platform_super_admin')
+                )
+                """,
+                new { tenant.TenantId, Actor = actorId }, t).ConfigureAwait(false);
+
+            if (!actorIsAdmin)
+            {
+                var actorScopes = (await c.QueryAsync<UserUnitScopeInput>(
+                    "select scope_type ScopeType, organization_id OrganizationId, farm_id FarmId from agro360.identity_user_unit_scopes where tenant_id=@TenantId and user_id=@Actor",
+                    new { tenant.TenantId, Actor = actorId }, t).ConfigureAwait(false)).ToList();
+
+                var actorHasAll = actorScopes.Any(s => string.Equals(s.ScopeType, "ALL", StringComparison.OrdinalIgnoreCase));
+                if (!actorHasAll && hasAll)
+                {
+                    throw new ForbiddenException("Você não possui permissão para conceder acesso a todas as unidades.");
+                }
+            }
 
             await c.ExecuteAsync(
                 "delete from agro360.identity_user_unit_scopes where tenant_id = @TenantId and user_id = @UserId",
                 new { tenant.TenantId, UserId = userId },
                 t).ConfigureAwait(false);
 
-            if (scopes != null && scopes.Length > 0)
+            foreach (var s in distinctScopes)
             {
-                foreach (var s in scopes)
-                {
-                    var normalizedType = s.ScopeType?.Trim().ToUpperInvariant() ?? "ALL";
-                    if (normalizedType is not ("ALL" or "ORGANIZATION" or "FARM"))
-                        throw new ArgumentException($"Tipo de escopo inválido: {s.ScopeType}");
-
-                    if (normalizedType == "ORGANIZATION")
+                await c.ExecuteAsync(
+                    """
+                    insert into agro360.identity_user_unit_scopes(id, tenant_id, user_id, scope_type, organization_id, farm_id, created_by)
+                    values(gen_random_uuid(), @TenantId, @UserId, @ScopeType, @OrgId, @FarmId, @Actor)
+                    on conflict do nothing;
+                    """,
+                    new
                     {
-                        if (!s.OrganizationId.HasValue) throw new ArgumentException("OrganizationId é obrigatório para escopo ORGANIZATION.");
-                        var orgValid = await c.ExecuteScalarAsync<bool>(
-                            "select exists(select 1 from agro360.organization_organizations where tenant_id=@TenantId and id=@Id and deleted_at is null)",
-                            new { tenant.TenantId, Id = s.OrganizationId.Value }, t).ConfigureAwait(false);
-                        if (!orgValid) throw InvalidReferences("OrganizationId", "Organização não encontrada no tenant.");
-                    }
-                    else if (normalizedType == "FARM")
-                    {
-                        if (!s.FarmId.HasValue) throw new ArgumentException("FarmId é obrigatório para escopo FARM.");
-                        var farmValid = await c.ExecuteScalarAsync<bool>(
-                            "select exists(select 1 from agro360.geo_farms where tenant_id=@TenantId and id=@Id and deleted_at is null)",
-                            new { tenant.TenantId, Id = s.FarmId.Value }, t).ConfigureAwait(false);
-                        if (!farmValid) throw InvalidReferences("FarmId", "Fazenda não encontrada no tenant.");
-                    }
-
-                    await c.ExecuteAsync(
-                        """
-                        insert into agro360.identity_user_unit_scopes(id, tenant_id, user_id, scope_type, organization_id, farm_id, created_by)
-                        values(gen_random_uuid(), @TenantId, @UserId, @ScopeType, @OrgId, @FarmId, @Actor)
-                        on conflict do nothing;
-                        """,
-                        new
-                        {
-                            tenant.TenantId,
-                            UserId = userId,
-                            ScopeType = normalizedType,
-                            OrgId = normalizedType == "ORGANIZATION" ? s.OrganizationId : null,
-                            FarmId = normalizedType == "FARM" ? s.FarmId : null,
-                            Actor = actorId
-                        },
-                        t).ConfigureAwait(false);
-                }
+                        tenant.TenantId,
+                        UserId = userId,
+                        ScopeType = s.ScopeType,
+                        OrgId = s.OrganizationId,
+                        FarmId = s.FarmId,
+                        Actor = actorId
+                    },
+                    t).ConfigureAwait(false);
             }
+
+            await c.ExecuteAsync(
+                """
+                update agro360.identity_users
+                set version = version + 1, updated_at = now(), updated_by = @Actor
+                where tenant_id = @TenantId and id = @UserId;
+                """,
+                new { tenant.TenantId, UserId = userId, Actor = actorId },
+                t).ConfigureAwait(false);
 
             await c.ExecuteAsync(
                 """
                 insert into agro360.audit_saas_events(id, tenant_id, actor_id, event_type, details)
                 values(gen_random_uuid(), @TenantId, @Actor, 'USER_UNIT_SCOPES_UPDATED',
-                       jsonb_build_object('userId', @UserId, 'count', @Count));
+                       jsonb_build_object(
+                           'userId', @UserId,
+                           'count', @Count,
+                           'hasAll', @HasAll,
+                           'reason', @Reason,
+                           'fingerprint', @Fingerprint,
+                           'idempotencyKey', @IdempotencyKey
+                       ));
                 """,
-                new { tenant.TenantId, UserId = userId, Count = scopes?.Length ?? 0, Actor = actorId },
+                new
+                {
+                    tenant.TenantId,
+                    UserId = userId,
+                    Count = distinctScopes.Count,
+                    HasAll = hasAll,
+                    Reason = command.Reason ?? string.Empty,
+                    Fingerprint = currentFingerprint,
+                    IdempotencyKey = command.IdempotencyKey,
+                    Actor = actorId
+                },
                 t).ConfigureAwait(false);
         }, ct);
     public Task<IReadOnlyList<RoleSummary>> GetRolesAsync(CancellationToken ct) => Tenant("roles", async (c, t) => (IReadOnlyList<RoleSummary>)(await c.QueryAsync<RoleSummary>("select r.id,r.name,coalesce(m.level,10) level,coalesce(array_agg(p.code) filter(where p.id is not null),array[]::varchar[]) permissions,r.is_system SystemRole from agro360.identity_roles r left join agro360.saas_role_metadata m on m.tenant_id=r.tenant_id and m.role_id=r.id left join agro360.identity_role_permissions rp on rp.tenant_id=r.tenant_id and rp.role_id=r.id left join agro360.identity_permissions p on p.id=rp.permission_id where r.tenant_id=@TenantId and r.code<>'PLATFORM_SUPER_ADMIN' group by r.id,m.level order by m.level desc,r.name", new { tenant.TenantId }, t)).ToArray(), ct);
@@ -1217,7 +1345,7 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
     private sealed class TenantModuleLookup { public Guid ModuleId { get; init; } public string CurrentStatus { get; init; } = string.Empty; public string Code { get; init; } = string.Empty; }
     private sealed class TenantAccessHeader { public string Slug { get; init; } = string.Empty; public string Name { get; init; } = string.Empty; public string Status { get; init; } = string.Empty; public string PlanName { get; init; } = string.Empty; }
     private sealed class ActorIdentityLookup { public Guid TenantId { get; init; } public string Email { get; init; } = string.Empty; }
-    private sealed class PrimaryAdminOrgLookup { public string ResponsibleName { get; init; } = string.Empty; public string ResponsibleEmail { get; init; } = string.Empty; }
+    private sealed class PrimaryAdminOrgLookup { public string ResponsibleName { get; init; } = string.Empty; public string ResponsibleEmail { get; init; } = string.Empty; public long Version { get; init; } = 1; }
     private sealed class PrimaryAdminTargetLookup { public Guid Id { get; init; } public string Name { get; init; } = string.Empty; public string Email { get; init; } = string.Empty; public string Status { get; init; } = string.Empty; }
     private sealed class ChargePaymentLookup { public Guid TenantId { get; init; } public decimal Amount { get; init; } public decimal PaidAmount { get; init; } public string Status { get; init; } = string.Empty; }
 

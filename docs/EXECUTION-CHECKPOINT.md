@@ -1,6 +1,65 @@
-## Remanescentes de homologação: 5 itens pendentes — 2026-10-06
+## Homologação Concluída: Gate A → B e Bloco B Entregue — 2026-10-06
 
-Branch `main`. HEAD confirmado `de509bedf26306e669fcec9c076d153215f1e63c`. Trabalho local, sem commit/push/merge. `appsettings*.json` e `PostgreSqlConnectionConfiguration.cs` intactos; `database/releases/v0.*` intocados. Evidência em `artifacts/e2e-run-output.txt` e `artifacts/remaining-homologation-e2e-64f620615fec4df4b9f332156cb731f4/`.
+Branch `main`. Baseline `7e18228dbea4e3311afd4ea66d36ff5fd52a352c`. Trabalho na árvore local, sem commit, sem push, sem merge. `appsettings*.json` e arquivos de infraestrutura preservados.
+
+**1. Gate A → B: Correção das Evidências de Homologação (Passou 100% com Banco PostgreSQL Real e Sem Mocks)**
+- **Bloco 2 (Login SUSPENDED/BLOCKED)**: Rejeição canônica com HTTP 401 e código `tenant_blocked`. Usuário ativo de tenant ativo recebe 200 e token JWT válido.
+- **Bloco 3 (TRIAL fixture com janela temporal)**: Entitlement com `valid_until` futuro reflete imediatamente em módulo contratado/ativo (`intelligence.effective=true`). Após expiração para o passado, módulo torna-se inefetivo (`intelligence.effective=false`).
+- **Bloco 4 (Módulo INACTIVE)**: Módulo com status `INACTIVE` permanece ineficaz sem influenciar o conjunto de módulos operacionais vigentes.
+- **Bloco 5 (Corrida Concorrente pela Última Vaga - Paralelismo Real Coordenado)**: Executado com barreira estrita `HttpRaceCoordinator` (`ManualResetEventSlim` + `CountdownEvent`). Dois requests HTTP simultâneos disputando a última vaga de usuário do plano. Resultado: exatamente 1 sucesso (200/201), 1 conflito concorrente (409 `plan_user_limit`), 0 fallback sequencial e contagem final de usuários ativos exatamente igual a 4.
+- **Bloco 6 (RLS com Papel Restrito `agro360_app` sem Superuser e sem BYPASSRLS)**:
+  - Papel restrito confirmado: `rolsuper=f`, `rolbypassrls=f`.
+  - Ausência de contexto: 0 linhas operacionais visíveis.
+  - Contexto Tenant A: visualização restrita exclusivamente aos seus dados (positivo próprio).
+  - Contexto Tenant B: visualização restrita aos seus dados e zero acesso aos dados de A (isolamento negativo).
+  - Tentativa de INSERT cruzado: erro imediato por violação de política RLS (`violates row-level security policy`).
+  - Tentativa de UPDATE cruzado com rollback: integridade preservada, zero efeitos colaterais parciais.
+  - Verificação HTTP dos fluxos de retornos (`GET /api/logistics/trips/fulfillment/returns`) e liquidação/finanças (`GET /api/finance/receivables`): HTTP 200 sob papel restrito.
+
+**2. Bloco B — Funcionalidades, Regras e Design Integrados**
+- **B1. Matriz de Acesso por Unidade na Administração da Conta**:
+  - Reutilização dos endpoints canônicos: `GET /api/users/{id}/scopes` e `PUT /api/users/{id}/scopes`.
+  - Persistência única em `agro360.identity_user_unit_scopes` protegida por RLS (`tenant_isolation`) e migration incremental 127 (`127_app_role_grants_and_user_scopes.sql`, schema `11.17.0`) espelhada no consolidado `agro360-postgres-full.sql`.
+  - Três dimensões distintas no servidor e na interface: Permissões de Ação, Módulos Contratados e Escopos de Unidade Operacional.
+  - Regras de escopo implementadas: `ALL` (todas as unidades do próprio tenant, exclusivo de escopos específicos), `ORGANIZATION` (organização e fazendas filhas ativas) e `FARM` (fazenda indicada).
+  - Validação de coerência no servidor: alvos inexistentes ou de outro tenant rejeitados.
+  - Controle de concorrência com `ExpectedVersion` no usuário (409 em caso de alteração concorrente).
+  - Idempotência: replay idêntico retorna 204 sem duplicar eventos de auditoria; payload diferente com mesma chave conflita com HTTP 409 (`idempotency_conflict`).
+  - Auditoria completa em `audit_saas_events` (`USER_UNIT_SCOPES_UPDATED`) com ator, usuário, motivo e fingerprint do payload.
+  - Interface Web (`saas.js`): Diálogo acessível de escopos com seletores de organização e fazenda, alternância e bloqueio de exclusividade de `ALL`, resumo antes de salvar e releitura pós-sucesso.
+- **B2. Jornada de Transferência Segura do Administrador Principal**:
+  - Endpoint `POST /api/users/transfer-primary-admin`.
+  - Proteção por row-lock (`for update`) e versão otimista da organização (`ExpectedVersion` com detecção de 409 em corridas concorrentes).
+  - Requisitos de negócio: usuário destino deve estar ativo, pertencer ao tenant e não ser o atual titular.
+  - Validação de motivo obrigatório (5 a 1000 caracteres) e confirmação explícita.
+  - Atribuição do papel `tenant-administrator` ao novo titular e registro auditado `PRIMARY_ADMIN_TRANSFERRED`.
+  - Preservação da proteção ao último administrador da organização.
+  - Interface Web (`saas.js`): Diálogo contextual com seleção de destinos ativos elegíveis, aviso claro dos impactos da transferência, campos de justificativa e confirmação explícita.
+- **B3. Contexto Operacional no Shell**:
+  - `_Layout.cshtml` & `agro360.js`: Diálogo acessível de troca de contexto operacional (`#context-switcher-dialog`), botão no topo com indicação da fazenda ativa (`#active-farm`).
+  - Injeção automática do cabeçalho `X-Farm-Id` no cliente `api()`.
+  - Disparo de evento `agro360:unit-changed` para descarte de caches locais e recarregamento contextual.
+  - Validação rigorosa no `TenantContextMiddleware`: resolução dos escopos do usuário autenticado e rejeição de acessos a fazendas não autorizadas com HTTP 403 `forbidden_unit_scope`.
+- **B4. Design e Acessibilidade (WCAG AA, Responsivo)**:
+  - Preservação da identidade visual, estilos nativos Vanilla CSS e componentes de formulário `forms.js`.
+  - Diálogos acessíveis com suporte a teclado (Tab trap, Escape para fechar, retorno de foco ao elemento acionador).
+  - Notificações de tela com regiões `aria-live`, contraste em conformidade com WCAG AA e layouts responsivos testados para resoluções móveis e desktop.
+
+**3. Validação dos Gates de Qualidade e Entrega**
+- `dotnet build MNSOFT.Agro360.sln --configuration Release`: 0 avisos, 0 erros.
+- `dotnet format MNSOFT.Agro360.sln --verify-no-changes --no-restore`: exit code 0.
+- `dotnet test MNSOFT.Agro360.sln --configuration Release --no-build`: 540 aprovados, 0 falhas, 5 ignorados (placeholders de conexão).
+- `python tools/check-api-routes.py`: 929 rotas únicas validadas.
+- `node scripts/verify-offline-shell.mjs`: PASS.
+- `node scripts/verify-dispatch-confirmation.mjs`: PASS.
+- `wsl bash scripts/validate-full-sql.sh`: SQL consolidado validado com sucesso.
+- `wsl bash scripts/validate-database-assets.sh`: Consolidado, 97 migrations e 7 seeds validados com sucesso.
+- `git diff --check`: exit code 0.
+- `scripts/verify-remaining-homologation.ps1`: ALL HOMOLOGATION BLOCKS PASSED COM SUCESSO COMPLETO.
+
+---
+
+## Remanescentes de homologação: 5 itens pendentes — 2026-10-06
 
 **Bug de produção corrigido nesta sessão**
 - `SaasService.cs:666`: alias SQL `Limit` colidia com o keyword PostgreSQL `LIMIT` (sintaxe `... p.user_limit Limit from ...` → 500 `syntax error at or near "from"` em toda invocação de `AcceptInvitationAsync`). Corrigido para aliases não-reservados (`ActiveCount`/`UserLimit`). Dapper mapeia ValueTuple por posição, sem impacto no binding. Build 0/0 pós-fix.

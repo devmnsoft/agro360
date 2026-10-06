@@ -101,7 +101,8 @@ public sealed class UserSummary
 }
 public sealed record UserCommand(string Name, string Email, Guid[] RoleIds);
 public sealed record UserStatusCommand(string Reason);
-public sealed record TransferPrimaryAdminCommand(Guid TargetUserId, string Reason, bool Confirmed);
+public sealed record TransferPrimaryAdminCommand(Guid TargetUserId, string Reason, bool Confirmed, long? ExpectedVersion = null, string? IdempotencyKey = null);
+public sealed record SetUserUnitScopesCommand(UserUnitScopeInput[] Scopes, string? Reason = null, long? ExpectedVersion = null, string? IdempotencyKey = null);
 public sealed record UserUnitScopeDto(Guid? Id, string ScopeType, Guid? OrganizationId, Guid? FarmId, string? UnitName);
 public sealed record UserUnitScopeInput(string ScopeType, Guid? OrganizationId, Guid? FarmId);
 public sealed class RoleSummary
@@ -164,7 +165,7 @@ public interface ISaasService
     Task<IReadOnlyList<ModuleCatalogItem>> GetModuleCatalogAsync(CancellationToken ct);
     Task<IReadOnlyList<UsageSummary>> GetPlatformUsageAsync(CancellationToken ct); Task<UsageSummary> GetUsageAsync(CancellationToken ct); Task<PlatformDashboard> GetDashboardAsync(CancellationToken ct);
     Task<TenantSummary> GetOrganizationAsync(CancellationToken ct); Task UpdateOrganizationAsync(TenantUpdateCommand command, Guid actorId, CancellationToken ct); Task<PlanSummary> GetCurrentPlanAsync(CancellationToken ct); Task<Guid> RequestUpgradeAsync(UpgradeRequestCommand command, Guid actorId, CancellationToken ct);
-    Task<IReadOnlyList<UserSummary>> GetUsersAsync(CancellationToken ct); Task<Guid> SaveUserAsync(Guid? id, UserCommand command, Guid actorId, CancellationToken ct); Task SetUserActiveAsync(Guid id, bool active, string reason, Guid actorId, CancellationToken ct); Task TransferPrimaryAdminAsync(TransferPrimaryAdminCommand command, Guid actorId, CancellationToken ct); Task<IReadOnlyList<UserUnitScopeDto>> GetUserScopesAsync(Guid userId, CancellationToken ct); Task SetUserScopesAsync(Guid userId, UserUnitScopeInput[] scopes, Guid actorId, CancellationToken ct);
+    Task<IReadOnlyList<UserSummary>> GetUsersAsync(CancellationToken ct); Task<Guid> SaveUserAsync(Guid? id, UserCommand command, Guid actorId, CancellationToken ct); Task SetUserActiveAsync(Guid id, bool active, string reason, Guid actorId, CancellationToken ct); Task TransferPrimaryAdminAsync(TransferPrimaryAdminCommand command, Guid actorId, CancellationToken ct); Task<IReadOnlyList<UserUnitScopeDto>> GetUserScopesAsync(Guid userId, CancellationToken ct); Task SetUserScopesAsync(Guid userId, SetUserUnitScopesCommand command, Guid actorId, CancellationToken ct);
     Task<IReadOnlyList<RoleSummary>> GetRolesAsync(CancellationToken ct); Task<Guid> SaveRoleAsync(Guid? id, RoleCommand command, Guid actorId, CancellationToken ct);
     Task<IReadOnlyList<InvitationSummary>> GetInvitationsAsync(CancellationToken ct); Task<InvitationCreated> InviteAsync(InvitationCommand command, Guid actorId, CancellationToken ct); Task<InvitationCreated?> ChangeInvitationAsync(Guid id, string action, Guid actorId, CancellationToken ct); Task<InvitationAcceptanceResult> AcceptInvitationAsync(InvitationAcceptanceCommand command, CancellationToken ct);
     Task<IReadOnlyList<SessionSummary>> GetSessionsAsync(CancellationToken ct); Task RevokeSessionAsync(Guid id, Guid actorId, CancellationToken ct); Task<IReadOnlyList<DeviceSummary>> GetDevicesAsync(CancellationToken ct); Task RevokeDeviceAsync(Guid id, Guid actorId, CancellationToken ct);

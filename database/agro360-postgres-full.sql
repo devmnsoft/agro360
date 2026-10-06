@@ -8935,6 +8935,7 @@ commit;
 
 -- Migration 127 espelho (privilégios agro360_app, escopos de unidade e auditoria de origem de direitos).
 begin;
+alter table agro360.saas_organizations add column if not exists version bigint not null default 1;
 create table if not exists agro360.identity_user_unit_scopes (
     id uuid primary key default gen_random_uuid(),
     tenant_id uuid not null references agro360.platform_tenants(id),
@@ -8990,7 +8991,7 @@ begin
         execute 'grant select, insert, update, delete on agro360.fulfillment_delivery_attempts to agro360_app';
         execute 'grant select, insert, update, delete on agro360.fulfillment_return_receipts to agro360_app';
         execute 'grant select, insert, update, delete on agro360.fulfillment_operation_requests to agro360_app';
-        execute 'grant select, insert, update, delete on agro360.fulfillment_return_dispositions to agro360_app';
+        execute 'grant select, insert, update, delete on agro360.fulfillment_return_decisions to agro360_app';
         execute 'grant select, insert, update, delete on agro360.commercial_deliveries to agro360_app';
         execute 'grant select, insert, update, delete on agro360.commercial_billing_forecasts to agro360_app';
         execute 'grant select, insert, update, delete on agro360.commercial_events to agro360_app';
