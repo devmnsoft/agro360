@@ -4,7 +4,7 @@ namespace Agro360.Application.Contracts;
 
 public sealed record RuralHrRecord(Guid Id, string Kind, string Name, string Status, Guid? PersonId, Guid? TeamId, DateTimeOffset? StartsAt, DateTimeOffset? EndsAt, decimal Amount, DateTimeOffset UpdatedAt, string? CostState = null, Guid? AllocationId = null, string? BlockReason = null, string? ReviewStatus = null);
 public sealed record RuralHrCommand([Required, MaxLength(40)] string Kind, [Required, MaxLength(180)] string Name, Guid? PersonId, Guid? TeamId, Guid? PropertyId, Guid? ResourceId, DateTimeOffset? StartsAt, DateTimeOffset? EndsAt, [Range(0, double.MaxValue)] decimal Amount = 0, [MaxLength(2000)] string? Notes = null);
-public sealed record PersonCommand([Required, MaxLength(180)] string Name, [Required, RegularExpression("^[0-9]{11,14}$")] string Document, [Required] Guid RoleId, [Required] Guid PropertyId, [EmailAddress] string? Email, [Phone] string? Phone, [MaxLength(1000)] string? Skills);
+public sealed record PersonCommand([Required, MaxLength(180)] string Name, [Required, RegularExpression("^(?:[0-9]{11}|[0-9]{14})$")] string Document, [Required] Guid RoleId, [Required] Guid PropertyId, [EmailAddress] string? Email, [Phone] string? Phone, [MaxLength(1000)] string? Skills);
 public sealed record TimeEntryCommand([Required] Guid PersonId, Guid? TeamId, [Required] Guid PropertyId, Guid? ResourceId, [Required] DateTimeOffset StartedAt, DateTimeOffset? EndedAt, [Range(0, 1440)] int BreakMinutes, [Required, MaxLength(40)] string ActivityType, [MaxLength(1000)] string? Notes = null, string? OfflineId = null, Guid? AllocationId = null, [MaxLength(160)] string? IdempotencyKey = null, decimal? PieceQuantity = null);
 public sealed record TransportCommand([Required, MaxLength(180)] string Name, [Required] Guid TeamId, [Required] Guid VehicleId, [Required] Guid DriverId, [Range(1, 500)] int Capacity, [Range(1, 500)] int PassengerCount, DateTimeOffset StartsAt, DateTimeOffset EndsAt, [MaxLength(500)] string? Route);
 public sealed record RuralHrDashboard(int ActivePeople, int ActiveTeams, decimal WorkedHours, decimal LaborCost, int ExpiredTrainings, int ExpiredPpe, int OpenIncidents, int OverdueActions, int TeamsInField, int CriticalAlerts);
@@ -85,6 +85,10 @@ public sealed record RuralHrOperationsBoard(IReadOnlyList<RuralHrBoardMetric> Me
 
 public sealed record RuralHrDataReview(Guid Id, string EntityTable, Guid EntityId, string ReasonCode, string Detail, string Resolution, DateTimeOffset DetectedAt);
 
+public sealed record RuralHrPlanReview(Guid Id, Guid PlanId, string PlanName, string ModuleCode, string ReasonCode, string Detail, string Resolution, DateTimeOffset DetectedAt);
+
+public sealed record RuralHrConstraintValidation(string ConstraintName, string Outcome);
+
 public sealed record RuralHrProjectionIssue(string Kind, Guid RecordId, string Issue);
 
 public interface IRuralHrService
@@ -113,5 +117,13 @@ public interface IRuralHrService
     Task<RuralHrOperationsBoard> OperationsBoardAsync(RuralHrBoardQuery query, CancellationToken ct);
     Task<IReadOnlyList<RuralHrDataReview>> ListDataReviewsAsync(CancellationToken ct);
     Task<IReadOnlyList<RuralHrProjectionIssue>> ProjectionIssuesAsync(CancellationToken ct);
+    Task CloseTariffAsync(Guid id, DateOnly validTo, string reason, CancellationToken ct);
+    Task ResolveDataReviewAsync(Guid id, string resolution, string reason, CancellationToken ct);
+    Task<IReadOnlyList<RuralHrPlanReview>> ListPlanReviewsAsync(CancellationToken ct);
+    Task ResolvePlanReviewAsync(Guid id, string resolution, string reason, CancellationToken ct);
+    Task<IReadOnlyList<RuralHrConstraintValidation>> ValidatePendingConstraintsAsync(CancellationToken ct);
 }
+
+public sealed record RuralHrResolutionCommand([Required, MaxLength(40)] string Resolution, [Required, MinLength(5), MaxLength(1000)] string Reason);
+public sealed record RuralHrTariffCloseCommand([Required] DateOnly ValidTo, [Required, MinLength(5), MaxLength(1000)] string Reason);
 

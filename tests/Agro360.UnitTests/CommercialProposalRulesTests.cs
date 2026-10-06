@@ -11,7 +11,10 @@ public sealed class CommercialProposalRulesTests
         => Assert.Equal(0.02m, CommercialRules.ProposalLineTotal(1m, 0.015m, 0m));
 
     [Theory]
-    [InlineData(0, 10, 0)] [InlineData(1, 0, 0)] [InlineData(1, 10, -1)] [InlineData(1, 10, 101)]
+    [InlineData(0, 10, 0)]
+    [InlineData(1, 0, 0)]
+    [InlineData(1, 10, -1)]
+    [InlineData(1, 10, 101)]
     public void ProposalRejectsInvalidCommercialValues(decimal quantity, decimal price, decimal discount)
         => Assert.Equal("sales.proposal_item_invalid", Assert.Throws<DomainException>(() => CommercialRules.ProposalLineTotal(quantity, price, discount)).Code);
 

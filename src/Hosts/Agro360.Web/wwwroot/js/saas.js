@@ -9,11 +9,18 @@
     const session = readSession();
     const permissions = new Set((session?.permissions ?? []).map(normalizePermission));
     const isSuperAdministrator = (session?.roles ?? []).some(r => r === "SUPER_ADMIN" || r === "PLATFORM_SUPER_ADMIN");
+    const consoleScope = document.querySelector("[data-console]")?.dataset.console ?? "tenant";
+    const globalViews = new Set(["dashboard", "tenants", "plans", "billing", "features", "audit", "usage"]);
     const tenantViews = new Set(["onboarding", "users", "roles", "invitations", "security", "notifications", "settings", "account"]);
     const requestedView = new URLSearchParams(location.search).get("view");
-    let view = requestedView && (isSuperAdministrator || tenantViews.has(requestedView))
-        ? requestedView
-        : isSuperAdministrator ? "dashboard" : permissions.has("account.users.read") ? "users" : "account";
+    let view;
+    if (consoleScope === "global") {
+        // Console global: somente as abas de super administração, resolvidas pelo escopo da página.
+        view = requestedView && globalViews.has(requestedView) ? requestedView : "dashboard";
+    } else {
+        // Console do cliente: visão da própria organização; a administração global fica em /platform.
+        view = requestedView && tenantViews.has(requestedView) ? requestedView : permissions.has("account.users.read") ? "users" : "account";
+    }
 
     const helps = {
         dashboard: "Consulte indicadores globais e alertas. O acesso de suporte e toda ação administrativa são auditados.",
@@ -532,7 +539,7 @@
     function applyCulture(culture) {
         const translation = ui[culture] ?? ui["pt-BR"];
         document.documentElement.lang = culture;
-        document.querySelector(".saas-page h1").textContent = isSuperAdministrator ? translation.title : "Administração da conta";
+        document.querySelector(".saas-page h1").textContent = consoleScope === "global" ? "Administração Global MNSOFT" : "Administração da conta";
         document.querySelector(".contextual-help summary").textContent = translation.help;
         document.querySelector("#saas-refresh").textContent = translation.refresh;
         if (["Carregando", "Loading", "Cargando"].some(term => status.textContent.includes(term))) status.textContent = translation.loading;
@@ -540,7 +547,7 @@
 
     document.querySelectorAll(".saas-tabs button").forEach(button => {
         const requiredPermission = normalizePermission(button.dataset.permission);
-        const visible = isSuperAdministrator
+        const visible = consoleScope === "global"
             ? button.dataset.global === "true"
             : tenantViews.has(button.dataset.view) && button.dataset.global !== "true" && (!requiredPermission || permissions.has(requiredPermission));
         button.hidden = !visible;

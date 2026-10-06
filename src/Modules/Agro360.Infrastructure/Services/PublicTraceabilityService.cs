@@ -59,8 +59,17 @@ public sealed class PublicTraceabilityService(DatabaseExecutor database, ITenant
                 values(@Id,@TenantId,'STOCK_LOT',@LotId,@PublicCode,'PUBLISHED',@Now,@Payload::jsonb,@IdempotencyKey,@UserId,@UserId);
                 insert into agro360.audit_logs(id,tenant_id,user_id,action,entity_type,entity_id,occurred_at)
                 values(gen_random_uuid(),@TenantId,@UserId,'publish','PublicTracePublication',@Id,now());
-                """, new { Id = id, tenant.TenantId, source.LotId, PublicCode = publicCode, Now = now,
-                    Payload = JsonSerializer.Serialize(payload, JsonOptions), IdempotencyKey = idempotencyKey, tenant.UserId }, tx,
+                """, new
+            {
+                Id = id,
+                tenant.TenantId,
+                source.LotId,
+                PublicCode = publicCode,
+                Now = now,
+                Payload = JsonSerializer.Serialize(payload, JsonOptions),
+                IdempotencyKey = idempotencyKey,
+                tenant.UserId
+            }, tx,
                 cancellationToken: cancellationToken));
             return new PublicTracePublicationDto(publicCode, "PUBLISHED", now, null);
         }, cancellationToken);

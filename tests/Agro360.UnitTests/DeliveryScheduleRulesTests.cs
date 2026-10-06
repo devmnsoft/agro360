@@ -286,4 +286,32 @@ public sealed class DeliveryScheduleRulesTests
             CommercialRules.ValidateReschedule("CANCELLED", 0m, 0m, 10m, 10m, 0m, "Tentativa em cancelada"));
         Assert.Equal("sales.reschedule_status_invalid", exCancelled.Code);
     }
+
+    [Theory]
+    [InlineData("DELIVERED")]
+    [InlineData("PARTIALLY_DELIVERED")]
+    [InlineData("delivered")]
+    public void EnsureCanSettleScheduleAllowsDeliveredStatuses(string status)
+    {
+        // Should not throw
+        CommercialRules.EnsureCanSettleSchedule(status, null);
+    }
+
+    [Theory]
+    [InlineData("PLANNED")]
+    [InlineData("PREPARING")]
+    [InlineData("DISPATCHED")]
+    [InlineData("CANCELLED")]
+    public void EnsureCanSettleScheduleRejectsNonDeliveredStatuses(string status)
+    {
+        var ex = Assert.Throws<DomainException>(() => CommercialRules.EnsureCanSettleSchedule(status, null));
+        Assert.Equal("sales.settle_status_invalid", ex.Code);
+    }
+
+    [Fact]
+    public void EnsureCanSettleScheduleRejectsAlreadySettled()
+    {
+        var ex = Assert.Throws<DomainException>(() => CommercialRules.EnsureCanSettleSchedule("DELIVERED", DateTimeOffset.UtcNow));
+        Assert.Equal("sales.settle_already_settled", ex.Code);
+    }
 }

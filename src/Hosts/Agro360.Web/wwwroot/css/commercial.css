@@ -294,7 +294,7 @@ dialog footer {
 .btn-outline:hover { background: var(--surface-2); border-color: var(--accent); }
 .btn-action { background: var(--surface-2); color: var(--accent); border-color: var(--line); }
 .btn-action:hover { background: var(--accent-soft); border-color: var(--accent); }
-.btn-action.primary { background: var(--accent); color: #071710; border-color: var(--accent); }
+.btn-action.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .btn-action.primary:hover { filter: brightness(1.08); }
 .btn-danger { background: rgba(239, 125, 120, .15); color: var(--red); border-color: rgba(239, 125, 120, .3); }
 .btn-danger:hover { background: rgba(239, 125, 120, .25); }

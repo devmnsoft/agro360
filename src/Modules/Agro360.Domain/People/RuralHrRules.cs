@@ -1,3 +1,5 @@
+using Agro360.Domain.Tenancy;
+
 namespace Agro360.Domain.People;
 
 public readonly record struct RuralHrTariffCandidate(Guid Id, Guid? RoleId, string? ActivityType, string RateType, decimal RateValue, DateOnly ValidFrom);
@@ -30,10 +32,38 @@ public static class RuralHrRules
 
     /// <summary>
     /// Períodos [início, fim) conflitam quando se cruzam. Extremos encostados não conflitam.
-    /// Política de alocação: a mesma pessoa, ou a mesma equipe, não pode ter duas alocações ACTIVE sobrepostas.
+    /// A mesma pessoa, a mesma equipe ou o integrante indicado em TEAM.person_id não podem ter alocações ACTIVE sobrepostas.
+    /// Não há tabela de membros: a composição real é no máximo uma pessoa por equipe.
     /// </summary>
     public static bool PeriodsOverlap(DateTimeOffset start, DateTimeOffset end, DateTimeOffset otherStart, DateTimeOffset otherEnd)
         => start < otherEnd && end > otherStart;
+
+    /// <summary>
+    /// CPF com 11 dígitos ou CNPJ com 14, com dígitos verificadores.
+    /// Tamanho intermediário não é documento. A fila de suspeita não declara o documento falso.
+    /// </summary>
+    public static string RequireWorkerDocument(string document)
+    {
+        try
+        {
+            return SaasGovernanceRules.NormalizeAndValidateDocument(document);
+        }
+        catch (ArgumentException)
+        {
+            throw new ArgumentException("Informe um CPF ou CNPJ válido. O cadastro não gera documento.");
+        }
+    }
+
+    /// <summary>
+    /// O início da jornada precisa cair em [início planejado, fim planejado).
+    /// A saída posterior ao fim planejado é aceita e marcada como ultrapassagem; não reescreve a alocação.
+    /// </summary>
+    public static string PlannedCoverage(DateTimeOffset started, DateTimeOffset? ended, DateTimeOffset planStart, DateTimeOffset planEnd)
+    {
+        if (started < planStart || started >= planEnd) return "START_OUTSIDE";
+        if (ended is not null && ended.Value > planEnd) return "OVERRUN";
+        return "INSIDE";
+    }
 
     /// <summary>
     /// Precedência da tarifa na data da jornada: papel+atividade (3), só papel (2), só atividade (1), genérica (0).

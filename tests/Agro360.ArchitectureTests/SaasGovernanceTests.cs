@@ -48,5 +48,117 @@ public sealed class SaasGovernanceTests
         Assert.Contains("pg_advisory_xact_lock", service);
         Assert.Contains("financialRestriction", service);
     }
+    [Fact]
+    public void GrantSourceIsCentralizedAndPlanActiveNoLongeFeedsAccess()
+    {
+        var root = FindRoot();
+        var fragment = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Security/EntitlementQueries.cs"));
+        var identity = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Services/IdentityService.cs"));
+        var saas = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Services/SaasService.cs"));
+        var authorization = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Security/PermissionAuthorization.cs"));
+        var combined = identity + saas + authorization;
+        Assert.Contains("public const string ModuleCodeSelect", fragment);
+        Assert.Contains("'CONTRACTED','ACTIVE','TRIAL'", fragment);
+        Assert.Contains("valid_until", fragment);
+        Assert.DoesNotContain("unnest(p.modules)", combined);
+        Assert.DoesNotContain("o.status='ACTIVE' and p.active", combined);
+        Assert.DoesNotContain("o.status = 'ACTIVE' and p.active", combined);
+    }
+
+    [Fact]
+    public void TenantStateModelIsCompleteAndEntitlementsTrackOrigin()
+    {
+        var root = FindRoot();
+        var sql = File.ReadAllText(Path.Combine(root, "database/agro360-postgres-full.sql"));
+        var migration = File.ReadAllText(Path.Combine(root, "database/migrations/125_saas_governance_integrity.sql"));
+        var expandedStates = "in('REGISTERING','IMPLEMENTING','TRIAL','ACTIVE','SUSPENDED','BLOCKED','DELINQUENT','INACTIVE','CANCELLED','CLOSED')";
+        foreach (var source in new[] { sql, migration })
+        {
+            Assert.Contains(expandedStates, source);
+            Assert.Contains("ck_platform_tenant_module_entitlement_origin", source);
+            Assert.Contains("'11.15.0'", source);
+            Assert.Contains("'livestock','Pecuária'", source);
+        }
+        Assert.Contains("'Snapshot retroativo do plano vigente'", sql);
+        Assert.Contains("ix_platform_tenant_module_entitlements_valid_until", sql);
+    }
+
+    [Fact]
+    public void TenantStatusTransitionAcceptsFullStateSet()
+    {
+        Agro360.Domain.Tenancy.SaasGovernanceRules.EnsureStatusTransition("SUSPENDED", "DELINQUENT", "Inadimplencia confirmada");
+        Agro360.Domain.Tenancy.SaasGovernanceRules.EnsureStatusTransition("TRIAL", "ACTIVE", "Trial convertido em contrato");
+        Assert.Throws<ArgumentException>(() => Agro360.Domain.Tenancy.SaasGovernanceRules.EnsureStatusTransition("ACTIVE", "UNKNOWN", "Motivo valido"));
+        Assert.Throws<InvalidOperationException>(() => Agro360.Domain.Tenancy.SaasGovernanceRules.EnsureStatusTransition("ACTIVE", "active", "Mesmo status"));
+        Assert.Throws<InvalidOperationException>(() => Agro360.Domain.Tenancy.SaasGovernanceRules.EnsureStatusTransition("ACTIVE", "SUSPENDED", "  "));
+    }
+
+    [Fact]
+    public void DelegationIsLockedServerSideAndRevalidatedAtAcceptance()
+    {
+        var root = FindRoot();
+        var service = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Services/SaasService.cs"));
+        var identity = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Services/IdentityService.cs"));
+        var api = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Api/Controllers/SaasControllers.cs"));
+        var contracts = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Application/Contracts/SaasContracts.cs"));
+        var permissions = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Application/Permissions.cs"));
+        Assert.Equal(3, CountOccurrences(service, "saas-user-management:"));
+        Assert.Equal(4, CountOccurrences(service, "pg_advisory_xact_lock(hashtextextended(@Key,0))"));
+        Assert.Contains("CountUndelegableRolePermissionsAsync", service);
+        Assert.Contains("invitation_role_missing", service);
+        Assert.Contains("invitation_authority_changed", service);
+        Assert.Contains("plan_user_limit", service);
+        Assert.Contains("'tenant-administrator', 'Administrador do tenant', true", identity);
+        Assert.Contains("TENANT_MODULE_STATUS", service);
+        Assert.Contains("Removido pelo ajuste de plano", service);
+        Assert.Contains("TenantModuleStatusCommand", contracts);
+        Assert.Contains("tenants/{id:guid}/modules/{moduleCode}", api);
+        Assert.Contains("public static string[] ModulesForPermission(string permission)", permissions);
+    }
+    [Fact]
+    public void WebAuthUsesPageTokenSchemeAndConsolesAreScoped()
+    {
+        var root = FindRoot();
+        var program = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/Program.cs"));
+        var handler = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/Security/PageTokenAuthHandler.cs"));
+        var platformPage = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/Pages/Platform/Index.cshtml.cs"));
+        var platformView = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/Pages/Platform/Index.cshtml"));
+        var saasView = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/Pages/Saas/Index.cshtml"));
+        var layout = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/Pages/Shared/_Layout.cshtml"));
+        var saasJs = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/wwwroot/js/saas.js"));
+        var agroJs = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/wwwroot/js/agro360.js"));
+        Assert.Contains("AddScheme<PageTokenAuthOptions, PageTokenAuthHandler>", program);
+        Assert.Contains("FallbackPolicy", program);
+        Assert.Contains("RequireAuthenticatedUser", program);
+        Assert.Contains("MapPost(\"/auth/page\"", program);
+        Assert.Contains("AllowAnonymousToFolder(\"/Portal\")", program);
+        Assert.Contains("public const string SchemeName = \"Agro360.Web.Page\"", handler);
+        Assert.Contains("public const string CookieName = \"agro360.page_token\"", handler);
+        Assert.Contains("public const string Purpose = \"Agro360.Web.PageToken.v1\"", handler);
+        Assert.Contains("[Authorize(Roles = \"SUPER_ADMIN,PLATFORM_SUPER_ADMIN\")]", platformPage);
+        Assert.Contains("data-console=\"global\"", platformView);
+        Assert.Contains("Administração Global MNSOFT", platformView);
+        Assert.Contains("data-console=\"tenant\"", saasView);
+        Assert.Contains("Administração da conta", saasView);
+        Assert.Contains("href=\"/Platform\"", layout);
+        Assert.Contains("consoleScope", saasJs);
+        Assert.Contains("syncPageToken", agroJs);
+    }
+
+    [Fact]
+    public void ApiRejectsAreCanonicalJsonAndAccessEndpointsExist()
+    {
+        var root = FindRoot();
+        var program = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Api/Program.cs"));
+        var handler = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Api/Middleware/JsonAuthorizationResultHandler.cs"));
+        var api = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Api/Controllers/SaasControllers.cs"));
+        Assert.Contains("AddSingleton<IAuthorizationMiddlewareResultHandler, JsonAuthorizationResultHandler>()", program);
+        Assert.Contains("type = \"token_invalid\"", handler);
+        Assert.Contains("type = \"forbidden_authorization\"", handler);
+        Assert.Contains("[HttpGet(\"effective-access\")", api);
+        Assert.Contains("[HttpGet(\"tenants/{id:guid}/modules\")]", api);
+        Assert.Contains("[HttpGet(\"tenants/{id:guid}/access\")]", api);
+    }
+    private static int CountOccurrences(string haystack, string needle) { var count = 0; var index = 0; while ((index = haystack.IndexOf(needle, index, StringComparison.Ordinal)) >= 0) { count++; index += needle.Length; } return count; }
     private static string FindRoot() { var d = new DirectoryInfo(AppContext.BaseDirectory); while (d is not null && !File.Exists(Path.Combine(d.FullName, "MNSOFT.Agro360.sln"))) d = d.Parent; return d?.FullName ?? throw new DirectoryNotFoundException(); }
 }

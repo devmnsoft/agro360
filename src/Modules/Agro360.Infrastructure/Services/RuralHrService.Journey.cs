@@ -69,10 +69,26 @@ public sealed partial class RuralHrService
             """,
             new
             {
-                Id = key, tenant.TenantId, Kind = targetKind, command.Name, command.PersonId, command.TeamId,
-                command.PropertyId, command.ResourceId, StartsAt = startsAt, EndsAt = endsAt, command.Amount,
-                command.Notes, Status = status, command.Role, command.ActivityType, command.BreakMinutes,
-                command.OrderId, command.SeasonId, command.PlotId, tenant.UserId
+                Id = key,
+                tenant.TenantId,
+                Kind = targetKind,
+                command.Name,
+                command.PersonId,
+                command.TeamId,
+                command.PropertyId,
+                command.ResourceId,
+                StartsAt = startsAt,
+                EndsAt = endsAt,
+                command.Amount,
+                command.Notes,
+                Status = status,
+                command.Role,
+                command.ActivityType,
+                command.BreakMinutes,
+                command.OrderId,
+                command.SeasonId,
+                command.PlotId,
+                tenant.UserId
             }, t, cancellationToken: ct)).ConfigureAwait(false);
         return key;
     }, ct);
@@ -111,9 +127,20 @@ public sealed partial class RuralHrService
                 """,
                 new
                 {
-                    Id = key, tenant.TenantId, command.Name, command.PersonId, command.TeamId, command.PropertyId,
-                    command.StartsAt, command.EndsAt, Activity = command.ActivityType.Trim(), OrderId = graph.OrderId,
-                    SeasonId = graph.SeasonId, PlotId = graph.PlotId, command.Notes, tenant.UserId
+                    Id = key,
+                    tenant.TenantId,
+                    command.Name,
+                    command.PersonId,
+                    command.TeamId,
+                    command.PropertyId,
+                    command.StartsAt,
+                    command.EndsAt,
+                    Activity = command.ActivityType.Trim(),
+                    OrderId = graph.OrderId,
+                    SeasonId = graph.SeasonId,
+                    PlotId = graph.PlotId,
+                    command.Notes,
+                    tenant.UserId
                 }, t, cancellationToken: ct)).ConfigureAwait(false);
         }
         else
@@ -136,9 +163,20 @@ public sealed partial class RuralHrService
                 """,
                 new
                 {
-                    tenant.TenantId, Id = id, command.Name, command.PersonId, command.TeamId, command.PropertyId,
-                    command.StartsAt, command.EndsAt, Activity = command.ActivityType.Trim(), OrderId = graph.OrderId,
-                    SeasonId = graph.SeasonId, PlotId = graph.PlotId, command.Notes, tenant.UserId
+                    tenant.TenantId,
+                    Id = id,
+                    command.Name,
+                    command.PersonId,
+                    command.TeamId,
+                    command.PropertyId,
+                    command.StartsAt,
+                    command.EndsAt,
+                    Activity = command.ActivityType.Trim(),
+                    OrderId = graph.OrderId,
+                    SeasonId = graph.SeasonId,
+                    PlotId = graph.PlotId,
+                    command.Notes,
+                    tenant.UserId
                 }, t, cancellationToken: ct)).ConfigureAwait(false);
             if (updated == 0) throw new ConflictException("A alocação mudou durante a edição.");
         }
@@ -198,7 +236,7 @@ public sealed partial class RuralHrService
         if (entry.AllocationBatchId is not null && await BatchIsConfirmedAsync(c, t, entry.AllocationBatchId.Value, ct).ConfigureAwait(false))
             throw new ConflictException("Estorne a apropriação antes de corrigir a jornada conferida.");
         if (entry.SeasonId is not null)
-            await EnsureSeasonOpenAsync(c, t, entry.SeasonId.Value, DateOnly.FromDateTime(entry.StartedAt.UtcDateTime), ct).ConfigureAwait(false);
+            await EnsureSeasonOpenAsync(c, t, entry.SeasonId.Value, await CivilDateAsync(c, t, entry.StartedAt, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
 
         var ended = command.EndedAt ?? entry.EndedAt;
         if (string.Equals(entry.Status, "CLOSED", StringComparison.OrdinalIgnoreCase) && ended is null)
@@ -206,6 +244,8 @@ public sealed partial class RuralHrService
         decimal? hours = null;
         if (ended is not null)
             hours = RuralHrRules.WorkedHours(entry.StartedAt, ended.Value, command.BreakMinutes);
+        await EnsureJourneyIntervalAsync(c, t, entry.PersonId, entry.StartedAt, ended, id, ct).ConfigureAwait(false);
+        var overrun = await PlanOverrunForEntryAsync(c, t, id, entry.StartedAt, ended, ct).ConfigureAwait(false);
 
         await c.ExecuteAsync(new CommandDefinition(
             """
@@ -218,10 +258,19 @@ public sealed partial class RuralHrService
             """,
             new
             {
-                Id = Guid.CreateVersion7(), tenant.TenantId, EntryId = id, Started = entry.StartedAt,
-                PreviousEnded = entry.EndedAt, PreviousBreak = entry.BreakMinutes, PreviousHours = entry.HoursWorked,
-                PreviousCost = entry.CostAmount, NewEnded = ended, NewBreak = command.BreakMinutes, NewHours = hours,
-                Justification = command.Justification.Trim(), tenant.UserId
+                Id = Guid.CreateVersion7(),
+                tenant.TenantId,
+                EntryId = id,
+                Started = entry.StartedAt,
+                PreviousEnded = entry.EndedAt,
+                PreviousBreak = entry.BreakMinutes,
+                PreviousHours = entry.HoursWorked,
+                PreviousCost = entry.CostAmount,
+                NewEnded = ended,
+                NewBreak = command.BreakMinutes,
+                NewHours = hours,
+                Justification = command.Justification.Trim(),
+                tenant.UserId
             }, t, cancellationToken: ct)).ConfigureAwait(false);
 
         var status = ended is null ? "OPEN" : "CLOSED";
@@ -229,11 +278,11 @@ public sealed partial class RuralHrService
             """
             update agro360.rural_hr_time_entries
                set ended_at=@Ended, break_minutes=@Break, piece_quantity=@Piece, status=@Status,
-                   hours_worked=@Hours, review_status='PENDING', reviewed_by=null, reviewed_at=null,
+                   hours_worked=@Hours, plan_overrun=@Overrun, review_status='PENDING', reviewed_by=null, reviewed_at=null,
                    version=version+1, updated_at=now()
              where tenant_id=@TenantId and id=@Id and version=@Version
             """,
-            new { tenant.TenantId, Id = id, Ended = ended, Break = command.BreakMinutes, Piece = command.PieceQuantity, Status = status, Hours = hours, Version = entry.Version }, t, cancellationToken: ct)).ConfigureAwait(false);
+            new { tenant.TenantId, Id = id, Ended = ended, Break = command.BreakMinutes, Piece = command.PieceQuantity, Status = status, Hours = hours, Overrun = overrun, Version = entry.Version }, t, cancellationToken: ct)).ConfigureAwait(false);
         if (updated == 0) throw new ConflictException("A jornada foi alterada por outro operador.");
         await SyncProjectionAsync(c, t, id, "TIME_ENTRY", status, null, ct).ConfigureAwait(false);
         await SnapshotLaborAsync(c, t, id, ct).ConfigureAwait(false);
@@ -305,7 +354,7 @@ public sealed partial class RuralHrService
         if (entry.CostStatus == "UNAVAILABLE" || entry.CostAmount is null)
             return new RuralHrAppropriationResult(null, null, "UNAVAILABLE", "Custo indisponível. Não há tarifa aplicável ou falta a quantidade de produção.");
         if (entry.SeasonId is not null)
-            await EnsureSeasonOpenAsync(c, t, entry.SeasonId.Value, DateOnly.FromDateTime(entry.StartedAt.UtcDateTime), ct).ConfigureAwait(false);
+            await EnsureSeasonOpenAsync(c, t, entry.SeasonId.Value, await CivilDateAsync(c, t, entry.StartedAt, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
 
         var sourceKey = timeEntryId.ToString("D");
         var costId = entry.CostEntryId ?? await c.ExecuteScalarAsync<Guid?>(new CommandDefinition(
@@ -317,6 +366,7 @@ public sealed partial class RuralHrService
             var personName = await c.ExecuteScalarAsync<string>(new CommandDefinition(
                 "select name from agro360.rural_hr_people where tenant_id=@TenantId and id=@Id",
                 new { tenant.TenantId, Id = entry.PersonId }, t, cancellationToken: ct)).ConfigureAwait(false) ?? "Pessoa";
+            var competence = await CivilDateAsync(c, t, entry.StartedAt, ct).ConfigureAwait(false);
             await c.ExecuteAsync(new CommandDefinition(
                 """
                 insert into agro360.cost_management_entries(
@@ -328,8 +378,13 @@ public sealed partial class RuralHrService
                 """,
                 new
                 {
-                    Id = costId, tenant.TenantId, FarmId = entry.PropertyId, Competence = DateOnly.FromDateTime(entry.StartedAt.UtcDateTime),
-                    Amount = entry.CostAmount.Value, Key = sourceKey, tenant.UserId,
+                    Id = costId,
+                    tenant.TenantId,
+                    FarmId = entry.PropertyId,
+                    Competence = competence,
+                    Amount = entry.CostAmount.Value,
+                    Key = sourceKey,
+                    tenant.UserId,
                     Description = $"Mão de obra {personName} jornada {sourceKey}"[..Math.Min(240, $"Mão de obra {personName} jornada {sourceKey}".Length)]
                 }, t, cancellationToken: ct)).ConfigureAwait(false);
             await c.ExecuteAsync(new CommandDefinition(
@@ -363,7 +418,12 @@ public sealed partial class RuralHrService
             """,
             new
             {
-                Id = batch, tenant.TenantId, EntryId = costId, Amount = amount, tenant.UserId, Key = idempotencyKey,
+                Id = batch,
+                tenant.TenantId,
+                EntryId = costId,
+                Amount = amount,
+                tenant.UserId,
+                Key = idempotencyKey,
                 Snapshot = JsonSerializer.Serialize(new { timeEntryId, tariffId = entry.TariffId, rateType = entry.RateType, rateValue = entry.RateValue, hours = entry.HoursWorked, quantity = entry.PieceQuantity, rule = RoundingRule }),
                 Justification = "Apropriação direta da jornada conferida para a safra da alocação."
             }, t, cancellationToken: ct)).ConfigureAwait(false);
@@ -393,13 +453,14 @@ public sealed partial class RuralHrService
     {
         var page = Math.Clamp(query.Page, 1, 10_000);
         var size = Math.Clamp(query.PageSize, 1, 100);
-        var filter = new { tenant.TenantId, query.From, query.To, query.PropertyId, query.SeasonId, query.TeamId };
+        var timeZone = await OperationalZoneIdAsync(c, t, ct).ConfigureAwait(false);
+        var filter = new { tenant.TenantId, query.From, query.To, query.PropertyId, query.SeasonId, query.TeamId, TimeZone = timeZone };
         var allocated = await c.ExecuteScalarAsync<int>(new CommandDefinition(
             """
             select count(distinct person_id) from agro360.rural_hr_records a
             where a.tenant_id=@TenantId and a.kind='ALLOCATION' and a.status='ACTIVE' and a.person_id is not null
               and (@PropertyId is null or a.property_id=@PropertyId) and (@SeasonId is null or a.season_id=@SeasonId) and (@TeamId is null or a.team_id=@TeamId)
-              and (@From is null or a.ends_at::date >= @From) and (@To is null or a.starts_at::date <= @To)
+              and (@From is null or (a.ends_at at time zone @TimeZone)::date >= @From) and (@To is null or (a.starts_at at time zone @TimeZone)::date <= @To)
             """, filter, t, cancellationToken: ct)).ConfigureAwait(false);
         var open = await c.ExecuteScalarAsync<int>(new CommandDefinition(CountJourneys("t.status='OPEN'"), filter, t, cancellationToken: ct)).ConfigureAwait(false);
         var waiting = await c.ExecuteScalarAsync<int>(new CommandDefinition(CountJourneys("t.status='CLOSED' and t.review_status='PENDING'"), filter, t, cancellationToken: ct)).ConfigureAwait(false);
@@ -408,11 +469,12 @@ public sealed partial class RuralHrService
             select count(*) from agro360.rural_hr_records a
             where a.tenant_id=@TenantId and a.kind='ALLOCATION' and a.status='ACTIVE'
               and (@PropertyId is null or a.property_id=@PropertyId) and (@SeasonId is null or a.season_id=@SeasonId) and (@TeamId is null or a.team_id=@TeamId)
+              and (@From is null or (a.ends_at at time zone @TimeZone)::date >= @From) and (@To is null or (a.starts_at at time zone @TimeZone)::date <= @To)
               and exists(
                 select 1 from agro360.rural_hr_records b
                 where b.tenant_id=a.tenant_id and b.kind='ALLOCATION' and b.status='ACTIVE' and b.id<>a.id
                   and b.starts_at < a.ends_at and b.ends_at > a.starts_at
-                  and ((a.person_id is not null and b.person_id=a.person_id) or (a.team_id is not null and b.team_id=a.team_id)))
+                  and ((a.person_id is not null and b.person_id=a.person_id) or (a.team_id is not null and b.team_id=a.team_id) or (a.person_id is not null and b.team_id in (select team.id from agro360.rural_hr_records team where team.tenant_id=a.tenant_id and team.kind='TEAM' and team.person_id=a.person_id)) or (a.team_id is not null and b.person_id=(select team.person_id from agro360.rural_hr_records team where team.tenant_id=a.tenant_id and team.id=a.team_id and team.kind='TEAM'))))
             """, filter, t, cancellationToken: ct)).ConfigureAwait(false);
         var realized = await c.ExecuteScalarAsync<decimal?>(new CommandDefinition(SumJourneys("t.review_status='CONFIRMED' and t.cost_status='CALCULATED'"), filter, t, cancellationToken: ct)).ConfigureAwait(false);
         var pendingTariff = await c.ExecuteScalarAsync<int>(new CommandDefinition(CountJourneys("t.status='CLOSED' and t.cost_status='UNAVAILABLE'"), filter, t, cancellationToken: ct)).ConfigureAwait(false);
@@ -420,15 +482,20 @@ public sealed partial class RuralHrService
             """
             select sum(ca.amount) from agro360.cost_allocations ca
             join agro360.cost_management_entries e on e.tenant_id=ca.tenant_id and e.id=ca.entry_id
+            left join agro360.rural_hr_time_entries t on t.tenant_id=e.tenant_id and t.cost_entry_id=e.id
             where ca.tenant_id=@TenantId and ca.status='CONFIRMED' and e.source_type='RURAL_HR_TIME' and e.deleted_at is null
               and (@PropertyId is null or e.farm_id=@PropertyId) and (@SeasonId is null or ca.season_id=@SeasonId)
+              and (@TeamId is null or t.team_id=@TeamId)
               and (@From is null or e.competence_date >= @From) and (@To is null or e.competence_date <= @To)
             """, filter, t, cancellationToken: ct)).ConfigureAwait(false);
         var available = await c.ExecuteScalarAsync<decimal?>(new CommandDefinition(
             """
-            select sum(e.recognized_amount-e.allocated_amount) from agro360.cost_management_entries e
+            select sum(e.recognized_amount-e.allocated_amount)
+            from agro360.cost_management_entries e
+            join agro360.rural_hr_time_entries t on t.tenant_id=e.tenant_id and t.cost_entry_id=e.id
             where e.tenant_id=@TenantId and e.source_type='RURAL_HR_TIME' and e.status='OPEN' and e.deleted_at is null
-              and (@PropertyId is null or e.farm_id=@PropertyId)
+              and e.recognized_amount>e.allocated_amount
+              and (@PropertyId is null or e.farm_id=@PropertyId) and (@SeasonId is null or t.season_id=@SeasonId) and (@TeamId is null or t.team_id=@TeamId)
               and (@From is null or e.competence_date >= @From) and (@To is null or e.competence_date <= @To)
             """, filter, t, cancellationToken: ct)).ConfigureAwait(false);
         var situation = (query.Situation ?? "OPEN_JOURNEY").Trim().ToUpperInvariant();
@@ -471,6 +538,126 @@ public sealed partial class RuralHrService
         return (IReadOnlyList<RuralHrProjectionIssue>)rows.ToArray();
     }, ct);
 
+    public Task CloseTariffAsync(Guid id, DateOnly validTo, string reason, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length < 5)
+            throw new DomainException("Informe o motivo do encerramento da vigência.", "rural_hr.reason_required");
+        var current = await c.QuerySingleOrDefaultAsync<TariffWindow>(new CommandDefinition(
+            "select valid_from ValidFrom, valid_to ValidTo from agro360.rural_hr_tariffs where tenant_id=@TenantId and id=@Id for update",
+            new { tenant.TenantId, Id = id }, t, cancellationToken: ct)).ConfigureAwait(false)
+            ?? throw new KeyNotFoundException("Tarifa não encontrada.");
+        if (validTo < current.ValidFrom)
+            throw new DomainException("O fim da vigência é anterior ao início.", "rural_hr.tariff_period_invalid");
+        if (current.ValidTo == validTo) return;
+        if (current.ValidTo is not null)
+            throw new ConflictException("A vigência já foi encerrada. As jornadas conservam o valor que foi calculado.");
+        await c.ExecuteAsync(new CommandDefinition(
+            """
+            update agro360.rural_hr_tariffs
+               set valid_to=@ValidTo, close_reason=@Reason, closed_by=@UserId, closed_at=now(), updated_at=now(), updated_by=@UserId
+             where tenant_id=@TenantId and id=@Id and valid_to is null
+            """,
+            new { tenant.TenantId, Id = id, ValidTo = validTo, Reason = reason.Trim(), tenant.UserId }, t, cancellationToken: ct)).ConfigureAwait(false);
+    }, ct);
+
+    public Task ResolveDataReviewAsync(Guid id, string resolution, string reason, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        var decision = (resolution ?? "").Trim().ToUpperInvariant();
+        if (decision is not ("CONFIRMED_REAL" or "CORRECTED"))
+            throw new DomainException("A revisão aceita CONFIRMED_REAL ou CORRECTED. A suspeita não altera o documento.", "rural_hr.review_resolution");
+        if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length < 5)
+            throw new DomainException("Informe o motivo da decisão.", "rural_hr.reason_required");
+        var review = await c.QuerySingleOrDefaultAsync<ReviewTarget>(new CommandDefinition(
+            "select id Id, entity_table EntityTable, entity_id EntityId, resolution Resolution from agro360.rural_hr_data_reviews where tenant_id=@TenantId and id=@Id for update",
+            new { tenant.TenantId, Id = id }, t, cancellationToken: ct)).ConfigureAwait(false)
+            ?? throw new KeyNotFoundException("Revisão não encontrada.");
+        if (!string.Equals(review.Resolution, "OPEN", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.Equals(review.Resolution, decision, StringComparison.OrdinalIgnoreCase)) return;
+            throw new ConflictException("A revisão já foi decidida.");
+        }
+        var before = await ReviewStateAsync(c, t, review.EntityTable, review.EntityId, ct).ConfigureAwait(false);
+        await c.ExecuteAsync(new CommandDefinition(
+            """
+            update agro360.rural_hr_data_reviews
+               set resolution=@Resolution, resolution_reason=@Reason, resolved_by=@UserId, resolved_at=now(),
+                   before_state=cast(@Before as jsonb), after_state=cast(@After as jsonb)
+             where tenant_id=@TenantId and id=@Id and resolution='OPEN'
+            """,
+            new { tenant.TenantId, Id = id, Resolution = decision, Reason = reason.Trim(), tenant.UserId, Before = before, After = before }, t, cancellationToken: ct)).ConfigureAwait(false);
+    }, ct);
+
+    public Task<IReadOnlyList<RuralHrPlanReview>> ListPlanReviewsAsync(CancellationToken ct) => db.InSystemTransactionAsync(async (c, t) =>
+    {
+        var rows = await c.QueryAsync<RuralHrPlanReview>(new CommandDefinition(
+            """
+            select r.id, r.plan_id PlanId, p.name PlanName, r.module_code ModuleCode, r.reason_code ReasonCode,
+                   r.detail, r.resolution, r.detected_at DetectedAt
+            from agro360.saas_plan_module_reviews r
+            join agro360.saas_plans p on p.id=r.plan_id
+            where r.resolution='OPEN'
+            order by r.detected_at desc
+            limit 200
+            """, transaction: t, cancellationToken: ct)).ConfigureAwait(false);
+        return (IReadOnlyList<RuralHrPlanReview>)rows.ToArray();
+    }, ct);
+
+    public async Task ResolvePlanReviewAsync(Guid id, string resolution, string reason, CancellationToken ct)
+    {
+        await db.InSystemTransactionAsync(async (c, t) =>
+        {
+            var decision = (resolution ?? "").Trim().ToUpperInvariant();
+            if (decision is not ("KEEP" or "REMOVE"))
+                throw new DomainException("A revisão do plano aceita KEEP ou REMOVE.", "rural_hr.plan_resolution");
+            if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length < 5)
+                throw new DomainException("Informe o motivo da decisão comercial.", "rural_hr.reason_required");
+            var review = await c.QuerySingleOrDefaultAsync<PlanReviewTarget>(new CommandDefinition(
+                "select id Id, plan_id PlanId, module_code ModuleCode, resolution Resolution from agro360.saas_plan_module_reviews where id=@Id for update",
+                new { Id = id }, t, cancellationToken: ct)).ConfigureAwait(false)
+                ?? throw new KeyNotFoundException("Revisão de plano não encontrada.");
+            if (!string.Equals(review.Resolution, "OPEN", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.Equals(review.Resolution, decision, StringComparison.OrdinalIgnoreCase)) return 0;
+                throw new ConflictException("A revisão do plano já foi decidida.");
+            }
+            var before = await c.QuerySingleAsync<string[]>(new CommandDefinition(
+                "select modules from agro360.saas_plans where id=@Id",
+                new { Id = review.PlanId }, t, cancellationToken: ct)).ConfigureAwait(false);
+            var after = before;
+            if (decision == "REMOVE")
+            {
+                if (review.ModuleCode is not ("rural-hr" or "verticals"))
+                    throw new DomainException("A retirada autorizada cobre apenas rural-hr ou verticals. Os demais módulos permanecem.", "rural_hr.plan_module_protected");
+                after = await c.QuerySingleAsync<string[]>(new CommandDefinition(
+                    """
+                update agro360.saas_plans
+                   set modules=array_remove(modules, @Module), updated_at=now(), updated_by=@UserId
+                 where id=@Id
+                 returning modules
+                """,
+                    new { Id = review.PlanId, Module = review.ModuleCode, tenant.UserId }, t, cancellationToken: ct)).ConfigureAwait(false);
+            }
+            var updated = await c.ExecuteAsync(new CommandDefinition(
+                """
+            update agro360.saas_plan_module_reviews
+               set resolution=@Resolution, resolution_reason=@Reason, resolved_by=@UserId, resolved_at=now(),
+                   before_modules=@Before, after_modules=@After
+             where id=@Id and resolution='OPEN'
+            """,
+                new { Id = id, Resolution = decision, Reason = reason.Trim(), tenant.UserId, Before = before, After = after }, t, cancellationToken: ct)).ConfigureAwait(false);
+            if (updated == 0) throw new ConflictException("A revisão do plano mudou durante a decisão.");
+            return updated;
+        }, ct).ConfigureAwait(false);
+    }
+
+    public Task<IReadOnlyList<RuralHrConstraintValidation>> ValidatePendingConstraintsAsync(CancellationToken ct) => db.InSystemTransactionAsync(async (c, t) =>
+    {
+        var rows = await c.QueryAsync<RuralHrConstraintValidation>(new CommandDefinition(
+            "select constraint_name ConstraintName, outcome Outcome from agro360.validate_pending_constraints()",
+            transaction: t, cancellationToken: ct)).ConfigureAwait(false);
+        return (IReadOnlyList<RuralHrConstraintValidation>)rows.ToArray();
+    }, ct);
+
     private async Task EnsureSavedAllocationAsync(DbConnection c, DbTransaction t, Guid? id, RuralHrCommand command, CancellationToken ct)
     {
         if (!string.Equals(command.Kind, "ALLOCATION", StringComparison.OrdinalIgnoreCase)) return;
@@ -484,8 +671,14 @@ public sealed partial class RuralHrService
 
     private async Task<Guid> SavePersonCoreAsync(DbConnection c, DbTransaction t, string name, string document, Guid roleId, Guid propertyId, string? email, string? phone, string? skills, string? idempotencyKey, CancellationToken ct)
     {
-        if (!System.Text.RegularExpressions.Regex.IsMatch(document, "^[0-9]{11,14}$"))
-            throw new DomainException("Informe o documento real com 11 a 14 dígitos.", "rural_hr.document_invalid");
+        try
+        {
+            document = RuralHrRules.RequireWorkerDocument(document);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new DomainException(ex.Message, "rural_hr.document_invalid");
+        }
         await ResolvePropertyAsync(c, t, propertyId, ct).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(idempotencyKey))
         {
@@ -521,7 +714,16 @@ public sealed partial class RuralHrService
     private async Task<Guid> SaveJourneyCoreAsync(DbConnection c, DbTransaction t, TimeEntryCommand command, CancellationToken ct)
     {
         if (command.EndedAt is not null)
-            RuralHrRules.WorkedHours(command.StartedAt, command.EndedAt.Value, command.BreakMinutes);
+        {
+            try
+            {
+                RuralHrRules.WorkedHours(command.StartedAt, command.EndedAt.Value, command.BreakMinutes);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new DomainException(ex.Message, "rural_hr.journey_invalid");
+            }
+        }
         if (command.PieceQuantity is < 0)
             throw new DomainException("A quantidade de produção não pode ser negativa.", "rural_hr.quantity_invalid");
         await ResolvePropertyAsync(c, t, command.PropertyId, ct).ConfigureAwait(false);
@@ -544,10 +746,14 @@ public sealed partial class RuralHrService
                 throw new DomainException("A alocação não está ativa.", "rural_hr.allocation_inactive");
             if (allocation.PropertyId != command.PropertyId || (allocation.PersonId is not null && allocation.PersonId != command.PersonId) || (allocation.TeamId is not null && command.TeamId is not null && allocation.TeamId != command.TeamId))
                 throw new DomainException("A jornada não corresponde à pessoa, equipe ou propriedade da alocação.", "rural_hr.allocation_mismatch");
-            if (allocation.EndsAt is null || command.StartedAt < allocation.StartsAt || command.StartedAt >= allocation.EndsAt)
-                throw new DomainException("O início da jornada está fora do período da alocação.", "rural_hr.allocation_period");
+            if (allocation.StartsAt is null || allocation.EndsAt is null)
+                throw new DomainException("A alocação não tem período planejado.", "rural_hr.allocation_period");
+            if (RuralHrRules.PlannedCoverage(command.StartedAt, command.EndedAt, allocation.StartsAt.Value, allocation.EndsAt.Value) == "START_OUTSIDE")
+                throw new DomainException("O início da jornada está fora do período planejado. A saída posterior ao fim é permitida e fica marcada.", "rural_hr.allocation_period");
             orderId = allocation.OrderId; seasonId = allocation.SeasonId; plotId = allocation.PlotId; teamId ??= allocation.TeamId;
         }
+        if (teamId is not null)
+            await EnsureTeamLinkAsync(c, t, command.PersonId, teamId.Value, ct).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(command.IdempotencyKey))
         {
             var replay = await ReplayAsync(c, t, "time", command.IdempotencyKey, Hash(JourneyHash(command)), ct).ConfigureAwait(false);
@@ -555,39 +761,59 @@ public sealed partial class RuralHrService
         }
         if (!string.IsNullOrWhiteSpace(command.OfflineId))
         {
-            var offline = await c.QuerySingleOrDefaultAsync<(Guid Id, Guid PersonId, DateTimeOffset StartedAt)?>(new CommandDefinition(
-                "select id Id, person_id PersonId, started_at StartedAt from agro360.rural_hr_time_entries where tenant_id=@TenantId and offline_id=@OfflineId",
+            var offline = await c.QuerySingleOrDefaultAsync<OfflineJourney>(new CommandDefinition(
+                """
+                select id Id, person_id PersonId, team_id TeamId, property_id PropertyId, resource_id ResourceId, allocation_id AllocationId,
+                       started_at StartedAt, ended_at EndedAt, break_minutes BreakMinutes, activity_type ActivityType, piece_quantity PieceQuantity
+                from agro360.rural_hr_time_entries where tenant_id=@TenantId and offline_id=@OfflineId
+                """,
                 new { tenant.TenantId, command.OfflineId }, t, cancellationToken: ct)).ConfigureAwait(false);
             if (offline is not null)
             {
-                if (offline.Value.PersonId == command.PersonId && offline.Value.StartedAt == command.StartedAt) return offline.Value.Id;
+                if (SameOffline(offline, command)) return offline.Id;
                 throw new ConflictException("A identificação offline já foi usada em outra jornada.");
             }
         }
-        var open = await c.ExecuteScalarAsync<bool>(new CommandDefinition(
-            "select exists(select 1 from agro360.rural_hr_time_entries where tenant_id=@TenantId and person_id=@PersonId and ended_at is null and status='OPEN')",
-            new { tenant.TenantId, command.PersonId }, t, cancellationToken: ct)).ConfigureAwait(false);
-        if (open && command.EndedAt is null) throw new DomainException("A pessoa já possui jornada aberta.", "rural_hr.journey_open");
+        await EnsureJourneyIntervalAsync(c, t, command.PersonId, command.StartedAt, command.EndedAt, null, ct).ConfigureAwait(false);
         var id = Guid.CreateVersion7();
         var status = command.EndedAt is null ? "OPEN" : "CLOSED";
         decimal? hours = command.EndedAt is null ? null : RuralHrRules.WorkedHours(command.StartedAt, command.EndedAt.Value, command.BreakMinutes);
+        var overrun = command.AllocationId is not null && await PlanOverrunAsync(c, t, command.AllocationId.Value, command.StartedAt, command.EndedAt, ct).ConfigureAwait(false);
         await c.ExecuteAsync(new CommandDefinition(
             """
             insert into agro360.rural_hr_time_entries(
                 id, tenant_id, person_id, team_id, property_id, resource_id, started_at, ended_at, break_minutes,
                 activity_type, notes, offline_id, status, created_by, allocation_id, order_id, season_id, plot_id,
-                hours_worked, piece_quantity, idempotency_key)
+                hours_worked, piece_quantity, idempotency_key, plan_overrun)
             values(
                 @Id, @TenantId, @PersonId, @TeamId, @PropertyId, @ResourceId, @StartedAt, @EndedAt, @BreakMinutes,
                 @ActivityType, @Notes, @OfflineId, @Status, @UserId, @AllocationId, @OrderId, @SeasonId, @PlotId,
-                @Hours, @Piece, @IdempotencyKey)
+                @Hours, @Piece, @IdempotencyKey, @Overrun)
             """,
             new
             {
-                Id = id, tenant.TenantId, command.PersonId, TeamId = teamId, command.PropertyId, command.ResourceId,
-                command.StartedAt, command.EndedAt, command.BreakMinutes, command.ActivityType, command.Notes, command.OfflineId,
-                Status = status, tenant.UserId, command.AllocationId, OrderId = orderId, SeasonId = seasonId, PlotId = plotId,
-                Hours = hours, Piece = command.PieceQuantity, command.IdempotencyKey
+                Id = id,
+                tenant.TenantId,
+                command.PersonId,
+                TeamId = teamId,
+                command.PropertyId,
+                command.ResourceId,
+                command.StartedAt,
+                command.EndedAt,
+                command.BreakMinutes,
+                command.ActivityType,
+                command.Notes,
+                command.OfflineId,
+                Status = status,
+                tenant.UserId,
+                command.AllocationId,
+                OrderId = orderId,
+                SeasonId = seasonId,
+                PlotId = plotId,
+                Hours = hours,
+                Piece = command.PieceQuantity,
+                command.IdempotencyKey,
+                Overrun = overrun
             }, t, cancellationToken: ct)).ConfigureAwait(false);
         await UpsertJourneyProjectionAsync(c, t, id, ct).ConfigureAwait(false);
         if (status == "CLOSED") await SnapshotLaborAsync(c, t, id, ct).ConfigureAwait(false);
@@ -615,7 +841,7 @@ public sealed partial class RuralHrService
         var roleId = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition(
             "select role_id from agro360.rural_hr_people where tenant_id=@TenantId and id=@Id",
             new { tenant.TenantId, Id = entry.PersonId }, t, cancellationToken: ct)).ConfigureAwait(false);
-        var day = DateOnly.FromDateTime(entry.StartedAt.UtcDateTime);
+        var day = await CivilDateAsync(c, t, entry.StartedAt, ct).ConfigureAwait(false);
         var tariffs = (await c.QueryAsync<RuralHrTariffCandidate>(new CommandDefinition(
             """
             select id Id, role_id RoleId, activity_type ActivityType, rate_type RateType, rate_value RateValue, valid_from ValidFrom
@@ -650,9 +876,16 @@ public sealed partial class RuralHrService
             """,
             new
             {
-                tenant.TenantId, Id = id, Hours = hours, TariffId = block is null ? selected.Id : (Guid?)null,
-                RateType = block is null ? selected.RateType : null, RateValue = block is null ? selected.RateValue : (decimal?)null,
-                Amount = amount, CostStatus = block is null ? "CALCULATED" : "UNAVAILABLE", Block = block, Rule = RoundingRule
+                tenant.TenantId,
+                Id = id,
+                Hours = hours,
+                TariffId = block is null ? selected.Id : (Guid?)null,
+                RateType = block is null ? selected.RateType : null,
+                RateValue = block is null ? selected.RateValue : (decimal?)null,
+                Amount = amount,
+                CostStatus = block is null ? "CALCULATED" : "UNAVAILABLE",
+                Block = block,
+                Rule = RoundingRule
             }, t, cancellationToken: ct)).ConfigureAwait(false);
     }
 
@@ -684,14 +917,17 @@ public sealed partial class RuralHrService
             throw new ConflictException("Há cargos duplicados com esse nome. Resolva a revisão antes de cadastrar a pessoa.");
         if (ids.Length == 1) return ids[0];
         var created = Guid.CreateVersion7();
+        await c.ExecuteAsync(new CommandDefinition("savepoint hr_role", transaction: t, cancellationToken: ct)).ConfigureAwait(false);
         try
         {
             await c.ExecuteAsync(new CommandDefinition(
                 "insert into agro360.rural_hr_roles(id, tenant_id, name, active) values(@Id, @TenantId, @Name, true)",
                 new { Id = created, tenant.TenantId, Name = name }, t, cancellationToken: ct)).ConfigureAwait(false);
+            await c.ExecuteAsync(new CommandDefinition("release savepoint hr_role", transaction: t, cancellationToken: ct)).ConfigureAwait(false);
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
+            await c.ExecuteAsync(new CommandDefinition("rollback to savepoint hr_role", transaction: t, cancellationToken: ct)).ConfigureAwait(false);
         }
         ids = (await c.QueryAsync<Guid>(new CommandDefinition(
             "select id from agro360.rural_hr_roles where tenant_id=@TenantId and lower(name)=lower(@Name) order by id",
@@ -720,6 +956,8 @@ public sealed partial class RuralHrService
             "select exists(select 1 from agro360.rural_hr_records where tenant_id=@TenantId and id=@Id and kind='TEAM' and status in ('ACTIVE','IN_FIELD'))",
             new { tenant.TenantId, Id = teamId }, t, cancellationToken: ct)).ConfigureAwait(false))
             throw new DomainException("A equipe não está disponível.", "rural_hr.team_unavailable");
+        if (personId is not null && teamId is not null)
+            await EnsureTeamLinkAsync(c, t, personId.Value, teamId.Value, ct).ConfigureAwait(false);
         if (orderId is null) return new AllocationGraph(plotId, seasonId, null);
         var order = await c.QuerySingleOrDefaultAsync<OrderLink>(new CommandDefinition(
             """
@@ -742,8 +980,37 @@ public sealed partial class RuralHrService
         return new AllocationGraph(plotId ?? orderField, seasonId ?? orderSeason, orderId);
     }
 
+    private async Task EnsureTeamLinkAsync(DbConnection c, DbTransaction t, Guid personId, Guid teamId, CancellationToken ct)
+    {
+        var member = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+            "select person_id from agro360.rural_hr_records where tenant_id=@TenantId and id=@Id and kind='TEAM'",
+            new { tenant.TenantId, Id = teamId }, t, cancellationToken: ct)).ConfigureAwait(false);
+        if (member is null)
+            throw new DomainException("A equipe não tem integrante vinculado. O cadastro guarda no máximo uma pessoa por equipe.", "rural_hr.team_member_missing");
+        if (member != personId)
+            throw new DomainException("A pessoa não é o integrante vinculado a essa equipe.", "rural_hr.team_member_mismatch");
+    }
+
     private async Task EnsureNoOverlapAsync(DbConnection c, DbTransaction t, Guid? id, Guid? personId, Guid? teamId, DateTimeOffset starts, DateTimeOffset ends, CancellationToken ct)
     {
+        var locks = new SortedSet<string>(StringComparer.Ordinal);
+        if (personId is not null) locks.Add($"alloc-person|{tenant.TenantId:D}|{personId:D}");
+        if (teamId is not null) locks.Add($"alloc-team|{tenant.TenantId:D}|{teamId:D}");
+        if (personId is not null)
+        {
+            var teams = await c.QueryAsync<Guid>(new CommandDefinition(
+                "select id from agro360.rural_hr_records where tenant_id=@TenantId and kind='TEAM' and person_id=@PersonId",
+                new { tenant.TenantId, PersonId = personId }, t, cancellationToken: ct)).ConfigureAwait(false);
+            foreach (var team in teams) locks.Add($"alloc-team|{tenant.TenantId:D}|{team:D}");
+        }
+        if (teamId is not null)
+        {
+            var member = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+                "select person_id from agro360.rural_hr_records where tenant_id=@TenantId and id=@Id and kind='TEAM'",
+                new { tenant.TenantId, Id = teamId }, t, cancellationToken: ct)).ConfigureAwait(false);
+            if (member is not null) locks.Add($"alloc-person|{tenant.TenantId:D}|{member:D}");
+        }
+        foreach (var key in locks) await LockKeyAsync(c, t, key, ct).ConfigureAwait(false);
         var conflict = await c.ExecuteScalarAsync<bool>(new CommandDefinition(
             """
             select exists(
@@ -751,11 +1018,19 @@ public sealed partial class RuralHrService
                 where a.tenant_id=@TenantId and a.kind='ALLOCATION' and a.status='ACTIVE'
                   and (@Id is null or a.id<>@Id)
                   and a.starts_at < @Ends and a.ends_at > @Starts
-                  and ((@PersonId is not null and a.person_id=@PersonId) or (@TeamId is not null and a.team_id=@TeamId)))
+                  and (
+                    (@PersonId is not null and a.person_id=@PersonId)
+                    or (@TeamId is not null and a.team_id=@TeamId)
+                    or (@PersonId is not null and a.team_id in (
+                        select team.id from agro360.rural_hr_records team
+                        where team.tenant_id=@TenantId and team.kind='TEAM' and team.person_id=@PersonId))
+                    or (@TeamId is not null and a.person_id = (
+                        select team.person_id from agro360.rural_hr_records team
+                        where team.tenant_id=@TenantId and team.id=@TeamId and team.kind='TEAM'))))
             """,
             new { tenant.TenantId, Id = id, PersonId = personId, TeamId = teamId, Starts = starts, Ends = ends }, t, cancellationToken: ct)).ConfigureAwait(false);
         if (conflict)
-            throw new ConflictException("Já existe alocação ativa da mesma pessoa ou equipe neste período.");
+            throw new ConflictException("Já existe alocação ativa da mesma pessoa, da mesma equipe ou do integrante vinculado a essa equipe neste período.");
     }
 
     private async Task EnsureExecutionPreservedAsync(DbConnection c, DbTransaction t, Guid id, Guid? personId, DateTimeOffset starts, DateTimeOffset ends, CancellationToken ct)
@@ -770,8 +1045,8 @@ public sealed partial class RuralHrService
         if (executed is null || executed.Entries == 0) return;
         if (personId is not null && executed.PersonId is not null && !string.Equals(executed.PersonId, personId.Value.ToString(), StringComparison.OrdinalIgnoreCase))
             throw new ConflictException("A execução já registrada impede trocar a pessoa da alocação.");
-        if (executed.Started < starts || executed.Ended > ends)
-            throw new ConflictException("O novo período não cobre a jornada já executada.");
+        if (executed.Started < starts || executed.Started >= ends)
+            throw new ConflictException("O novo período não cobre o início da jornada já executada. A saída posterior ao fim permanece na jornada.");
     }
 
     private async Task EnsureSeasonOpenAsync(DbConnection c, DbTransaction t, Guid seasonId, DateOnly competence, CancellationToken ct)
@@ -909,6 +1184,8 @@ public sealed partial class RuralHrService
 
     private async Task<Guid?> ReplayAsync(DbConnection c, DbTransaction t, string command, string key, string hash, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(key)) return null;
+        await LockKeyAsync(c, t, $"{tenant.TenantId:D}|replay|{command}|{key.Trim()}", ct).ConfigureAwait(false);
         var row = await c.QuerySingleOrDefaultAsync<ReplayRow>(new CommandDefinition(
             "select entity_id EntityId, request_hash RequestHash from agro360.rural_hr_command_replays where tenant_id=@TenantId and command_name=@Command and idempotency_key=@Key",
             new { tenant.TenantId, Command = command, Key = key.Trim() }, t, cancellationToken: ct)).ConfigureAwait(false);
@@ -926,8 +1203,102 @@ public sealed partial class RuralHrService
             """,
             new { tenant.TenantId, Command = command, Key = key.Trim(), EntityId = entityId, Hash = hash }, t, cancellationToken: ct)).ConfigureAwait(false);
 
+    private static Task<int> LockKeyAsync(DbConnection c, DbTransaction t, string key, CancellationToken ct) =>
+        c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey, 0))", new { LockKey = key }, t, cancellationToken: ct));
+
+    private async Task EnsureJourneyIntervalAsync(DbConnection c, DbTransaction t, Guid personId, DateTimeOffset started, DateTimeOffset? ended, Guid? excludeId, CancellationToken ct)
+    {
+        await LockKeyAsync(c, t, $"journey|{tenant.TenantId:D}|{personId:D}", ct).ConfigureAwait(false);
+        var conflict = await c.ExecuteScalarAsync<bool>(new CommandDefinition(
+            """
+            select exists(
+                select 1 from agro360.rural_hr_time_entries e
+                where e.tenant_id=@TenantId and e.person_id=@PersonId and e.status<>'CANCELLED'
+                  and (@Exclude is null or e.id<>@Exclude)
+                  and e.started_at < coalesce(@Ended, 'infinity'::timestamptz)
+                  and coalesce(e.ended_at, 'infinity'::timestamptz) > @Started)
+            """,
+            new { tenant.TenantId, PersonId = personId, Exclude = excludeId, Started = started, Ended = ended }, t, cancellationToken: ct)).ConfigureAwait(false);
+        if (conflict)
+            throw new ConflictException("Já existe jornada desta pessoa no mesmo intervalo. Jornadas consecutivas, sem cruzar o intervalo, são permitidas.");
+    }
+
+    private async Task<bool> PlanOverrunAsync(DbConnection c, DbTransaction t, Guid allocationId, DateTimeOffset started, DateTimeOffset? ended, CancellationToken ct)
+    {
+        var plan = await c.QuerySingleOrDefaultAsync<PlanWindow>(new CommandDefinition(
+            "select starts_at StartsAt, ends_at EndsAt from agro360.rural_hr_records where tenant_id=@TenantId and id=@Id and kind='ALLOCATION'",
+            new { tenant.TenantId, Id = allocationId }, t, cancellationToken: ct)).ConfigureAwait(false);
+        if (plan?.StartsAt is null || plan.EndsAt is null) return false;
+        return RuralHrRules.PlannedCoverage(started, ended, plan.StartsAt.Value, plan.EndsAt.Value) == "OVERRUN";
+    }
+
+    private async Task<bool> PlanOverrunForEntryAsync(DbConnection c, DbTransaction t, Guid entryId, DateTimeOffset started, DateTimeOffset? ended, CancellationToken ct)
+    {
+        var allocationId = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+            "select allocation_id from agro360.rural_hr_time_entries where tenant_id=@TenantId and id=@Id",
+            new { tenant.TenantId, Id = entryId }, t, cancellationToken: ct)).ConfigureAwait(false);
+        if (allocationId is null) return false;
+        var plan = await c.QuerySingleOrDefaultAsync<PlanWindow>(new CommandDefinition(
+            "select starts_at StartsAt, ends_at EndsAt from agro360.rural_hr_records where tenant_id=@TenantId and id=@Id and kind='ALLOCATION'",
+            new { tenant.TenantId, Id = allocationId }, t, cancellationToken: ct)).ConfigureAwait(false);
+        if (plan?.StartsAt is null || plan.EndsAt is null) return true;
+        return RuralHrRules.PlannedCoverage(started, ended, plan.StartsAt.Value, plan.EndsAt.Value) != "INSIDE";
+    }
+
+    private async Task<string> OperationalZoneIdAsync(DbConnection c, DbTransaction t, CancellationToken ct)
+    {
+        var id = await c.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "select nullif(btrim(timezone_id), '') from agro360.tenancy_tenants where id=@TenantId",
+            new { tenant.TenantId }, t, cancellationToken: ct)).ConfigureAwait(false);
+        var zone = string.IsNullOrWhiteSpace(id) ? "America/Belem" : id.Trim();
+        try
+        {
+            _ = TimeZoneInfo.FindSystemTimeZoneById(zone);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            throw new DomainException($"O fuso operacional '{zone}' do tenant não é reconhecido.", "rural_hr.timezone_invalid");
+        }
+        catch (InvalidTimeZoneException)
+        {
+            throw new DomainException($"O fuso operacional '{zone}' do tenant não é reconhecido.", "rural_hr.timezone_invalid");
+        }
+        return zone;
+    }
+
+    private async Task<DateOnly> CivilDateAsync(DbConnection c, DbTransaction t, DateTimeOffset instant, CancellationToken ct)
+    {
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(await OperationalZoneIdAsync(c, t, ct).ConfigureAwait(false));
+        return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instant, zone).DateTime);
+    }
+
+    private async Task<string> ReviewStateAsync(DbConnection c, DbTransaction t, string entityTable, Guid entityId, CancellationToken ct)
+    {
+        var sql = entityTable switch
+        {
+            "rural_hr_people" => "select to_jsonb(p) from agro360.rural_hr_people p where p.tenant_id=@TenantId and p.id=@Id",
+            "rural_hr_roles" => "select to_jsonb(r) from agro360.rural_hr_roles r where r.tenant_id=@TenantId and r.id=@Id",
+            "rural_hr_records" => "select to_jsonb(r) from agro360.rural_hr_records r where r.tenant_id=@TenantId and r.id=@Id",
+            _ => null
+        };
+        if (sql is null) return "{}";
+        return await c.ExecuteScalarAsync<string>(new CommandDefinition(sql, new { tenant.TenantId, Id = entityId }, t, cancellationToken: ct)).ConfigureAwait(false) ?? "{}";
+    }
+
+    private static bool SameOffline(OfflineJourney row, TimeEntryCommand command) =>
+        row.PersonId == command.PersonId
+        && row.TeamId == command.TeamId
+        && row.PropertyId == command.PropertyId
+        && row.ResourceId == command.ResourceId
+        && row.AllocationId == command.AllocationId
+        && row.StartedAt.UtcDateTime == command.StartedAt.UtcDateTime
+        && row.EndedAt?.UtcDateTime == command.EndedAt?.UtcDateTime
+        && row.BreakMinutes == command.BreakMinutes
+        && string.Equals(row.ActivityType, command.ActivityType, StringComparison.OrdinalIgnoreCase)
+        && row.PieceQuantity == command.PieceQuantity;
+
     private static string JourneyHash(TimeEntryCommand command) =>
-        $"{command.PersonId}|{command.TeamId}|{command.PropertyId}|{command.StartedAt:O}|{command.EndedAt:O}|{command.BreakMinutes}|{command.ActivityType}|{command.AllocationId}|{command.PieceQuantity}";
+        $"{command.PersonId}|{command.TeamId}|{command.PropertyId}|{command.ResourceId}|{command.StartedAt:O}|{command.EndedAt:O}|{command.BreakMinutes}|{command.ActivityType}|{command.AllocationId}|{command.PieceQuantity}|{command.OfflineId}";
 
     private static string Hash(string payload) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
 
@@ -936,7 +1307,7 @@ public sealed partial class RuralHrService
         select count(*) from agro360.rural_hr_time_entries t
         where t.tenant_id=@TenantId and {predicate}
           and (@PropertyId is null or t.property_id=@PropertyId) and (@SeasonId is null or t.season_id=@SeasonId) and (@TeamId is null or t.team_id=@TeamId)
-          and (@From is null or (t.started_at at time zone 'UTC')::date >= @From) and (@To is null or (t.started_at at time zone 'UTC')::date <= @To)
+          and (@From is null or (t.started_at at time zone @TimeZone)::date >= @From) and (@To is null or (t.started_at at time zone @TimeZone)::date <= @To)
         """;
 
     private static string SumJourneys(string predicate) =>
@@ -944,7 +1315,7 @@ public sealed partial class RuralHrService
         select sum(t.cost_amount) from agro360.rural_hr_time_entries t
         where t.tenant_id=@TenantId and {predicate}
           and (@PropertyId is null or t.property_id=@PropertyId) and (@SeasonId is null or t.season_id=@SeasonId) and (@TeamId is null or t.team_id=@TeamId)
-          and (@From is null or (t.started_at at time zone 'UTC')::date >= @From) and (@To is null or (t.started_at at time zone 'UTC')::date <= @To)
+          and (@From is null or (t.started_at at time zone @TimeZone)::date >= @From) and (@To is null or (t.started_at at time zone @TimeZone)::date <= @To)
         """;
 
     private static (string Sql, object Args) BoardItems(string situation, object filter, int page, int size)
@@ -957,13 +1328,13 @@ public sealed partial class RuralHrService
                     select 1 from agro360.rural_hr_records b
                     where b.tenant_id=a.tenant_id and b.kind='ALLOCATION' and b.status='ACTIVE' and b.id<>a.id
                       and b.starts_at < a.ends_at and b.ends_at > a.starts_at
-                      and ((a.person_id is not null and b.person_id=a.person_id) or (a.team_id is not null and b.team_id=a.team_id)))
+                      and ((a.person_id is not null and b.person_id=a.person_id) or (a.team_id is not null and b.team_id=a.team_id) or (a.person_id is not null and b.team_id in (select team.id from agro360.rural_hr_records team where team.tenant_id=a.tenant_id and team.kind='TEAM' and team.person_id=a.person_id)) or (a.team_id is not null and b.person_id=(select team.person_id from agro360.rural_hr_records team where team.tenant_id=a.tenant_id and team.id=a.team_id and team.kind='TEAM'))))
                 """),
             "AWAITING_REVIEW" => BoardJourney("t.status='CLOSED' and t.review_status='PENDING'"),
             "COST_REALIZED" => BoardJourney("t.review_status='CONFIRMED' and t.cost_status='CALCULATED'"),
             "COST_PENDING_TARIFF" => BoardJourney("t.status='CLOSED' and t.cost_status='UNAVAILABLE'"),
-            "APPROPRIATED" => BoardJourney("t.allocation_batch_id is not null"),
-            "AVAILABLE_BALANCE" => BoardJourney("t.cost_entry_id is not null and t.review_status='CONFIRMED'"),
+            "APPROPRIATED" => BoardJourney("exists(select 1 from agro360.cost_allocation_batches b where b.tenant_id=t.tenant_id and b.id=t.allocation_batch_id and b.status='CONFIRMED')"),
+            "AVAILABLE_BALANCE" => BoardJourney("exists(select 1 from agro360.cost_management_entries e where e.tenant_id=t.tenant_id and e.id=t.cost_entry_id and e.deleted_at is null and e.status='OPEN' and e.recognized_amount>e.allocated_amount)"),
             _ => BoardJourney("t.status='OPEN'")
         };
         var args = new DynamicParameters(filter);
@@ -979,14 +1350,14 @@ public sealed partial class RuralHrService
             select count(*) from agro360.rural_hr_time_entries t
             where t.tenant_id=@TenantId and {predicate}
               and (@PropertyId is null or t.property_id=@PropertyId) and (@SeasonId is null or t.season_id=@SeasonId) and (@TeamId is null or t.team_id=@TeamId)
-              and (@From is null or (t.started_at at time zone 'UTC')::date >= @From) and (@To is null or (t.started_at at time zone 'UTC')::date <= @To)
+              and (@From is null or (t.started_at at time zone @TimeZone)::date >= @From) and (@To is null or (t.started_at at time zone @TimeZone)::date <= @To)
             """;
         var allocation = (string predicate) =>
             $"""
             select count(*) from agro360.rural_hr_records a
             where a.tenant_id=@TenantId and a.kind='ALLOCATION' and {predicate}
               and (@PropertyId is null or a.property_id=@PropertyId) and (@SeasonId is null or a.season_id=@SeasonId) and (@TeamId is null or a.team_id=@TeamId)
-              and (@From is null or a.ends_at::date >= @From) and (@To is null or a.starts_at::date <= @To)
+              and (@From is null or (a.ends_at at time zone @TimeZone)::date >= @From) and (@To is null or (a.starts_at at time zone @TimeZone)::date <= @To)
             """;
         return situation switch
         {
@@ -996,13 +1367,13 @@ public sealed partial class RuralHrService
                     select 1 from agro360.rural_hr_records b
                     where b.tenant_id=a.tenant_id and b.kind='ALLOCATION' and b.status='ACTIVE' and b.id<>a.id
                       and b.starts_at < a.ends_at and b.ends_at > a.starts_at
-                      and ((a.person_id is not null and b.person_id=a.person_id) or (a.team_id is not null and b.team_id=a.team_id)))
+                      and ((a.person_id is not null and b.person_id=a.person_id) or (a.team_id is not null and b.team_id=a.team_id) or (a.person_id is not null and b.team_id in (select team.id from agro360.rural_hr_records team where team.tenant_id=a.tenant_id and team.kind='TEAM' and team.person_id=a.person_id)) or (a.team_id is not null and b.person_id=(select team.person_id from agro360.rural_hr_records team where team.tenant_id=a.tenant_id and team.id=a.team_id and team.kind='TEAM'))))
                 """),
             "AWAITING_REVIEW" => journey("t.status='CLOSED' and t.review_status='PENDING'"),
             "COST_REALIZED" => journey("t.review_status='CONFIRMED' and t.cost_status='CALCULATED'"),
             "COST_PENDING_TARIFF" => journey("t.status='CLOSED' and t.cost_status='UNAVAILABLE'"),
-            "APPROPRIATED" => journey("t.allocation_batch_id is not null"),
-            "AVAILABLE_BALANCE" => journey("t.cost_entry_id is not null and t.review_status='CONFIRMED'"),
+            "APPROPRIATED" => journey("exists(select 1 from agro360.cost_allocation_batches b where b.tenant_id=t.tenant_id and b.id=t.allocation_batch_id and b.status='CONFIRMED')"),
+            "AVAILABLE_BALANCE" => journey("exists(select 1 from agro360.cost_management_entries e where e.tenant_id=t.tenant_id and e.id=t.cost_entry_id and e.deleted_at is null and e.status='OPEN' and e.recognized_amount>e.allocated_amount)"),
             _ => journey("t.status='OPEN'")
         };
     }
@@ -1016,7 +1387,7 @@ public sealed partial class RuralHrService
         left join agro360.rural_hr_people p on p.tenant_id=t.tenant_id and p.id=t.person_id
         where t.tenant_id=@TenantId and {predicate}
           and (@PropertyId is null or t.property_id=@PropertyId) and (@SeasonId is null or t.season_id=@SeasonId) and (@TeamId is null or t.team_id=@TeamId)
-          and (@From is null or (t.started_at at time zone 'UTC')::date >= @From) and (@To is null or (t.started_at at time zone 'UTC')::date <= @To)
+          and (@From is null or (t.started_at at time zone @TimeZone)::date >= @From) and (@To is null or (t.started_at at time zone @TimeZone)::date <= @To)
         order by t.started_at desc
         limit @Limit offset @Offset
         """;
@@ -1029,11 +1400,29 @@ public sealed partial class RuralHrService
         from agro360.rural_hr_records a
         where a.tenant_id=@TenantId and a.kind='ALLOCATION' and {predicate}
           and (@PropertyId is null or a.property_id=@PropertyId) and (@SeasonId is null or a.season_id=@SeasonId) and (@TeamId is null or a.team_id=@TeamId)
-          and (@From is null or a.ends_at::date >= @From) and (@To is null or a.starts_at::date <= @To)
+          and (@From is null or (a.ends_at at time zone @TimeZone)::date >= @From) and (@To is null or (a.starts_at at time zone @TimeZone)::date <= @To)
         order by a.starts_at desc
         limit @Limit offset @Offset
         """;
 
+    private sealed class OfflineJourney
+    {
+        public Guid Id { get; set; }
+        public Guid PersonId { get; set; }
+        public Guid? TeamId { get; set; }
+        public Guid PropertyId { get; set; }
+        public Guid? ResourceId { get; set; }
+        public Guid? AllocationId { get; set; }
+        public DateTimeOffset StartedAt { get; set; }
+        public DateTimeOffset? EndedAt { get; set; }
+        public int BreakMinutes { get; set; }
+        public string ActivityType { get; set; } = "";
+        public decimal? PieceQuantity { get; set; }
+    }
+    private sealed class TariffWindow { public DateOnly ValidFrom { get; set; } public DateOnly? ValidTo { get; set; } }
+    private sealed class PlanWindow { public DateTimeOffset? StartsAt { get; set; } public DateTimeOffset? EndsAt { get; set; } }
+    private sealed class ReviewTarget { public Guid Id { get; set; } public string EntityTable { get; set; } = ""; public Guid EntityId { get; set; } public string Resolution { get; set; } = ""; }
+    private sealed class PlanReviewTarget { public Guid Id { get; set; } public Guid PlanId { get; set; } public string ModuleCode { get; set; } = ""; public string Resolution { get; set; } = ""; }
     private sealed class BatchLink { public Guid Id { get; set; } public string Status { get; set; } = ""; }
     private sealed class ReplayRow { public Guid EntityId { get; set; } public string RequestHash { get; set; } = ""; }
     private sealed class PersonMatch { public Guid Id { get; set; } public string Name { get; set; } = ""; public Guid RoleId { get; set; } public Guid PropertyId { get; set; } }

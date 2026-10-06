@@ -1,6 +1,31 @@
 Você trabalha exclusivamente no repositório https://github.com/devmnsoft/agro360 (MNSOFT Agro360). Não use outro produto.
 
-## Estado deixado pela execução atual (AG-PROD-INT-001)
+## Estado deixado pela execução atual (AG-GOV-001 + AG-EVO-INT-001) — 2026-10-05
+
+Branch `main`. HEAD de referência: `de509bedf26306e669fcec9c076d153215f1e63c`. Tudo na árvore de trabalho, sem commit/push/merge; diffs locais do usuário preservados. `appsettings*.json` e `PostgreSqlConnectionConfiguration.cs` intactos; `database/releases/v0.*` intocados.
+
+Gates verdes (re-executados após as edições desta rodada): build Release 0/0; UnitTests **350/350**; ArchitectureTests **182/182**; IntegrationTests **5/5** (base legada 11.16.0, PG 18); `dotnet format --verify-no-changes` exit 0; rotas **925** OK; `git diff --check` exit 0; validador do `full.sql` OK.
+
+**Entregue (Bloco A — governance)**: fonte única dos grants (`EntitlementQueries.ModuleCodeSelect`, 6 cópias removidas, mapa grupo→módulo em `Permissions.ModulesForPermission`); bootstrap `tenant-administrator` ativo (nunca `platform.admin`); delegação validada no servidor (`CountUndelegableRolePermissionsAsync` + advisory locks ×3 + revalidação do aceite com `invitation_role_missing`/`invitation_authority_changed`/`plan_user_limit`); provisionamento com ator + `origin='PLAN'`; downgrade preserva adicionais e dados; writer `SetTenantModuleStatusAsync` + endpoint `PUT /api/platform/tenants/{id}/modules/{moduleCode}`; migration incremental 125 (schema 11.15.0) espelhada no consolidado (CHECKs com os 10 estados, `INACTIVE` + `origin`/`valid_until` nos entitlements, seeds do catálogo e snapshot retroativo).
+
+**Entregue (Etapas 1–4 — evolução integrada do compromisso de entrega, com E2E verde completo em `artifacts/integrated-evolution-e2e-8be6749392f944f098f17e1c036b74cf`)**:
+- Etapa 1: criação da programação lê reservas p/ validar saldo mas nunca escreve (assert negativo E2E: 0 reservas/movimentos, saldo intacto); reserva nasce só no atendimento multi-lote.
+- Etapa 2: attempt FAILED leva remessa a IN_DELIVERY sem contar como entrega (compromisso DISPATCHED, entregue=0).
+- Etapa 3: só `accepted_quantity` avança `delivered_quantity`; RECONCILED exige por item `accepted+returned+lost>=checked`; retorno da recusa move sacas de `refused` para `returned` (guard no serviço, sem migration — constraint 071 imutável; 409 `return.refused_exhausted`). Bugs latentes achados pelo E2E e corrigidos: joins inexistentes em ListReturns/ReturnDetail (500) e incompatibilidade aditiva com `fulfillment_shipment_items_check1` (422 no receipt).
+- Etapa 4: migration 126 (schema 11.16.0, compatível PG 18) espelhada; liquidação administrativa idempotente (hash `{ScheduleId,ExpectedVersion,Reason}`, lock, replay 204/conflito 409), update guardado por versão, op row SETTLE + evento, zero escrita finance/fiscal; selagem (reschedule/cancel 409 `sales.schedule_settled_locked`; sobre liquidado 422 `settle_already_settled`; PLANNED 422 `settle_status_invalid`); custo ausente ≠ zero (`dispatchedTotalCost=null`/`available=false` sem movimentação).
+
+**Matriz de baseline (resumo — tabela completa em `docs/EXECUTION-CHECKPOINT.md`, incluindo a nova matriz das Etapas 1–4 com 18 linhas aprovadas por E2E real)**: fixtures reais (Santa Clara `santa-clara`, Vale Verde `cooperativa-vale-verde`, Bloqueada `fazenda-bloqueada-teste`; duas fazendas `geo_farms` SC-SEDE-001/SC-RETIRO-001; perfis A–E, sendo C/D sem seed e criados sob demanda pelo B). Aprovados em nível de código/teste executado: fonte única (1), writer de bloqueio (4), provisionamento/origem (5), downgrade (6), delegação (7), locks ×3 (8), revalidação (9), limite (10), estados completos/migration (15), catálogo/snapshot (17), gates (21). **Falhados** por ausência real: transferência explícita do último admin (11) e vínculo usuário↔unidade (12). **Bloqueado**: escopo entre as duas fazendas (13, depende de 12). Nenhum mock substituiu execução real.
+
+### Próximo ciclo — ordem obrigatória
+1. **Remanescentes de homologação pendentes** (gate PG disponível): corrida concorrente pela última vaga (exatamente uma disputa consome; restante dos itens 8/10); login em tenant `SUSPENDED`/`BLOCKED` (restante do item 18); fixture TRIAL com janela passado/futuro (item 3) e módulos pendente/trial-expirado (restante do item 2); RLS com papel restrito (`set role agro360_app`) exercido sob HTTP nos fluxos novos de returns/liquidação. Registrar falhou/bloqueado/não executado com evidência real.
+2. **Fundação mínima do vínculo usuário↔unidade** (item falho 12) usando as duas fazendas do Santa Clara, desbloqueando o item 13 (escopo entre fazendas do mesmo tenant).
+3. **Navegador dos consoles e novas telas**: temas, 360/768/1440, zoom 200%, teclado — inclusive telas de returns e liquidação exercitadas por HTTP nesta rodada.
+4. **CI do GitHub nesta árvore** (a última execução conhecida falhou em Format no baseline; gates locais estão verdes).
+5. Manter invariantes nas próximas evoluções: programação≠reserva≠saída física; expedição≠prova de entrega; tentativa frustrada≠entrega; entrega≠liquidação; custo ausente≠zero; sem simular NF/crédito/pagamento.
+
+---
+
+## Estado anterior (AG-PROD-INT-001)
 
 HEAD de referência: `35aaf6040664e7ed42e1b5cb0d63c60883478cef`.
 As alterações foram compiladas com .NET 10 Release (0 erros, 0 avisos) e validadas integralmente em banco PostgreSQL 18 isolado via suítes automatizadas de integração e concorrência real.

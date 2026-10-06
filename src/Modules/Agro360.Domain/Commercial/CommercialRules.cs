@@ -6,8 +6,10 @@ public static class CommercialRules
 {
     private static readonly Dictionary<string, string[]> ProposalTransitions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["DRAFT"] = ["SUBMITTED", "CANCELLED"], ["SUBMITTED"] = ["APPROVED", "REJECTED", "CANCELLED"],
-        ["APPROVED"] = ["ACCEPTED", "CANCELLED"], ["REJECTED"] = ["DRAFT", "CANCELLED"]
+        ["DRAFT"] = ["SUBMITTED", "CANCELLED"],
+        ["SUBMITTED"] = ["APPROVED", "REJECTED", "CANCELLED"],
+        ["APPROVED"] = ["ACCEPTED", "CANCELLED"],
+        ["REJECTED"] = ["DRAFT", "CANCELLED"]
     };
 
     public static void ValidateProposalTransition(string current, string next, string? reason)
@@ -367,6 +369,17 @@ public static class CommercialRules
             var additional = AdditionalScheduleQuantity(scheduleCapacity, currentItemQuantity);
             throw new DomainException($"A nova quantidade {newQuantity} excede a capacidade desta programação ({scheduleCapacity}). O incremento adicional permitido é {additional}.", "sales.reschedule_balance_exceeded");
         }
+    }
+
+    // Entrega != liquidação: só um compromisso com entrega registrada pode ser liquidado,
+    // e a liquidação é administrativa (não altera o status operacional).
+    public static void EnsureCanSettleSchedule(string status, DateTimeOffset? settledAt)
+    {
+        var normalized = status.Trim().ToUpperInvariant();
+        if (normalized is not ("DELIVERED" or "PARTIALLY_DELIVERED"))
+            throw new DomainException($"Compromisso com status '{normalized}' ainda não pode ser liquidado.", "sales.settle_status_invalid");
+        if (settledAt is not null)
+            throw new DomainException("O compromisso de entrega já foi liquidado.", "sales.settle_already_settled");
     }
 }
 

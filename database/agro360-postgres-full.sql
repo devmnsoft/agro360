@@ -1585,7 +1585,7 @@ commit;
 create table if not exists agro360.saas_plans(id uuid primary key default gen_random_uuid(),name varchar(100) not null unique,description varchar(500) not null,monthly_price numeric(14,2) not null check(monthly_price>=0),annual_price numeric(14,2) not null check(annual_price>=0),user_limit int not null check(user_limit>0),property_limit int not null check(property_limit>0),storage_limit_mb bigint not null check(storage_limit_mb>0),device_limit int not null check(device_limit>0),modules varchar[] not null,premium_features varchar[] not null default '{}',active boolean not null default true,created_at timestamptz not null default now(),updated_at timestamptz);
 insert into agro360.saas_plans(name,description,monthly_price,annual_price,user_limit,property_limit,storage_limit_mb,device_limit,modules,premium_features) values
 ('Essencial','Gestão essencial para o produtor',199,1990,5,2,5120,3,array['properties','agriculture','inventory'],array[]::varchar[]),('Profissional','Operação rural integrada',499,4990,20,10,51200,15,array['properties','agriculture','livestock','inventory','finance','reports'],array['offline']),('Cooperativa','Gestão de cooperados e logística',1290,12900,100,100,204800,80,array['properties','agriculture','inventory','finance','logistics','traceability','reports'],array['offline','bi']),('Agroindústria','Originação, indústria e rastreabilidade',1890,18900,150,50,512000,120,array['properties','inventory','finance','logistics','traceability','reports'],array['offline','bi','ledger']),('Enterprise','Limites e módulos ampliados',0,0,1000,1000,2097152,1000,array['properties','agriculture','livestock','inventory','finance','logistics','traceability','reports','intelligence'],array['offline','bi','ledger','support']) on conflict(name) do nothing;
-create table if not exists agro360.saas_organizations(tenant_id uuid primary key references agro360.tenancy_tenants(id),organization_type varchar(30) not null check(organization_type in('PRODUCER','COOPERATIVE','AGRIBUSINESS','CONSULTANCY','DISTRIBUTOR','CARRIER','OTHER')),document varchar(14) not null unique,responsible_name varchar(160) not null,responsible_email varchar(254) not null,plan_id uuid not null references agro360.saas_plans(id),status varchar(20) not null default 'IMPLEMENTING' check(status in('IMPLEMENTING','ACTIVE','SUSPENDED','BLOCKED','CANCELLED')),activated_at timestamptz,blocked_at timestamptz,block_reason varchar(500),onboarding_status varchar(30) not null default 'ORGANIZATION',created_at timestamptz not null default now(),updated_at timestamptz,check(status<>'BLOCKED' or (blocked_at is not null and length(trim(block_reason))>0)));
+create table if not exists agro360.saas_organizations(tenant_id uuid primary key references agro360.tenancy_tenants(id),organization_type varchar(30) not null check(organization_type in('PRODUCER','COOPERATIVE','AGRIBUSINESS','CONSULTANCY','DISTRIBUTOR','CARRIER','OTHER')),document varchar(14) not null unique,responsible_name varchar(160) not null,responsible_email varchar(254) not null,plan_id uuid not null references agro360.saas_plans(id),status varchar(20) not null default 'IMPLEMENTING' check(status in('REGISTERING','IMPLEMENTING','TRIAL','ACTIVE','SUSPENDED','BLOCKED','DELINQUENT','INACTIVE','CANCELLED','CLOSED')),activated_at timestamptz,blocked_at timestamptz,block_reason varchar(500),onboarding_status varchar(30) not null default 'ORGANIZATION',created_at timestamptz not null default now(),updated_at timestamptz,check(status<>'BLOCKED' or (blocked_at is not null and length(trim(block_reason))>0)));
 create table if not exists agro360.saas_usage_metrics(tenant_id uuid primary key references agro360.tenancy_tenants(id),storage_used_mb bigint not null default 0,tracked_lots bigint not null default 0,certificates bigint not null default 0,offline_records bigint not null default 0,ledger_events bigint not null default 0,exported_reports bigint not null default 0,measured_at timestamptz not null default now());
 create table if not exists agro360.saas_role_metadata(tenant_id uuid not null,role_id uuid not null,level int not null check(level between 1 and 100),primary key(tenant_id,role_id),foreign key(tenant_id,role_id) references agro360.identity_roles(tenant_id,id));
 create table if not exists agro360.saas_invitations(id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),email varchar(254) not null,role_id uuid not null,token_hash char(64) not null unique,status varchar(20) not null default 'PENDING' check(status in('PENDING','ACCEPTED','CANCELLED')),expires_at timestamptz not null,invited_by uuid not null,delivery_status varchar(30) not null default 'PENDING_PROVIDER',accepted_at timestamptz,accepted_by_user_id uuid,created_at timestamptz not null default now(),foreign key(tenant_id,role_id) references agro360.identity_roles(tenant_id,id));
@@ -2082,7 +2082,7 @@ alter table agro360.saas_plans add column if not exists deleted_at timestamptz;
 
 create table if not exists agro360.saas_tenant_status_events(
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id), previous_status varchar(20) not null,
- new_status varchar(20) not null check(new_status in('IMPLEMENTING','TRIAL','ACTIVE','SUSPENDED','BLOCKED','INACTIVE','CANCELLED')),
+ new_status varchar(20) not null check(new_status in('REGISTERING','IMPLEMENTING','TRIAL','ACTIVE','SUSPENDED','BLOCKED','DELINQUENT','INACTIVE','CANCELLED','CLOSED')),
  reason varchar(1000) not null check(length(trim(reason))>=5), created_at timestamptz not null default now(), created_by uuid not null);
 create index if not exists ix_saas_tenant_status_events on agro360.saas_tenant_status_events(tenant_id,created_at desc);
 
@@ -2765,7 +2765,7 @@ create table if not exists agro360.platform_tenants (
  customer_type varchar(40) not null, primary_segment varchar(80) not null, country char(2) not null default 'BR', state varchar(80), city varchar(120),
  primary_email varchar(254) not null, phone varchar(30), legal_contact varchar(160) not null, operational_contact varchar(160), plan_id uuid references agro360.platform_saas_plans(id),
  default_language varchar(10) not null default 'pt-BR' references agro360.platform_languages(culture), default_currency char(3) not null default 'BRL', time_zone varchar(80) not null default 'America/Sao_Paulo',
- status varchar(20) not null check(status in ('REGISTERING','ACTIVE','IMPLEMENTING','SUSPENDED','BLOCKED','DELINQUENT','CANCELLED','CLOSED')),
+ status varchar(20) not null check(status in ('REGISTERING','IMPLEMENTING','TRIAL','ACTIVE','SUSPENDED','BLOCKED','DELINQUENT','INACTIVE','CANCELLED','CLOSED')),
  block_reason text, read_only_when_blocked boolean not null default true, notes text, created_at timestamptz not null default now(), updated_at timestamptz,
  created_by uuid, updated_by uuid, deleted_at timestamptz, check(status not in ('BLOCKED','SUSPENDED') or length(trim(block_reason))>=5)
 );
@@ -2790,7 +2790,7 @@ create unique index if not exists ux_platform_user_primary_profile on agro360.pl
 
 create table if not exists agro360.platform_module_catalog (id uuid primary key default gen_random_uuid(), code varchar(60) not null unique, name varchar(120) not null, description text not null, active boolean not null default true, created_at timestamptz not null default now(), updated_at timestamptz, created_by uuid, updated_by uuid);
 create table if not exists agro360.platform_module_dependencies (module_id uuid not null references agro360.platform_module_catalog(id), depends_on_id uuid not null references agro360.platform_module_catalog(id), primary key(module_id,depends_on_id), check(module_id<>depends_on_id));
-create table if not exists agro360.platform_tenant_module_entitlements (tenant_id uuid not null references agro360.platform_tenants(id), module_id uuid not null references agro360.platform_module_catalog(id), status varchar(20) not null check(status in ('CONTRACTED','ACTIVE','BLOCKED','TRIAL','DELINQUENT','SUSPENDED')), reason text, activated_at timestamptz, created_at timestamptz not null default now(), updated_at timestamptz, created_by uuid, updated_by uuid, primary key(tenant_id,module_id));
+create table if not exists agro360.platform_tenant_module_entitlements (tenant_id uuid not null references agro360.platform_tenants(id), module_id uuid not null references agro360.platform_module_catalog(id), status varchar(20) not null check(status in ('CONTRACTED','ACTIVE','BLOCKED','TRIAL','DELINQUENT','SUSPENDED','INACTIVE')), origin varchar(20) check(origin is null or origin in('PLAN','MARKETPLACE','MANUAL')), valid_until timestamptz, reason text, activated_at timestamptz, created_at timestamptz not null default now(), updated_at timestamptz, created_by uuid, updated_by uuid, primary key(tenant_id,module_id));
 create index if not exists ix_platform_tenant_module_entitlements_status on agro360.platform_tenant_module_entitlements(tenant_id,status);
 
 create table if not exists agro360.platform_billing_charges (
@@ -8738,5 +8738,198 @@ insert into agro360.platform_schema_versions(version, description, installed_at)
 values('11.13.0', 'Fonte canônica de RH, integridade de vínculos e correção comercial da 122 (AG-HR-OP-002)', now())
 on conflict (version) do update set description = excluded.description;
 
+commit;
+
+-- Migration 124 embedded for clean install
+begin;
+
+-- Migration 124: concorrência operacional de RH, decisão das revisões e fuso civil.
+-- Schema 11.14.0. Não altera checksum de migration aplicada.
+-- A suspeita de documento não prova falsidade e não substitui o cadastro.
+-- A composição atual de um plano não prova, sozinha, concessão indevida.
+set local search_path to agro360, public;
+
+alter table agro360.rural_hr_time_entries
+  add column if not exists plan_overrun boolean not null default false;
+comment on column agro360.rural_hr_time_entries.plan_overrun is
+  'Verdadeiro quando a saída passa do fim planejado ou quando a correção encontra início legado fora do plano. A alocação e os fatos executados não são reescritos.';
+
+alter table agro360.rural_hr_tariffs
+  add column if not exists close_reason varchar(1000),
+  add column if not exists closed_by uuid,
+  add column if not exists closed_at timestamptz;
+comment on column agro360.rural_hr_tariffs.close_reason is
+  'Encerramento de vigência. O valor já gravado na jornada permanece; a tarifa deixa de valer após valid_to.';
+
+alter table agro360.rural_hr_data_reviews
+  add column if not exists resolution_reason varchar(1000),
+  add column if not exists resolved_by uuid,
+  add column if not exists resolved_at timestamptz,
+  add column if not exists before_state jsonb,
+  add column if not exists after_state jsonb;
+
+alter table agro360.saas_plan_module_reviews
+  add column if not exists resolution_reason varchar(1000),
+  add column if not exists resolved_by uuid,
+  add column if not exists resolved_at timestamptz,
+  add column if not exists before_modules varchar[],
+  add column if not exists after_modules varchar[];
+
+do $$
+declare constraint_name text;
+begin
+  for constraint_name in
+    select c.conname
+    from pg_constraint c
+    where c.conrelid = 'agro360.rural_hr_data_reviews'::regclass
+      and c.contype = 'c'
+      and pg_get_constraintdef(c.oid) ilike '%resolution%'
+  loop
+    execute format('alter table agro360.rural_hr_data_reviews drop constraint %I', constraint_name);
+  end loop;
+  for constraint_name in
+    select c.conname
+    from pg_constraint c
+    where c.conrelid = 'agro360.saas_plan_module_reviews'::regclass
+      and c.contype = 'c'
+      and pg_get_constraintdef(c.oid) ilike '%resolution%'
+  loop
+    execute format('alter table agro360.saas_plan_module_reviews drop constraint %I', constraint_name);
+  end loop;
+end $$;
+
+alter table agro360.rural_hr_data_reviews
+  add constraint ck_rural_hr_data_review_decision check (
+    resolution in ('OPEN', 'CONFIRMED_REAL', 'CORRECTED')
+    and (
+      resolution = 'OPEN'
+      or (length(trim(resolution_reason)) >= 5 and resolved_by is not null and resolved_at is not null and before_state is not null and after_state is not null)
+    )
+  );
+alter table agro360.saas_plan_module_reviews
+  add constraint ck_saas_plan_module_review_decision check (
+    resolution in ('OPEN', 'KEEP', 'REMOVE')
+    and (
+      resolution = 'OPEN'
+      or (length(trim(resolution_reason)) >= 5 and resolved_by is not null and resolved_at is not null and before_modules is not null and after_modules is not null)
+    )
+  );
+
+comment on table agro360.rural_hr_data_reviews is
+  'Fila de revisão de dados legados. SUSPECTED_SYNTHETIC_DOCUMENT é uma suspeita, não prova de documento falso. A decisão autorizada registra motivo, ator e o estado antes/depois, sem substituir nem apagar a origem.';
+comment on table agro360.saas_plan_module_reviews is
+  'Revisão comercial do acréscimo da migration 122. A composição atual não prova concessão indevida. KEEP preserva os módulos. REMOVE retira somente rural-hr ou verticals, por decisão explícita.';
+
+create or replace function agro360.validate_pending_constraints()
+returns table(constraint_name text, outcome text)
+language plpgsql
+security definer
+set search_path = agro360, pg_temp
+as $$
+declare
+  item record;
+begin
+  for item in
+    select c.conname, c.conrelid::regclass as relation_name
+    from pg_constraint c
+    join pg_namespace n on n.oid = c.connamespace
+    where n.nspname = 'agro360' and not c.convalidated
+    order by c.conname
+  loop
+    begin
+      execute format('alter table %s validate constraint %I', item.relation_name, item.conname);
+      constraint_name := item.conname;
+      outcome := 'VALIDATED';
+      return next;
+    exception when others then
+      constraint_name := item.conname;
+      outcome := sqlstate || ' ' || sqlerrm;
+      return next;
+    end;
+  end loop;
+end $$;
+
+comment on function agro360.validate_pending_constraints() is
+  'Valida constraints NOT VALID sem alterar linhas. Falha de uma constraint permanece registrada no retorno e não apaga o dado.';
+
+revoke all on function agro360.validate_pending_constraints() from public;
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'agro360_app') then
+    grant update on table agro360.saas_plan_module_reviews to agro360_app;
+    grant execute on function agro360.validate_pending_constraints() to agro360_app;
+  end if;
+end $$;
+
+-- Tabelas com tenant_id criadas nas sprints comercial/fiscal sem a política canônica.
+-- A aplicação já filtra tenant_id; sem RLS o papel agro360_app ainda lia a linha de outro cliente.
+select agro360.platform_enable_tenant_rls('agro360.fiscal_profiles');
+select agro360.platform_enable_tenant_rls('agro360.fiscal_provider_configs');
+select agro360.platform_enable_tenant_rls('agro360.fiscal_provider_attempts');
+select agro360.platform_enable_tenant_rls('agro360.fiscal_correction_letters');
+select agro360.platform_enable_tenant_rls('agro360.commercial_deliveries');
+select agro360.platform_enable_tenant_rls('agro360.commercial_billing_forecasts');
+select agro360.platform_enable_tenant_rls('agro360.commercial_events');
+
+insert into agro360.platform_schema_versions(version, description, installed_at)
+values('11.14.0', 'Integridade operacional de RH: sobreposição, revisão autorizada e fuso civil (AG-HR-OP-003)', now())
+on conflict (version) do update set description = excluded.description;
+
+commit;
+
+-- Migration 125 espelho (governança SaaS): estados completos, origem/vigência dos direitos e catálogo.
+begin;
+alter table agro360.saas_organizations drop constraint if exists saas_organizations_status_check;
+alter table agro360.saas_organizations add constraint saas_organizations_status_check check(status in('REGISTERING','IMPLEMENTING','TRIAL','ACTIVE','SUSPENDED','BLOCKED','DELINQUENT','INACTIVE','CANCELLED','CLOSED'));
+alter table agro360.saas_tenant_status_events drop constraint if exists saas_tenant_status_events_new_status_check;
+alter table agro360.saas_tenant_status_events add constraint saas_tenant_status_events_new_status_check check(new_status in('REGISTERING','IMPLEMENTING','TRIAL','ACTIVE','SUSPENDED','BLOCKED','DELINQUENT','INACTIVE','CANCELLED','CLOSED'));
+alter table agro360.platform_tenants drop constraint if exists platform_tenants_status_check;
+alter table agro360.platform_tenants add constraint platform_tenants_status_check check(status in ('REGISTERING','IMPLEMENTING','TRIAL','ACTIVE','SUSPENDED','BLOCKED','DELINQUENT','INACTIVE','CANCELLED','CLOSED'));
+alter table agro360.platform_tenant_module_entitlements add column if not exists origin varchar(20);
+alter table agro360.platform_tenant_module_entitlements add column if not exists valid_until timestamptz;
+alter table agro360.platform_tenant_module_entitlements drop constraint if exists platform_tenant_module_entitlements_status_check;
+alter table agro360.platform_tenant_module_entitlements add constraint platform_tenant_module_entitlements_status_check check(status in ('CONTRACTED','ACTIVE','BLOCKED','TRIAL','DELINQUENT','SUSPENDED','INACTIVE'));
+alter table agro360.platform_tenant_module_entitlements drop constraint if exists ck_platform_tenant_module_entitlement_origin;
+alter table agro360.platform_tenant_module_entitlements add constraint ck_platform_tenant_module_entitlement_origin check(origin is null or origin in('PLAN','MARKETPLACE','MANUAL'));
+create index if not exists ix_platform_tenant_module_entitlements_valid_until on agro360.platform_tenant_module_entitlements(tenant_id,valid_until) where valid_until is not null;
+insert into agro360.platform_module_catalog(code,name,description,active) values
+ ('livestock','Pecuária','Animais, rebanho e sanidade.',true),
+ ('reports','Relatórios','Relatórios operacionais consolidados.',true),
+ ('intelligence','Inteligência','Análise preditiva e recomendações.',true)
+ on conflict(code) do update set active=true,updated_at=now();
+update agro360.platform_tenant_module_entitlements set origin='PLAN' where origin is null;
+insert into agro360.platform_tenant_module_entitlements(tenant_id,module_id,status,reason,activated_at,origin)
+ select distinct o.tenant_id,m.id,'ACTIVE','Snapshot retroativo do plano vigente',now(),'PLAN'
+ from agro360.saas_organizations o
+ join agro360.saas_plans p on p.id=o.plan_id
+ cross join lateral unnest(p.modules) as planned(code)
+ join agro360.platform_module_catalog m on lower(m.code)=lower(planned.code)
+ where o.status='ACTIVE'
+ on conflict(tenant_id,module_id) do nothing;
+insert into agro360.platform_schema_versions(version, description, installed_at)
+ values('11.15.0', 'Governança SaaS: estados completos, origem e vigência dos direitos, catálogo completo', now())
+ on conflict (version) do update set description = excluded.description;
+commit;
+
+-- Migration 126 espelho (evolução integrada): liquidação administrativa do compromisso de entrega (entrega != liquidação).
+begin;
+alter table agro360.sales_delivery_schedules add column if not exists settled_at timestamptz;
+alter table agro360.sales_delivery_schedules add column if not exists settled_by uuid;
+alter table agro360.sales_delivery_schedules add column if not exists settlement_reason text;
+comment on column agro360.sales_delivery_schedules.settled_at is 'Instante da liquidação administrativa; nulo indica não liquidado.';
+comment on column agro360.sales_delivery_schedules.settled_by is 'Usuário que executou a liquidação.';
+comment on column agro360.sales_delivery_schedules.settlement_reason is 'Motivo registrado na liquidação.';
+alter table agro360.sales_delivery_schedules drop constraint if exists sales_delivery_schedules_settled_by_fk;
+alter table agro360.sales_delivery_schedules add constraint sales_delivery_schedules_settled_by_fk foreign key (tenant_id, settled_by) references agro360.identity_users(tenant_id, id);
+alter table agro360.sales_delivery_schedules drop constraint if exists ck_sales_delivery_schedules_settled_pair;
+alter table agro360.sales_delivery_schedules add constraint ck_sales_delivery_schedules_settled_pair check ((settled_at is null) = (settled_by is null));
+alter table agro360.sales_delivery_schedule_operations drop constraint if exists sales_delivery_schedule_operations_operation_check;
+alter table agro360.sales_delivery_schedule_operations drop constraint if exists ck_sales_delivery_schedule_operations_operation;
+alter table agro360.sales_delivery_schedule_operations add constraint ck_sales_delivery_schedule_operations_operation check (operation in ('RESCHEDULE', 'CANCEL', 'SETTLE'));
+create index if not exists ix_sales_delivery_schedules_settled on agro360.sales_delivery_schedules(tenant_id, planned_date) where settled_at is not null;
+insert into agro360.platform_schema_versions(version, description, installed_at)
+ values('11.16.0', 'Liquidação de compromissos de entrega: passo administrativo sem simulação financeira', now())
+ on conflict (version) do update set description = excluded.description;
 commit;
 

@@ -30,10 +30,12 @@ public sealed class LoginExperienceTests
     public void TenantTokensRespectContractedModulesAndCanonicalPermissionCodes()
     {
         var service = Read("src/Modules/Agro360.Infrastructure/Services/IdentityService.cs");
+        var grants = Read("src/Modules/Agro360.Infrastructure/Security/EntitlementQueries.cs");
         var sql = Read("database/agro360-postgres-full.sql");
 
-        Assert.Contains("platform_tenant_module_entitlements", service);
-        Assert.Contains("platform_tenant_modules", service);
+        Assert.Contains("EntitlementQueries.ModuleCodeSelect", service);
+        Assert.Contains("platform_tenant_module_entitlements", grants);
+        Assert.Contains("platform_tenant_modules", grants);
         Assert.Contains("IsPermissionContracted", service);
         Assert.Contains("SUPER_ADMIN", service);
         Assert.Contains("'inventory.read'", sql);

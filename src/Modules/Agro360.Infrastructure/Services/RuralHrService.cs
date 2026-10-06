@@ -81,57 +81,37 @@ public sealed partial class RuralHrService(DatabaseExecutor db, ITenantContext t
 
     private async Task EndTimeInternalAsync(System.Data.Common.DbConnection c, System.Data.Common.DbTransaction t, Guid id, DateTimeOffset endedAt, string? justification, CancellationToken ct)
     {
-        var record = await c.QuerySingleOrDefaultAsync<(string Kind, string Status, DateTimeOffset? StartedAt, int BreakMinutes)>(new CommandDefinition(
-            "select kind as Kind, status as Status, coalesce(started_at, starts_at) as StartedAt, break_minutes as BreakMinutes from agro360.rural_hr_records where tenant_id=@TenantId and id=@Id for update",
-            new { tenant.TenantId, Id = id }, transaction: t, cancellationToken: ct)).ConfigureAwait(false);
-
-        if (record != default && !string.IsNullOrWhiteSpace(record.Kind))
+        var entry = await LockEntryAsync(c, t, id, ct).ConfigureAwait(false);
+        if (string.Equals(entry.Status, "CANCELLED", StringComparison.OrdinalIgnoreCase))
+            throw new ConflictException("Jornada cancelada não é encerrada por este comando.");
+        if (string.Equals(entry.Status, "CLOSED", StringComparison.OrdinalIgnoreCase))
+            throw new ConflictException("Esta jornada já foi encerrada.");
+        decimal hours;
+        try
         {
-            if (string.Equals(record.Status, "CLOSED", StringComparison.OrdinalIgnoreCase))
-                throw new ConflictException("Esta jornada já foi encerrada.");
-
-            var st = record.StartedAt ?? endedAt.AddHours(-1);
-            RuralHrRules.WorkedHours(st, endedAt, record.BreakMinutes);
-
-            var noteSuffix = string.IsNullOrWhiteSpace(justification) ? "" : $" [Encerramento: {justification.Trim()}]";
-            var updated = await c.ExecuteAsync(new CommandDefinition(
-                """
-                update agro360.rural_hr_records
-                   set status = 'CLOSED', ended_at = @EndedAt, ends_at = @EndedAt,
-                       notes = coalesce(notes, '') || @NoteSuffix,
-                       updated_by = @UserId, updated_at = now()
-                 where tenant_id = @TenantId and id = @Id and status != 'CLOSED'
-                """,
-                new { tenant.TenantId, Id = id, EndedAt = endedAt, NoteSuffix = noteSuffix, tenant.UserId }, transaction: t, cancellationToken: ct)).ConfigureAwait(false);
-
-            await c.ExecuteAsync(new CommandDefinition(
-                """
-                update agro360.rural_hr_time_entries
-                   set status = 'CLOSED', ended_at = @EndedAt, updated_at = now()
-                 where tenant_id = @TenantId and id = @Id and status != 'CLOSED'
-                """,
-                new { tenant.TenantId, Id = id, EndedAt = endedAt }, transaction: t, cancellationToken: ct)).ConfigureAwait(false);
-
-            if (updated == 0) throw new ConflictException("Concorrência ao encerrar jornada.");
-            await UpsertJourneyProjectionAsync(c, t, id, ct).ConfigureAwait(false);
-            await SnapshotLaborAsync(c, t, id, ct).ConfigureAwait(false);
-            return;
+            hours = RuralHrRules.WorkedHours(entry.StartedAt, endedAt, entry.BreakMinutes);
         }
-
-        var entry = await c.QuerySingleOrDefaultAsync<(DateTimeOffset StartedAt, int BreakMinutes, string Status)>(new CommandDefinition(
-            "select started_at as StartedAt, break_minutes as BreakMinutes, status as Status from agro360.rural_hr_time_entries where tenant_id=@TenantId and id=@Id for update",
-            new { tenant.TenantId, Id = id }, transaction: t, cancellationToken: ct)).ConfigureAwait(false);
-
-        if (entry == default) throw new KeyNotFoundException("Jornada aberta não encontrada.");
-        if (entry.Status == "CLOSED") throw new ConflictException("Esta jornada já foi encerrada.");
-
-        RuralHrRules.WorkedHours(entry.StartedAt, endedAt, entry.BreakMinutes);
-
-        var updatedEntry = await c.ExecuteAsync(new CommandDefinition(
-            "update agro360.rural_hr_time_entries set ended_at=@EndedAt,status='CLOSED',updated_at=now() where tenant_id=@TenantId and id=@Id and status!='CLOSED'",
-            new { tenant.TenantId, Id = id, EndedAt = endedAt }, transaction: t, cancellationToken: ct)).ConfigureAwait(false);
-
-        if (updatedEntry == 0) throw new ConflictException("Concorrência ao encerrar jornada.");
+        catch (ArgumentException ex)
+        {
+            throw new DomainException(ex.Message, "rural_hr.journey_invalid");
+        }
+        await EnsureJourneyIntervalAsync(c, t, entry.PersonId, entry.StartedAt, endedAt, id, ct).ConfigureAwait(false);
+        var overrun = await PlanOverrunForEntryAsync(c, t, id, entry.StartedAt, endedAt, ct).ConfigureAwait(false);
+        var noteSuffix = string.IsNullOrWhiteSpace(justification) ? "" : $" [Encerramento: {justification.Trim()}]";
+        var updated = await c.ExecuteAsync(new CommandDefinition(
+            """
+            update agro360.rural_hr_time_entries
+               set status='CLOSED', ended_at=@EndedAt, hours_worked=@Hours, plan_overrun=@Overrun, updated_at=now()
+             where tenant_id=@TenantId and id=@Id and status='OPEN'
+            """,
+            new { tenant.TenantId, Id = id, EndedAt = endedAt, Hours = hours, Overrun = overrun }, transaction: t, cancellationToken: ct)).ConfigureAwait(false);
+        if (updated == 0) throw new ConflictException("Concorrência ao encerrar jornada.");
+        if (noteSuffix.Length > 0)
+        {
+            await c.ExecuteAsync(new CommandDefinition(
+                "update agro360.rural_hr_records set notes=coalesce(notes, '') || @Note where tenant_id=@TenantId and id=@Id and kind='TIME_ENTRY'",
+                new { tenant.TenantId, Id = id, Note = noteSuffix }, transaction: t, cancellationToken: ct)).ConfigureAwait(false);
+        }
         await UpsertJourneyProjectionAsync(c, t, id, ct).ConfigureAwait(false);
         await SnapshotLaborAsync(c, t, id, ct).ConfigureAwait(false);
     }

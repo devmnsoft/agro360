@@ -31,7 +31,7 @@ public sealed class Sprint37ProcurementTests
         Assert.Contains("usable=available-reserved", service);
         Assert.Contains("not exists(select 1 from agro360.procurement_purchase_orders", service);
         Assert.Contains("pg_advisory_xact_lock", service);
-        Assert.Contains("suggestedStock==0?0", service);
+        Assert.Contains("suggestedStock == 0 ? 0", service);
         Assert.Contains("ux_replenishment_policy_active", migration);
         Assert.Contains("ux_material_need_confirmation", migration);
     }

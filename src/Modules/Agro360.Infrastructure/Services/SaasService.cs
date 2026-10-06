@@ -40,8 +40,8 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
             insert into agro360.saas_subscriptions(tenant_id,plan_id,status,cycle,starts_on,contracted_value,discount,auto_renew,created_by) values(@Id,@PlanId,'ACTIVE','MONTHLY',current_date,@MonthlyPrice,0,false,@Actor);
             insert into agro360.platform_tenants(id,legal_name,trade_name,normalized_document,customer_type,primary_segment,primary_email,legal_contact,plan_id,status) values(@Id,@Name,@Name,@Document,@Type,@Type,@ResponsibleEmail,@ResponsibleName,@PlanId,'IMPLEMENTING');
             insert into agro360.platform_tenant_settings(tenant_id,language,currency,time_zone,preferences) values(@Id,'pt-BR','BRL','America/Sao_Paulo','{"sourceOfTruth":"saas_organizations"}');
-            insert into agro360.platform_tenant_module_entitlements(tenant_id,module_id,status,reason,activated_at)
-                select @Id, m.id, 'ACTIVE', 'Provisionamento de organização', now()
+            insert into agro360.platform_tenant_module_entitlements(tenant_id,module_id,status,reason,activated_at,created_by,origin)
+                select @Id, m.id, 'ACTIVE', 'Provisionamento de organização', now(), @Actor, 'PLAN'
                 from agro360.platform_module_catalog m where lower(m.code) = any(@ContractedModules)
                 on conflict(tenant_id,module_id) do nothing;
             insert into agro360.identity_roles(id,tenant_id,code,name,is_system) values(@RoleId,@Id,'tenant-administrator','Administrador do Cliente',true);
@@ -114,11 +114,136 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
         var planModules = plan.Modules.Select(m => m.Trim().ToLowerInvariant()).ToArray();
         await c.ExecuteAsync(
             """
-            insert into agro360.platform_tenant_module_entitlements(tenant_id, module_id, status, reason, activated_at)
-            select @Id, m.id, 'ACTIVE', 'Atualização de plano', now()
+            insert into agro360.platform_tenant_module_entitlements(tenant_id, module_id, status, reason, activated_at, created_by, updated_by, origin)
+            select @Id, m.id, 'ACTIVE', 'Atualização de plano', now(), @Actor, @Actor, 'PLAN'
             from agro360.platform_module_catalog m where lower(m.code) = any(@PlanModules)
-            on conflict(tenant_id, module_id) do update set status = 'ACTIVE', reason = 'Atualização de plano', updated_at = now();
-            """, new { Id = id, PlanModules = planModules }, t);
+            on conflict(tenant_id, module_id) do update set status = 'ACTIVE', reason = 'Atualização de plano', updated_at = now(), updated_by = @Actor, origin = 'PLAN';
+            update agro360.platform_tenant_module_entitlements e
+            set status = 'INACTIVE', reason = 'Removido pelo ajuste de plano', updated_at = now(), updated_by = @Actor
+            from agro360.platform_module_catalog c
+            where e.module_id = c.id and e.tenant_id = @Id and e.origin = 'PLAN' and lower(c.code) <> all(@PlanModules);
+            """, new { Id = id, PlanModules = planModules, Actor = actorId }, t);
+    }, ct);
+    public Task SetTenantModuleStatusAsync(Guid id, string moduleCode, string status, string reason, Guid actorId, CancellationToken ct) => System("module-status", async (c, t) =>
+    {
+        var normalizedStatus = (status?.Trim() ?? "").ToUpperInvariant();
+        if (normalizedStatus is not ("ACTIVE" or "BLOCKED" or "INACTIVE"))
+            throw new ArgumentException("Status inválido; use ACTIVE, BLOCKED ou INACTIVE.");
+        var normalizedReason = reason?.Trim();
+        if (normalizedReason is null || normalizedReason.Length < 5)
+            throw new ArgumentException("Justificativa com ao menos cinco caracteres é obrigatória.");
+        var target = await c.QuerySingleOrDefaultAsync<TenantModuleLookup>(
+            """
+            select e.module_id ModuleId, e.status CurrentStatus, c.code Code
+            from agro360.platform_tenant_module_entitlements e
+            join agro360.platform_module_catalog c on c.id = e.module_id
+            where e.tenant_id = @TenantId and lower(c.code) = lower(@ModuleCode)
+            for update
+            """, new { TenantId = id, ModuleCode = moduleCode?.Trim() }, t);
+        if (target is null)
+            throw new KeyNotFoundException("Módulo não contratado para esta organização.");
+        if (!string.Equals(target.CurrentStatus, normalizedStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            await c.ExecuteAsync(
+                """
+                update agro360.platform_tenant_module_entitlements
+                set status = @Status, reason = @Reason, updated_at = now(), updated_by = @Actor
+                where tenant_id = @TenantId and module_id = @ModuleId;
+                insert into agro360.saas_admin_audit_events(tenant_id, actor_id, action, entity_type, entity_id, reason, safe_details)
+                values (@TenantId, @Actor, 'TENANT_MODULE_STATUS', 'MODULE', @ModuleId, @Reason, jsonb_build_object('moduleCode', @ModuleCode, 'from', @Current, 'to', @Status));
+                """, new { ModuleId = target.ModuleId, Status = normalizedStatus.ToUpperInvariant(), Reason = normalizedReason, Actor = actorId, TenantId = id, ModuleCode = target.Code, Current = target.CurrentStatus }, t);
+        }
+    }, ct);
+    private const string TenantModulesStatusSql = """
+        select c.code Code, c.name Name,
+               coalesce(e.status, 'NOT_CONTRACTED') Status,
+               e.reason Reason, e.origin Origin, e.valid_until ValidUntil, e.updated_at UpdatedAt,
+               (coalesce(e.status, 'NOT_CONTRACTED') in ('CONTRACTED','ACTIVE','TRIAL') and (e.valid_until is null or e.valid_until > now())
+                or exists(
+                    select 1 from agro360.platform_tenant_modules tm
+                    join agro360.platform_marketplace_modules m on m.id = tm.module_id
+                    where tm.tenant_id = @TenantId and lower(m.code) = lower(c.code) and tm.status = 'ACTIVE'
+                      and (tm.trial_ends_at is null or tm.trial_ends_at > now())))::bool Effective
+        from agro360.platform_module_catalog c
+        left join agro360.platform_tenant_module_entitlements e on e.tenant_id = @TenantId and e.module_id = c.id
+        order by c.name
+        """;
+    private static async Task<IReadOnlyList<TenantModuleStatus>> QueryTenantModulesAsync(System.Data.IDbConnection connection, Guid tenantId, System.Data.IDbTransaction transaction) =>
+        (await connection.QueryAsync<TenantModuleStatus>(TenantModulesStatusSql, new { TenantId = tenantId }, transaction)).ToArray();
+    public Task<IReadOnlyList<TenantModuleStatus>> GetTenantModulesAsync(Guid tenantId, CancellationToken ct) => System("tenant-modules", (c, t) => QueryTenantModulesAsync(c, tenantId, t), ct);
+    public Task<TenantAccessSummary> GetTenantAccessAsync(Guid tenantId, CancellationToken ct) => System("tenant-access", async (c, t) =>
+    {
+        var header = await c.QuerySingleOrDefaultAsync<TenantAccessHeader>(
+            "select x.slug Slug, x.name Name, s.status Status, p.name PlanName from agro360.tenancy_tenants x join agro360.saas_organizations s on s.tenant_id=x.id join agro360.saas_plans p on p.id=s.plan_id where x.id=@Id and x.deleted_at is null", new { Id = tenantId }, t)
+            ?? throw new KeyNotFoundException("Organização não encontrada.");
+        return new TenantAccessSummary
+        {
+            TenantId = tenantId,
+            Slug = header.Slug,
+            Name = header.Name,
+            Status = header.Status,
+            PlanName = header.PlanName,
+            SupportSessionActive = await c.ExecuteScalarAsync<bool>("select exists(select 1 from agro360.saas_support_sessions where tenant_id=@TenantId and ended_at is null)", new { TenantId = tenantId }, t),
+            Usage = (await c.QueryAsync<UsageSummary>(UsageSql + " where o.tenant_id=@TenantId", new { TenantId = tenantId }, t)).Single(),
+            Modules = await QueryTenantModulesAsync(c, tenantId, t)
+        };
+    }, ct);
+    public Task<EffectiveAccessSummary> GetEffectiveAccessAsync(Guid actorId, CancellationToken ct) => System("effective-access", async (c, t) =>
+    {
+        var identity = await c.QuerySingleOrDefaultAsync<ActorIdentityLookup>(
+            "select tenant_id TenantId, email Email from agro360.identity_users where id=@ActorId and deleted_at is null", new { ActorId = actorId }, t)
+            ?? throw new UnauthorizedAccessException("Usuário não encontrado.");
+        var granted = (await c.QueryAsync<string>(
+            """
+            select distinct p.code
+            from agro360.identity_user_roles ur
+            join agro360.identity_role_permissions rp
+              on rp.role_id = ur.role_id and rp.tenant_id = ur.tenant_id
+            join agro360.identity_permissions p on p.id = rp.permission_id
+            where ur.tenant_id = @TenantId and ur.user_id = @UserId
+            order by p.code;
+            """, new { TenantId = identity.TenantId, UserId = actorId }, t)).ToArray();
+        var roles = (await c.QueryAsync<string>(
+            """
+            select distinct r.code
+            from agro360.identity_user_roles ur
+            join agro360.identity_roles r
+              on r.id = ur.role_id and r.tenant_id = ur.tenant_id
+            where ur.tenant_id = @TenantId and ur.user_id = @UserId
+            order by r.code;
+            """, new { TenantId = identity.TenantId, UserId = actorId }, t)).ToArray();
+        var isGlobalAdministrator = roles.Contains("SUPER_ADMIN", StringComparer.OrdinalIgnoreCase)
+            && await c.ExecuteScalarAsync<bool>("select exists(select 1 from agro360.platform_super_admins where user_id=@UserId and active and deleted_at is null)", new { UserId = actorId }, t);
+        if (!isGlobalAdministrator)
+            roles = roles.Where(role => !role.Equals("SUPER_ADMIN", StringComparison.OrdinalIgnoreCase)).ToArray();
+        string[] permissions;
+        if (isGlobalAdministrator)
+        {
+            permissions = granted;
+        }
+        else
+        {
+            var contractedModules = (await c.QueryAsync<string>($"""
+                {EntitlementQueries.ModuleCodeSelect}
+                """, new { TenantId = identity.TenantId }, t)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            permissions = granted.Where(permission => permission.StartsWith("account.", StringComparison.OrdinalIgnoreCase) || Permissions.ModulesForPermission(permission).Any(contractedModules.Contains)).ToArray();
+        }
+        var denied = granted.Except(permissions, StringComparer.OrdinalIgnoreCase).OrderBy(code => code, StringComparer.Ordinal).ToArray();
+        var planId = await c.QuerySingleOrDefaultAsync<Guid?>("select plan_id from agro360.saas_organizations where tenant_id=@TenantId", new { TenantId = identity.TenantId }, t);
+        var plan = planId.HasValue ? await c.QuerySingleOrDefaultAsync<PlanSummary>(
+            "select p.id,p.name,p.description,p.monthly_price MonthlyPrice,p.annual_price AnnualPrice,p.user_limit UserLimit,p.property_limit PropertyLimit,p.storage_limit_mb StorageLimitMb,p.device_limit DeviceLimit,p.modules,p.premium_features PremiumFeatures,p.active from agro360.saas_plans p where p.id=@PlanId", new { PlanId = planId.Value }, t) : null;
+        return new EffectiveAccessSummary
+        {
+            TenantId = identity.TenantId,
+            Email = identity.Email,
+            GlobalAdministrator = isGlobalAdministrator,
+            Roles = roles,
+            Permissions = permissions,
+            DeniedPermissions = denied,
+            ContractedModules = await QueryTenantModulesAsync(c, identity.TenantId, t),
+            Plan = plan,
+            Usage = (await c.QueryAsync<UsageSummary>(UsageSql + " where o.tenant_id=@TenantId", new { TenantId = identity.TenantId }, t)).Single()
+        };
     }, ct);
     public Task SetTenantStatusAsync(Guid id, string status, string? reason, Guid actorId, CancellationToken ct) => System("tenant-status", async (c, t) =>
     {
@@ -242,6 +367,7 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
         if (string.IsNullOrWhiteSpace(command.Name) || !EmailRegex().IsMatch(command.Email) || command.RoleIds.Length == 0)
             throw new ArgumentException("Nome, e-mail válido e perfil são obrigatórios.");
         var roleIds = command.RoleIds.Distinct().ToArray();
+        await c.ExecuteAsync("select pg_advisory_xact_lock(hashtextextended(@Key,0))", new { Key = $"saas-user-management:{tenant.TenantId:N}" }, t);
         var actorLevel = await GetActorLevelAsync(c, t, actorId);
         var roles = (await c.QueryAsync<RoleGrantLookup>(
             """
@@ -257,6 +383,8 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
             throw new ForbiddenException("Papéis globais não podem ser atribuídos por uma organização cliente.");
         if (roles.Any(role => role.Level > actorLevel))
             throw new ForbiddenException("Não é permitido atribuir perfil superior ao do administrador atual.");
+        if (await CountUndelegableRolePermissionsAsync(c, t, roleIds, actorId) > 0)
+            throw new ForbiddenException("O perfil solicita permissão que o administrador atual não possui.");
 
         var key = id ?? Guid.CreateVersion7();
         var target = id is null ? null : await c.QuerySingleOrDefaultAsync<UserRoleState>(
@@ -301,6 +429,7 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
     public Task SetUserActiveAsync(Guid id, bool active, string reason, Guid actorId, CancellationToken ct) =>
         Tenant("user-status", async (connection, transaction) =>
         {
+            await connection.ExecuteAsync("select pg_advisory_xact_lock(hashtextextended(@Key,0))", new { Key = $"saas-user-management:{tenant.TenantId:N}" }, transaction);
             var target = await connection.QuerySingleOrDefaultAsync<UserAccessLookup>(
                 """
                 select u.status,
@@ -453,6 +582,8 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
         if (role is null) throw InvalidReferences(nameof(InvitationCommand.RoleId), "O perfil informado não pertence a esta organização.");
         if (role.Code.Equals("SUPER_ADMIN", StringComparison.OrdinalIgnoreCase) || role.Code.StartsWith("PLATFORM_", StringComparison.OrdinalIgnoreCase) || role.Level > actorLevel)
             throw new ForbiddenException("O convite não pode conceder autoridade global ou superior à do administrador atual.");
+        if (await CountUndelegableRolePermissionsAsync(c, t, [command.RoleId], actorId) > 0)
+            throw new ForbiddenException("O perfil solicita permissão que o administrador atual não possui.");
         if (await c.ExecuteScalarAsync<bool>("select exists(select 1 from agro360.identity_users where tenant_id=@TenantId and lower(email)=lower(@Email) and deleted_at is null and status='ACTIVE')", new { tenant.TenantId, Email = command.Email.Trim() }, t))
             throw new ConflictException("O e-mail já possui acesso ativo nesta organização.", "invitation_user_active");
 
@@ -499,9 +630,10 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
         var name = Agro360.SharedKernel.Guard.Required(command.Name, nameof(command.Name), 160);
         return db.InTenantTransactionAsync(tenantId, async (c, t) =>
         {
+            await c.ExecuteAsync("select pg_advisory_xact_lock(hashtextextended(@Key,0))", new { Key = $"saas-user-management:{tenantId:N}" }, t);
             var invitation = await c.QuerySingleOrDefaultAsync<InvitationAcceptanceLookup>(
                 """
-                select i.id,i.email,i.role_id RoleId,i.expires_at ExpiresAt,i.status,t.slug TenantSlug
+                select i.id,i.email,i.role_id RoleId,i.expires_at ExpiresAt,i.status,i.invited_by InvitedBy,t.slug TenantSlug
                 from agro360.saas_invitations i join agro360.tenancy_tenants t on t.id=i.tenant_id
                 where i.tenant_id=@TenantId and i.token_hash=@TokenHash for update
                 """, new { TenantId = tenantId, TokenHash = HashInvitationToken(command.Token) }, t);
@@ -510,6 +642,36 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
             var existingUser = await c.QuerySingleOrDefaultAsync<InvitationUserLookup>("select id,status from agro360.identity_users where tenant_id=@TenantId and lower(email)=lower(@Email) and deleted_at is null for update", new { TenantId = tenantId, invitation.Email }, t);
             if (existingUser is not null && existingUser.Status != "INVITED")
                 throw new ConflictException("O usuário associado ao convite já foi ativado ou bloqueado.", "invitation_user_state_changed");
+            var grant = await c.QuerySingleOrDefaultAsync<RoleGrantLookup>(
+                """
+                select r.id,r.code,r.is_system IsSystem,case when lower(r.code)='tenant-administrator' then 100 else coalesce(m.level,10) end Level
+                from agro360.identity_roles r left join agro360.saas_role_metadata m on m.tenant_id=r.tenant_id and m.role_id=r.id
+                where r.tenant_id=@TenantId and r.id=@RoleId
+                """, new { TenantId = tenantId, RoleId = invitation.RoleId }, t);
+            if (grant is null || grant.Code.Equals("SUPER_ADMIN", StringComparison.OrdinalIgnoreCase) || grant.Code.StartsWith("PLATFORM_", StringComparison.OrdinalIgnoreCase))
+                throw new ConflictException("O perfil do convite deixou de ser válido para aceite.", "invitation_role_missing");
+            var inviterLevel = await c.ExecuteScalarAsync<int?>(
+                """
+                select max(case when lower(r.code)='tenant-administrator' then 100 else coalesce(m.level,10) end)
+                from agro360.identity_users u
+                join agro360.identity_user_roles ur on ur.tenant_id=u.tenant_id and ur.user_id=u.id
+                join agro360.identity_roles r on r.tenant_id=ur.tenant_id and r.id=ur.role_id
+                left join agro360.saas_role_metadata m on m.tenant_id=r.tenant_id and m.role_id=r.id
+                where u.tenant_id=@TenantId and u.id=@InvitedBy and u.deleted_at is null
+                """, new { TenantId = tenantId, InvitedBy = invitation.InvitedBy }, t);
+            if (inviterLevel is null || inviterLevel < grant.Level)
+                throw new ConflictException("A autoridade do convitor mudou; o convite não pode ser aceito.", "invitation_authority_changed");
+            var seatLimit = await c.QuerySingleAsync<(long Used, int Limit)>(
+                """
+                select count(*) filter(where u.status='ACTIVE') as ActiveCount,p.user_limit as UserLimit
+                from agro360.saas_organizations o
+                join agro360.saas_plans p on p.id=o.plan_id
+                left join agro360.identity_users u on u.tenant_id=o.tenant_id and u.deleted_at is null
+                where o.tenant_id=@TenantId
+                group by p.user_limit
+                """, new { TenantId = tenantId }, t);
+            if (seatLimit.Used >= seatLimit.Limit)
+                throw new ConflictException($"Limite do plano atingido: {seatLimit.Used} de {seatLimit.Limit} usuários ativos.", "plan_user_limit");
             var userId = existingUser?.Id ?? Guid.CreateVersion7();
             await c.ExecuteAsync(
                 """
@@ -611,14 +773,8 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
             """, new { TenantId = tenantId, Actor = superAdminUserId }, t);
 
         var contractedModules = (await c.QueryAsync<string>(
-            """
-            select lower(code) from (
-                select unnest(p.modules) code from agro360.saas_organizations o join agro360.saas_plans p on p.id=o.plan_id where o.tenant_id=@TenantId and o.status='ACTIVE' and p.active
-                union
-                select c.code from agro360.platform_tenant_module_entitlements e join agro360.platform_module_catalog c on c.id=e.module_id where e.tenant_id=@TenantId and e.status in('CONTRACTED','ACTIVE','TRIAL')
-                union
-                select m.code from agro360.platform_tenant_modules tm join agro360.platform_marketplace_modules m on m.id=tm.module_id where tm.tenant_id=@TenantId and tm.status='ACTIVE' and (tm.trial_ends_at is null or tm.trial_ends_at>now())
-            ) m
+            $"""
+            {EntitlementQueries.ModuleCodeSelect}
             """, new { TenantId = tenantId }, t)).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var effectiveScope = string.Equals(scope?.Trim(), "SUPPORT_OPERATIONAL", StringComparison.OrdinalIgnoreCase)
@@ -790,11 +946,26 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
             select max(case when lower(r.code)='tenant-administrator' then 100 else coalesce(m.level,10) end)
             from agro360.identity_user_roles ur
             join agro360.identity_roles r on r.tenant_id=ur.tenant_id and r.id=ur.role_id
+            join agro360.identity_users u on u.tenant_id=ur.tenant_id and u.id=ur.user_id
             left join agro360.saas_role_metadata m on m.tenant_id=r.tenant_id and m.role_id=r.id
-            where ur.tenant_id=@TenantId and ur.user_id=@Actor
+            where ur.tenant_id=@TenantId and ur.user_id=@Actor and u.deleted_at is null
             """, new { tenant.TenantId, Actor = actorId }, transaction);
         return level ?? throw new ForbiddenException("O ator não possui perfil administrativo válido nesta organização.");
     }
+    private Task<long> CountUndelegableRolePermissionsAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, Guid[] roleIds, Guid actorId) =>
+        connection.ExecuteScalarAsync<long>(
+            """
+            select count(*)
+            from agro360.identity_role_permissions rp
+            join agro360.identity_permissions p on p.id = rp.permission_id
+            where rp.tenant_id = @TenantId and rp.role_id = any(@RoleIds)
+              and (lower(p.code) = 'platform.admin'
+                   or not exists(select 1
+                        from agro360.identity_user_roles aur
+                        join agro360.identity_role_permissions arp on arp.tenant_id = aur.tenant_id and arp.role_id = aur.role_id
+                        join agro360.identity_permissions ap on ap.id = arp.permission_id
+                        where aur.tenant_id = @TenantId and aur.user_id = @Actor and lower(ap.code) = lower(p.code)))
+            """, new { tenant.TenantId, RoleIds = roleIds, Actor = actorId }, transaction);
     private Task<long> CountActiveAdministratorsAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction) =>
         connection.ExecuteScalarAsync<long>(
             """
@@ -827,9 +998,12 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
     }
     private sealed class RoleGrantLookup { public Guid Id { get; init; } public string Code { get; init; } = string.Empty; public bool IsSystem { get; init; } public int Level { get; init; } }
     private sealed class UserRoleState { public string Status { get; init; } = string.Empty; public bool IsAdministrator { get; init; } }
-    private sealed class InvitationAcceptanceLookup { public Guid Id { get; init; } public string Email { get; init; } = string.Empty; public Guid RoleId { get; init; } public DateTimeOffset ExpiresAt { get; init; } public string Status { get; init; } = string.Empty; public string TenantSlug { get; init; } = string.Empty; }
+    private sealed class InvitationAcceptanceLookup { public Guid Id { get; init; } public string Email { get; init; } = string.Empty; public Guid RoleId { get; init; } public Guid InvitedBy { get; init; } public DateTimeOffset ExpiresAt { get; init; } public string Status { get; init; } = string.Empty; public string TenantSlug { get; init; } = string.Empty; }
     private sealed class InvitationUserLookup { public Guid Id { get; init; } public string Status { get; init; } = string.Empty; }
     private sealed class PlanProvisioningLookup { public Guid Id { get; init; } public string Name { get; init; } = string.Empty; public decimal MonthlyPrice { get; init; } public string[] Modules { get; init; } = []; }
+    private sealed class TenantModuleLookup { public Guid ModuleId { get; init; } public string CurrentStatus { get; init; } = string.Empty; public string Code { get; init; } = string.Empty; }
+    private sealed class TenantAccessHeader { public string Slug { get; init; } = string.Empty; public string Name { get; init; } = string.Empty; public string Status { get; init; } = string.Empty; public string PlanName { get; init; } = string.Empty; }
+    private sealed class ActorIdentityLookup { public Guid TenantId { get; init; } public string Email { get; init; } = string.Empty; }
     private sealed class ChargePaymentLookup { public Guid TenantId { get; init; } public decimal Amount { get; init; } public decimal PaidAmount { get; init; } public string Status { get; init; } = string.Empty; }
 
 

@@ -143,8 +143,14 @@ static async Task ProvisionSantaClaraAsync(NpgsqlConnection connection, IConfigu
         update agro360.identity_refresh_tokens set revoked_at=coalesce(revoked_at,now()) where @ChangesCredential and tenant_id=@TenantId and user_id=@UserId;
         insert into agro360.audit_logs(id,tenant_id,user_id,action,entity_type,entity_id,after_data,occurred_at)
         values (gen_random_uuid(),@TenantId,@UserId,@Action,'IdentityUser',@UserId,jsonb_build_object('environment',@Environment,'operator',current_user,'sessionsRevoked',@ChangesCredential,'mustChangePassword',@ChangesCredential),now());
-        """, new { TenantId = tenantId, UserId = userId, Environment = environment, ChangesCredential = changesCredential,
-            Action = resetPassword ? "homologation_password_reset" : current is null ? "homologation_access_provisioned" : "homologation_access_confirmed" }, transaction);
+        """, new
+        {
+            TenantId = tenantId,
+            UserId = userId,
+            Environment = environment,
+            ChangesCredential = changesCredential,
+            Action = resetPassword ? "homologation_password_reset" : current is null ? "homologation_access_provisioned" : "homologation_access_confirmed"
+        }, transaction);
     await transaction.CommitAsync().ConfigureAwait(false);
 
     if (password is not null)
@@ -294,8 +300,15 @@ static async Task ProvisionHomologationAsync(NpgsqlConnection connection, IConfi
         insert into agro360.identity_user_roles(tenant_id,user_id,role_id) values ('30000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000004') on conflict do nothing;
         update agro360.identity_refresh_tokens set revoked_at=coalesce(revoked_at,now()) where @CreateTenant and tenant_id='30000000-0000-0000-0000-000000000001' and user_id='30000000-0000-0000-0000-000000000003';
         insert into agro360.audit_logs(id,tenant_id,user_id,action,entity_type,entity_id,after_data) values (gen_random_uuid(),'30000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000003',case when @CreateTenant then 'homologation_access_provisioned' else 'homologation_access_confirmed' end,'IdentityUser','30000000-0000-0000-0000-000000000003',jsonb_build_object('environment',@Environment,'credentialChanged',@CreateTenant));
-        """, new { SuperHash = existingSuperAdmin?.PasswordHash ?? hasher.Hash(superPassword!), TenantHash = existingSantaClara?.PasswordHash ?? hasher.Hash(tenantPassword!), MfaSecret = protectedMfaSecret, Environment = environment,
-            CreateSuper = existingSuperAdmin is null, CreateTenant = existingSantaClara is null }, transaction).ConfigureAwait(false);
+        """, new
+        {
+            SuperHash = existingSuperAdmin?.PasswordHash ?? hasher.Hash(superPassword!),
+            TenantHash = existingSantaClara?.PasswordHash ?? hasher.Hash(tenantPassword!),
+            MfaSecret = protectedMfaSecret,
+            Environment = environment,
+            CreateSuper = existingSuperAdmin is null,
+            CreateTenant = existingSantaClara is null
+        }, transaction).ConfigureAwait(false);
     await transaction.CommitAsync().ConfigureAwait(false);
     await VerifyProvisionedIdentitiesAsync(connection.ConnectionString, hasher,
         existingSuperAdmin is null ? superPassword : null,
@@ -340,28 +353,28 @@ static async Task VerifyProvisionedIdentityAsync(
     await using var verificationConnection = new NpgsqlConnection(connectionString);
     await verificationConnection.OpenAsync().ConfigureAwait(false);
     await using var verificationTransaction = await verificationConnection.BeginTransactionAsync().ConfigureAwait(false);
-        await verificationConnection.ExecuteAsync(
-            "select set_config('app.tenant_id',@TenantId,true);",
-            new { TenantId = item.TenantId.ToString() }, verificationTransaction).ConfigureAwait(false);
-        var rows = (await verificationConnection.QueryAsync<PersistedCredential>(
-            """
+    await verificationConnection.ExecuteAsync(
+        "select set_config('app.tenant_id',@TenantId,true);",
+        new { TenantId = item.TenantId.ToString() }, verificationTransaction).ConfigureAwait(false);
+    var rows = (await verificationConnection.QueryAsync<PersistedCredential>(
+        """
             select id,tenant_id as TenantId,email,password_hash as PasswordHash,
                    status,deleted_at as DeletedAt,must_change_password as MustChangePassword
             from agro360.identity_users
             where tenant_id=@TenantId and lower(email)=@Email;
             """,
-            new { item.TenantId, item.Email }, verificationTransaction).ConfigureAwait(false)).ToArray();
+        new { item.TenantId, item.Email }, verificationTransaction).ConfigureAwait(false)).ToArray();
 
-        if (rows.Length != 1 || rows[0].Id != item.UserId || rows[0].TenantId != item.TenantId)
-            throw new InvalidOperationException($"A identidade {item.Email} não foi lida de forma unívoca no contexto de tenant da API após o commit.");
-        var row = rows[0];
-        if (!string.Equals(row.Email, item.Email, StringComparison.OrdinalIgnoreCase)
-            || row.DeletedAt is not null
-            || !string.Equals(row.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase)
-            || !row.MustChangePassword
-            || !IsSupportedPasswordHash(row.PasswordHash)
-            || !hasher.Verify(password, row.PasswordHash))
-            throw new InvalidOperationException($"A credencial persistida para {item.Email} falhou na verificação pós-commit; nenhuma credencial foi exibida.");
+    if (rows.Length != 1 || rows[0].Id != item.UserId || rows[0].TenantId != item.TenantId)
+        throw new InvalidOperationException($"A identidade {item.Email} não foi lida de forma unívoca no contexto de tenant da API após o commit.");
+    var row = rows[0];
+    if (!string.Equals(row.Email, item.Email, StringComparison.OrdinalIgnoreCase)
+        || row.DeletedAt is not null
+        || !string.Equals(row.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase)
+        || !row.MustChangePassword
+        || !IsSupportedPasswordHash(row.PasswordHash)
+        || !hasher.Verify(password, row.PasswordHash))
+        throw new InvalidOperationException($"A credencial persistida para {item.Email} falhou na verificação pós-commit; nenhuma credencial foi exibida.");
 
     await verificationTransaction.CommitAsync().ConfigureAwait(false);
     Log.Information("Credencial de {Email} verificada após o commit em nova conexão, sob o tenant {TenantId}; registro único, formato válido e troca inicial exigida.",

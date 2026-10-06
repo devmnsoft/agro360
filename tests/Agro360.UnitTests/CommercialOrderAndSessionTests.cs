@@ -1,3 +1,4 @@
+using Agro360.Application;
 using Agro360.Application.Contracts;
 using Agro360.Domain.Commercial;
 using Agro360.Infrastructure.Security;
@@ -93,6 +94,23 @@ public sealed class CommercialOrderAndSessionTests
         var modules = PermissionAuthorizationHandler.AcceptedModules(permission);
         Assert.Contains("logistics", modules);
         Assert.DoesNotContain("platform", modules);
+    }
+
+    [Theory]
+    [InlineData("storage.view", "inventory")]
+    [InlineData("dashboard.read", "reports")]
+    [InlineData("export.csv", "export")]
+    [InlineData("purchasing.manage", "purchasing")]
+    public void ModulesForPermissionMapsGroupToCatalogModules(string permission, string expectedModule)
+    {
+        var modules = Permissions.ModulesForPermission(permission);
+        Assert.Contains(expectedModule, modules);
+    }
+
+    [Fact]
+    public void ModulesForPermissionReturnsEmptyForUnknownGroup()
+    {
+        Assert.Empty(Permissions.ModulesForPermission("unknown.thing"));
     }
 
     [Fact]

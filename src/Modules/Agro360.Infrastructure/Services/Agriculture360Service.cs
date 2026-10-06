@@ -84,7 +84,8 @@ public sealed class Agriculture360Service(DatabaseExecutor database, ITenantCont
     public Task<AgricultureRecord> UpdateAsync(string moduleCode, Guid id, AgricultureCommand command, CancellationToken cancellationToken)
     {
         EnsureModule(moduleCode); Validate(moduleCode, command); var status = NormalizeStatus(command.Status, moduleCode);
-        return database.InTenantTransactionAsync(async (c, t) => {
+        return database.InTenantTransactionAsync(async (c, t) =>
+        {
             await ValidateReferences(c, t, command, cancellationToken);
             var sql = moduleCode == "work-orders"
                 ? "update agro360.agriculture_records set status=@Status,data=data||cast(@Data as jsonb),updated_at=now(),updated_by=@UserId,version=version+1 where id=@Id and tenant_id=@TenantId and module=@Module and deleted_at is null and status in ('OPEN','PLANNED','AWAITING_RESOURCES') and (@Version is null or version=@Version)"
@@ -102,7 +103,8 @@ public sealed class Agriculture360Service(DatabaseExecutor database, ITenantCont
         if (moduleCode == "work-orders" && command?.Version is null) throw new DomainException("A versão da ordem é obrigatória. Recarregue os dados antes de executar a ação.", "agriculture.version_required");
         if (next == "COMPLETED" && moduleCode == "work-orders" && (command?.ResponsibleId is null || command.ChecklistRequired && !command.ChecklistCompleted)) throw new DomainException("Responsável e checklist obrigatório concluído são necessários.", "agro360.agriculture_work_order_incomplete");
         if (next == "CANCELLED" && string.IsNullOrWhiteSpace(command?.CancellationReason)) throw new DomainException("Informe o motivo do cancelamento.", "agro360.agriculture_cancellation_reason_required");
-        return database.InTenantTransactionAsync(async (c, t) => {
+        return database.InTenantTransactionAsync(async (c, t) =>
+        {
             var current = await c.ExecuteScalarAsync<string?>(new CommandDefinition("select status from agro360.agriculture_records where id=@Id and tenant_id=@TenantId and module=@Module and deleted_at is null for update", new { Id = id, tenant.TenantId, Module = moduleCode }, t, cancellationToken: cancellationToken));
             if (current is null) throw new NotFoundException("Registro agrícola", id);
             if (moduleCode == "work-orders")

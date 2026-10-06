@@ -42,8 +42,23 @@
         // Expose canonical global session for inter-module use
         window.agro360Session = session ?? null;
         window.dispatchEvent(new CustomEvent("agro360:session", { detail: session ?? null }));
+        syncPageToken(session);
         renderUser();
         renderNavigation();
+    }
+
+    // Sincroniza a credencial da página no host Web (cookie HttpOnly protegido).
+    // Fire-and-forget: falha de rede não pode afetar a sessão da aplicação.
+    function syncPageToken(session) {
+        try {
+            fetch("/auth/page", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ accessToken: session?.accessToken ?? "" })
+            }).catch(() => { });
+        } catch {
+            // Sem fetch disponível (ex.: arquivo local) — ignora silenciosamente.
+        }
     }
 
     function normalizePermission(value) {

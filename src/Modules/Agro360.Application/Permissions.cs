@@ -197,4 +197,37 @@ public static class Permissions
         if (p == "support_session") return true;
         return p.EndsWith(".read", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".reports", StringComparison.OrdinalIgnoreCase) || p.EndsWith(".download", StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>Mapa central permissão→módulos contratados exigidos (grupo da permissão).</summary>
+    public static string[] ModulesForPermission(string permission)
+    {
+        var group = permission.Split('.', 2, StringSplitOptions.TrimEntries)[0];
+        return group switch
+        {
+            "properties" => ["properties"],
+            "agriculture" => ["agriculture"],
+            "inventory" => ["inventory"],
+            "livestock" => ["livestock"],
+            "crm" or "commercial" or "commercial-saas" or "customer-success" => ["commercial"],
+            "finance" => ["finance"],
+            "purchasing" => ["purchasing"],
+            "production" => ["agroindustry"],
+            "fleet" or "maintenance" => ["fleet"],
+            "dashboard" => ["reports", "analytics"],
+            "storage" => ["inventory", "warehousing"],
+            "logistics" or "regional-logistics" or "after-sales" => ["logistics"],
+            "traceability" or "ledger" or "sales-network" => ["traceability"],
+            "intelligence" => ["reports", "intelligence", "analytics", "ai", "predictive-ai"],
+            "compliance" or "esg" or "sustainability" => ["environment-esg"],
+            "maps" => ["properties", "analytics"],
+            "cooperative" => ["cooperatives"],
+            "rural-hr" or "sst" => ["verticals", "rural-hr"],
+            "documents" or "evidences" or "dossiers" or "certificates" => ["documents"],
+            "mobile" or "field-checklists" => ["mobile"],
+            "export" or "fiscal" => [group],
+            "marketplace" or "partners" or "api-keys" or "integrations" => ["platform", "marketplace"],
+            "deployment" or "governance" or "lgpd" or "security" or "work" or "support" or "portal" => ["platform"],
+            _ => []
+        };
+    }
 }

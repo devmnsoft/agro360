@@ -1,12 +1,12 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Agro360.Application.Contracts;
 using Agro360.Domain.Commercial;
 using Agro360.Infrastructure.Persistence;
 using Agro360.Multitenancy;
 using Agro360.SharedKernel;
 using Dapper;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 
 namespace Agro360.Infrastructure.Services;
 
@@ -337,30 +337,30 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             var order = await c.QuerySingleOrDefaultAsync<(string Status, string CustomerStatus)>(
             "select o.status,c.status CustomerStatus from agro360.sales_orders o join agro360.crm_customers c on c.id=o.customer_id and c.tenant_id=o.tenant_id where o.id=@Id and o.tenant_id=@TenantId and o.deleted_at is null for update of o",
             new { Id = id, tenant.TenantId }, t);
-        if (order == default) throw new KeyNotFoundException("Pedido não encontrado.");
-        CommercialRules.ValidateOrderTransition(order.Status, next, command.Reason);
+            if (order == default) throw new KeyNotFoundException("Pedido não encontrado.");
+            CommercialRules.ValidateOrderTransition(order.Status, next, command.Reason);
 
-        if (next == "APPROVED")
-        {
-            CommercialRules.CustomerCanOrder(order.CustomerStatus, mayOverrideBlock);
-            if (!await c.ExecuteScalarAsync<bool>("select exists(select 1 from agro360.sales_order_items where order_id=@Id and tenant_id=@TenantId)", new { Id = id, tenant.TenantId }, t))
-                throw new ArgumentException("Pedido sem itens.");
-        }
-
-        await c.ExecuteAsync("update agro360.sales_orders set status=@Status,cancellation_reason=case when @Status='CANCELLED' then @Reason end,updated_by=@UserId,updated_at=now() where id=@Id and tenant_id=@TenantId and status=@Current", new { Id = id, tenant.TenantId, Status = next, Current = order.Status, command.Reason, tenant.UserId }, t);
-        await c.ExecuteAsync("insert into agro360.sales_commercial_events(id,tenant_id,event_type,aggregate_id,payload,created_by) values(gen_random_uuid(),@TenantId,@Type,@Id,jsonb_build_object('from',@Current,'status',@Status,'reason',@Reason),@UserId)", new { tenant.TenantId, Type = $"ORDER_{next}", Id = id, Current = order.Status, Status = next, command.Reason, tenant.UserId }, t);
-        if (next == "CANCELLED")
-        {
-            var itemIds = (await c.QueryAsync<Guid>(
-                "select id from agro360.sales_order_items where tenant_id=@TenantId and order_id=@Id order by id",
-                new { tenant.TenantId, Id = id }, t)).AsList();
-            foreach (var orderItemId in itemIds)
+            if (next == "APPROVED")
             {
-                await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{orderItemId}" }, t, cancellationToken: ct));
+                CommercialRules.CustomerCanOrder(order.CustomerStatus, mayOverrideBlock);
+                if (!await c.ExecuteScalarAsync<bool>("select exists(select 1 from agro360.sales_order_items where order_id=@Id and tenant_id=@TenantId)", new { Id = id, tenant.TenantId }, t))
+                    throw new ArgumentException("Pedido sem itens.");
             }
 
-            var prepared = await c.ExecuteScalarAsync<bool>(new CommandDefinition(
-                """
+            await c.ExecuteAsync("update agro360.sales_orders set status=@Status,cancellation_reason=case when @Status='CANCELLED' then @Reason end,updated_by=@UserId,updated_at=now() where id=@Id and tenant_id=@TenantId and status=@Current", new { Id = id, tenant.TenantId, Status = next, Current = order.Status, command.Reason, tenant.UserId }, t);
+            await c.ExecuteAsync("insert into agro360.sales_commercial_events(id,tenant_id,event_type,aggregate_id,payload,created_by) values(gen_random_uuid(),@TenantId,@Type,@Id,jsonb_build_object('from',@Current,'status',@Status,'reason',@Reason),@UserId)", new { tenant.TenantId, Type = $"ORDER_{next}", Id = id, Current = order.Status, Status = next, command.Reason, tenant.UserId }, t);
+            if (next == "CANCELLED")
+            {
+                var itemIds = (await c.QueryAsync<Guid>(
+                    "select id from agro360.sales_order_items where tenant_id=@TenantId and order_id=@Id order by id",
+                    new { tenant.TenantId, Id = id }, t)).AsList();
+                foreach (var orderItemId in itemIds)
+                {
+                    await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{orderItemId}" }, t, cancellationToken: ct));
+                }
+
+                var prepared = await c.ExecuteScalarAsync<bool>(new CommandDefinition(
+                    """
                 select exists(
                     select 1 from agro360.fulfillment_reservations r
                     join agro360.fulfillment_shipment_items i on i.tenant_id=r.tenant_id and i.reservation_id=r.id
@@ -370,47 +370,47 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
                       and (i.picked_quantity>0 or i.checked_quantity>0)
                 )
                 """, new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
-            if (prepared) throw new ConflictException("Desfaça a separação e conferência antes de cancelar o pedido.");
+                if (prepared) throw new ConflictException("Desfaça a separação e conferência antes de cancelar o pedido.");
 
-            await c.ExecuteAsync("update agro360.sales_commissions set status='CANCELLED',updated_at=now() where tenant_id=@TenantId and order_id=@Id and status not in('PAID','REVERSED'); update agro360.sales_split_entries set status='CANCELLED',updated_at=now() where tenant_id=@TenantId and order_id=@Id and status='EXPECTED'", new { tenant.TenantId, Id = id }, t);
+                await c.ExecuteAsync("update agro360.sales_commissions set status='CANCELLED',updated_at=now() where tenant_id=@TenantId and order_id=@Id and status not in('PAID','REVERSED'); update agro360.sales_split_entries set status='CANCELLED',updated_at=now() where tenant_id=@TenantId and order_id=@Id and status='EXPECTED'", new { tenant.TenantId, Id = id }, t);
 
-            // Release any active fulfillment reservations to restore stock balances without leaving orphan reservations
-            var activeReservations = (await c.QueryAsync<(Guid Id, Guid LotId, decimal Active, long Version)>(
-                "select r.id, r.stock_lot_id LotId, (r.quantity - r.consumed_quantity - r.released_quantity) Active, r.version " +
-                "from agro360.fulfillment_reservations r " +
-                "join agro360.sales_order_items oi on oi.tenant_id = r.tenant_id and oi.id = r.order_item_id " +
-                "where r.tenant_id = @TenantId and oi.order_id = @Id and r.status = 'ACTIVE' " +
-                "order by r.id for update",
-                new { tenant.TenantId, Id = id }, t)).AsList();
+                // Release any active fulfillment reservations to restore stock balances without leaving orphan reservations
+                var activeReservations = (await c.QueryAsync<(Guid Id, Guid LotId, decimal Active, long Version)>(
+                    "select r.id, r.stock_lot_id LotId, (r.quantity - r.consumed_quantity - r.released_quantity) Active, r.version " +
+                    "from agro360.fulfillment_reservations r " +
+                    "join agro360.sales_order_items oi on oi.tenant_id = r.tenant_id and oi.id = r.order_item_id " +
+                    "where r.tenant_id = @TenantId and oi.order_id = @Id and r.status = 'ACTIVE' " +
+                    "order by r.id for update",
+                    new { tenant.TenantId, Id = id }, t)).AsList();
 
-            foreach (var res in activeReservations)
-            {
-                if (res.Active > 0)
+                foreach (var res in activeReservations)
                 {
-                    var released = await c.ExecuteAsync(
-                        "update agro360.fulfillment_reservations set released_quantity = released_quantity + @Amount, status = case when consumed_quantity + released_quantity + @Amount = quantity then 'RELEASED' else 'ACTIVE' end, version = version + 1, updated_at = now(), updated_by = @UserId where tenant_id = @TenantId and id = @ReservationId and status = 'ACTIVE' and version = @Version; " +
-                        "update agro360.inventory_stock_balances b set reserved = reserved - @Amount, version = version + 1, updated_at = now() from agro360.inventory_stock_lots l where l.tenant_id = b.tenant_id and l.id = @LotId and b.tenant_id = @TenantId and b.warehouse_id = l.warehouse_id and b.product_id = l.product_id and b.reserved >= @Amount",
-                        new { tenant.TenantId, ReservationId = res.Id, res.LotId, Amount = res.Active, res.Version, tenant.UserId }, t);
-                    if (released != 2) throw new ConflictException("Saldo mudou durante o cancelamento das reservas.");
+                    if (res.Active > 0)
+                    {
+                        var released = await c.ExecuteAsync(
+                            "update agro360.fulfillment_reservations set released_quantity = released_quantity + @Amount, status = case when consumed_quantity + released_quantity + @Amount = quantity then 'RELEASED' else 'ACTIVE' end, version = version + 1, updated_at = now(), updated_by = @UserId where tenant_id = @TenantId and id = @ReservationId and status = 'ACTIVE' and version = @Version; " +
+                            "update agro360.inventory_stock_balances b set reserved = reserved - @Amount, version = version + 1, updated_at = now() from agro360.inventory_stock_lots l where l.tenant_id = b.tenant_id and l.id = @LotId and b.tenant_id = @TenantId and b.warehouse_id = l.warehouse_id and b.product_id = l.product_id and b.reserved >= @Amount",
+                            new { tenant.TenantId, ReservationId = res.Id, res.LotId, Amount = res.Active, res.Version, tenant.UserId }, t);
+                        if (released != 2) throw new ConflictException("Saldo mudou durante o cancelamento das reservas.");
+                    }
                 }
-            }
 
-            // Cancel open delivery schedules (PLANNED or PREPARING)
-            await c.ExecuteAsync(
-                "update agro360.sales_delivery_schedules set status = 'CANCELLED', cancellation_reason = @Reason, version = version + 1, updated_at = now(), updated_by = @UserId where tenant_id = @TenantId and order_id = @Id and status in ('PLANNED', 'PREPARING')",
-                new { tenant.TenantId, Id = id, command.Reason, tenant.UserId }, t);
+                // Cancel open delivery schedules (PLANNED or PREPARING)
+                await c.ExecuteAsync(
+                    "update agro360.sales_delivery_schedules set status = 'CANCELLED', cancellation_reason = @Reason, version = version + 1, updated_at = now(), updated_by = @UserId where tenant_id = @TenantId and order_id = @Id and status in ('PLANNED', 'PREPARING')",
+                    new { tenant.TenantId, Id = id, command.Reason, tenant.UserId }, t);
 
-            // Update sales_order_items cancelled_quantity preserving already consumed/dispatched quantities
-            await c.ExecuteAsync(
-                """
+                // Update sales_order_items cancelled_quantity preserving already consumed/dispatched quantities
+                await c.ExecuteAsync(
+                    """
                 update agro360.sales_order_items oi
                 set cancelled_quantity = greatest(0, oi.quantity - coalesce((select sum(r.consumed_quantity) from agro360.fulfillment_reservations r where r.tenant_id=oi.tenant_id and r.order_item_id=oi.id), 0)),
                     fulfillment_version = fulfillment_version + 1
                 where oi.tenant_id = @TenantId and oi.order_id = @Id
                 """,
-                new { tenant.TenantId, Id = id }, t);
-        }
-    }, ct);
+                    new { tenant.TenantId, Id = id }, t);
+            }
+        }, ct);
     }
 
     public Task<Guid> CalculateCommissionAsync(CommissionCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
@@ -822,10 +822,12 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         foreach (var itemId in linkedOrderItems)
             await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{itemId}" }, t, cancellationToken: ct));
 
-        var schedule = await c.QuerySingleOrDefaultAsync<(Guid OrderId, string Status, DateOnly PlannedDate, DateOnly OriginalPlannedDate, long Version, string Destination, Guid? ResponsibleId)>(
-            "select order_id OrderId, status, planned_date PlannedDate, original_planned_date OriginalPlannedDate, version, destination Destination, responsible_id ResponsibleId from agro360.sales_delivery_schedules where tenant_id=@TenantId and id=@Id for update",
+        var schedule = await c.QuerySingleOrDefaultAsync<(Guid OrderId, string Status, DateOnly PlannedDate, DateOnly OriginalPlannedDate, long Version, string Destination, Guid? ResponsibleId, DateTimeOffset? SettledAt)>(
+            "select order_id OrderId, status, planned_date PlannedDate, original_planned_date OriginalPlannedDate, version, destination Destination, responsible_id ResponsibleId, settled_at SettledAt from agro360.sales_delivery_schedules where tenant_id=@TenantId and id=@Id for update",
             new { tenant.TenantId, Id = scheduleId }, t);
         if (string.IsNullOrWhiteSpace(schedule.Status)) throw new NotFoundException("Programação de entrega", scheduleId);
+        if (schedule.SettledAt is not null)
+            throw new ConflictException("Compromisso já liquidado não aceita reprogramação.", "sales.schedule_settled_locked");
         if (schedule.Version != command.ExpectedVersion)
             throw new ConflictException("A programação de entrega foi alterada por outro usuário. Recarregue os dados antes de reprogramar.");
 
@@ -924,7 +926,8 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
                 @PreviousDate, @NewDate, cast(@PreviousItems as jsonb), cast(@NewItems as jsonb)
             )
             """,
-            new {
+            new
+            {
                 tenant.TenantId,
                 ScheduleId = scheduleId,
                 NewVersion = newVersion,
@@ -974,10 +977,12 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         foreach (var itemId in linkedOrderItems)
             await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"fulfillment:item:{tenant.TenantId}:{itemId}" }, t, cancellationToken: ct));
 
-        var schedule = await c.QuerySingleOrDefaultAsync<(Guid OrderId, string Status, long Version)>(
-            "select order_id OrderId, status, version from agro360.sales_delivery_schedules where tenant_id=@TenantId and id=@Id for update",
+        var schedule = await c.QuerySingleOrDefaultAsync<(Guid OrderId, string Status, long Version, DateTimeOffset? SettledAt)>(
+            "select order_id OrderId, status, version, settled_at SettledAt from agro360.sales_delivery_schedules where tenant_id=@TenantId and id=@Id for update",
             new { tenant.TenantId, Id = scheduleId }, t);
         if (string.IsNullOrWhiteSpace(schedule.Status)) throw new NotFoundException("Programação de entrega", scheduleId);
+        if (schedule.SettledAt is not null)
+            throw new ConflictException("Compromisso já liquidado não aceita cancelamento.", "sales.schedule_settled_locked");
         if (schedule.Version != command.ExpectedVersion)
             throw new ConflictException("A programação de entrega foi alterada por outro usuário. Recarregue os dados antes de cancelar.");
 
@@ -1063,6 +1068,57 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             new { tenant.TenantId, Id = scheduleId, OrderId = schedule.OrderId, command.Reason, tenant.UserId }, t);
     }, ct);
 
+    public Task SettleDeliveryScheduleAsync(Guid scheduleId, SettleDeliveryScheduleCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    {
+        if (string.IsNullOrWhiteSpace(command.Reason))
+            throw new DomainException("Liquidação do compromisso de entrega exige motivo.", "sales.settle_reason_required");
+        if (string.IsNullOrWhiteSpace(command.IdempotencyKey))
+            throw new DomainException("Chave de idempotência é obrigatória.", "sales.settle_idempotency_required");
+        CommercialRules.EnsureExpectedVersion(command.ExpectedVersion);
+        var requestHash = ScheduleHash(new { ScheduleId = scheduleId, command.ExpectedVersion, Reason = command.Reason.Trim() });
+        await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"schedule:settle:{tenant.TenantId}:{scheduleId}:{command.IdempotencyKey}" }, t, cancellationToken: ct));
+
+        var existingOp = await c.QuerySingleOrDefaultAsync<(string RequestHash, long? ResultVersion)>(
+            "select request_hash RequestHash, result_version ResultVersion from agro360.sales_delivery_schedule_operations where tenant_id=@TenantId and schedule_id=@ScheduleId and operation='SETTLE' and idempotency_key=@Key",
+            new { tenant.TenantId, ScheduleId = scheduleId, Key = command.IdempotencyKey.Trim() }, t);
+        if (!string.IsNullOrWhiteSpace(existingOp.RequestHash))
+        {
+            if (!string.Equals(existingOp.RequestHash, requestHash, StringComparison.Ordinal))
+                throw new ConflictException("A mesma chave de idempotência foi reutilizada com conteúdo diferente. A liquidação não foi registrada.");
+            return;
+        }
+
+        var schedule = await c.QuerySingleOrDefaultAsync<(Guid Id, Guid OrderId, string Status, long Version, DateTimeOffset? SettledAt)>(
+            "select id, order_id OrderId, status, version, settled_at from agro360.sales_delivery_schedules where tenant_id=@TenantId and id=@Id for update",
+            new { tenant.TenantId, Id = scheduleId }, t);
+        if (schedule.Id == Guid.Empty) throw new NotFoundException("Programação de entrega", scheduleId);
+        CommercialRules.EnsureCanSettleSchedule(schedule.Status, schedule.SettledAt);
+        if (schedule.Version != command.ExpectedVersion)
+            throw new ConflictException("A programação de entrega foi alterada por outro usuário. Recarregue os dados antes de liquidar.");
+
+        var changed = await c.ExecuteAsync(
+            """
+            update agro360.sales_delivery_schedules
+            set settled_at = now(), settled_by = @UserId, settlement_reason = @Reason,
+                version = version + 1, updated_at = now(), updated_by = @UserId
+            where tenant_id = @TenantId and id = @Id and version = @ExpectedVersion and settled_at is null
+            """,
+            new { tenant.TenantId, Id = scheduleId, Reason = command.Reason.Trim(), ExpectedVersion = command.ExpectedVersion, tenant.UserId }, t);
+        if (changed != 1) throw new ConflictException("Falha ao liquidar a programação de entrega.");
+
+        await c.ExecuteAsync(
+            """
+            insert into agro360.sales_delivery_schedule_operations(
+                id, tenant_id, schedule_id, operation, idempotency_key, request_hash, result_version, created_by)
+            values (gen_random_uuid(), @TenantId, @ScheduleId, 'SETTLE', @Key, @Hash, @ResultVersion, @UserId)
+            """,
+            new { tenant.TenantId, ScheduleId = scheduleId, Key = command.IdempotencyKey.Trim(), Hash = requestHash, ResultVersion = command.ExpectedVersion + 1, tenant.UserId }, t);
+
+        await c.ExecuteAsync(
+            "insert into agro360.sales_commercial_events(id, tenant_id, event_type, aggregate_id, payload, created_by) values(gen_random_uuid(), @TenantId, 'DELIVERY_SCHEDULE_SETTLED', @Id, jsonb_build_object('orderId', @OrderId, 'reason', @Reason, 'version', @NewVersion), @UserId)",
+            new { tenant.TenantId, Id = scheduleId, OrderId = schedule.OrderId, Reason = command.Reason.Trim(), NewVersion = command.ExpectedVersion + 1, tenant.UserId }, t);
+    }, ct);
+
     public Task<DeliverySchedulePage> ListDeliverySchedulesAsync(DeliveryScheduleQuery query, CancellationToken ct) => db.InTenantTransactionAsync<DeliverySchedulePage>(async (c, t) =>
     {
         var page = Math.Max(1, query.Page);
@@ -1089,6 +1145,8 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
               s.responsible_id ResponsibleId, u.name ResponsibleName,
               s.planned_date PlannedDate, s.original_planned_date OriginalPlannedDate,
               s.status Status, s.notes Notes, s.cancellation_reason CancellationReason,
+              s.settled_at SettledAt, s.settled_by SettledBy, s.settlement_reason SettlementReason,
+              {SettleCostColumns("s")}
               s.version Version, s.created_at CreatedAt, s.updated_at UpdatedAt
             from agro360.sales_delivery_schedules s
             join agro360.sales_orders o on o.tenant_id = s.tenant_id and o.id = s.order_id
@@ -1192,7 +1250,9 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             h.CreatedAt,
             h.UpdatedAt,
             itemsBySchedule.GetValueOrDefault(h.Id) ?? [],
-            revisionsBySchedule.GetValueOrDefault(h.Id) ?? []
+            revisionsBySchedule.GetValueOrDefault(h.Id) ?? [],
+            SettledAt: h.SettledAt, SettledBy: h.SettledBy, SettlementReason: h.SettlementReason,
+            DispatchedTotalCost: h.DispatchedTotalCost, DispatchedCostAvailable: h.DispatchedCostAvailable
         )).Select(WithActions).ToArray();
 
         return new DeliverySchedulePage(views, page, pageSize, total, indicators);
@@ -1201,13 +1261,15 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
     private async Task<IReadOnlyList<DeliveryScheduleView>> GetSchedulesForOrderInternalAsync(System.Data.Common.DbConnection c, System.Data.Common.DbTransaction t, Guid orderId, CancellationToken ct)
     {
         var headers = (await c.QueryAsync<ScheduleHeaderDto>(
-            """
+            $"""
             select
               s.id, s.order_id OrderId, o.order_number OrderNumber, coalesce(c.name, 'Cliente') CustomerName,
               s.schedule_number ScheduleNumber, s.destination Destination,
               s.responsible_id ResponsibleId, u.name ResponsibleName,
               s.planned_date PlannedDate, s.original_planned_date OriginalPlannedDate,
               s.status Status, s.notes Notes, s.cancellation_reason CancellationReason,
+              s.settled_at SettledAt, s.settled_by SettledBy, s.settlement_reason SettlementReason,
+              {SettleCostColumns("s")}
               s.version Version, s.created_at CreatedAt, s.updated_at UpdatedAt
             from agro360.sales_delivery_schedules s
             join agro360.sales_orders o on o.tenant_id = s.tenant_id and o.id = s.order_id
@@ -1269,7 +1331,9 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             h.CreatedAt,
             h.UpdatedAt,
             itemsBySchedule.GetValueOrDefault(h.Id) ?? [],
-            revisionsBySchedule.GetValueOrDefault(h.Id) ?? []
+            revisionsBySchedule.GetValueOrDefault(h.Id) ?? [],
+            SettledAt: h.SettledAt, SettledBy: h.SettledBy, SettlementReason: h.SettlementReason,
+            DispatchedTotalCost: h.DispatchedTotalCost, DispatchedCostAvailable: h.DispatchedCostAvailable
         )).Select(WithActions).ToArray();
     }
 
@@ -1279,13 +1343,15 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
     public Task<DeliveryScheduleView?> GetDeliveryScheduleByIdAsync(Guid scheduleId, CancellationToken ct) => db.InTenantTransactionAsync<DeliveryScheduleView?>(async (c, t) =>
     {
         var h = await c.QuerySingleOrDefaultAsync<ScheduleHeaderDto>(
-            """
+            $"""
             select
               s.id, s.order_id OrderId, o.order_number OrderNumber, coalesce(c.name, 'Cliente') CustomerName,
               s.schedule_number ScheduleNumber, s.destination Destination,
               s.responsible_id ResponsibleId, u.name ResponsibleName,
               s.planned_date PlannedDate, s.original_planned_date OriginalPlannedDate,
               s.status Status, s.notes Notes, s.cancellation_reason CancellationReason,
+              s.settled_at SettledAt, s.settled_by SettledBy, s.settlement_reason SettlementReason,
+              {SettleCostColumns("s")}
               s.version Version, s.created_at CreatedAt, s.updated_at UpdatedAt
             from agro360.sales_delivery_schedules s
             join agro360.sales_orders o on o.tenant_id = s.tenant_id and o.id = s.order_id
@@ -1347,7 +1413,9 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
             h.CreatedAt,
             h.UpdatedAt,
             items,
-            revisions
+            revisions,
+            SettledAt: h.SettledAt, SettledBy: h.SettledBy, SettlementReason: h.SettlementReason,
+            DispatchedTotalCost: h.DispatchedTotalCost, DispatchedCostAvailable: h.DispatchedCostAvailable
         );
         return WithActions(view);
     }, ct);
@@ -1360,7 +1428,9 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         var actions = new List<string>();
         string? block = null;
         var status = view.Status.Trim().ToUpperInvariant();
-        if (status is "CANCELLED")
+        if (view.SettledAt is not null)
+            block = "Compromisso liquidado administrativamente. O histórico permanece disponível.";
+        else if (status is "CANCELLED")
             block = "Compromisso cancelado. O histórico permanece disponível.";
         else if (status is "DELIVERED" || pending <= 0 && status is not ("PLANNED" or "PREPARING"))
             block = pending <= 0 ? "Não há quantidade pendente neste compromisso." : "Compromisso entregue.";
@@ -1378,8 +1448,17 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         }
         if (status is "PLANNED" or "PREPARING" or "DISPATCHED" or "PARTIALLY_DELIVERED" && !actions.Contains("reschedule") && pending > 0)
             actions.Insert(0, "reschedule");
+        if (view.SettledAt is null && status is "DELIVERED" or "PARTIALLY_DELIVERED")
+            actions.Add("settle");
         return view with { AllowedActions = actions, BlockReason = block };
     }
+
+    // Custo derivado dos movimentos reais de expedição; null permanece null (custo ausente != zero).
+    private static string SettleCostColumns(string alias) => $"""
+              (select sum(m.total_cost) from agro360.inventory_stock_movements m join agro360.fulfillment_shipments fs on fs.tenant_id=m.tenant_id and fs.id=m.reference_id where m.tenant_id={alias}.tenant_id and m.reference_type='FULFILLMENT_SHIPMENT' and fs.deleted_at is null and fs.schedule_id={alias}.id) DispatchedTotalCost,
+              exists(select 1 from agro360.inventory_stock_movements m join agro360.fulfillment_shipments fs on fs.tenant_id=m.tenant_id and fs.id=m.reference_id where m.tenant_id={alias}.tenant_id and m.reference_type='FULFILLMENT_SHIPMENT' and fs.deleted_at is null and fs.schedule_id={alias}.id and m.total_cost is not null) DispatchedCostAvailable,
+
+          """;
 
     private static readonly JsonSerializerOptions ScheduleHashJson = new(JsonSerializerDefaults.Web);
     private static string ScheduleHash<T>(T payload) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, ScheduleHashJson))));
@@ -1425,6 +1504,11 @@ public sealed class Commercial360Service(DatabaseExecutor db, ITenantContext ten
         public long Version { get; init; }
         public DateTimeOffset CreatedAt { get; init; }
         public DateTimeOffset? UpdatedAt { get; init; }
+        public DateTimeOffset? SettledAt { get; init; }
+        public Guid? SettledBy { get; init; }
+        public string? SettlementReason { get; init; }
+        public decimal? DispatchedTotalCost { get; init; }
+        public bool DispatchedCostAvailable { get; init; }
     }
     private sealed class ScheduleItemDto
     {

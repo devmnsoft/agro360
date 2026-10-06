@@ -45,7 +45,7 @@ public sealed class Commercial360Controller(ICommercial360Service service) : Con
         var canFulfill = User.HasClaim("permission", Permissions.LogisticsWrite);
         var actions = (view.AllowedActions ?? []).Where(action => action switch
         {
-            "reschedule" or "cancel" => canWrite,
+            "reschedule" or "cancel" or "settle" => canWrite,
             "fulfill" => canFulfill,
             _ => false
         }).ToArray();
@@ -56,4 +56,5 @@ public sealed class Commercial360Controller(ICommercial360Service service) : Con
     }
     [HttpPut("schedules/{id:guid}/reschedule"), Authorize(Policy = Permissions.CommercialWrite)] public async Task<IActionResult> Reschedule(Guid id, RescheduleDeliveryCommand x, CancellationToken ct) { await service.RescheduleDeliveryAsync(id, x, ct); return NoContent(); }
     [HttpPost("schedules/{id:guid}/cancel"), Authorize(Policy = Permissions.CommercialWrite)] public async Task<IActionResult> CancelSchedule(Guid id, CancelDeliveryScheduleCommand x, CancellationToken ct) { await service.CancelDeliveryScheduleAsync(id, x, ct); return NoContent(); }
+    [HttpPost("schedules/{id:guid}/settle"), Authorize(Policy = Permissions.CommercialWrite)] public async Task<IActionResult> SettleSchedule(Guid id, SettleDeliveryScheduleCommand x, CancellationToken ct) { await service.SettleDeliveryScheduleAsync(id, x, ct); return NoContent(); }
 }

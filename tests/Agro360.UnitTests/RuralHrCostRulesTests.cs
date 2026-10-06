@@ -66,4 +66,24 @@ public sealed class RuralHrCostRulesTests
     [Fact]
     public void ConferenceIsNotAClientStatusTransition()
         => Assert.Throws<InvalidOperationException>(() => RuralHrRules.ValidateStatusTransition("TIME_ENTRY", "CLOSED", "CONFIRMED"));
+
+    [Fact]
+    public void WorkerDocumentRequiresCpfOrCnpjCheckDigits()
+    {
+        Assert.Equal("52998224725", RuralHrRules.RequireWorkerDocument("529.982.247-25"));
+        Assert.Throws<ArgumentException>(() => RuralHrRules.RequireWorkerDocument("11111111111"));
+        Assert.Throws<ArgumentException>(() => RuralHrRules.RequireWorkerDocument("123456789012"));
+    }
+
+    [Fact]
+    public void JourneyMayLeaveThePlanButMustStartInsideIt()
+    {
+        var planStart = new DateTimeOffset(2026, 10, 4, 8, 0, 0, TimeSpan.Zero);
+        var planEnd = new DateTimeOffset(2026, 10, 4, 17, 0, 0, TimeSpan.Zero);
+        var inside = planStart.AddHours(1);
+        Assert.Equal("INSIDE", RuralHrRules.PlannedCoverage(inside, planEnd, planStart, planEnd));
+        Assert.Equal("OVERRUN", RuralHrRules.PlannedCoverage(inside, planEnd.AddMinutes(30), planStart, planEnd));
+        Assert.Equal("START_OUTSIDE", RuralHrRules.PlannedCoverage(planEnd, planEnd.AddHours(1), planStart, planEnd));
+        Assert.False(RuralHrRules.PeriodsOverlap(planStart, planEnd, planEnd, planEnd.AddHours(1)));
+    }
 }

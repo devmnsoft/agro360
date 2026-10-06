@@ -24,7 +24,9 @@
             <li><strong>Painel:</strong> Pessoas alocadas, jornadas abertas, conferência pendente, conflitos, custo conferido, custo sem tarifa, valor apropriado e saldo. O indicador abre a lista correspondente.</li>
             <li><strong>Alocação:</strong> Escolha pessoa ou equipe, propriedade, talhão, safra, ordem e período. O cancelamento não apaga a jornada já executada.</li>
             <li><strong>Jornada:</strong> Vincule uma alocação. Encerre com saída válida, confira e corrija com justificativa. Sem tarifa, o custo fica indisponível — zero informado continua visível como zero.</li>
-            <li><strong>Pessoas:</strong> Cadastre trabalhadores com documento real, cargo do cadastro e propriedade selecionada.</li>
+            <li><strong>Pessoas:</strong> Informe CPF ou CNPJ válido, cargo do cadastro e propriedade autorizada. O sistema não gera documento.</li>
+            <li><strong>Revisões:</strong> Uma suspeita não prova documento falso. Confirme o documento real ou registre que a origem já foi corrigida. Nada é apagado automaticamente.</li>
+            <li><strong>Tarifas:</strong> Encerre a vigência quando o valor deixar de valer. As jornadas já calculadas guardam a regra aplicada.</li>
             <li><strong>EPIs:</strong> Controle de disponibilidade, entrega ao colaborador, devolução e descarte conforme normas vigentes.</li>
             <li><strong>SST &amp; Incidentes:</strong> Registro de não conformidades, investigação e acompanhamento de ações corretivas.</li>
             <li><strong>Transporte:</strong> Programação de veículos, itinerários e lotação para transporte seguro das frentes de trabalho.</li>
@@ -371,11 +373,15 @@
 
     <!-- DIALOG: Ação com Justificativa -->
     <dialog id="hr-action-dialog" class="hr-modal">
-        <form id="hr-action-form" method="dialog">
+        <form id="hr-action-form">
             <h2 id="hr-action-title">Confirmar Ação</h2>
             <p class="modal-desc" id="hr-action-prompt">Esta operação será registrada no histórico de auditoria.</p>
-            <input type="hidden" name="actionUrl" id="hr-action-url" />
-            <label>
+            <input type="hidden" id="hr-action-resolution" />
+            <label id="hr-action-date-label" hidden>
+                Fim da vigência
+                <input type="date" id="hr-action-date" />
+            </label>
+            <label for="hr-action-reason">
                 Justificativa / Motivo
                 <textarea name="reason" id="hr-action-reason" maxlength="1000" placeholder="Informe a justificativa desta operação..."></textarea>
             </label>

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Agro360.Application;
 using Agro360.Application.Abstractions;
+using Agro360.SharedKernel;
 using Dapper;
 using Microsoft.AspNetCore.Authorization;
 
@@ -16,9 +17,14 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
 {
     protected override async Task HandleRequirementAsync(AuthorizationHandlerContext context, PermissionRequirement requirement)
     {
+        // Sem claims de identidade o requerimento falha silenciosamente (desafio 401).
+        // Com identidade válida, toda negativa definitiva vira ForbiddenException (403 canônico).
         if (!Guid.TryParse(context.User.FindFirstValue("sub"), out var userId)
-            || !Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenantId)
-            || !context.User.HasClaim("permission", requirement.Permission)) return;
+            || !Guid.TryParse(context.User.FindFirstValue("tenant_id"), out var tenantId)) return;
+        if (!context.User.HasClaim("permission", requirement.Permission))
+            throw new ForbiddenException(requirement.Permission == Permissions.PlatformAdmin
+                ? "Esta operação exige super administração da plataforma MNSOFT."
+                : "Seu perfil não possui permissão para executar esta operação.");
 
         await using var connection = await connectionFactory.OpenConnectionAsync().ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync().ConfigureAwait(false);
@@ -39,7 +45,12 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
                       and u.tenant_id=@TenantId and u.status='ACTIVE' and u.deleted_at is null
                       and r.code='SUPER_ADMIN' and p.code=@Permission)
                 """, new { UserId = userId, TenantId = tenantId, requirement.Permission }, transaction).ConfigureAwait(false);
-            if (authorized) context.Succeed(requirement);
+            if (!authorized)
+            {
+                await transaction.CommitAsync().ConfigureAwait(false);
+                throw new ForbiddenException("Esta operação exige super administração da plataforma MNSOFT.");
+            }
+            context.Succeed(requirement);
             await transaction.CommitAsync().ConfigureAwait(false);
             return;
         }
@@ -58,7 +69,12 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
                       and t.status in (1, 2) and t.deleted_at is null
                 )
                 """, new { UserId = userId, TenantId = tenantId }, transaction).ConfigureAwait(false);
-            if (portalAuthorized) context.Succeed(requirement);
+            if (!portalAuthorized)
+            {
+                await transaction.CommitAsync().ConfigureAwait(false);
+                throw new ForbiddenException("Seu acesso de portal está inativo ou incompatível com esta operação.");
+            }
+            context.Succeed(requirement);
             await transaction.CommitAsync().ConfigureAwait(false);
             return;
         }
@@ -71,13 +87,13 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
             if (!Guid.TryParse(sessionIdClaim, out var sessionId))
             {
                 await transaction.CommitAsync().ConfigureAwait(false);
-                return;
+                throw new ForbiddenException("Sua sessão de suporte não está mais ativa.");
             }
 
             await connection.ExecuteAsync("select set_config('app.platform_context', 'true', true);", transaction: transaction).ConfigureAwait(false);
 
             var supportAccess = await connection.QuerySingleAsync<SupportAccessState>(
-                """
+                $"""
                 select exists(
                            select 1 from agro360.platform_super_admins a
                            join agro360.identity_users u on u.id=a.user_id
@@ -90,22 +106,20 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
                              and s.started_at <= now() and s.expires_at > now() and s.ended_at is null
                        ) ActiveSupportSession,
                        exists(select 1 from agro360.tenancy_tenants where id=@TenantId and status in(1,2) and deleted_at is null) TenantAllowed,
-                       exists(
-                           select 1 from (
-                               select 1 from agro360.saas_organizations o join agro360.saas_plans p on p.id=o.plan_id where o.tenant_id=@TenantId and o.status='ACTIVE' and p.active
-                               union all
-                               select 1 from agro360.platform_tenant_module_entitlements where tenant_id=@TenantId and status in('CONTRACTED','ACTIVE','TRIAL')
-                               union all
-                               select 1 from agro360.platform_tenant_modules where tenant_id=@TenantId and status='ACTIVE' and (trial_ends_at is null or trial_ends_at>now())
-                           ) x
-                       ) ContractAllowed,
+                       exists(select 1 from ({EntitlementQueries.ModuleCodeSelect}) effective_modules) ContractAllowed,
                        coalesce((select s.scope from agro360.saas_support_sessions s where s.id=@SessionId and s.tenant_id=@TenantId and s.actor_id=@UserId and s.ended_at is null), '') Scope
                 """, new { TenantId = tenantId, UserId = userId, SessionId = sessionId }, transaction).ConfigureAwait(false);
 
-            if (!supportAccess.IsSuperAdmin || !supportAccess.ActiveSupportSession || !supportAccess.TenantAllowed)
+            if (!supportAccess.IsSuperAdmin || !supportAccess.ActiveSupportSession)
             {
                 await transaction.CommitAsync().ConfigureAwait(false);
-                return;
+                throw new ForbiddenException("Sua sessão de suporte não está mais ativa.");
+            }
+
+            if (!supportAccess.TenantAllowed)
+            {
+                await transaction.CommitAsync().ConfigureAwait(false);
+                throw new ForbiddenException("Esta organização está em estado incompatível para a operação.");
             }
 
             // Scope check: if scope is read-only, mutations must be denied
@@ -113,7 +127,7 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
             if (isMutation && !string.Equals(supportAccess.Scope, "SUPPORT_OPERATIONAL", StringComparison.OrdinalIgnoreCase))
             {
                 await transaction.CommitAsync().ConfigureAwait(false);
-                return;
+                throw new ForbiddenException("Esta sessão de suporte permite apenas leitura.");
             }
 
             if (requirement.Permission.StartsWith("account.", StringComparison.OrdinalIgnoreCase) || requirement.Permission == "support_session")
@@ -131,27 +145,27 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
                 return;
             }
 
+            var supportContracted = false;
             if (supportAccess.ContractAllowed)
             {
-                var contracted = await connection.ExecuteScalarAsync<bool>(
-                    """
+                supportContracted = await connection.ExecuteScalarAsync<bool>(
+                    $"""
                     select exists(
-                        select 1 from (
-                            select unnest(p.modules) code from agro360.saas_organizations o join agro360.saas_plans p on p.id=o.plan_id where o.tenant_id=@TenantId and o.status='ACTIVE' and p.active
-                            union all
-                            select c.code from agro360.platform_tenant_module_entitlements e join agro360.platform_module_catalog c on c.id=e.module_id where e.tenant_id=@TenantId and e.status in('CONTRACTED','ACTIVE','TRIAL')
-                            union all
-                            select m.code from agro360.platform_tenant_modules tm join agro360.platform_marketplace_modules m on m.id=tm.module_id where tm.tenant_id=@TenantId and tm.status='ACTIVE' and (tm.trial_ends_at is null or tm.trial_ends_at>now())
-                        ) modules where lower(code)=any(@Modules))
+                        select 1 from ({EntitlementQueries.ModuleCodeSelect}) effective_modules where module_code=any(@Modules))
                     """, new { TenantId = tenantId, Modules = acceptedSupportModules.Select(module => module.ToLowerInvariant()).ToArray() }, transaction).ConfigureAwait(false);
-                if (contracted) context.Succeed(requirement);
             }
+            if (!supportContracted)
+            {
+                await transaction.CommitAsync().ConfigureAwait(false);
+                throw new ForbiddenException("O módulo necessário para esta operação não está contratado pela sua organização.");
+            }
+            context.Succeed(requirement);
             await transaction.CommitAsync().ConfigureAwait(false);
             return;
         }
 
         var baseAccess = await connection.QuerySingleAsync<AccessState>(
-            """
+            $"""
             select exists(
                        select 1 from agro360.identity_users u
                        join agro360.identity_user_roles ur on ur.tenant_id=u.tenant_id and ur.user_id=u.id
@@ -160,12 +174,18 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
                        where u.tenant_id=@TenantId and u.id=@UserId and u.status='ACTIVE' and u.deleted_at is null and p.code=@Permission
                    ) HasPermission,
                    exists(select 1 from agro360.tenancy_tenants where id=@TenantId and status in(1,2) and deleted_at is null) TenantAllowed,
-                   exists(select 1 from agro360.saas_organizations o join agro360.saas_plans p on p.id=o.plan_id where o.tenant_id=@TenantId and o.status='ACTIVE' and p.active) ContractAllowed
+                   exists(select 1 from ({EntitlementQueries.ModuleCodeSelect}) effective_modules) ContractAllowed
             """, new { TenantId = tenantId, UserId = userId, requirement.Permission }, transaction).ConfigureAwait(false);
-        if (!baseAccess.HasPermission || !baseAccess.TenantAllowed)
+        if (!baseAccess.HasPermission)
         {
             await transaction.CommitAsync().ConfigureAwait(false);
-            return;
+            throw new ForbiddenException("Seu perfil não possui permissão para executar esta operação.");
+        }
+
+        if (!baseAccess.TenantAllowed)
+        {
+            await transaction.CommitAsync().ConfigureAwait(false);
+            throw new ForbiddenException("Esta organização está em estado incompatível para a operação.");
         }
 
         if (requirement.Permission.StartsWith("account.", StringComparison.OrdinalIgnoreCase))
@@ -176,42 +196,27 @@ public sealed class PermissionAuthorizationHandler(IDbConnectionFactory connecti
         }
 
         var acceptedModules = AcceptedModules(requirement.Permission);
-        if (baseAccess.ContractAllowed && acceptedModules.Length > 0)
+        if (!baseAccess.ContractAllowed || acceptedModules.Length == 0)
         {
-            var contracted = await connection.ExecuteScalarAsync<bool>(
-                """
-                select exists(
-                    select 1 from (
-                        select unnest(p.modules) code from agro360.saas_organizations o join agro360.saas_plans p on p.id=o.plan_id where o.tenant_id=@TenantId and o.status='ACTIVE' and p.active
-                        union all
-                        select c.code from agro360.platform_tenant_module_entitlements e join agro360.platform_module_catalog c on c.id=e.module_id where e.tenant_id=@TenantId and e.status in('CONTRACTED','ACTIVE','TRIAL')
-                        union all
-                        select m.code from agro360.platform_tenant_modules tm join agro360.platform_marketplace_modules m on m.id=tm.module_id where tm.tenant_id=@TenantId and tm.status='ACTIVE' and (tm.trial_ends_at is null or tm.trial_ends_at>now())
-                    ) modules where lower(code)=any(@Modules))
-                """, new { TenantId = tenantId, Modules = acceptedModules.Select(module => module.ToLowerInvariant()).ToArray() }, transaction).ConfigureAwait(false);
-            if (contracted) context.Succeed(requirement);
+            await transaction.CommitAsync().ConfigureAwait(false);
+            throw new ForbiddenException("O módulo necessário para esta operação não está contratado pela sua organização.");
         }
+
+        var contracted = await connection.ExecuteScalarAsync<bool>(
+            $"""
+            select exists(
+                select 1 from ({EntitlementQueries.ModuleCodeSelect}) effective_modules where module_code=any(@Modules))
+            """, new { TenantId = tenantId, Modules = acceptedModules.Select(module => module.ToLowerInvariant()).ToArray() }, transaction).ConfigureAwait(false);
+        if (!contracted)
+        {
+            await transaction.CommitAsync().ConfigureAwait(false);
+            throw new ForbiddenException("O módulo necessário para esta operação não está contratado pela sua organização.");
+        }
+        context.Succeed(requirement);
         await transaction.CommitAsync().ConfigureAwait(false);
     }
 
-    public static string[] AcceptedModules(string permission)
-    {
-        var group = permission.Split('.', 2, StringSplitOptions.TrimEntries)[0];
-        return group switch
-        {
-            "properties" => ["properties"], "agriculture" => ["agriculture"], "inventory" => ["inventory"], "livestock" => ["livestock"],
-            "crm" or "commercial" or "commercial-saas" or "customer-success" => ["commercial"], "finance" => ["finance"], "purchasing" => ["purchasing"],
-            "production" => ["agroindustry"], "fleet" or "maintenance" => ["fleet"], "dashboard" => ["reports", "analytics"],
-            "storage" => ["inventory", "warehousing"], "logistics" or "regional-logistics" or "after-sales" => ["logistics"],
-            "traceability" or "ledger" or "sales-network" => ["traceability"], "intelligence" => ["reports", "intelligence", "analytics", "ai", "predictive-ai"],
-            "compliance" or "esg" or "sustainability" => ["environment-esg"], "maps" => ["properties", "analytics"], "cooperative" => ["cooperatives"],
-            "rural-hr" or "sst" => ["verticals", "rural-hr"], "documents" or "evidences" or "dossiers" or "certificates" => ["documents"],
-            "mobile" or "field-checklists" => ["mobile"], "export" or "fiscal" => [group],
-            "marketplace" or "partners" or "api-keys" or "integrations" => ["platform", "marketplace"],
-            "deployment" or "governance" or "lgpd" or "security" or "work" or "support" or "portal" => ["platform"],
-            _ => []
-        };
-    }
+    public static string[] AcceptedModules(string permission) => Permissions.ModulesForPermission(permission);
 
     private sealed class AccessState { public bool HasPermission { get; init; } public bool TenantAllowed { get; init; } public bool ContractAllowed { get; init; } }
     private sealed class SupportAccessState { public bool IsSuperAdmin { get; init; } public bool ActiveSupportSession { get; init; } public bool TenantAllowed { get; init; } public bool ContractAllowed { get; init; } public string Scope { get; init; } = ""; }

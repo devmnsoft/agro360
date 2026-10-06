@@ -56,12 +56,14 @@ public sealed class FleetController(IFleetService service, IFleetOperationsServi
     [HttpPost("downtimes"), Authorize(Policy = Permissions.FleetWrite)] public Task<IActionResult> Downtime(DowntimeCommand x, CancellationToken ct) => Created("downtimes", () => service.OpenDowntimeAsync(x, ct));
 
     [HttpGet("costs")] public Task<IReadOnlyList<dynamic>> Costs(Guid? assetId, DateOnly? from, DateOnly? until, CancellationToken ct) => operations.CostSummaryAsync(assetId, from, until, ct);
-    [HttpGet("reports/export")] public async Task<IActionResult> ExportReport(string kind, string? status, Guid? assetId, CancellationToken ct)
+    [HttpGet("reports/export")]
+    public async Task<IActionResult> ExportReport(string kind, string? status, Guid? assetId, CancellationToken ct)
     {
         var bytes = await operations.ExportCsvAsync(new FleetExportFilter(kind, status, assetId), ct);
         return File(bytes, "text/csv; charset=utf-8", $"frota-{kind}.csv");
     }
-    [HttpGet("reports/assets.csv")] public async Task<IActionResult> AssetsCsv(CancellationToken ct)
+    [HttpGet("reports/assets.csv")]
+    public async Task<IActionResult> AssetsCsv(CancellationToken ct)
     {
         var bytes = await operations.ExportCsvAsync(new FleetExportFilter("assets", null, null), ct);
         return File(bytes, "text/csv; charset=utf-8", "frota-ativos.csv");

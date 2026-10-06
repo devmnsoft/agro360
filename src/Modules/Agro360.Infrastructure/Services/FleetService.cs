@@ -45,9 +45,9 @@ from agro360.fleet_assets where tenant_id=@TenantId and deleted_at is null
         };
         return (IReadOnlyList<FleetLookup>)(await c.QueryAsync<FleetLookup>($"select id,name from {source} where tenant_id=@TenantId and {active} and (@Search is null or name ilike '%'||@Search||'%') order by name limit 50", new { tenant.TenantId, Search = search }, t)).ToArray();
     }, ct);
-        public Task<IReadOnlyList<FleetAsset>> AssetsAsync(string? search, string? status, int page, int pageSize, CancellationToken ct, bool includeDeleted = false) => db.InTenantTransactionAsync(async (c, t) =>
-    {
-        var sql = """
+    public Task<IReadOnlyList<FleetAsset>> AssetsAsync(string? search, string? status, int page, int pageSize, CancellationToken ct, bool includeDeleted = false) => db.InTenantTransactionAsync(async (c, t) =>
+{
+    var sql = """
             select a.id, a.internal_code internalcode, a.name, t.name type, a.status, a.brand, a.model, a.plate,
                    a.odometer, a.hour_meter hourmeter, p.name propertyname, cc.name costcentername,
                    a.created_at createdat, cu.name createdbyname, a.updated_at updatedat, uu.name updatedbyname,
@@ -66,42 +66,42 @@ from agro360.fleet_assets where tenant_id=@TenantId and deleted_at is null
             order by a.name
             limit @Take offset @Skip
             """;
-        var rows = await c.QueryAsync<FleetAsset>(sql, new
-        {
-            tenant.TenantId,
-            Search = search,
-            Status = status,
-            IncludeDeleted = includeDeleted,
-            Take = Math.Clamp(pageSize, 1, 100),
-            Skip = (Math.Max(page, 1) - 1) * Math.Clamp(pageSize, 1, 100)
-        }, t);
-        return (IReadOnlyList<FleetAsset>)rows.ToArray();
-    }, ct);
-public Task<Guid> SaveAssetAsync(Guid? id, FleetAssetCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
+    var rows = await c.QueryAsync<FleetAsset>(sql, new
     {
-        FleetRules.ValidateAsset(command.InternalCode, command.Status, command.Odometer, command.HourMeter);
-        var cadastral = string.IsNullOrWhiteSpace(command.CadastralStatus) ? "ACTIVE" : command.CadastralStatus.Trim().ToUpperInvariant();
-        var ownership = string.IsNullOrWhiteSpace(command.Ownership) ? "OWNED" : command.Ownership.Trim().ToUpperInvariant();
-        if (!FleetRules.CadastralStatuses.Contains(cadastral, StringComparer.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Situação cadastral inválida.");
-        if (ownership is not ("OWNED" or "LEASED" or "RENTED" or "THIRD_PARTY"))
-            throw new InvalidOperationException("Condição de propriedade/locação inválida.");
-        await Ensure(c, t, "agro360.fleet_asset_types", command.AssetTypeId);
-        var duplicate = await c.ExecuteScalarAsync<bool>(
-            "select exists(select 1 from agro360.fleet_assets where tenant_id=@TenantId and deleted_at is null and id<>@Id and (upper(internal_code)=upper(@InternalCode) or (@Plate is not null and upper(plate)=upper(@Plate))))",
-            new { tenant.TenantId, Id = id ?? Guid.Empty, command.InternalCode, command.Plate }, t);
-        if (duplicate) throw new InvalidOperationException("Código interno ou placa já cadastrado neste tenant.");
-        var assetId = id ?? Guid.NewGuid();
-        if (id is not null)
+        tenant.TenantId,
+        Search = search,
+        Status = status,
+        IncludeDeleted = includeDeleted,
+        Take = Math.Clamp(pageSize, 1, 100),
+        Skip = (Math.Max(page, 1) - 1) * Math.Clamp(pageSize, 1, 100)
+    }, t);
+    return (IReadOnlyList<FleetAsset>)rows.ToArray();
+}, ct);
+    public Task<Guid> SaveAssetAsync(Guid? id, FleetAssetCommand command, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
         {
-            var old = await c.QuerySingleOrDefaultAsync<(decimal Odometer, decimal HourMeter)>(
-                "select odometer,hour_meter hourmeter from agro360.fleet_assets where tenant_id=@TenantId and id=@Id and deleted_at is null",
-                new { tenant.TenantId, Id = id }, t);
-            FleetRules.ValidateMeterChange(old.Odometer, command.Odometer, command.MeterJustification, false);
-            FleetRules.ValidateMeterChange(old.HourMeter, command.HourMeter, command.MeterJustification, false);
-        }
-        await c.ExecuteAsync(
-            """
+            FleetRules.ValidateAsset(command.InternalCode, command.Status, command.Odometer, command.HourMeter);
+            var cadastral = string.IsNullOrWhiteSpace(command.CadastralStatus) ? "ACTIVE" : command.CadastralStatus.Trim().ToUpperInvariant();
+            var ownership = string.IsNullOrWhiteSpace(command.Ownership) ? "OWNED" : command.Ownership.Trim().ToUpperInvariant();
+            if (!FleetRules.CadastralStatuses.Contains(cadastral, StringComparer.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Situação cadastral inválida.");
+            if (ownership is not ("OWNED" or "LEASED" or "RENTED" or "THIRD_PARTY"))
+                throw new InvalidOperationException("Condição de propriedade/locação inválida.");
+            await Ensure(c, t, "agro360.fleet_asset_types", command.AssetTypeId);
+            var duplicate = await c.ExecuteScalarAsync<bool>(
+                "select exists(select 1 from agro360.fleet_assets where tenant_id=@TenantId and deleted_at is null and id<>@Id and (upper(internal_code)=upper(@InternalCode) or (@Plate is not null and upper(plate)=upper(@Plate))))",
+                new { tenant.TenantId, Id = id ?? Guid.Empty, command.InternalCode, command.Plate }, t);
+            if (duplicate) throw new InvalidOperationException("Código interno ou placa já cadastrado neste tenant.");
+            var assetId = id ?? Guid.NewGuid();
+            if (id is not null)
+            {
+                var old = await c.QuerySingleOrDefaultAsync<(decimal Odometer, decimal HourMeter)>(
+                    "select odometer,hour_meter hourmeter from agro360.fleet_assets where tenant_id=@TenantId and id=@Id and deleted_at is null",
+                    new { tenant.TenantId, Id = id }, t);
+                FleetRules.ValidateMeterChange(old.Odometer, command.Odometer, command.MeterJustification, false);
+                FleetRules.ValidateMeterChange(old.HourMeter, command.HourMeter, command.MeterJustification, false);
+            }
+            await c.ExecuteAsync(
+                """
             insert into agro360.fleet_assets(
                 id,tenant_id,internal_code,code,name,asset_type_id,status,cadastral_status,ownership,brand,model,year,plate,serial_number,
                 property_id,farm_id,cost_center_id,odometer,hour_meter,fuel_capacity,energy_source,main_operator_id,acquired_on,commissioned_on,
@@ -130,37 +130,37 @@ public Task<Guid> SaveAssetAsync(Guid? id, FleetAssetCommand command, Cancellati
             where @HourMeter > 0
               and not exists(select 1 from agro360.fleet_asset_meters m where m.tenant_id=@TenantId and m.asset_id=@Id and m.meter_kind='HOUR_METER');
             """,
-            new
-            {
-                Id = assetId,
-                tenant.TenantId,
-                tenant.UserId,
-                command.InternalCode,
-                command.Name,
-                command.AssetTypeId,
-                command.Status,
-                Cadastral = cadastral,
-                Ownership = ownership,
-                command.Brand,
-                command.Model,
-                command.Year,
-                command.Plate,
-                command.SerialNumber,
-                command.PropertyId,
-                command.CostCenterId,
-                command.Odometer,
-                command.HourMeter,
-                command.FuelCapacity,
-                command.EnergySource,
-                command.MainOperatorId,
-                command.AcquiredOn,
-                command.CommissionedOn,
-                command.AcquisitionValue,
-                command.Notes,
-                EventType = id is null ? "CREATED" : "UPDATED"
-            }, t);
-        return assetId;
-    }, ct);
+                new
+                {
+                    Id = assetId,
+                    tenant.TenantId,
+                    tenant.UserId,
+                    command.InternalCode,
+                    command.Name,
+                    command.AssetTypeId,
+                    command.Status,
+                    Cadastral = cadastral,
+                    Ownership = ownership,
+                    command.Brand,
+                    command.Model,
+                    command.Year,
+                    command.Plate,
+                    command.SerialNumber,
+                    command.PropertyId,
+                    command.CostCenterId,
+                    command.Odometer,
+                    command.HourMeter,
+                    command.FuelCapacity,
+                    command.EnergySource,
+                    command.MainOperatorId,
+                    command.AcquiredOn,
+                    command.CommissionedOn,
+                    command.AcquisitionValue,
+                    command.Notes,
+                    EventType = id is null ? "CREATED" : "UPDATED"
+                }, t);
+            return assetId;
+        }, ct);
     public Task SoftDeleteAssetAsync(Guid id, string reason, CancellationToken ct) => db.InTenantTransactionAsync(async (c, t) =>
     {
         var activeBlocks = await c.ExecuteScalarAsync<bool>("select exists(select 1 from agro360.fleet_operational_blocks where tenant_id=@TenantId and asset_id=@Id and status='ACTIVE')", new { tenant.TenantId, Id = id }, t);

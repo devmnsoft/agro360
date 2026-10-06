@@ -157,6 +157,44 @@ function Call-Api([string]$BaseUrl, [string]$Path, [string]$Method = 'GET', $Bod
     }
 }
 
+function Invoke-WebPage([string]$Method, [string]$Uri, $Body = $null, [string]$CookieHeader = $null) {
+    $request = [System.Net.HttpWebRequest]::Create($Uri)
+    $request.Method = $Method
+    $request.AllowAutoRedirect = $false
+    $request.Timeout = 20000
+    if ($Body -ne $null) {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Body)
+        $request.ContentType = 'application/json; charset=utf-8'
+        $request.ContentLength = $bytes.Length
+        $stream = $request.GetRequestStream()
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Close()
+    }
+    if ($CookieHeader) { $request.Headers['Cookie'] = $CookieHeader }
+    try {
+        $response = $request.GetResponse()
+    } catch [System.Net.WebException] {
+        $response = $_.Exception.Response
+        if ($null -eq $response) { throw "Erro na chamada web ${Method} ${Uri}: $($_.Exception.Message)" }
+    }
+    $code = [int]$response.StatusCode
+    $location = $response.Headers['Location']
+    $content = ''
+    try {
+        $reader = [System.IO.StreamReader]::new($response.GetResponseStream(), [System.Text.Encoding]::UTF8)
+        $content = $reader.ReadToEnd()
+        $reader.Dispose()
+    } catch { }
+    $setCookies = @($response.Headers.GetValues('Set-Cookie'))
+    $response.Close()
+    return [PSCustomObject]@{
+        Code = $code
+        Location = if ($location) { $location } else { '' }
+        Body = $content
+        SetCookies = $setCookies
+    }
+}
+
 try {
     Write-Host "=== INICIANDO AUDITORIA E HOMOLOGACAO E2E AGRO360 ===" -ForegroundColor Cyan
 
@@ -662,13 +700,31 @@ values('$orderMultiItemId', '$tenantAId', '$orderMultiId', '$productId', 50.00, 
     Assert-Step "Tenant B bloqueado ao consultar remessa do Tenant A (404/403)" ($crossShipmentRes.StatusCode -in @(403, 404)) "Status: $($crossShipmentRes.StatusCode)"
 
     # =========================================================================
-    # BLOCO 12 - RENDERIZACAO VISUAL WEB RAZOR
+    # BLOCO 12 - RENDERIZACAO VISUAL WEB RAZOR + AUTENTICACAO POR COOKIE DE PAGINA
     # =========================================================================
-    $commercialPage = Invoke-WebRequest "$webUrl/Commercial" -TimeoutSec 15 -UseBasicParsing
-    Assert-Step "Pagina Comercial renderizada no Web Razor" ($commercialPage.StatusCode -eq 200 -and $commercialPage.Content -match 'Agro360')
+    # Sem cookie: paginas protegidas redirecionam para a raiz (302 -> /).
+    $anonCommercial = Invoke-WebPage 'GET' "$webUrl/Commercial" $null $null
+    Assert-Step "Pagina Comercial anonima redireciona para login (302 -> /)" ($anonCommercial.Code -eq 302 -and $anonCommercial.Location -eq '/') "Code: $($anonCommercial.Code) Loc: $($anonCommercial.Location)"
 
-    $logisticsPage = Invoke-WebRequest "$webUrl/Logistics" -TimeoutSec 15 -UseBasicParsing
-    Assert-Step "Pagina Logistica renderizada no Web Razor" ($logisticsPage.StatusCode -eq 200 -and $logisticsPage.Content -match 'Agro360')
+    # Credencial invalida no sincronismo da pagina recebe 400 JSON canônico.
+    $badSync = Invoke-WebPage 'POST' "$webUrl/auth/page" '{"accessToken":"credencial-invalida"}' $null
+    Assert-Step "Sincronismo de pagina com credencial invalida responde 400 JSON" ($badSync.Code -eq 400 -and $badSync.Body -match 'invalid_page_token') "Code: $($badSync.Code) Body: $($badSync.Body)"
+
+    # Sincronismo com o token do Tenant A cria o cookie de pagina.
+    $syncA = Invoke-WebPage 'POST' "$webUrl/auth/page" ('{"accessToken":"' + $tokenA + '"}') $null
+    Assert-Step "Sincronismo de pagina autenticado responde 200 com cookie HttpOnly" ($syncA.Code -eq 200 -and (($syncA.SetCookies | Out-String) -match 'agro360\.page_token=.*httponly')) "Code: $($syncA.Code)"
+
+    $cookieA = ''
+    foreach ($sc in $syncA.SetCookies) {
+        if ($sc -like 'agro360.page_token=*') { $cookieA = ($sc -split ';')[0] }
+    }
+
+    # Autenticado: as paginas de modulo renderizam no Web Razor.
+    $commercialPage = Invoke-WebPage 'GET' "$webUrl/Commercial" $null $cookieA
+    Assert-Step "Pagina Comercial renderizada no Web Razor (autenticada)" ($commercialPage.Code -eq 200 -and $commercialPage.Body -match 'Agro360') "Code: $($commercialPage.Code)"
+
+    $logisticsPage = Invoke-WebPage 'GET' "$webUrl/Logistics" $null $cookieA
+    Assert-Step "Pagina Logistica renderizada no Web Razor (autenticada)" ($logisticsPage.Code -eq 200 -and $logisticsPage.Body -match 'Agro360') "Code: $($logisticsPage.Code)"
 
     Write-Host "`n=== TODOS OS 21 CENARIOS E2E FORAM HOMOLOGADOS COM EXITO! ===" -ForegroundColor Green
 }

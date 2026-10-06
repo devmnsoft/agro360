@@ -83,7 +83,7 @@ public sealed class IdentityService(
                 insert into agro360.identity_roles
                     (id, tenant_id, code, name, is_system, created_at)
                 values
-                    (@RoleId, @TenantId, 'tenant-administrator', 'Administrador do tenant', false, now());
+                    (@RoleId, @TenantId, 'tenant-administrator', 'Administrador do tenant', true, now());
 
                 insert into agro360.identity_user_roles (tenant_id, user_id, role_id)
                 values (@TenantId, @UserId, @RoleId);
@@ -410,26 +410,8 @@ public sealed class IdentityService(
         if (!isGlobalAdministrator)
         {
             var contractedModules = (await connection.QueryAsync<string>(new CommandDefinition(
-                """
-                select distinct module_code
-                from (
-                    select unnest(p.modules) as module_code
-                    from agro360.saas_organizations o
-                    join agro360.saas_plans p on p.id = o.plan_id
-                    where o.tenant_id = @TenantId and o.status = 'ACTIVE' and p.active
-                    union
-                    select c.code
-                    from agro360.platform_tenant_module_entitlements e
-                    join agro360.platform_module_catalog c on c.id = e.module_id
-                    where e.tenant_id = @TenantId and e.status in ('CONTRACTED','ACTIVE','TRIAL')
-                    union
-                    select m.code
-                    from agro360.platform_tenant_modules tm
-                    join agro360.platform_marketplace_modules m on m.id = tm.module_id
-                    where tm.tenant_id = @TenantId and tm.status = 'ACTIVE'
-                      and (tm.trial_ends_at is null or tm.trial_ends_at > now())
-                ) contracted
-                where module_code is not null;
+                $"""
+                {EntitlementQueries.ModuleCodeSelect}
                 """,
                 new { user.TenantId },
                 transaction,
@@ -484,36 +466,7 @@ public sealed class IdentityService(
             return true;
         }
 
-        var permissionGroup = permission.Split('.', 2, StringSplitOptions.TrimEntries)[0];
-        string[] acceptedModules = permissionGroup switch
-        {
-            "properties" => ["properties"],
-            "agriculture" => ["agriculture"],
-            "inventory" => ["inventory"],
-            "livestock" => ["livestock"],
-            "crm" or "commercial" or "commercial-saas" or "customer-success" => ["commercial"],
-            "finance" => ["finance"],
-            "purchasing" => ["purchasing"],
-            "production" => ["agroindustry"],
-            "fleet" or "maintenance" => ["fleet"],
-            "dashboard" => ["reports", "analytics"],
-            "storage" => ["inventory", "warehousing"],
-            "logistics" or "regional-logistics" or "after-sales" => ["logistics"],
-            "traceability" or "ledger" or "sales-network" => ["traceability"],
-            "intelligence" => ["reports", "intelligence", "analytics", "ai", "predictive-ai"],
-            "compliance" or "esg" or "sustainability" => ["environment-esg"],
-            "maps" => ["properties", "analytics"],
-            "cooperative" => ["cooperatives"],
-            "rural-hr" or "sst" => ["verticals", "rural-hr"],
-            "documents" or "evidences" or "dossiers" or "certificates" => ["documents"],
-            "mobile" or "field-checklists" => ["mobile"],
-            "export" or "fiscal" => [permissionGroup],
-            "marketplace" or "partners" or "api-keys" or "integrations" => ["platform", "marketplace"],
-            "deployment" or "governance" or "lgpd" or "security" or "work" or "support" or "portal" => ["platform"],
-            _ => Array.Empty<string>()
-        };
-
-        return acceptedModules.Any(contractedModules.Contains);
+        return Permissions.ModulesForPermission(permission).Any(contractedModules.Contains);
     }
 
     private static bool TryReadTenantId(string refreshToken, out Guid tenantId)

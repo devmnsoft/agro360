@@ -48,6 +48,8 @@
     let route = 'operations-board';
     let boardSituation = '';
     let boardPage = 1;
+    let showToken = 0;
+    let restoreFocus = null;
     const lookupsCache = {};
     const scopedKinds = new Set(['plots', 'seasons', 'work-orders', 'allocations', 'operational-resources']);
     const newKey = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
@@ -85,6 +87,8 @@
             }
         });
 
+        if (response.status === 401) throw new Error('Sessão expirada ou revogada. Entre novamente.');
+        if (response.status === 403) throw new Error('Seu perfil não pode executar esta operação.');
         if (!response.ok) {
             let errorText = 'Não foi possível concluir a operação.';
             try {
@@ -104,14 +108,11 @@
     const loadLookup = async (kind, scopeId) => {
         const key = scopeId ? `${kind}@${scopeId}` : kind;
         if (lookupsCache[key]) return lookupsCache[key];
-        try {
-            const qs = scopeId ? `?scopeId=${encodeURIComponent(scopeId)}` : '';
-            const data = await request(`lookups/${kind}${qs}`);
-            lookupsCache[key] = Array.isArray(data) ? data : [];
-        } catch {
-            lookupsCache[key] = [];
-        }
-        return lookupsCache[key];
+        const qs = scopeId ? `?scopeId=${encodeURIComponent(scopeId)}` : '';
+        const data = await request(`lookups/${kind}${qs}`);
+        if (!Array.isArray(data)) throw new Error(`A consulta de ${kind} não retornou uma lista.`);
+        lookupsCache[key] = data;
+        return data;
     };
 
     const scopeFor = (container) => container?.querySelector?.('[name="propertyId"], #hr-filter-property')?.value || '';
@@ -123,7 +124,13 @@
         for (const select of selects) {
             const kind = select.dataset.lookup;
             const currentVal = select.value;
-            const options = await loadLookup(kind, scopedKinds.has(kind) ? scopeId : '');
+            let options = [];
+            try {
+                options = await loadLookup(kind, scopedKinds.has(kind) ? scopeId : '');
+            } catch (err) {
+                notify(`Não foi possível carregar ${kind}. Abra o formulário novamente para tentar. ${err.message}`, true);
+                continue;
+            }
             const firstPlaceholder = select.querySelector('option[value=""]')?.textContent || 'Selecione…';
 
             select.innerHTML = `<option value="">${esc(firstPlaceholder)}</option>` +
@@ -236,6 +243,16 @@
         const id = item.id;
         const status = (item.status || '').toUpperCase();
         const actions = [];
+
+        if (currentRoute === 'data-reviews') {
+            actions.push(`<button type="button" class="btn btn-sm btn-primary" data-action="resolve-review" data-resolution="CONFIRMED_REAL" data-id="${id}">Confirmar documento real</button>`);
+            actions.push(`<button type="button" class="btn btn-sm btn-outline-secondary" data-action="resolve-review" data-resolution="CORRECTED" data-id="${id}">Registrar correção na origem</button>`);
+            return actions.join(' ');
+        }
+        if (currentRoute === 'tariffs' && status === 'ACTIVE') {
+            actions.push(`<button type="button" class="btn btn-sm btn-outline-secondary" data-action="close-tariff" data-id="${id}">Encerrar vigência</button>`);
+            return actions.join(' ');
+        }
 
         if (currentRoute === 'people') {
             if (status === 'ACTIVE') {
@@ -437,6 +454,7 @@
                             <td>
                                 <strong>${esc(item.name || '(Sem nome)')}</strong>
                                 ${item.kind ? `<small class="d-block text-muted">${esc(item.kind)}</small>` : ''}
+                                ${item.blockReason ? `<small class="d-block">${esc(item.blockReason)}</small>` : ''}
                             </td>
                             <td>${statusBadge(item.status)}</td>
                             <td>${item.startsAt ? new Date(item.startsAt).toLocaleString('pt-BR') : '—'}</td>
@@ -455,6 +473,7 @@
     };
 
     const show = async () => {
+        const token = ++showToken;
         renderEmpty('Carregando dados operacionais…');
         const filterStatus = document.querySelector('#hr-filter-status')?.value;
         const filterSearch = document.querySelector('#hr-filter-search')?.value?.trim().toLowerCase();
@@ -462,16 +481,19 @@
         try {
             if (route === 'dashboard') {
                 const data = await request('dashboard');
+                if (token !== showToken) return;
                 renderDashboard(data);
                 return;
             }
             if (route === 'operations-board') {
                 const data = await request(`operations-board${boardQuery()}`);
+                if (token !== showToken) return;
                 renderBoard(data);
                 return;
             }
             if (route === 'tariffs') {
                 const data = await request('tariffs');
+                if (token !== showToken) return;
                 renderList((data || []).map(t => ({
                     id: t.id,
                     name: `${t.roleName || 'Qualquer cargo'} · ${t.activityType || 'qualquer atividade'} · ${t.rateType}`,
@@ -486,19 +508,22 @@
             }
             if (route === 'data-reviews') {
                 const data = await request('data-reviews');
+                if (token !== showToken) return;
                 renderList((data || []).map(r => ({
-                    id: r.entityId,
+                    id: r.id,
                     name: `${r.reasonCode}: ${r.detail}`,
                     status: r.resolution,
-                    kind: r.entityTable,
+                    kind: 'DATA_REVIEW',
                     amount: 0,
-                    updatedAt: r.detectedAt
+                    updatedAt: r.detectedAt,
+                    blockReason: 'A suspeita não prova documento falso. Confirme o documento real ou registre a correção já feita na origem. O cadastro não é substituído.'
                 })));
                 return;
             }
 
             const query = filterStatus ? `?status=${encodeURIComponent(filterStatus)}` : '';
             const data = await request(`${route}${query}`);
+            if (token !== showToken) return;
             let rows = Array.isArray(data) ? data : [];
 
             if (filterSearch) {
@@ -507,7 +532,8 @@
 
             renderList(rows);
         } catch (e) {
-            renderEmpty('Não foi possível carregar os dados.');
+            if (token !== showToken) return;
+            renderEmpty('Não foi possível carregar os dados. Tente novamente.');
             notify(e.message, true);
         }
     };
@@ -672,6 +698,8 @@
             e.preventDefault();
             if (!personForm.reportValidity()) return;
             const data = Object.fromEntries(new FormData(personForm));
+            const button = personForm.querySelector('[type="submit"]');
+            if (button) button.disabled = true;
             try {
                 await request('people', { method: 'POST', body: JSON.stringify(data) });
                 personDialog?.close();
@@ -680,6 +708,8 @@
                 await show();
             } catch (err) {
                 notify(err.message, true);
+            } finally {
+                if (button) button.disabled = false;
             }
         });
     }
@@ -691,7 +721,13 @@
             const data = Object.fromEntries(new FormData(timeForm));
             data.breakMinutes = Number(data.breakMinutes || 0);
             nullGuids(data, ['teamId', 'resourceId', 'allocationId']);
-            if (!data.idempotencyKey) data.idempotencyKey = newKey();
+            if (!data.idempotencyKey) {
+                data.idempotencyKey = newKey();
+                const field = timeForm.querySelector('[name="idempotencyKey"]');
+                if (field) field.value = data.idempotencyKey;
+            }
+            const button = timeForm.querySelector('[type="submit"]');
+            if (button) button.disabled = true;
             try {
                 await request('time-entries/register', { method: 'POST', body: JSON.stringify(data) });
                 timeDialog?.close();
@@ -699,6 +735,8 @@
                 await show();
             } catch (err) {
                 notify(err.message, true);
+            } finally {
+                if (button) button.disabled = false;
             }
         });
     }
@@ -833,12 +871,14 @@
             }
 
             if (action === 'appropriate') {
+                if (!btn.dataset.idempotencyKey) btn.dataset.idempotencyKey = newKey();
                 btn.disabled = true;
                 try {
                     const result = await request(`time-entries/${id}/appropriate`, {
                         method: 'POST',
-                        body: JSON.stringify({ idempotencyKey: newKey() })
+                        body: JSON.stringify({ idempotencyKey: btn.dataset.idempotencyKey })
                     });
+                    delete btn.dataset.idempotencyKey;
                     notify(result?.message || 'Apropriação registrada.');
                     await show();
                 } catch (err) {
@@ -849,23 +889,37 @@
             }
 
             if (action === 'cancel-plan') {
-                const reason = window.prompt('Motivo do cancelamento da alocação. A jornada já executada permanece.');
-                if (!reason || reason.trim().length < 5) {
-                    notify('Informe um motivo com pelo menos 5 caracteres.', true);
-                    return;
-                }
-                btn.disabled = true;
-                try {
-                    await request(`allocations/${id}/cancel-plan`, {
-                        method: 'POST',
-                        body: JSON.stringify({ status: 'CANCELLED', reason: reason.trim() })
-                    });
-                    notify('Alocação cancelada. A execução realizada foi preservada.');
-                    await show();
-                } catch (err) {
-                    notify(err.message, true);
-                    btn.disabled = false;
-                }
+                openAction({
+                    title: 'Cancelar alocação',
+                    prompt: 'A jornada já executada permanece. Informe o motivo, com pelo menos 5 caracteres.',
+                    url: `allocations/${id}/cancel-plan`,
+                    kind: 'cancel',
+                    requireReason: true
+                });
+                return;
+            }
+
+            if (action === 'resolve-review') {
+                openAction({
+                    title: btn.dataset.resolution === 'CORRECTED' ? 'Registrar correção na origem' : 'Confirmar documento real',
+                    prompt: 'A decisão não substitui nem apaga o documento. Descreva o que foi verificado.',
+                    url: `data-reviews/${id}/resolve`,
+                    kind: 'review',
+                    resolution: btn.dataset.resolution,
+                    requireReason: true
+                });
+                return;
+            }
+
+            if (action === 'close-tariff') {
+                openAction({
+                    title: 'Encerrar vigência da tarifa',
+                    prompt: 'As jornadas já calculadas conservam o valor. Informe o último dia de vigência e o motivo.',
+                    url: `tariffs/${id}/close`,
+                    kind: 'tariff',
+                    askDate: true,
+                    requireReason: true
+                });
                 return;
             }
 
@@ -884,15 +938,80 @@
             };
 
             const label = actionLabels[action] || action;
-            if (!confirm(`Confirma a operação "${label}" para este registro?`)) return;
+            openAction({
+                title: 'Confirmar operação',
+                prompt: `Confirma a operação "${label}" para este registro?`,
+                url: `${route}/${id}/${action}`,
+                kind: 'status',
+                requireReason: false
+            });
+        });
+    }
 
+    const openAction = ({ title, prompt, url, kind, resolution, askDate, requireReason }) => {
+        if (!actionDialog || !actionForm) {
+            notify('O diálogo de confirmação não está disponível.', true);
+            return;
+        }
+        restoreFocus = document.activeElement;
+        const titleEl = document.querySelector('#hr-action-title');
+        const promptEl = document.querySelector('#hr-action-prompt');
+        const reason = document.querySelector('#hr-action-reason');
+        const dateLabel = document.querySelector('#hr-action-date-label');
+        const dateInput = document.querySelector('#hr-action-date');
+        const resolutionInput = document.querySelector('#hr-action-resolution');
+        if (titleEl) titleEl.textContent = title;
+        if (promptEl) promptEl.textContent = prompt;
+        if (reason) {
+            reason.value = '';
+            reason.required = !!requireReason;
+            reason.minLength = requireReason ? 5 : 0;
+        }
+        if (dateLabel) dateLabel.hidden = !askDate;
+        if (dateInput) {
+            dateInput.value = '';
+            dateInput.required = !!askDate;
+        }
+        if (resolutionInput) resolutionInput.value = resolution || '';
+        actionForm.dataset.url = url;
+        actionForm.dataset.kind = kind;
+        actionDialog.showModal();
+        (askDate ? dateInput : reason)?.focus();
+    };
+
+    if (actionForm) {
+        actionForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!actionForm.reportValidity()) return;
+            const button = actionForm.querySelector('[type="submit"]');
+            if (button) button.disabled = true;
+            const kind = actionForm.dataset.kind;
+            const reason = document.querySelector('#hr-action-reason')?.value.trim() || '';
+            const resolution = document.querySelector('#hr-action-resolution')?.value || '';
+            const validTo = document.querySelector('#hr-action-date')?.value || '';
+            let body = null;
+            if (kind === 'cancel') body = { status: 'CANCELLED', reason };
+            else if (kind === 'review') body = { resolution, reason };
+            else if (kind === 'tariff') body = { validTo, reason };
             try {
-                await request(`${route}/${id}/${action}`, { method: 'POST' });
-                notify(`Operação "${label}" concluída com sucesso!`);
+                const options = { method: 'POST' };
+                if (body) options.body = JSON.stringify(body);
+                await request(actionForm.dataset.url, options);
+                actionDialog?.close();
+                notify('Operação confirmada.');
                 await show();
             } catch (err) {
                 notify(err.message, true);
+            } finally {
+                if (button) button.disabled = false;
             }
+        });
+    }
+
+    if (actionDialog) {
+        actionDialog.addEventListener('close', () => {
+            if (restoreFocus && typeof restoreFocus.focus === 'function') restoreFocus.focus();
+            restoreFocus = null;
         });
     }
 

@@ -113,7 +113,7 @@
 
 .tabs button.active {
     background: var(--accent);
-    color: #051a11;
+    color: var(--on-accent);
     border-color: var(--accent);
     box-shadow: 0 4px 14px rgba(99, 230, 167, 0.25);
 }
@@ -191,7 +191,7 @@
 
 .btn-primary {
     background: var(--accent);
-    color: #061c12;
+    color: var(--on-accent);
 }
 
 .btn-primary:hover {
