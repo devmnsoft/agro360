@@ -42,4 +42,24 @@ public sealed class IdentityController(IIdentityService identityService, IConfig
         await identityService.LogoutAsync(command, cancellationToken).ConfigureAwait(false);
         return NoContent();
     }
+
+    [HttpGet("auth/session")]
+    [Authorize]
+    [ProducesResponseType<SessionValidationResult>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetSession(CancellationToken cancellationToken)
+    {
+        var result = await identityService.ValidateSessionAsync(User, cancellationToken).ConfigureAwait(false);
+        if (!result.IsValid)
+        {
+            return Unauthorized(new
+            {
+                type = result.ErrorCode ?? "session_invalid",
+                title = "Sessão inválida ou revogada.",
+                detail = result.ErrorMessage ?? "Acesso não autorizado.",
+                status = 401
+            });
+        }
+        return Ok(result);
+    }
 }

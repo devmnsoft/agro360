@@ -352,6 +352,75 @@ public sealed class IdentityService(
         InfrastructureLogMessages.LogoutCompleted(logger, tenantId, revoked > 0, traceId);
     }
 
+    public async Task<SessionValidationResult> ValidateSessionAsync(System.Security.Claims.ClaimsPrincipal principal, CancellationToken cancellationToken)
+    {
+        var sub = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+            ?? principal.FindFirst("sub")?.Value;
+        var tenantStr = principal.FindFirst("tenant_id")?.Value;
+
+        if (!Guid.TryParse(sub, out var userId) || !Guid.TryParse(tenantStr, out var tenantId))
+        {
+            return new SessionValidationResult(false, ErrorCode: "invalid_claims", ErrorMessage: "Claims de identificação inválidas no token.");
+        }
+
+        return await database.InSystemTransactionAsync(async (connection, transaction) =>
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                "select set_config('app.tenant_id', @TenantId, true);",
+                new { TenantId = tenantId.ToString() }, transaction, cancellationToken: cancellationToken));
+
+            var tenant = await connection.QuerySingleOrDefaultAsync<TenantLookup>(new CommandDefinition(
+                """
+                select t.id, t.status, pt.status as "PlatformStatus"
+                from agro360.tenancy_tenants t
+                left join agro360.platform_tenants pt on pt.id = t.id and pt.deleted_at is null
+                where t.id = @TenantId and t.deleted_at is null;
+                """,
+                new { TenantId = tenantId }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+            if (tenant is null || tenant.Status is 3 or 4 or 5
+                || tenant.PlatformStatus is "SUSPENDED" or "BLOCKED" or "DELINQUENT" or "CANCELLED" or "CLOSED")
+            {
+                return new SessionValidationResult(false, tenantId, userId, ErrorCode: "tenant_blocked", ErrorMessage: "Tenant bloqueado ou inativo.");
+            }
+
+            var user = await connection.QuerySingleOrDefaultAsync<UserLookup>(new CommandDefinition(
+                """
+                select u.id, u.tenant_id as TenantId, u.name, u.email, u.status, u.deleted_at as DeletedAt
+                from agro360.identity_users u
+                where u.tenant_id = @TenantId and u.id = @UserId;
+                """,
+                new { TenantId = tenantId, UserId = userId }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+            if (user is null || user.DeletedAt is not null || !string.Equals(user.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+            {
+                return new SessionValidationResult(false, tenantId, userId, ErrorCode: "user_blocked", ErrorMessage: "Usuário inativo, excluído ou bloqueado.");
+            }
+
+            var roles = (await connection.QueryAsync<string>(new CommandDefinition(
+                """
+                select r.code
+                from agro360.identity_user_roles ur
+                join agro360.identity_roles r on r.tenant_id = ur.tenant_id and r.id = ur.role_id
+                where ur.tenant_id = @TenantId and ur.user_id = @UserId;
+                """,
+                new { TenantId = tenantId, UserId = userId }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
+
+            var permissions = (await connection.QueryAsync<string>(new CommandDefinition(
+                $"""
+                select distinct p.code
+                from agro360.identity_user_roles ur
+                join agro360.identity_role_permissions rp on rp.tenant_id = ur.tenant_id and rp.role_id = ur.role_id
+                join agro360.identity_permissions p on p.id = rp.permission_id
+                where ur.tenant_id = @TenantId and ur.user_id = @UserId
+                  and exists (select 1 from ({EntitlementQueries.ModuleCodeSelect}) m where m.module_code = p.module);
+                """,
+                new { TenantId = tenantId, UserId = userId }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
+
+            return new SessionValidationResult(true, tenantId, userId, user.Name, user.Email, roles, permissions);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
     private void RejectRefresh(string reason, Guid? tenantId, Guid? userId, string traceId, string origin)
     {
         InfrastructureLogMessages.RefreshRejected(logger, reason, tenantId, userId, traceId, origin);

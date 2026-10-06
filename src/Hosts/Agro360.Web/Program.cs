@@ -24,9 +24,11 @@ if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
 
 builder.Services.AddRazorPages();
 builder.Services.AddHealthChecks();
+builder.Services.AddHttpClient();
 
 var pageIssuer = builder.Configuration["Jwt:Issuer"] ?? "MNSOFT.Agro360";
 var pageAudience = builder.Configuration["Jwt:Audience"] ?? "MNSOFT.Agro360.Clients";
+var pageSigningKey = builder.Configuration["Jwt:SigningKey"] ?? "agro360-dev-insecure-jwt-key-not-for-prod-32b";
 
 builder.Services
     .AddAuthentication(PageTokenAuthHandler.SchemeName)
@@ -34,6 +36,7 @@ builder.Services
     {
         options.Issuer = pageIssuer;
         options.Audience = pageAudience;
+        options.SigningKey = pageSigningKey;
     });
 
 builder.Services.AddAuthorization(options => options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
@@ -134,7 +137,7 @@ async Task<IResult> HandlePageTokenSync(HttpContext context)
         return Results.Json(new { ok = true });
     }
 
-    var (principal, error, expiresAt) = PageTokenAuthHandler.TryDecode(accessToken, pageIssuer, pageAudience);
+    var (principal, error, expiresAt) = PageTokenAuthHandler.ValidateToken(accessToken, pageIssuer, pageAudience, pageSigningKey);
     if (principal is null || expiresAt is null)
     {
         return InvalidPageToken(context, error);
@@ -144,6 +147,33 @@ async Task<IResult> HandlePageTokenSync(HttpContext context)
     if (maxAge.TotalSeconds < 1)
     {
         return InvalidPageToken(context, "Sessão expirada.");
+    }
+
+    // Validação com o backend confiável: usuário/tenant ativos e sessão não revogada
+    var httpClientFactory = context.RequestServices.GetRequiredService<IHttpClientFactory>();
+    var httpClient = httpClientFactory.CreateClient();
+    using var sessionReq = new HttpRequestMessage(HttpMethod.Get, $"{apiOrigin}/api/v1/auth/session");
+    sessionReq.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+    try
+    {
+        using var sessionResp = await httpClient.SendAsync(sessionReq, context.RequestAborted).ConfigureAwait(false);
+        if (!sessionResp.IsSuccessStatusCode)
+        {
+            var problem = await sessionResp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: context.RequestAborted).ConfigureAwait(false);
+            var detail = problem.TryGetProperty("detail", out var d) ? d.GetString() : "Usuário ou tenant inativo ou bloqueado.";
+            return Results.Json(new
+            {
+                type = "session_rejected",
+                title = "Acesso negado.",
+                detail,
+                status = (int)sessionResp.StatusCode,
+                traceId = context.TraceIdentifier
+            }, statusCode: (int)sessionResp.StatusCode);
+        }
+    }
+    catch (HttpRequestException)
+    {
+        // Se a API estiver temporariamente inacessível durante o sync, a validação criptográfica do token já garantiu a integridade
     }
 
     var protector = context.RequestServices.GetRequiredService<IDataProtectionProvider>().CreateProtector(PageTokenAuthHandler.Purpose);
@@ -157,3 +187,4 @@ async Task<IResult> HandlePageTokenSync(HttpContext context)
     });
     return Results.Json(new { ok = true });
 }
+

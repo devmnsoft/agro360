@@ -87,6 +87,24 @@ public sealed class UsersController(ISaasService service) : SaasControllerBase(s
         await Service.SetUserActiveAsync(id, active, command.Reason, UserId(), ct).ConfigureAwait(false);
         return NoContent();
     }
+
+    [HttpPost("transfer-primary-admin"), Authorize(Policy = Permissions.AccountUsersManage)]
+    public async Task<IActionResult> TransferPrimaryAdmin(TransferPrimaryAdminCommand command, CancellationToken ct)
+    {
+        await Service.TransferPrimaryAdminAsync(command, UserId(), ct).ConfigureAwait(false);
+        return NoContent();
+    }
+
+    [HttpGet("{id:guid}/scopes"), Authorize(Policy = Permissions.AccountUsersRead)]
+    public Task<IReadOnlyList<UserUnitScopeDto>> GetScopes(Guid id, CancellationToken ct) =>
+        Service.GetUserScopesAsync(id, ct);
+
+    [HttpPut("{id:guid}/scopes"), Authorize(Policy = Permissions.AccountUsersManage)]
+    public async Task<IActionResult> SetScopes(Guid id, [FromBody] UserUnitScopeInput[] scopes, CancellationToken ct)
+    {
+        await Service.SetUserScopesAsync(id, scopes, UserId(), ct).ConfigureAwait(false);
+        return NoContent();
+    }
 }
 [Route("api/roles")] public sealed class RolesController(ISaasService s) : SaasControllerBase(s) { [HttpGet, Authorize(Policy = Permissions.AccountRolesRead)] public Task<IReadOnlyList<RoleSummary>> List(CancellationToken ct) => Service.GetRolesAsync(ct); [HttpPost, Authorize(Policy = Permissions.AccountRolesManage)] public async Task<IActionResult> Create(RoleCommand x, CancellationToken ct) { var id = await Service.SaveRoleAsync(null, x, UserId(), ct); return Created("/api/roles", new { id }); } [HttpPut("{id:guid}"), Authorize(Policy = Permissions.AccountRolesManage)] public async Task<IActionResult> Update(Guid id, RoleCommand x, CancellationToken ct) { await Service.SaveRoleAsync(id, x, UserId(), ct); return NoContent(); } }
 [Route("api/invitations")] public sealed class InvitationsController(ISaasService s) : SaasControllerBase(s) { [HttpGet, Authorize(Policy = Permissions.AccountInvitationsRead)] public Task<IReadOnlyList<InvitationSummary>> List(CancellationToken ct) => Service.GetInvitationsAsync(ct); [HttpPost, Authorize(Policy = Permissions.AccountInvitationsManage)] public async Task<IActionResult> Create(InvitationCommand x, CancellationToken ct) { var result = await Service.InviteAsync(x, UserId(), ct); return Created("/api/invitations", result); } [HttpPost("accept"), AllowAnonymous] public Task<InvitationAcceptanceResult> Accept(InvitationAcceptanceCommand x, CancellationToken ct) => Service.AcceptInvitationAsync(x, ct); [HttpPost("{id:guid}/resend"), Authorize(Policy = Permissions.AccountInvitationsManage)] public async Task<IActionResult> Resend(Guid id, CancellationToken ct) { var result = await Service.ChangeInvitationAsync(id, "resend", UserId(), ct); return Ok(result); } [HttpPost("{id:guid}/cancel"), Authorize(Policy = Permissions.AccountInvitationsManage)] public async Task<IActionResult> Cancel(Guid id, CancellationToken ct) { await Service.ChangeInvitationAsync(id, "cancel", UserId(), ct); return NoContent(); } }

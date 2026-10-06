@@ -2,6 +2,28 @@
 set -euo pipefail
 file="${1:-database/agro360-postgres-full.sql}"
 test -s "$file"
+
+if ! command -v rg >/dev/null 2>&1; then
+  rg() {
+    local grep_args=()
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        -m1|-m)
+          if [[ "$1" == "-m" ]]; then shift; fi
+          grep_args+=("-m" "1")
+          ;;
+        -n|-i|-q|-o|-ni|-in|-qi|-iq|-io|-oi)
+          grep_args+=("$1")
+          ;;
+        *)
+          grep_args+=("$1")
+          ;;
+      esac
+      shift
+    done
+    grep -E "${grep_args[@]}"
+  }
+fi
 first_role_reference="$(rg -n -m1 -i '^[[:space:]]*(grant|revoke|create[[:space:]]+policy|alter[[:space:]]+default[[:space:]]+privileges)[^;]*\bagro360_app\b' "$file" | cut -d: -f1)"
 first_role_creation="$(rg -n -m1 -i 'create[[:space:]]+role[[:space:]]+agro360_app[[:space:]]+nologin' "$file" | cut -d: -f1)"
 if [[ -z "$first_role_creation" || -z "$first_role_reference" || "$first_role_creation" -gt "$first_role_reference" ]]; then

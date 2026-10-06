@@ -13,13 +13,14 @@ public sealed class PageTokenAuthOptions : AuthenticationSchemeOptions
 {
     public string Issuer { get; set; } = "MNSOFT.Agro360";
     public string Audience { get; set; } = "MNSOFT.Agro360.Clients";
+    public string SigningKey { get; set; } = string.Empty;
 }
 
 /// <summary>
 /// Autentica páginas do host Web por um cookie HttpOnly protegido com DataProtection
-/// que carrega o mesmo JWT Bearer usado pela API. A assinatura do token não é
-/// verificada neste host (a chave de assinatura fica na API); a integridade é garantida
-/// pela proteção criptográfica do cookie e exp/iss/aud continuam sendo validados aqui.
+/// que carrega o JWT Bearer emitido pela API. A assinatura criptográfica HMAC-SHA256
+/// do token é estritamente validada com a chave segura configurada (Jwt:SigningKey)
+/// e os prazos exp/nbf/iss/aud são verificados.
 /// </summary>
 public sealed class PageTokenAuthHandler : AuthenticationHandler<PageTokenAuthOptions>
 {
@@ -54,7 +55,7 @@ public sealed class PageTokenAuthHandler : AuthenticationHandler<PageTokenAuthOp
             return Task.FromResult(AuthenticateResult.Fail("Credencial da página é inválida."));
         }
 
-        var (principal, error, _) = TryDecode(rawToken, Options.Issuer, Options.Audience);
+        var (principal, error, _) = ValidateToken(rawToken, Options.Issuer, Options.Audience, Options.SigningKey);
         return principal is null
             ? Task.FromResult(AuthenticateResult.Fail(error ?? "Credencial da página é inválida."))
             : Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name)));
@@ -80,31 +81,84 @@ public sealed class PageTokenAuthHandler : AuthenticationHandler<PageTokenAuthOp
         });
     }
 
-    /// <summary>Decodifica o payload base64url do JWT sem verificar a assinatura e valida exp/nbf/iss/aud.</summary>
+    /// <summary>Valida o token criptograficamente verificando assinatura HMAC-SHA256, algoritmo e claims exp/nbf/iss/aud.</summary>
+    public static (ClaimsPrincipal? Principal, string? Error, DateTime? ExpiresAtUtc) ValidateToken(string token, string expectedIssuer, string expectedAudience, string? signingKey)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return (null, "Credencial não informada.", null);
+        }
+
+        var segments = token.Split('.');
+        if (segments.Length != 3)
+        {
+            return (null, "Credencial em formato inválido.", null);
+        }
+
+        // Validação do Header
+        var headerBytes = Base64UrlDecode(segments[0]);
+        if (headerBytes is null)
+        {
+            return (null, "Credencial em formato inválido.", null);
+        }
+
+        try
+        {
+            using var headerDoc = JsonDocument.Parse(headerBytes);
+            if (!headerDoc.RootElement.TryGetProperty("alg", out var algElem) ||
+                !string.Equals(algElem.GetString(), "HS256", StringComparison.OrdinalIgnoreCase))
+            {
+                return (null, "Algoritmo de assinatura não permitido.", null);
+            }
+        }
+        catch (JsonException)
+        {
+            return (null, "Credencial em formato inválido.", null);
+        }
+
+        // Validação criptográfica da assinatura HMAC-SHA256
+        if (!string.IsNullOrWhiteSpace(signingKey))
+        {
+            var keyBytes = Encoding.UTF8.GetBytes(signingKey);
+            var signedBytes = Encoding.UTF8.GetBytes($"{segments[0]}.{segments[1]}");
+            var expectedSignature = HMACSHA256.HashData(keyBytes, signedBytes);
+            var actualSignature = Base64UrlDecode(segments[2]);
+
+            if (actualSignature is null || !CryptographicOperations.FixedTimeEquals(expectedSignature, actualSignature))
+            {
+                return (null, "Assinatura da credencial é inválida.", null);
+            }
+        }
+        else
+        {
+            return (null, "Chave de assinatura não configurada no host Web.", null);
+        }
+
+        return TryDecodePayload(segments[1], expectedIssuer, expectedAudience);
+    }
+
+    /// <summary>Decodifica o payload base64url do JWT e valida exp/nbf/iss/aud.</summary>
     public static (ClaimsPrincipal? Principal, string? Error, DateTime? ExpiresAtUtc) TryDecode(string token, string expectedIssuer, string expectedAudience)
+    {
+        var segments = token.Split('.');
+        if (segments.Length != 3)
+        {
+            return (null, "Credencial em formato inválido.", null);
+        }
+        return TryDecodePayload(segments[1], expectedIssuer, expectedAudience);
+    }
+
+    private static (ClaimsPrincipal? Principal, string? Error, DateTime? ExpiresAtUtc) TryDecodePayload(string payloadSegment, string expectedIssuer, string expectedAudience)
     {
         try
         {
-            var segments = token.Split('.');
-            if (segments.Length != 3)
+            var payloadBytes = Base64UrlDecode(payloadSegment);
+            if (payloadBytes is null)
             {
                 return (null, "Credencial em formato inválido.", null);
             }
 
-            var payload = segments[1].Replace('-', '+').Replace('_', '/');
-            switch (payload.Length % 4)
-            {
-                case 2:
-                    payload += "==";
-                    break;
-                case 3:
-                    payload += "=";
-                    break;
-                case 1:
-                    return (null, "Credencial em formato inválido.", null);
-            }
-
-            using var document = JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(payload)));
+            using var document = JsonDocument.Parse(payloadBytes);
             var root = document.RootElement;
             var now = DateTimeOffset.UtcNow;
 
@@ -230,6 +284,26 @@ public sealed class PageTokenAuthHandler : AuthenticationHandler<PageTokenAuthOp
                     claims.Add(new Claim(claimType, item.GetString()!));
                 }
             }
+        }
+    }
+
+    private static byte[]? Base64UrlDecode(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return null;
+        var padded = input.Replace('-', '+').Replace('_', '/');
+        switch (padded.Length % 4)
+        {
+            case 2: padded += "=="; break;
+            case 3: padded += "="; break;
+            case 1: return null;
+        }
+        try
+        {
+            return Convert.FromBase64String(padded);
+        }
+        catch (FormatException)
+        {
+            return null;
         }
     }
 }

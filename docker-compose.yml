@@ -60,6 +60,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: 8080
       ApiBaseUrl: http://localhost:8081
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:?set JWT_SIGNING_KEY in .env}
     ports:
       - "8080:8080"
     depends_on:

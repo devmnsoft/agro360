@@ -389,7 +389,7 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
         var key = id ?? Guid.CreateVersion7();
         var target = id is null ? null : await c.QuerySingleOrDefaultAsync<UserRoleState>(
             """
-            select u.status,
+            select u.status, u.email,
                    exists(select 1 from agro360.identity_user_roles ur join agro360.identity_roles r on r.tenant_id=ur.tenant_id and r.id=ur.role_id where ur.tenant_id=u.tenant_id and ur.user_id=u.id and lower(r.code)='tenant-administrator') IsAdministrator
             from agro360.identity_users u where u.tenant_id=@TenantId and u.id=@Id and u.deleted_at is null for update
             """, new { tenant.TenantId, Id = key }, t);
@@ -398,6 +398,12 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
         if (target?.IsAdministrator == true && !grantsAdministrator)
         {
             if (key == actorId) throw new ForbiddenException("O administrador não pode remover o próprio papel administrativo.");
+            var isPrimaryAdmin = await c.ExecuteScalarAsync<bool>(
+                "select exists(select 1 from agro360.saas_organizations where tenant_id=@TenantId and lower(responsible_email)=lower(@Email))",
+                new { tenant.TenantId, Email = target.Email }, t);
+            if (isPrimaryAdmin)
+                throw new ConflictException("O administrador principal deve manter o perfil administrativo até a transferência da titularidade.", "primary_admin_role_revocation_blocked");
+
             var activeAdministrators = await CountActiveAdministratorsAsync(c, t);
             if (activeAdministrators <= 1) throw new ConflictException("O último administrador ativo não pode perder o perfil administrativo.", "last_tenant_administrator");
         }
@@ -432,7 +438,7 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
             await connection.ExecuteAsync("select pg_advisory_xact_lock(hashtextextended(@Key,0))", new { Key = $"saas-user-management:{tenant.TenantId:N}" }, transaction);
             var target = await connection.QuerySingleOrDefaultAsync<UserAccessLookup>(
                 """
-                select u.status,
+                select u.status, u.email,
                        exists (
                            select 1
                            from agro360.identity_user_roles ur
@@ -450,6 +456,28 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
             if (target is null)
             {
                 throw new NotFoundException("Usuario", id);
+            }
+
+            if (!active)
+            {
+                var isPrimaryAdmin = await connection.ExecuteScalarAsync<bool>(
+                    """
+                    select exists (
+                        select 1
+                        from agro360.saas_organizations
+                        where tenant_id = @TenantId
+                          and lower(responsible_email) = lower(@Email)
+                    )
+                    """,
+                    new { tenant.TenantId, Email = target.Email },
+                    transaction).ConfigureAwait(false);
+
+                if (isPrimaryAdmin)
+                {
+                    throw new ConflictException(
+                        "O administrador principal não pode ser inativado sem transferência prévia da titularidade da conta.",
+                        "primary_admin_deactivation_blocked");
+                }
             }
 
             var activeAdministrators = target.IsAdministrator
@@ -523,6 +551,190 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
                     Actor = actorId
                 },
                 transaction).ConfigureAwait(false);
+        }, ct);
+
+    public Task TransferPrimaryAdminAsync(TransferPrimaryAdminCommand command, Guid actorId, CancellationToken ct) =>
+        Tenant("transfer-primary-admin", async (connection, transaction) =>
+        {
+            if (command.TargetUserId == Guid.Empty)
+                throw new ArgumentException("Usuário de destino é obrigatório.");
+            if (!command.Confirmed)
+                throw new ArgumentException("A transferência do administrador principal exige confirmação explícita.");
+            var reason = command.Reason?.Trim() ?? string.Empty;
+            if (reason.Length is < 5 or > 1000)
+                throw new ArgumentException("Motivo da transferência deve ter entre 5 e 1000 caracteres.");
+
+            await connection.ExecuteAsync(
+                "select pg_advisory_xact_lock(hashtextextended(@Key,0))",
+                new { Key = $"saas-user-management:{tenant.TenantId:N}" },
+                transaction).ConfigureAwait(false);
+
+            var org = await connection.QuerySingleOrDefaultAsync<PrimaryAdminOrgLookup>(
+                "select responsible_name as ResponsibleName, responsible_email as ResponsibleEmail from agro360.saas_organizations where tenant_id=@TenantId for update",
+                new { tenant.TenantId },
+                transaction).ConfigureAwait(false);
+
+            var target = await connection.QuerySingleOrDefaultAsync<PrimaryAdminTargetLookup>(
+                "select id as Id, name as Name, email as Email, status as Status from agro360.identity_users where tenant_id=@TenantId and id=@Id and deleted_at is null for update",
+                new { tenant.TenantId, Id = command.TargetUserId },
+                transaction).ConfigureAwait(false);
+
+            if (target is null)
+                throw new NotFoundException("Usuario", command.TargetUserId);
+
+            if (!string.Equals(target.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                throw new ConflictException("O usuário de destino deve estar ativo para assumir como administrador principal.", "target_user_inactive");
+
+            if (org is not null && string.Equals(org.ResponsibleEmail, target.Email, StringComparison.OrdinalIgnoreCase))
+                throw new ConflictException("O usuário selecionado já é o administrador principal da organização.", "already_primary_admin");
+
+            // Garante que o novo administrador principal possui o perfil tenant-administrator
+            var adminRoleId = await connection.ExecuteScalarAsync<Guid?>(
+                "select id from agro360.identity_roles where tenant_id=@TenantId and lower(code)='tenant-administrator'",
+                new { tenant.TenantId },
+                transaction).ConfigureAwait(false);
+
+            if (adminRoleId.HasValue)
+            {
+                await connection.ExecuteAsync(
+                    """
+                    insert into agro360.identity_user_roles(tenant_id, user_id, role_id)
+                    values(@TenantId, @UserId, @RoleId)
+                    on conflict do nothing;
+                    """,
+                    new { tenant.TenantId, UserId = target.Id, RoleId = adminRoleId.Value },
+                    transaction).ConfigureAwait(false);
+            }
+
+            // Atualiza a titularidade na organização
+            await connection.ExecuteAsync(
+                """
+                update agro360.saas_organizations
+                set responsible_name = @Name,
+                    responsible_email = @Email,
+                    updated_at = now()
+                where tenant_id = @TenantId;
+                """,
+                new { tenant.TenantId, Name = target.Name, Email = target.Email },
+                transaction).ConfigureAwait(false);
+
+            // Registra auditoria do evento
+            await connection.ExecuteAsync(
+                """
+                insert into agro360.audit_saas_events(id, tenant_id, actor_id, event_type, details)
+                values(gen_random_uuid(), @TenantId, @Actor, 'PRIMARY_ADMIN_TRANSFERRED',
+                       jsonb_build_object(
+                           'previousResponsibleEmail', @PreviousEmail,
+                           'previousResponsibleName', @PreviousName,
+                           'newResponsibleUserId', @TargetId,
+                           'newResponsibleEmail', @TargetEmail,
+                           'newResponsibleName', @TargetName,
+                           'reason', @Reason
+                       ));
+                """,
+                new
+                {
+                    tenant.TenantId,
+                    Actor = actorId,
+                    PreviousEmail = org?.ResponsibleEmail ?? string.Empty,
+                    PreviousName = org?.ResponsibleName ?? string.Empty,
+                    TargetId = target.Id,
+                    TargetEmail = target.Email,
+                    TargetName = target.Name,
+                    Reason = reason
+                },
+                transaction).ConfigureAwait(false);
+        }, ct);
+
+    public Task<IReadOnlyList<UserUnitScopeDto>> GetUserScopesAsync(Guid userId, CancellationToken ct) =>
+        Tenant("get-user-scopes", async (c, t) =>
+        {
+            var scopes = await c.QueryAsync<UserUnitScopeDto>(
+                """
+                select s.id as Id, s.scope_type as ScopeType, s.organization_id as OrganizationId, s.farm_id as FarmId,
+                       coalesce(f.name, o.name, 'Todas as Unidades') as UnitName
+                from agro360.identity_user_unit_scopes s
+                left join agro360.geo_farms f on f.tenant_id = s.tenant_id and f.id = s.farm_id
+                left join agro360.organization_organizations o on o.tenant_id = s.tenant_id and o.id = s.organization_id
+                where s.tenant_id = @TenantId and s.user_id = @UserId
+                order by s.created_at;
+                """,
+                new { tenant.TenantId, UserId = userId },
+                t).ConfigureAwait(false);
+            return (IReadOnlyList<UserUnitScopeDto>)scopes.ToArray();
+        }, ct);
+
+    public Task SetUserScopesAsync(Guid userId, UserUnitScopeInput[] scopes, Guid actorId, CancellationToken ct) =>
+        Tenant("set-user-scopes", async (c, t) =>
+        {
+            var userExists = await c.ExecuteScalarAsync<bool>(
+                "select exists(select 1 from agro360.identity_users where tenant_id=@TenantId and id=@UserId and deleted_at is null)",
+                new { tenant.TenantId, UserId = userId },
+                t).ConfigureAwait(false);
+            if (!userExists) throw new NotFoundException("Usuario", userId);
+
+            await c.ExecuteAsync(
+                "select pg_advisory_xact_lock(hashtextextended(@Key,0))",
+                new { Key = $"saas-user-management:{tenant.TenantId:N}" },
+                t).ConfigureAwait(false);
+
+            await c.ExecuteAsync(
+                "delete from agro360.identity_user_unit_scopes where tenant_id = @TenantId and user_id = @UserId",
+                new { tenant.TenantId, UserId = userId },
+                t).ConfigureAwait(false);
+
+            if (scopes != null && scopes.Length > 0)
+            {
+                foreach (var s in scopes)
+                {
+                    var normalizedType = s.ScopeType?.Trim().ToUpperInvariant() ?? "ALL";
+                    if (normalizedType is not ("ALL" or "ORGANIZATION" or "FARM"))
+                        throw new ArgumentException($"Tipo de escopo inválido: {s.ScopeType}");
+
+                    if (normalizedType == "ORGANIZATION")
+                    {
+                        if (!s.OrganizationId.HasValue) throw new ArgumentException("OrganizationId é obrigatório para escopo ORGANIZATION.");
+                        var orgValid = await c.ExecuteScalarAsync<bool>(
+                            "select exists(select 1 from agro360.organization_organizations where tenant_id=@TenantId and id=@Id and deleted_at is null)",
+                            new { tenant.TenantId, Id = s.OrganizationId.Value }, t).ConfigureAwait(false);
+                        if (!orgValid) throw InvalidReferences("OrganizationId", "Organização não encontrada no tenant.");
+                    }
+                    else if (normalizedType == "FARM")
+                    {
+                        if (!s.FarmId.HasValue) throw new ArgumentException("FarmId é obrigatório para escopo FARM.");
+                        var farmValid = await c.ExecuteScalarAsync<bool>(
+                            "select exists(select 1 from agro360.geo_farms where tenant_id=@TenantId and id=@Id and deleted_at is null)",
+                            new { tenant.TenantId, Id = s.FarmId.Value }, t).ConfigureAwait(false);
+                        if (!farmValid) throw InvalidReferences("FarmId", "Fazenda não encontrada no tenant.");
+                    }
+
+                    await c.ExecuteAsync(
+                        """
+                        insert into agro360.identity_user_unit_scopes(id, tenant_id, user_id, scope_type, organization_id, farm_id, created_by)
+                        values(gen_random_uuid(), @TenantId, @UserId, @ScopeType, @OrgId, @FarmId, @Actor)
+                        on conflict do nothing;
+                        """,
+                        new
+                        {
+                            tenant.TenantId,
+                            UserId = userId,
+                            ScopeType = normalizedType,
+                            OrgId = normalizedType == "ORGANIZATION" ? s.OrganizationId : null,
+                            FarmId = normalizedType == "FARM" ? s.FarmId : null,
+                            Actor = actorId
+                        },
+                        t).ConfigureAwait(false);
+                }
+            }
+
+            await c.ExecuteAsync(
+                """
+                insert into agro360.audit_saas_events(id, tenant_id, actor_id, event_type, details)
+                values(gen_random_uuid(), @TenantId, @Actor, 'USER_UNIT_SCOPES_UPDATED',
+                       jsonb_build_object('userId', @UserId, 'count', @Count));
+                """,
+                new { tenant.TenantId, UserId = userId, Count = scopes?.Length ?? 0, Actor = actorId },
+                t).ConfigureAwait(false);
         }, ct);
     public Task<IReadOnlyList<RoleSummary>> GetRolesAsync(CancellationToken ct) => Tenant("roles", async (c, t) => (IReadOnlyList<RoleSummary>)(await c.QueryAsync<RoleSummary>("select r.id,r.name,coalesce(m.level,10) level,coalesce(array_agg(p.code) filter(where p.id is not null),array[]::varchar[]) permissions,r.is_system SystemRole from agro360.identity_roles r left join agro360.saas_role_metadata m on m.tenant_id=r.tenant_id and m.role_id=r.id left join agro360.identity_role_permissions rp on rp.tenant_id=r.tenant_id and rp.role_id=r.id left join agro360.identity_permissions p on p.id=rp.permission_id where r.tenant_id=@TenantId and r.code<>'PLATFORM_SUPER_ADMIN' group by r.id,m.level order by m.level desc,r.name", new { tenant.TenantId }, t)).ToArray(), ct);
     public Task<Guid> SaveRoleAsync(Guid? id, RoleCommand command, Guid actorId, CancellationToken ct) => Tenant("save-role", async (c, t) =>
@@ -994,16 +1206,19 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
     private sealed class UserAccessLookup
     {
         public string Status { get; init; } = string.Empty;
+        public string Email { get; init; } = string.Empty;
         public bool IsAdministrator { get; init; }
     }
     private sealed class RoleGrantLookup { public Guid Id { get; init; } public string Code { get; init; } = string.Empty; public bool IsSystem { get; init; } public int Level { get; init; } }
-    private sealed class UserRoleState { public string Status { get; init; } = string.Empty; public bool IsAdministrator { get; init; } }
+    private sealed class UserRoleState { public string Status { get; init; } = string.Empty; public string Email { get; init; } = string.Empty; public bool IsAdministrator { get; init; } }
     private sealed class InvitationAcceptanceLookup { public Guid Id { get; init; } public string Email { get; init; } = string.Empty; public Guid RoleId { get; init; } public Guid InvitedBy { get; init; } public DateTimeOffset ExpiresAt { get; init; } public string Status { get; init; } = string.Empty; public string TenantSlug { get; init; } = string.Empty; }
     private sealed class InvitationUserLookup { public Guid Id { get; init; } public string Status { get; init; } = string.Empty; }
     private sealed class PlanProvisioningLookup { public Guid Id { get; init; } public string Name { get; init; } = string.Empty; public decimal MonthlyPrice { get; init; } public string[] Modules { get; init; } = []; }
     private sealed class TenantModuleLookup { public Guid ModuleId { get; init; } public string CurrentStatus { get; init; } = string.Empty; public string Code { get; init; } = string.Empty; }
     private sealed class TenantAccessHeader { public string Slug { get; init; } = string.Empty; public string Name { get; init; } = string.Empty; public string Status { get; init; } = string.Empty; public string PlanName { get; init; } = string.Empty; }
     private sealed class ActorIdentityLookup { public Guid TenantId { get; init; } public string Email { get; init; } = string.Empty; }
+    private sealed class PrimaryAdminOrgLookup { public string ResponsibleName { get; init; } = string.Empty; public string ResponsibleEmail { get; init; } = string.Empty; }
+    private sealed class PrimaryAdminTargetLookup { public Guid Id { get; init; } public string Name { get; init; } = string.Empty; public string Email { get; init; } = string.Empty; public string Status { get; init; } = string.Empty; }
     private sealed class ChargePaymentLookup { public Guid TenantId { get; init; } public decimal Amount { get; init; } public decimal PaidAmount { get; init; } public string Status { get; init; } = string.Empty; }
 
 

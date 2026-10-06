@@ -25,6 +25,17 @@ public sealed record AuthenticationResult(
     IReadOnlyCollection<string> Permissions,
     IReadOnlyCollection<string> Roles);
 
+public sealed record SessionValidationResult(
+    bool IsValid,
+    Guid? TenantId = null,
+    Guid? UserId = null,
+    string? Name = null,
+    string? Email = null,
+    IReadOnlyCollection<string>? Roles = null,
+    IReadOnlyCollection<string>? Permissions = null,
+    string? ErrorCode = null,
+    string? ErrorMessage = null);
+
 public interface IIdentityService
 {
     Task<BootstrapResult> BootstrapAsync(BootstrapCommand command, CancellationToken cancellationToken);
@@ -34,4 +45,7 @@ public interface IIdentityService
     Task<AuthenticationResult> RefreshAsync(RefreshTokenCommand command, CancellationToken cancellationToken);
 
     Task LogoutAsync(RefreshTokenCommand command, CancellationToken cancellationToken);
+
+    Task<SessionValidationResult> ValidateSessionAsync(System.Security.Claims.ClaimsPrincipal principal, CancellationToken cancellationToken);
 }
+

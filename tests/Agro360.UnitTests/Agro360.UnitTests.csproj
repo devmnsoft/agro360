@@ -21,5 +21,6 @@
     <ProjectReference Include="..\..\src\Modules\Agro360.Application\Agro360.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\Agro360.Domain\Agro360.Domain.csproj" />
     <ProjectReference Include="..\..\src\Modules\Agro360.Infrastructure\Agro360.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Hosts\Agro360.Web\Agro360.Web.csproj" />
   </ItemGroup>
 </Project>

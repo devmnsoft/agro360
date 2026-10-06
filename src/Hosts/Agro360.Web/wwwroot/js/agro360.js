@@ -48,17 +48,34 @@
     }
 
     // Sincroniza a credencial da página no host Web (cookie HttpOnly protegido).
-    // Fire-and-forget: falha de rede não pode afetar a sessão da aplicação.
-    function syncPageToken(session) {
+    async function syncPageToken(session) {
+        if (!session?.accessToken) {
+            try {
+                await fetch("/auth/page", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ accessToken: "" })
+                }).catch(() => { });
+            } catch { }
+            return;
+        }
         try {
-            fetch("/auth/page", {
+            const resp = await fetch("/auth/page", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ accessToken: session?.accessToken ?? "" })
-            }).catch(() => { });
-        } catch {
-            // Sem fetch disponível (ex.: arquivo local) — ignora silenciosamente.
-        }
+                body: JSON.stringify({ accessToken: session.accessToken })
+            });
+            if (resp.status === 401 || resp.status === 403) {
+                const problem = await resp.json().catch(() => ({}));
+                persistSession(null);
+                if (typeof showToast === "function") {
+                    showToast("danger", "Acesso revogado", problem.detail || "Sua credencial não é mais válida ou o acesso foi bloqueado.", "session-rejected");
+                }
+                if (typeof showLogin === "function") {
+                    showLogin();
+                }
+            }
+        } catch { }
     }
 
     function normalizePermission(value) {
