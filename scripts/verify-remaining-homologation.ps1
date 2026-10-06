@@ -189,8 +189,8 @@ try {
     $dbName = 'agro360_homolog'
     cmd.exe /c "`"$psql`" -p $pgPort -U postgres -h 127.0.0.1 -d postgres -c `"drop database if exists ${dbName};`" 2>&1" | Out-Null
     cmd.exe /c "`"$psql`" -p $pgPort -U postgres -h 127.0.0.1 -d postgres -c `"create database ${dbName} template agro360_clean;`" 2>&1" | Out-Null
-    $schemaVer = Invoke-Psql "select max(version) from agro360.platform_schema_versions;"
-    Assert-Step 'Schema-clone' ($schemaVer -ne $null -and $schemaVer.Length -gt 0) "top version=$schemaVer"
+    $schemaVer = Invoke-Psql "select version from agro360.platform_schema_versions where version='11.17.0';"
+    Assert-Step 'Schema-clone' ($schemaVer -eq '11.17.0') "required schema version=$schemaVer"
 
     # ============ BLOCK 1: START API HOST ============
     $apiPort = Get-FreePort
