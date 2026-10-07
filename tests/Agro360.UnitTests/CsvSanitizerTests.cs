@@ -10,6 +10,8 @@ public sealed class CsvSanitizerTests
     [InlineData("+cmd|' /C calc'!A0", "'+cmd|' /C calc'!A0")]
     [InlineData("-2+3", "'-2+3")]
     [InlineData("@SUM(A1:A10)", "'@SUM(A1:A10)")]
+    [InlineData("  =1+1", "'  =1+1")]
+    [InlineData(" \t=1+1", "' \t=1+1")]
     [InlineData("\tmalicious", "'\tmalicious")]
     [InlineData("\rmalicious", "\"'\rmalicious\"")]
     public void NeutralizesFormulaTriggers(string input, string expected)

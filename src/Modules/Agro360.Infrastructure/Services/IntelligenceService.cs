@@ -1,9 +1,12 @@
 using System.Globalization;
 using System.Text;
+using Agro360.Application;
 using Agro360.Application.Abstractions;
 using Agro360.Application.Contracts;
 using Agro360.Infrastructure.Persistence;
+using Agro360.Infrastructure.Security;
 using Agro360.Multitenancy;
+using Agro360.SharedKernel;
 using Dapper;
 using Microsoft.Extensions.Logging;
 
@@ -142,18 +145,190 @@ public sealed class IntelligenceService : IIntelligenceService
         return (IReadOnlyList<ForecastResult>)forecasts;
     }, ct));
 
-    public Task<AssistantAnswer> AskAsync(AssistantQuery query, CancellationToken ct) => Guard("assistant", () => _database.InTenantTransactionAsync(async (c, t) =>
+    public Task<AssistantAnswer> AskAsync(AssistantQuery query, CancellationToken ct)
     {
-        var text = query.Question.Trim(); string intent, sql, answer, action;
-        if (text.Contains("conta", StringComparison.OrdinalIgnoreCase) && text.Contains("venc", StringComparison.OrdinalIgnoreCase)) { intent = "DUE_ACCOUNTS"; sql = "select supplier_name name,balance amount,due_on date,status from agro360.finance_payables where tenant_id=@TenantId and status in ('OPEN','PARTIAL') and due_on<=current_date+7 order by due_on limit 50"; answer = "Contas a pagar vencidas ou com vencimento nos próximos 7 dias."; action = "Priorize as contas vencidas e valide disponibilidade de caixa."; }
-        else if (text.Contains("estoque", StringComparison.OrdinalIgnoreCase) || text.Contains("mínimo", StringComparison.OrdinalIgnoreCase) || text.Contains("minimo", StringComparison.OrdinalIgnoreCase)) { intent = "LOW_STOCK"; sql = "select p.name,b.available,b.minimum,b.unit from agro360.inventory_stock_balances b join agro360.inventory_products p on p.id=b.product_id where b.tenant_id=@TenantId and b.available<=b.minimum order by b.available/b.minimum nulls first limit 50"; answer = "Itens cujo saldo disponível atingiu ou ficou abaixo do mínimo."; action = "Revise consumo e abra cotação para itens críticos."; }
-        else if (text.Contains("manuten", StringComparison.OrdinalIgnoreCase)) { intent = "MAINTENANCE"; sql = "select a.name,m.description,m.status,coalesce(m.scheduled_for,m.next_review_date) due_on from agro360.fleet_maintenance_orders m join agro360.fleet_assets a on a.id=m.asset_id where m.tenant_id=@TenantId and m.status not in ('COMPLETED','CANCELLED') and coalesce(m.scheduled_for,m.next_review_date)<=current_date+30 order by due_on limit 50"; answer = "Máquinas com manutenção vencida ou prevista em 30 dias."; action = "Programe a parada antes do limite operacional."; }
-        else if (text.Contains("viage", StringComparison.OrdinalIgnoreCase) || text.Contains("rota", StringComparison.OrdinalIgnoreCase)) { intent = "TRIP_RISK"; sql = "select number,planned_start,status from agro360.regional_logistics_trips where tenant_id=@TenantId and status not in ('COMPLETED','CANCELLED') and planned_start<=now()+interval '24 hours' order by planned_start limit 50"; answer = "Viagens abertas dentro da janela crítica de 24 horas."; action = "Confirme veículo, rota e janela operacional."; }
-        else if (text.Contains("lote", StringComparison.OrdinalIgnoreCase) || text.Contains("conform", StringComparison.OrdinalIgnoreCase)) { intent = "NONCONFORMING_LOTS"; sql = "select code,current_balance,status,block_reason from agro360.storage_lots where tenant_id=@TenantId and status='BLOCKED' order by formed_at limit 50"; answer = "Lotes bloqueados por pendência de conformidade."; action = "Revise o motivo do bloqueio e registre a tratativa."; }
-        else { intent = "RISK_SUMMARY"; sql = "select type,severity,title,status,detected_at from agro360.intelligence_legacy_alerts where tenant_id=@TenantId and status='OPEN' order by detected_at desc limit 20"; answer = "Resumo dos riscos abertos encontrados na operação."; action = "Trate primeiro alertas críticos e de alta severidade."; }
-        var data = (await c.QueryAsync(new CommandDefinition(sql, new { _tenant.TenantId }, t, cancellationToken: ct))).Cast<IDictionary<string, object?>>().Select(x => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>(x)).ToArray();
-        return new AssistantAnswer(intent, data.Length == 0 ? $"{answer} Nenhum registro foi encontrado." : $"{answer} {data.Length} registro(s) encontrado(s).", [action], data);
-    }, ct));
+        ArgumentNullException.ThrowIfNull(query);
+        var text = AssistantQueryRules.NormalizeQuestion(query.Question);
+
+        return Guard("assistant", () => _database.InTenantTransactionAsync(async (c, t) =>
+        {
+            string intent, permission, sql, answer, action, source;
+            var tenantWideData = false;
+            if (text.Contains("conta", StringComparison.OrdinalIgnoreCase) && text.Contains("venc", StringComparison.OrdinalIgnoreCase))
+            {
+                intent = "DUE_ACCOUNTS";
+                permission = Permissions.FinanceRead;
+                tenantWideData = true;
+                sql = """
+                    select supplier_name name,balance amount,due_on date,status,
+                           case when due_on<current_date then 'OVERDUE' else 'DUE_WITHIN_7_DAYS' end due_category
+                    from agro360.finance_payables
+                    where tenant_id=@TenantId and status in ('OPEN','PARTIAL') and due_on<=current_date+7
+                    order by due_on limit 50
+                    """;
+                answer = "Contas vencidas e contas com vencimento nos próximos 7 dias corridos.";
+                action = "Priorize as contas vencidas e valide disponibilidade de caixa.";
+                source = "Financeiro · contas a pagar";
+            }
+            else if (text.Contains("estoque", StringComparison.OrdinalIgnoreCase) || text.Contains("mínimo", StringComparison.OrdinalIgnoreCase) || text.Contains("minimo", StringComparison.OrdinalIgnoreCase))
+            {
+                intent = "LOW_STOCK";
+                permission = Permissions.InventoryRead;
+                sql = """
+                    select p.name,b.available,b.minimum,b.unit
+                    from agro360.inventory_stock_balances b
+                    join agro360.inventory_products p on p.id=b.product_id and p.tenant_id=b.tenant_id
+                    join agro360.inventory_warehouses w on w.id=b.warehouse_id and w.tenant_id=b.tenant_id
+                    where b.tenant_id=@TenantId and b.available<=b.minimum
+                      and (@FarmId is null or w.farm_id=@FarmId)
+                    order by b.available/nullif(b.minimum,0) nulls first limit 50
+                    """;
+                answer = "Itens cujo saldo disponível atingiu ou ficou abaixo do mínimo na fazenda ativa.";
+                action = "Revise consumo e prepare uma cotação para os itens críticos.";
+                source = "Estoque · saldo disponível e mínimo dos armazéns";
+            }
+            else if (text.Contains("manuten", StringComparison.OrdinalIgnoreCase))
+            {
+                intent = "MAINTENANCE";
+                permission = Permissions.MaintenanceRead;
+                sql = """
+                    select a.name,m.description,m.status,coalesce(m.scheduled_for,m.next_review_date) due_on
+                    from agro360.fleet_maintenance_orders m
+                    join agro360.fleet_assets a on a.id=m.asset_id and a.tenant_id=m.tenant_id
+                    where m.tenant_id=@TenantId and m.status not in ('COMPLETED','CANCELLED')
+                      and coalesce(m.scheduled_for,m.next_review_date)<=current_date+30
+                      and (@FarmId is null or a.property_id=@FarmId)
+                    order by due_on limit 50
+                    """;
+                answer = "Máquinas com manutenção vencida ou prevista nos próximos 30 dias na fazenda ativa.";
+                action = "Programe a parada antes do limite operacional.";
+                source = "Frota · ordens de manutenção";
+            }
+            else if (text.Contains("viage", StringComparison.OrdinalIgnoreCase) || text.Contains("rota", StringComparison.OrdinalIgnoreCase))
+            {
+                intent = "TRIP_RISK";
+                permission = Permissions.RegionalLogisticsRead;
+                tenantWideData = true;
+                sql = """
+                    select number,planned_start,status
+                    from agro360.regional_logistics_trips
+                    where tenant_id=@TenantId and status not in ('COMPLETED','CANCELLED')
+                      and planned_start<=now()+interval '24 hours'
+                    order by planned_start limit 50
+                    """;
+                answer = "Viagens abertas atrasadas ou com início planejado nas próximas 24 horas.";
+                action = "Confirme veículo, rota e janela operacional.";
+                source = "Logística regional · viagens abertas";
+            }
+            else if (text.Contains("lote", StringComparison.OrdinalIgnoreCase) || text.Contains("conform", StringComparison.OrdinalIgnoreCase))
+            {
+                intent = "NONCONFORMING_LOTS";
+                permission = Permissions.StorageRead;
+                sql = """
+                    select l.code,l.current_balance,l.status,l.block_reason
+                    from agro360.storage_lots l
+                    join agro360.storage_structures s on s.id=l.structure_id and s.tenant_id=l.tenant_id
+                    where l.tenant_id=@TenantId and l.status='BLOCKED'
+                      and (@FarmId is null or s.property_id=@FarmId)
+                    order by l.formed_at limit 50
+                    """;
+                answer = "Lotes bloqueados por pendência de conformidade na fazenda ativa.";
+                action = "Revise o motivo do bloqueio e registre a tratativa.";
+                source = "Armazenagem · lotes bloqueados e estruturas";
+            }
+            else
+            {
+                return new AssistantAnswer(
+                    "UNSUPPORTED",
+                    "Não reconheci uma consulta disponível. Pergunte sobre contas, estoque, manutenção, viagens ou lotes bloqueados.",
+                    ["Use um dos exemplos disponíveis na tela."],
+                    [],
+                    "Nenhuma consulta executada");
+            }
+
+            var canReadAcrossTenant = await AuthorizeAssistantQueryAsync(c, t, permission, ct);
+            if (tenantWideData && !canReadAcrossTenant)
+                throw new ForbiddenException("Esta consulta não possui vínculo confiável com uma fazenda. Ela exige escopo de tenant completo.");
+            if (!_tenant.FarmId.HasValue && !canReadAcrossTenant)
+                throw new ForbiddenException("Selecione uma fazenda autorizada no contexto operacional antes de consultar estes dados.");
+
+            var parameters = new { _tenant.TenantId, FarmId = _tenant.FarmId };
+            var data = (await c.QueryAsync(new CommandDefinition(sql, parameters, t, cancellationToken: ct)))
+                .Cast<IDictionary<string, object?>>()
+                .Select(x => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>(x))
+                .ToArray();
+
+            var response = intent == "DUE_ACCOUNTS"
+                ? $"{data.Count(x => string.Equals(x.GetValueOrDefault("due_category")?.ToString(), "OVERDUE", StringComparison.Ordinal))} vencida(s); {data.Count(x => string.Equals(x.GetValueOrDefault("due_category")?.ToString(), "DUE_WITHIN_7_DAYS", StringComparison.Ordinal))} vence(m) nos próximos 7 dias corridos."
+                : data.Length == 0 ? "Nenhum registro foi encontrado." : $"{data.Length} registro(s) encontrado(s).";
+            return new AssistantAnswer(intent, $"{answer} {response}", [action], data, source);
+        }, ct));
+    }
+
+    private async Task<bool> AuthorizeAssistantQueryAsync(
+        System.Data.IDbConnection connection,
+        System.Data.IDbTransaction transaction,
+        string permission,
+        CancellationToken cancellationToken)
+    {
+        var modules = Permissions.ModulesForPermission(permission);
+        if (modules.Length == 0)
+            throw new InvalidOperationException($"Nenhum módulo foi associado à permissão '{permission}'.");
+
+        var access = await connection.QuerySingleAsync<AssistantAccess>(new CommandDefinition(
+            $"""
+            select exists(
+                       select 1 from agro360.identity_users u
+                       join agro360.identity_user_roles ur on ur.tenant_id=u.tenant_id and ur.user_id=u.id
+                       join agro360.identity_role_permissions rp on rp.tenant_id=ur.tenant_id and rp.role_id=ur.role_id
+                       join agro360.identity_permissions p on p.id=rp.permission_id
+                       where u.tenant_id=@TenantId and u.id=@UserId
+                         and u.status='ACTIVE' and u.deleted_at is null and p.code=@Permission
+                   ) HasPermission,
+                   exists(
+                       select 1 from ({EntitlementQueries.ModuleCodeSelect}) effective_modules
+                       where module_code=any(@Modules)
+                   ) HasContract,
+                   exists(
+                       select 1 from agro360.identity_users u
+                       join agro360.platform_super_admins a on a.user_id=u.id
+                       where u.tenant_id=@TenantId and u.id=@UserId
+                         and u.status='ACTIVE' and u.deleted_at is null
+                         and a.active and a.deleted_at is null
+                   ) IsPlatformAdmin,
+                   exists(
+                       select 1 from agro360.identity_users u
+                       join agro360.identity_user_roles ur on ur.tenant_id=u.tenant_id and ur.user_id=u.id
+                       join agro360.identity_roles r on r.tenant_id=ur.tenant_id and r.id=ur.role_id
+                       where u.tenant_id=@TenantId and u.id=@UserId
+                         and u.status='ACTIVE' and u.deleted_at is null
+                         and lower(r.code) in ('super_admin','platform_super_admin','tenant-administrator')
+                   ) IsTenantAdmin,
+                   exists(
+                       select 1 from agro360.identity_user_unit_scopes s
+                       where s.tenant_id=@TenantId and s.user_id=@UserId and s.scope_type='ALL'
+                   ) HasAllUnitScope
+            """,
+            new { _tenant.TenantId, UserId = _tenant.UserId, Permission = permission, Modules = modules },
+            transaction,
+            cancellationToken: cancellationToken));
+
+        if (!access.HasPermission)
+            throw new ForbiddenException("Seu perfil não possui permissão efetiva para consultar este módulo.");
+        if (!access.HasContract)
+            throw new ForbiddenException("O módulo consultado não está contratado ou vigente para esta organização.");
+
+        return access.IsPlatformAdmin || access.IsTenantAdmin || access.HasAllUnitScope;
+    }
+
+    private sealed class AssistantAccess
+    {
+        public bool HasPermission { get; init; }
+        public bool HasContract { get; init; }
+        public bool IsPlatformAdmin { get; init; }
+        public bool IsTenantAdmin { get; init; }
+        public bool HasAllUnitScope { get; init; }
+    }
 
     public Task<IReadOnlyList<CustomDashboard>> GetDashboardsAsync(CancellationToken ct) => Guard("dashboards", () => _database.InTenantTransactionAsync(async (connection, transaction) =>
     {

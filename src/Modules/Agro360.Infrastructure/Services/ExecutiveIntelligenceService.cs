@@ -3,6 +3,7 @@ using System.Text;
 using Agro360.Application.Contracts;
 using Agro360.Infrastructure.Persistence;
 using Agro360.Multitenancy;
+using Agro360.SharedKernel;
 using Dapper;
 using Microsoft.Extensions.Logging;
 
@@ -48,8 +49,150 @@ public sealed class ExecutiveIntelligenceService(DatabaseExecutor database, ITen
     public Task DecideRecommendationAsync(Guid id, RecommendationStatusCommand command, Guid userId, CancellationToken cancellationToken) => Guard("recommendation-decision", () => database.InTenantTransactionAsync(async (c, t) =>
     { var severity = await c.ExecuteScalarAsync<string?>(new CommandDefinition("select severity from agro360.intelligence_recommendations where id=@Id and tenant_id=@TenantId", new { Id = id, tenant.TenantId }, t, cancellationToken: cancellationToken)) ?? throw new KeyNotFoundException("Recomendação não encontrada."); if (command.Status == "REJECTED" && (severity == "HIGH" || severity == "CRITICAL") && string.IsNullOrWhiteSpace(command.Reason)) throw new ArgumentException("Rejeição de recomendação alta ou crítica exige motivo."); await c.ExecuteAsync(new CommandDefinition("update agro360.intelligence_recommendations set status=@Status,decision_reason=@Reason,updated_at=now(),updated_by=@UserId where id=@Id and tenant_id=@TenantId;insert into agro360.intelligence_recommendation_events(id,tenant_id,recommendation_id,event_type,reason,created_by,updated_by) values(gen_random_uuid(),@TenantId,@Id,@Status,@Reason,@UserId,@UserId)", new { Id = id, tenant.TenantId, command.Status, command.Reason, UserId = userId }, t, cancellationToken: cancellationToken)); }, cancellationToken));
 
-    public Task<byte[]> ExportAsync(string report, IntelligencePageFilter filter, Guid userId, CancellationToken cancellationToken) => Guard("export", () => database.InTenantTransactionAsync(async (c, t) => { var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "indicators", "snapshots", "alerts", "risks", "recommendations", "audit" }; if (!allowed.Contains(report)) throw new ArgumentException("Relatório não suportado."); var rows = await c.QueryAsync<(string Type, string Status, string Description, DateTimeOffset CreatedAt)>(new CommandDefinition("select 'ALERT' type,status,description,created_at from agro360.intelligence_alerts where tenant_id=@TenantId and (@Status is null or status=@Status) order by created_at desc limit @PageSize", new { tenant.TenantId, Status = string.IsNullOrWhiteSpace(filter.Status) ? null : filter.Status, PageSize = Math.Clamp(filter.PageSize, 1, 100) }, t, cancellationToken: cancellationToken)); var csv = new StringBuilder("Tipo;Status;Descrição;Data\r\n"); foreach (var row in rows) csv.AppendLine(CultureInfo.InvariantCulture, $"{Csv(row.Type)};{Csv(row.Status)};{Csv(row.Description)};{row.CreatedAt:O}"); await c.ExecuteAsync("insert into agro360.intelligence_report_exports(id,tenant_id,report,filters,row_count,created_by) values(gen_random_uuid(),@TenantId,@Report,'{}',@Count,@UserId)", new { tenant.TenantId, Report = report, Count = rows.Count(), UserId = userId }, t); return Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv.ToString())).ToArray(); }, cancellationToken));
-    private static string Csv(string value) => $"\"{value.Replace("\"", "\"\"")}\"";
+    public Task<byte[]> ExportAsync(string report, IntelligencePageFilter filter, Guid userId, CancellationToken cancellationToken) =>
+        Guard("export", () => database.InTenantTransactionAsync(async (c, t) =>
+        {
+            ArgumentNullException.ThrowIfNull(filter);
+            if (userId == Guid.Empty)
+                throw new ArgumentException("Usuário inválido.", nameof(userId));
+
+            var reportId = report?.Trim().ToLowerInvariant();
+            var spec = reportId switch
+            {
+                "indicators" => new ExportSpec("Indicadores", ["id", "code", "name", "category", "unit", "target", "active"], """
+                    select id,code,name,category,unit,target,active
+                    from agro360.intelligence_kpi_definitions
+                    where tenant_id=@TenantId and deleted_at is null
+                      and (@Status is null or case when active then 'ACTIVE' else 'INACTIVE' end=@Status)
+                      and (@Module is null or category ilike @Module)
+                      and (@Search is null or code ilike @SearchPattern or name ilike @SearchPattern)
+                    order by category,name,id
+                    limit @PageSize offset @Offset
+                    """),
+                "snapshots" => new ExportSpec("Medições de indicadores", ["code", "name", "reference_date", "status", "calculated_value", "target", "source", "calculation_error", "calculated_at"], """
+                    select d.code,d.name,s.reference_date,s.status,s.calculated_value,d.target,s.source,s.calculation_error,s.calculated_at
+                    from agro360.intelligence_kpi_snapshots s
+                    join agro360.intelligence_kpi_definitions d on d.id=s.kpi_id and d.tenant_id=s.tenant_id
+                    where s.tenant_id=@TenantId and d.deleted_at is null
+                      and (@Status is null or s.status=@Status)
+                      and (@Module is null or d.category ilike @Module)
+                      and (@Search is null or d.code ilike @SearchPattern or d.name ilike @SearchPattern)
+                    order by s.reference_date desc,s.created_at desc
+                    limit @PageSize offset @Offset
+                    """),
+                "alerts" => new ExportSpec("Alertas executivos", ["id", "type", "category", "severity", "source_module", "origin", "description", "recommendation", "status", "due_at", "created_at"], """
+                    select id,type,category,severity,source_module,origin,description,recommendation,status,due_at,created_at
+                    from agro360.intelligence_alerts
+                    where tenant_id=@TenantId
+                      and (@Status is null or status=@Status)
+                      and (@Severity is null or severity=@Severity)
+                      and (@Module is null or source_module ilike @Module)
+                      and (@Search is null or type ilike @SearchPattern or origin ilike @SearchPattern or description ilike @SearchPattern)
+                    order by created_at desc,id
+                    limit @PageSize offset @Offset
+                    """),
+                "risks" => new ExportSpec("Riscos executivos", ["id", "type", "source_module", "cause", "severity", "impact", "recommendation", "detected_at", "status", "created_at"], """
+                    select id,type,source_module,cause,severity,impact,recommendation,detected_at,status,created_at
+                    from agro360.intelligence_risks
+                    where tenant_id=@TenantId and deleted_at is null
+                      and (@Status is null or status=@Status)
+                      and (@Severity is null or severity=@Severity)
+                      and (@Module is null or source_module ilike @Module)
+                      and (@Search is null or type ilike @SearchPattern or cause ilike @SearchPattern or impact ilike @SearchPattern)
+                    order by detected_at desc,id
+                    limit @PageSize offset @Offset
+                    """),
+                "recommendations" => new ExportSpec("Recomendações executivas", ["id", "title", "description", "severity", "source_module", "related_entity_type", "related_entity_id", "status", "decision_reason", "created_at"], """
+                    select id,title,description,severity,source_module,related_entity_type,related_entity_id,status,decision_reason,created_at
+                    from agro360.intelligence_recommendations
+                    where tenant_id=@TenantId and deleted_at is null
+                      and (@Status is null or status=@Status)
+                      and (@Severity is null or severity=@Severity)
+                      and (@Module is null or source_module ilike @Module)
+                      and (@Search is null or title ilike @SearchPattern or description ilike @SearchPattern)
+                    order by created_at desc,id
+                    limit @PageSize offset @Offset
+                    """),
+                "audit" => new ExportSpec("Auditoria de inteligência", ["id", "module", "entity_type", "entity_id", "action", "user_id", "correlation_id", "created_at"], """
+                    select id,module,entity_type,entity_id,action,user_id,correlation_id,created_at
+                    from agro360.intelligence_audit_events
+                    where tenant_id=@TenantId
+                      and (@Module is null or module ilike @Module)
+                      and (@Search is null or entity_type ilike @SearchPattern or action ilike @SearchPattern)
+                    order by created_at desc,id
+                    limit @PageSize offset @Offset
+                    """),
+                _ => throw new ArgumentException("Relatório não suportado.", nameof(report))
+            };
+
+            var page = Math.Clamp(filter.Page, 1, 500);
+            var pageSize = Math.Clamp(filter.PageSize, 1, 100);
+            var search = NormalizeFilter(filter.Search, 160);
+            var status = NormalizeFilter(filter.Status, 40);
+            var severity = NormalizeFilter(filter.Severity, 40);
+            var module = NormalizeFilter(filter.Module, 40);
+            var parameters = new
+            {
+                tenant.TenantId,
+                Status = status,
+                Severity = severity,
+                Module = module,
+                Search = search,
+                SearchPattern = search is null ? null : $"%{search}%",
+                PageSize = pageSize,
+                Offset = (page - 1) * pageSize
+            };
+            var rows = (await c.QueryAsync(new CommandDefinition(spec.Sql, parameters, t, cancellationToken: cancellationToken)))
+                .Cast<IDictionary<string, object?>>()
+                .ToArray();
+
+            var csv = new StringBuilder();
+            csv.AppendLine(Csv($"Relatório: {spec.Title}"));
+            csv.AppendLine(string.Join(';', spec.Columns.Select(Csv)));
+            foreach (var row in rows)
+            {
+                csv.AppendLine(string.Join(';', spec.Columns.Select(column =>
+                    Csv(row.TryGetValue(column, out var value) ? value : null))));
+            }
+
+            var filtersJson = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                page,
+                pageSize,
+                search,
+                status,
+                severity,
+                module
+            });
+            await c.ExecuteAsync(new CommandDefinition(
+                "insert into agro360.intelligence_report_exports(id,tenant_id,report,filters,row_count,created_by) values(gen_random_uuid(),@TenantId,@Report,cast(@Filters as jsonb),@Count,@UserId)",
+                new { tenant.TenantId, Report = reportId, Filters = filtersJson, Count = rows.Length, UserId = userId },
+                t,
+                cancellationToken: cancellationToken));
+
+            return Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv.ToString())).ToArray();
+        }, cancellationToken));
+
+    private sealed record ExportSpec(string Title, string[] Columns, string Sql);
+
+    private static string? NormalizeFilter(string? value, int maximumLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        var normalized = value.Trim();
+        if (normalized.Length > maximumLength)
+            throw new ArgumentException($"O filtro deve ter no máximo {maximumLength} caracteres.");
+        return normalized;
+    }
+    private static string Csv(object? value) => value switch
+    {
+        null or DBNull => string.Empty,
+        string text => CsvSanitizer.Sanitize(text),
+        DateTime dateTime => dateTime.ToString("O", CultureInfo.InvariantCulture),
+        DateTimeOffset dateTimeOffset => dateTimeOffset.ToString("O", CultureInfo.InvariantCulture),
+        IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture) ?? string.Empty,
+        _ => CsvSanitizer.Sanitize(value.ToString())
+    };
     private async Task<T> Guard<T>(string operation, Func<Task<T>> work) { try { return await work(); } catch (Exception ex) { InfrastructureLogMessages.ExecutiveIntelligenceFailed(logger, operation, tenant.TenantId, ex); throw; } }
     private async Task Guard(string operation, Func<Task> work) { try { await work(); } catch (Exception ex) { InfrastructureLogMessages.ExecutiveIntelligenceFailed(logger, operation, tenant.TenantId, ex); throw; } }
 }

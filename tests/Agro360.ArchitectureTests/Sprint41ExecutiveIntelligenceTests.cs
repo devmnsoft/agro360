@@ -21,6 +21,17 @@ public sealed class Sprint41ExecutiveIntelligenceTests
     }
 
     [Fact]
+    public void ExecutiveExportsSelectTheirOwnTenantScopedReportAndSanitizeCsv()
+    {
+        var code = File.ReadAllText(Path.Combine(Root, "src/Modules/Agro360.Infrastructure/Services/ExecutiveIntelligenceService.cs"));
+        foreach (var report in new[] { "indicators", "snapshots", "alerts", "risks", "recommendations", "audit" })
+            Assert.Contains($"\"{report}\" => new ExportSpec", code, StringComparison.Ordinal);
+        Assert.Contains("tenant_id=@TenantId", code, StringComparison.Ordinal);
+        Assert.Contains("CsvSanitizer.Sanitize", code, StringComparison.Ordinal);
+        Assert.Contains("Relatório não suportado", code, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UiUsesBusinessChoicesAndDisclosesRuleBasedRecommendations()
     {
         var view = File.ReadAllText(Path.Combine(Root, "src/Hosts/Agro360.Web/Pages/Intelligence360/Index.cshtml"));

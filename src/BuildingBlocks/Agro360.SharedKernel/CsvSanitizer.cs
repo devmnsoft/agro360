@@ -12,7 +12,7 @@ public static class CsvSanitizer
         }
 
         var text = value;
-        if (FormulaTriggers.Contains(text[0]))
+        if (StartsWithFormulaTrigger(text))
         {
             text = "'" + text;
         }
@@ -34,11 +34,23 @@ public static class CsvSanitizer
         }
 
         var text = value;
-        if (FormulaTriggers.Contains(text[0]))
+        if (StartsWithFormulaTrigger(text))
         {
             text = "'" + text;
         }
 
         return text.Replace(';', ',');
+    }
+
+    private static bool StartsWithFormulaTrigger(string text)
+    {
+        if (FormulaTriggers.Contains(text[0]))
+            return true;
+
+        var index = 0;
+        while (index < text.Length && char.IsWhiteSpace(text[index]))
+            index++;
+
+        return index < text.Length && FormulaTriggers.Contains(text[index]);
     }
 }

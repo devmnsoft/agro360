@@ -44,6 +44,18 @@ public sealed class IntelligenceServiceStructureTests
         Assert.DoesNotMatch(new Regex(@"\b(?:identity|finance|workflow|inventory)\.[a-z_]", RegexOptions.IgnoreCase), Service);
     }
 
+    [Fact]
+    public void AssistantValidatesInputAndRechecksModuleAndUnitAccess()
+    {
+        Assert.Contains("AssistantQueryRules.NormalizeQuestion", Service, StringComparison.Ordinal);
+        Assert.Contains("AuthorizeAssistantQueryAsync", Service, StringComparison.Ordinal);
+        Assert.Contains("EntitlementQueries.ModuleCodeSelect", Service, StringComparison.Ordinal);
+        Assert.Contains("HasAllUnitScope", Service, StringComparison.Ordinal);
+        Assert.Contains("Selecione uma fazenda autorizada", Service, StringComparison.Ordinal);
+        Assert.Contains("nullif(b.minimum,0)", Service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("due_category", Service, StringComparison.Ordinal);
+    }
+
 
     private static string FindRoot()
     {

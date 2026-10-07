@@ -9,8 +9,8 @@ public sealed record ReportResult(string ReportId, IReadOnlyList<string> Columns
 public sealed record AlertResult(Guid Id, string Type, string Severity, string Title, string Status, DateTimeOffset DetectedAt, DateTimeOffset? SnoozedUntil);
 public sealed record AlertAction([Required] Guid UserId, DateTimeOffset? Until, [StringLength(500)] string? Reason);
 public sealed record ForecastResult(string Type, string Status, decimal? Value, string Unit, string Explanation, IReadOnlyDictionary<string, object?> Evidence);
-public sealed record AssistantQuery([Required, MinLength(3), MaxLength(300)] string Question);
-public sealed record AssistantAnswer(string Intent, string Answer, IReadOnlyList<string> RecommendedActions, IReadOnlyList<IReadOnlyDictionary<string, object?>> Data);
+public sealed record AssistantQuery([Required, MinLength(3), MaxLength(AssistantQueryRules.MaximumQuestionLength)] string Question);
+public sealed record AssistantAnswer(string Intent, string Answer, IReadOnlyList<string> RecommendedActions, IReadOnlyList<IReadOnlyDictionary<string, object?>> Data, string Source = "Consulta determinística interna Agro360");
 public sealed record ExecutiveDashboard(IReadOnlyList<IndicatorResult> Indicators, IReadOnlyList<AlertResult> TopRisks, IReadOnlyList<ForecastResult> Forecasts, DateTimeOffset GeneratedAt);
 public sealed record DashboardCommand([Required, MinLength(2), MaxLength(120)] string Name, [MaxLength(500)] string? Description, IReadOnlyList<string>? SharedRoles);
 public sealed record WidgetCommand([Required] string IndicatorCode, Guid? FarmId, Guid? SeasonId, [Range(0, 1000)] int Order, [RegularExpression("^(SMALL|MEDIUM|LARGE)$")] string Size);
