@@ -3,6 +3,7 @@ using Agro360.Application.Contracts;
 using Agro360.Infrastructure.Persistence;
 using Agro360.Infrastructure.Security;
 using Agro360.Infrastructure.Services;
+using Agro360.Infrastructure.Services.Ai;
 using Agro360.Multitenancy;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -73,6 +74,18 @@ public static class DependencyInjection
         services.AddScoped<IEsgService, EsgService>();
         services.AddScoped<ISustainabilityService, SustainabilityService>();
         services.AddScoped<IIntegrationService, IntegrationService>();
+
+        // AI Infrastructure
+        services.AddHttpClient();
+        services.AddScoped<IAiProvider, GroqProvider>();
+        services.AddScoped<IAiProvider, GeminiProvider>();
+        services.AddScoped<IAiProvider, DeepSeekProvider>();
+        services.AddScoped<IAiProviderFactory, AiProviderFactory>();
+        services.AddScoped<IAiExecutionService, AiExecutionService>();
+        services.AddScoped<IAiQuotaService, AiQuotaService>();
+        services.AddScoped<IAiStockAssistant, AiStockAssistant>();
+        services.AddScoped<IQuotationService, QuotationService>();
+        services.AddScoped<IMyDayService, MyDayService>();
         services.AddScoped<IGeospatialService, GeospatialService>();
         services.AddScoped<ICooperativeService, CooperativeService>();
         services.AddScoped<IRuralHrService, RuralHrService>();
@@ -86,6 +99,8 @@ public static class DependencyInjection
         services.AddScoped<IFleetOperationsService, FleetOperationsService>();
         services.AddScoped<IProcurementService, ProcurementService>();
         services.AddScoped<IReplenishmentService, ReplenishmentService>();
+        services.AddScoped<IPostingService, PostingService>();
+        services.AddScoped<ICycleVerificationService, CycleVerificationService>();
         services.AddScoped<IIndustrialProductionService, IndustrialProductionService>();
         services.AddScoped<IExportTradingService, ExportTradingService>();
         services.AddScoped<FiscalIntegrationAdapter>();

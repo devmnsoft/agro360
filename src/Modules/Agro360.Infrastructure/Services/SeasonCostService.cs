@@ -46,7 +46,43 @@ public sealed class SeasonCostService(DatabaseExecutor db, ITenantContext tenant
     public Task<Guid> ConfirmAsync(ConfirmCostAllocationCommand command, CancellationToken ct)
     {
         Guard.Required(command.IdempotencyKey, nameof(command.IdempotencyKey), 160);
-        return Tx(async (c, t) => { var old = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition("select id from agro360.cost_allocation_batches where tenant_id=@TenantId and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct)); if (old.HasValue) return old.Value; var preview = await BuildPreview(c, t, command.Preview, true, ct); if (preview.Method == "DIRECT" && preview.Lines.Count != 1) throw new DomainException("A apropriação direta exige um destino.", "cost.direct_destination_invalid"); var batch = Guid.CreateVersion7(); var snapshot = JsonSerializer.Serialize(preview); await c.ExecuteAsync(new CommandDefinition("""insert into agro360.cost_allocation_batches(id,tenant_id,entry_id,method,amount,currency,base_snapshot,idempotency_key,status,justification,confirmed_at,confirmed_by,created_by) values(@Id,@TenantId,@EntryId,@Method,@Amount,@Currency,cast(@Snapshot as jsonb),@Key,'CONFIRMED',@Justification,now(),@UserId,@UserId);""", new { Id = batch, tenant.TenantId, tenant.UserId, EntryId = preview.EntryId, preview.Method, Amount = preview.SelectedAmount, preview.Currency, Snapshot = snapshot, Key = command.IdempotencyKey, command.Justification }, t, cancellationToken: ct)); foreach (var line in preview.Lines) await c.ExecuteAsync(new CommandDefinition("""insert into agro360.cost_allocations(id,tenant_id,batch_id,entry_id,season_id,farm_id,field_id,cost_center_id,base_value,base_unit,percentage,amount,rounding_adjustment,status,confirmed_at,confirmed_by,created_by) values(@Id,@TenantId,@Batch,@EntryId,@SeasonId,@FarmId,@FieldId,@CostCenterId,@BaseValue,@Unit,@Percentage,@Amount,@Adjustment,'CONFIRMED',now(),@UserId,@UserId)""", new { Id = Guid.CreateVersion7(), tenant.TenantId, tenant.UserId, Batch = batch, EntryId = preview.EntryId, line.SeasonId, line.FarmId, line.FieldId, line.CostCenterId, line.BaseValue, line.Unit, line.Percentage, line.Amount, Adjustment = line.RoundingAdjustment }, t, cancellationToken: ct)); await c.ExecuteAsync(new CommandDefinition("update agro360.cost_management_entries set allocated_amount=allocated_amount+@Amount,row_version=row_version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, tenant.UserId, Id = preview.EntryId, Amount = preview.SelectedAmount }, t, cancellationToken: ct)); await c.WriteAuditAsync(t, tenant, "confirm", "CostAllocation", batch, null, preview, ct); InfrastructureLogMessages.CostAllocationChanged(logger, "confirm", tenant.TenantId, batch, tenant.UserId); return batch; }, ct);
+        return Tx(async (c, t) => {
+            // 1. Strict Idempotency Check
+            var old = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition("select id from agro360.cost_allocation_batches where tenant_id=@TenantId and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
+            if (old.HasValue) return old.Value;
+
+            // 2. Atomic Balance and Version Check (Lock record for update)
+            var entry = await c.QuerySingleOrDefaultAsync(new CommandDefinition("""
+                select recognized_amount, allocated_amount, row_version, status
+                from agro360.cost_management_entries
+                where tenant_id=@TenantId and id=@Id and deleted_at is null for update
+                """, new { tenant.TenantId, Id = command.Preview.EntryId }, t, cancellationToken: ct))
+                ?? throw new NotFoundException("Lançamento", command.Preview.EntryId);
+
+            if ((string)entry.status != "OPEN") throw new ConflictException("O lançamento não permite apropriação.");
+            if ((long)entry.row_version != command.Preview.EntryVersion) throw new ConflictException("O lançamento mudou. Gere uma nova prévia.");
+
+            var available = (decimal)entry.recognized_amount - (decimal)entry.allocated_amount;
+            if (command.Preview.Amount > available) throw new DomainException("O valor excede o saldo apropriável atual.", "cost.balance_insufficient");
+
+            // 3. Dynamic Destination Verification (Ensure destinations are still valid)
+            foreach (var d in command.Preview.Destinations) await RequireDestination(c, t, d, ct);
+
+            var preview = await BuildPreview(c, t, command.Preview, true, ct);
+            if (preview.Method == "DIRECT" && preview.Lines.Count != 1) throw new DomainException("A apropriação direta exige um destino.", "cost.direct_destination_invalid");
+
+            var batch = Guid.CreateVersion7();
+            var snapshot = JsonSerializer.Serialize(preview);
+            await c.ExecuteAsync(new CommandDefinition("""insert into agro360.cost_allocation_batches(id,tenant_id,entry_id,method,amount,currency,base_snapshot,idempotency_key,status,justification,confirmed_at,confirmed_by,created_by) values(@Id,@TenantId,@EntryId,@Method,@Amount,@Currency,cast(@Snapshot as jsonb),@Key,'CONFIRMED',@Justification,now(),@UserId,@UserId);""", new { Id = batch, tenant.TenantId, tenant.UserId, EntryId = preview.EntryId, preview.Method, Amount = preview.SelectedAmount, preview.Currency, Snapshot = snapshot, Key = command.IdempotencyKey, command.Justification }, t, cancellationToken: ct));
+
+            foreach (var line in preview.Lines) await c.ExecuteAsync(new CommandDefinition("""insert into agro360.cost_allocations(id,tenant_id,batch_id,entry_id,season_id,farm_id,field_id,cost_center_id,base_value,base_unit,percentage,amount,rounding_adjustment,status,confirmed_at,confirmed_by,created_by) values(@Id,@TenantId,@Batch,@EntryId,@SeasonId,@FarmId,@FieldId,@CostCenterId,@BaseValue,@Unit,@Percentage,@Amount,@Adjustment,'CONFIRMED',now(),@UserId,@UserId)""", new { Id = Guid.CreateVersion7(), tenant.TenantId, tenant.UserId, Batch = batch, EntryId = preview.EntryId, line.SeasonId, line.FarmId, line.FieldId, line.CostCenterId, line.BaseValue, line.Unit, line.Percentage, line.Amount, Adjustment = line.RoundingAdjustment }, t, cancellationToken: ct));
+
+            await c.ExecuteAsync(new CommandDefinition("update agro360.cost_management_entries set allocated_amount=allocated_amount+@Amount,row_version=row_version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, tenant.UserId, Id = preview.EntryId, Amount = preview.SelectedAmount }, t, cancellationToken: ct));
+
+            await c.WriteAuditAsync(t, tenant, "confirm", "CostAllocation", batch, null, preview, ct);
+            InfrastructureLogMessages.CostAllocationChanged(logger, "confirm", tenant.TenantId, batch, tenant.UserId);
+            return batch;
+        }, ct);
     }
 
     public Task ReverseAsync(Guid batchId, ReverseCostAllocationCommand command, CancellationToken ct)

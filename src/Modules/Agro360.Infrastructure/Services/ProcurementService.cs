@@ -16,7 +16,8 @@ public sealed class ProcurementService(
     DatabaseExecutor db,
     ITenantContext tenant,
     ILogger<ProcurementService> logger,
-    IOperationalInspectionTrigger inspectionTrigger) : IProcurementService
+    IOperationalInspectionTrigger inspectionTrigger,
+    IPostingService postingService) : IProcurementService
 {
     public Task<dynamic> DashboardAsync(CancellationToken ct) => Tx(async (c, t) => await c.QuerySingleAsync(new CommandDefinition("select count(*) filter(where status='OPEN') requisitions_open,count(*) filter(where status='OPEN' and priority='URGENT') requisitions_urgent,(select count(*) from agro360.procurement_quotations where tenant_id=@TenantId and status in('SENT','PARTIAL','RESPONDED','ANALYSIS')) quotations_running,(select count(*) from agro360.procurement_purchase_orders where tenant_id=@TenantId and status='AWAITING_APPROVAL') orders_awaiting_approval,(select count(*) from agro360.procurement_purchase_orders where tenant_id=@TenantId and status='PARTIALLY_RECEIVED') orders_partially_received,(select count(*) from agro360.procurement_receipts where tenant_id=@TenantId and status='DIVERGENT') divergent_receipts,(select count(*) from agro360.procurement_suppliers where tenant_id=@TenantId and status in('ACTIVE','APPROVED')) active_suppliers,(select count(*) from agro360.procurement_suppliers where tenant_id=@TenantId and status='BLOCKED') blocked_suppliers,(select coalesce(sum(total),0) from agro360.procurement_purchase_orders where tenant_id=@TenantId and status not in('DRAFT','CANCELLED') and approved_at>=date_trunc('month',now())) purchased_month from agro360.procurement_requisitions where tenant_id=@TenantId", new { tenant.TenantId }, t, cancellationToken: ct)));
     public Task<IReadOnlyList<dynamic>> SuppliersAsync(ProcurementQuery q, CancellationToken ct) => List("select * from agro360.procurement_suppliers where tenant_id=@TenantId and deleted_at is null and (@Search is null or legal_name ilike '%'||@Search||'%' or trade_name ilike '%'||@Search||'%') and (@Status is null or status=@Status) and (@Category is null or main_category=@Category) order by legal_name limit @Take offset @Skip", q, ct);
@@ -133,6 +134,25 @@ public sealed class ProcurementService(
             var id = Guid.CreateVersion7();
             var number = await Number(c, t, "RCV", ct);
             await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_receipts(id,tenant_id,number,purchase_order_id,received_at,responsible_id,invoice_document,status,excess_justification,stock_integration_status,finance_integration_status,idempotency_key,request_fingerprint,warehouse_id,created_by,updated_by) values(@Id,@TenantId,@Number,@OrderId,@ReceivedAt,@UserId,@Invoice,'PENDING',@Reason,'PENDING','PENDING',@IdempotencyKey,@RequestFingerprint,@WarehouseId,@UserId,@UserId)", new { Id = id, tenant.TenantId, Number = number, OrderId = x.PurchaseOrderId, x.ReceivedAt, tenant.UserId, Invoice = x.InvoiceDocument, Reason = x.ExcessJustification, IdempotencyKey = idempotencyKey, RequestFingerprint = requestFingerprint, x.WarehouseId }, t, cancellationToken: ct));
+
+            // Recognize costs upon material receipt
+            foreach (var item in x.Items)
+            {
+                var row = rows[item.PurchaseOrderItemId];
+                if (row.ItemType != "SERVICE")
+                {
+                    await postingService.PostMaterialCostAsync(
+                        tenant.TenantId,
+                        order.CostCenterId ?? Guid.Empty, // Use cost center as farm proxy or adjust based on domain
+                        row.RelatedProductId!.Value,
+                        item.Quantity,
+                        row.UnitPrice,
+                        $"RCV-{number}",
+                        $"Receipt of {row.Name}",
+                        x.ReceivedAt,
+                        ct);
+                }
+            }
 
             foreach (var item in x.Items)
             {
@@ -306,6 +326,24 @@ public sealed class ProcurementService(
         var id = current.Id == Guid.Empty ? Guid.CreateVersion7() : current.Id; var p = new { Id = id, tenant.TenantId, command.QuantityPercent, command.QuantityAbsolute, command.PricePercent, command.PriceAbsolute, command.TotalPercent, command.TotalAbsolute, command.ExcessPercent, command.ExcessAbsolute, command.DeliveryDays, command.SeparationOfDuties, tenant.UserId };
         await c.ExecuteAsync(new CommandDefinition(current.Id == Guid.Empty ? "insert into agro360.procurement_match_tolerances(id,tenant_id,quantity_percent,quantity_absolute,price_percent,price_absolute,total_percent,total_absolute,excess_percent,excess_absolute,delivery_days,separation_of_duties,created_by,updated_by) values(@Id,@TenantId,@QuantityPercent,@QuantityAbsolute,@PricePercent,@PriceAbsolute,@TotalPercent,@TotalAbsolute,@ExcessPercent,@ExcessAbsolute,@DeliveryDays,@SeparationOfDuties,@UserId,@UserId)" : "update agro360.procurement_match_tolerances set quantity_percent=@QuantityPercent,quantity_absolute=@QuantityAbsolute,price_percent=@PricePercent,price_absolute=@PriceAbsolute,total_percent=@TotalPercent,total_absolute=@TotalAbsolute,excess_percent=@ExcessPercent,excess_absolute=@ExcessAbsolute,delivery_days=@DeliveryDays,separation_of_duties=@SeparationOfDuties,version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", p, t, cancellationToken: ct));
         await Audit(c, t, "MATCH_TOLERANCE", id, current.Id == Guid.Empty ? "CREATED" : "UPDATED", command, ct); return id;
+    });
+
+    public Task<Guid> RegisterQualityIncidentAsync(QualityIncidentCommand x, CancellationToken ct) => Tx(async (c, t) =>
+    {
+        var id = Guid.CreateVersion7();
+        await c.ExecuteAsync(new CommandDefinition("""
+            insert into agro360.procurement_quality_incidents(id,tenant_id,supplier_id,product_id,receipt_item_id,work_order_material_id,incident_type,severity,description,status,created_by,updated_by)
+            values(@Id,@TenantId,@SupplierId,@ProductId,@ReceiptItemId,@WorkOrderMaterialId,@IncidentType,@Severity,@Description,'OPEN',@UserId,@UserId)
+            """, new { Id = id, tenant.TenantId, x.SupplierId, x.ProductId, x.ReceiptItemId, x.WorkOrderMaterialId, x.IncidentType, x.Severity, x.Description, tenant.UserId }, t, cancellationToken: ct));
+
+        // Update supplier score or status if severity is high
+        if (x.Severity is "HIGH" or "CRITICAL")
+        {
+            await c.ExecuteAsync(new CommandDefinition("update agro360.procurement_suppliers set status='UNDER_REVIEW',updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@SupplierId", new { tenant.TenantId, x.SupplierId, tenant.UserId }, t, cancellationToken: ct));
+        }
+
+        await Audit(c, t, "QUALITY_INCIDENT", id, "CREATED", x, ct);
+        return id;
     });
     public async Task<byte[]> ExportAsync(string report, ProcurementQuery q, CancellationToken ct) { IReadOnlyList<dynamic> rows = report switch { "suppliers" => await SuppliersAsync(q, ct), "requisitions" => await RequisitionsAsync(q, ct), "orders" => await OrdersAsync(q, ct), _ => throw new DomainException("Relatório inválido.", "agro360.procurement_report_invalid") }; var sb = new StringBuilder("sep=;\n"); if (report == "suppliers") { sb.AppendLine("Razão social;Fantasia;Categoria;Status;E-mail"); foreach (var r in rows) sb.AppendLine(CultureInfo.InvariantCulture, $"{Csv(r.legal_name)};{Csv(r.trade_name)};{Csv(r.main_category)};{Csv(r.status)};{Csv(r.email)}"); } else if (report == "requisitions") { sb.AppendLine("Número;Prioridade;Necessidade;Status;Itens"); foreach (var r in rows) sb.AppendLine(CultureInfo.InvariantCulture, $"{r.number};{r.priority};{r.needed_on:yyyy-MM-dd};{r.status};{r.item_count}"); } else { sb.AppendLine("Número;Fornecedor;Entrega;Total;Status"); foreach (var r in rows) sb.AppendLine(CultureInfo.InvariantCulture, $"{r.number};{Csv(r.supplier_name)};{r.delivery_on:yyyy-MM-dd};{r.total};{r.status}"); } return Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray(); }
     private Task<T> Tx<T>(Func<Npgsql.NpgsqlConnection, Npgsql.NpgsqlTransaction, Task<T>> action) => db.InTenantTransactionAsync(action, CancellationToken.None);

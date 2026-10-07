@@ -16,6 +16,8 @@ public sealed record DashboardCommand([Required, MinLength(2), MaxLength(120)] s
 public sealed record WidgetCommand([Required] string IndicatorCode, Guid? FarmId, Guid? SeasonId, [Range(0, 1000)] int Order, [RegularExpression("^(SMALL|MEDIUM|LARGE)$")] string Size);
 public sealed record CustomDashboard(Guid Id, string Name, string? Description, IReadOnlyList<string> SharedRoles, IReadOnlyList<DashboardWidget> Widgets);
 public sealed record DashboardWidget(Guid Id, string IndicatorCode, Guid? FarmId, Guid? SeasonId, int Order, string Size);
+public sealed record OperationVariance(string OrderId, decimal PlannedCost, decimal ActualCost, decimal PhysicalProgress, decimal CostProgress, string Status, string Warning);
+public sealed record VarianceFilter(Guid OrderId);
 
 public interface IIntelligenceService
 {
@@ -32,4 +34,5 @@ public interface IIntelligenceService
     Task<Guid> SaveDashboardAsync(Guid? id, DashboardCommand command, Guid userId, CancellationToken ct);
     Task<Guid> AddWidgetAsync(Guid dashboardId, WidgetCommand command, CancellationToken ct);
     Task DeleteWidgetAsync(Guid dashboardId, Guid widgetId, CancellationToken ct);
+    Task<OperationVariance> GetOperationVarianceAsync(Guid orderId, CancellationToken ct);
 }

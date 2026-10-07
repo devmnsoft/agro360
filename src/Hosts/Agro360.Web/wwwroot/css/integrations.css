@@ -1,5 +1,5 @@
 .integration-shell {
-    --line: var(--border, #dcebe5);
+    --integration-border: var(--line, rgba(27, 67, 50, .11));
     max-width: 1440px;
     margin: auto;
     padding: clamp(1rem, 3vw, 2.5rem);
@@ -11,7 +11,7 @@
     justify-content: space-between;
     gap: 2rem;
     padding: clamp(1.5rem, 4vw, 3rem);
-    border: 1px solid var(--line);
+    border: 1px solid var(--integration-border);
     border-radius: 28px;
     background: radial-gradient(circle at 85% 20%, color-mix(in srgb, var(--accent, #287a4b) 20%, transparent) 0, transparent 26%), linear-gradient(135deg, var(--surface, #fff), var(--surface-2, #eef8f4));
     box-shadow: var(--shadow, 0 24px 65px rgba(20, 72, 58, .1));
@@ -35,7 +35,7 @@
 
 .integration-shell .tabs button {
     white-space: nowrap;
-    border: 1px solid var(--line);
+    border: 1px solid var(--integration-border);
     background: var(--surface, #fff);
     padding: .7rem 1rem;
     border-radius: 12px;
@@ -52,7 +52,7 @@
     grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
     gap: 1rem;
     background: var(--surface, #fff);
-    border: 1px solid var(--line);
+    border: 1px solid var(--integration-border);
     border-radius: 1rem;
     padding: 1.5rem;
     min-height: 15rem;
@@ -62,7 +62,7 @@
 .integration-shell .metric-card,
 .integration-shell .data-card {
     background: var(--surface, #fff);
-    border: 1px solid var(--line);
+    border: 1px solid var(--integration-border);
     border-radius: 18px;
     padding: 1.2rem;
     box-shadow: 0 9px 28px rgba(23, 63, 52, .06);
@@ -78,7 +78,7 @@
     grid-column: 1 / -1;
     padding: 3rem;
     text-align: center;
-    border: 1px dashed var(--line);
+    border: 1px dashed var(--integration-border);
     border-radius: 18px;
 }
 
@@ -86,12 +86,12 @@
 .integration-shell .loading,
 .integration-shell .empty { color: var(--muted, #647067); }
 
-.integration-shell dialog { border: 1px solid var(--line); border-radius: 22px; padding: 0; background: var(--surface, #fff); color: var(--text, #132b26); box-shadow: var(--shadow, 0 30px 90px #092c2580); }
+.integration-shell dialog { border: 1px solid var(--integration-border); border-radius: 22px; padding: 0; background: var(--surface, #fff); color: var(--text, #132b26); box-shadow: var(--shadow, 0 30px 90px #092c2580); }
 .integration-shell dialog::backdrop { background: #092c2580; backdrop-filter: blur(5px); }
 .integration-shell dialog form { min-width: min(480px, 90vw); display: grid; gap: 1rem; padding: 1.6rem; }
 .integration-shell dialog label { display: grid; gap: .4rem; font-weight: 700; }
 .integration-shell dialog input,
-.integration-shell dialog select { padding: .8rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-input, var(--surface, #fff)); color: var(--text, #132b26); }
+.integration-shell dialog select { padding: .8rem; border: 1px solid var(--integration-border); border-radius: 10px; background: var(--surface-input, var(--surface, #fff)); color: var(--text, #132b26); }
 .integration-shell .security-note { padding: 1rem; border-radius: 12px; background: var(--surface-2, #effaf6); color: var(--text, #315d50); }
 .integration-shell dialog menu { display: flex; justify-content: flex-end; gap: .6rem; }
 

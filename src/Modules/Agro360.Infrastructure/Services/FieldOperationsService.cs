@@ -7,7 +7,7 @@ using Dapper;
 
 namespace Agro360.Infrastructure.Services;
 
-public sealed class FieldOperationsService(DatabaseExecutor database, ITenantContext tenant) : IFieldOperationsService
+public sealed class FieldOperationsService(DatabaseExecutor database, ITenantContext tenant, IPostingService postingService, IProcurementService procurementService, IIntelligenceService intelligenceService) : IFieldOperationsService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly IReadOnlyCollection<string> UnknownMaterialCostIssue = Array.AsReadOnly(new[] { "Há material sem custo vigente." });
@@ -142,9 +142,82 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
             source = await c.QuerySingleOrDefaultAsync<MaterialEventRow>(new CommandDefinition("select work_order_material_id WorkOrderMaterialId,event_type EventType,quantity,reason,source_event_id SourceEventId from agro360.field_material_events where tenant_id=@TenantId and id=@Id for update", new { tenant.TenantId, Id = command.SourceEventId }, t, cancellationToken: cancellationToken));
             if (source is null || source.WorkOrderMaterialId != materialId || source.EventType != "CONSUME" || source.Quantity != command.Quantity) throw new ConflictException("O estorno deve corresponder integralmente a um consumo desta operação.", "agriculture.reversal_source_invalid");
             if (await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.field_material_events where tenant_id=@TenantId and source_event_id=@Id and event_type='REVERSAL')", new { tenant.TenantId, Id = command.SourceEventId }, t, cancellationToken: cancellationToken))) throw new ConflictException("Este consumo já foi estornado.", "agriculture.reversal_duplicate");
+
+            // Financial Reversal: Nullify the recognized cost of the original consumption
+            var rowData = await c.QuerySingleOrDefaultAsync<OrderRow>(new CommandDefinition("select id,module,status,created_at CreatedAt,data::text Data,version from agro360.agriculture_records where tenant_id=@TenantId and id=@Id and module='work-orders' and deleted_at is null", new { tenant.TenantId, Id = orderId }, t, cancellationToken: cancellationToken));
+            if (rowData != null)
+            {
+                var data = JsonSerializer.Deserialize<Dictionary<string, object?>>(rowData.Data, JsonOptions) ?? [];
+                var farmIdStr = data["propertyId"]?.ToString();
+                if (!string.IsNullOrWhiteSpace(farmIdStr) && Guid.TryParse(farmIdStr, out var farmId))
+                {
+                    await postingService.PostMaterialCostAsync(tenant.TenantId, farmId, m.Id, -command.Quantity, m.UnitCost ?? 0, orderId.ToString(), $"REVERSAL: {m.ProductId}", DateTimeOffset.UtcNow, cancellationToken);
+                }
+            }
         }
         Guid? movement = null;
-        if (kind is "CONSUME" or "LOSS" or "RETURN" or "REVERSAL") { if (m.WarehouseId is null) throw new ConflictException("Defina o depósito antes de movimentar estoque."); var qty = kind is "RETURN" or "REVERSAL" ? command.Quantity : -command.Quantity; movement = await c.ExecuteScalarAsync<Guid>(new CommandDefinition("select agro360.inventory_apply_stock_movement(@TenantId,@WarehouseId,@ProductId,@Quantity,coalesce(@UnitCost,0),@Type,@Reference,null,null,@UserId,@Reason)", new { tenant.TenantId, m.WarehouseId, m.ProductId, Quantity = qty, m.UnitCost, Type = kind is "RETURN" or "REVERSAL" ? "ENTRY" : "EXIT", Reference = orderId, tenant.UserId, command.Reason }, t, cancellationToken: cancellationToken)); }
+        if (kind is "CONSUME" or "LOSS" or "RETURN" or "REVERSAL") { if (m.WarehouseId is null) throw new ConflictException("Defina o depósito antes de movimentar estoque."); var qty = kind is "RETURN" or "REVERSAL" ? command.Quantity : -command.Quantity; movement = await c.ExecuteScalarAsync<Guid>(new CommandDefinition("select agro360.inventory_apply_stock_movement(@TenantId,@WarehouseId,@ProductId,@Quantity,coalesce(@UnitCost,0),@Type,@Reference,null,null,@UserId,@Reason)", new { tenant.TenantId, m.WarehouseId, m.ProductId, Quantity = qty, m.UnitCost, Type = kind is "RETURN" or "REVERSAL" ? "ENTRY" : "EXIT", Reference = orderId, tenant.UserId, command.Reason }, t, cancellationToken: cancellationToken));
+        }
+        if (kind is "CONSUME" or "LOSS")
+        {
+            // Quality Bridge: Prevent consumption of materials currently in quarantine or rejected
+            var isBlocked = await c.ExecuteScalarAsync<bool>(new CommandDefinition("""
+                select exists(
+                    select 1 from agro360.procurement_receipt_quarantine q
+                    join agro360.procurement_receipt_items ri on ri.id = q.receipt_item_id
+                    where ri.work_order_material_id = @MaterialId
+                      and q.status in ('PENDING', 'REJECTED')
+                )
+                """, new { MaterialId = m.Id }, t, cancellationToken: cancellationToken));
+
+            if (isBlocked)
+            {
+                // Feedback Loop: Register a quality incident when consumption is blocked by quarantine/rejection
+                var incidentData = await c.QuerySingleOrDefaultAsync<IncidentSourceRow>(new CommandDefinition("""
+                    select s.id SupplierId, ri.id ReceiptItemId, m.product_id ProductId
+                    from agro360.procurement_receipt_quarantine q
+                    join agro360.procurement_receipt_items ri on ri.id = q.receipt_item_id
+                    join agro360.procurement_purchase_orders po on po.id = ri.purchase_order_id
+                    join agro360.procurement_suppliers s on s.id = po.supplier_id
+                    where ri.work_order_material_id = @MaterialId
+                      and q.status in ('PENDING', 'REJECTED')
+                    limit 1
+                    """, new { MaterialId = m.Id }, t, cancellationToken: cancellationToken));
+
+                if (incidentData != null)
+                {
+                    await procurementService.RegisterQualityIncidentAsync(new QualityIncidentCommand(
+                        incidentData.SupplierId,
+                        incidentData.ProductId,
+                        incidentData.ReceiptItemId,
+                        m.Id,
+                        "REJECTION_AT_USE",
+                        "HIGH",
+                        $"Material bloqueado para consumo no campo. Status de quarentena: {m.Status}",
+                        cancellationToken), t);
+                }
+
+                // Early Warning System: Trigger variance check
+                var variance = await intelligenceService.GetOperationVarianceAsync(orderId, cancellationToken);
+                if (variance.Status is "WARNING" or "CRITICAL")
+                {
+                    // Here we could log a warning or even block the action if it's too critical,
+                    // but for now we will just integrate the check.
+                    // In a real UI, this would return a warning to the operator.
+                }
+
+                throw new ConflictException("Este material está em quarentena ou foi rejeitado pelo controle de qualidade e não pode ser consumido.", "agriculture.material_quality_blocked");
+            }
+
+            var rowData = await c.QuerySingleOrDefaultAsync<OrderRow>(new CommandDefinition("select id,module,status,created_at CreatedAt,data::text Data,version from agro360.agriculture_records where tenant_id=@TenantId and id=@Id and module='work-orders' and deleted_at is null", new { tenant.TenantId, Id = orderId }, t, cancellationToken: cancellationToken));
+            if (rowData == null) throw new NotFoundException("Ordem de campo", orderId);
+            var data = JsonSerializer.Deserialize<Dictionary<string, object?>>(rowData.Data, JsonOptions) ?? [];
+            var farmIdStr = data["propertyId"]?.ToString();
+            if (string.IsNullOrWhiteSpace(farmIdStr)) throw new DomainException("A ordem não possui uma propriedade vinculada.", "agriculture.order_farm_missing");
+            var farmId = Guid.Parse(farmIdStr);
+            await postingService.PostMaterialCostAsync(tenant.TenantId, farmId, m.Id, command.Quantity, m.UnitCost ?? 0, orderId.ToString(), $"{kind}: {m.ProductId}", DateTimeOffset.UtcNow, cancellationToken);
+        }
+
         var column = kind switch { "RESERVE" => "reserved_quantity", "DELIVER" => "delivered_quantity", "CONSUME" => "consumed_quantity", "RETURN" => "returned_quantity", "LOSS" => "lost_quantity", _ => "reserved_quantity" }; var delta = kind == "RELEASE" ? -command.Quantity : command.Quantity;
         if (kind == "REVERSAL") { column = "consumed_quantity"; delta = -command.Quantity; }
         await c.ExecuteAsync(new CommandDefinition($"update agro360.field_work_order_materials set {column}={column}+@Delta,updated_at=now(),updated_by=@UserId,version=version+1,status=case when @Kind='REVERSAL' then 'DELIVERED' when delivered_quantity-consumed_quantity-returned_quantity-lost_quantity-@Delta=0 and delivered_quantity>0 then 'SETTLED' when @Kind='DELIVER' then 'DELIVERED' when @Kind='RESERVE' then 'RESERVED' else status end where tenant_id=@TenantId and id=@Id", new { Delta = delta, tenant.UserId, Kind = kind, tenant.TenantId, Id = materialId }, t, cancellationToken: cancellationToken));
@@ -156,7 +229,28 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
         var row = await c.QuerySingleOrDefaultAsync<OrderRow>(new CommandDefinition("select id,module,status,created_at CreatedAt,data::text Data,version from agro360.agriculture_records where tenant_id=@TenantId and id=@Id and module='work-orders' and deleted_at is null for update", new { tenant.TenantId, Id = orderId }, t, cancellationToken: cancellationToken));
         if (row is null) throw new NotFoundException("Ordem de campo", orderId); if (row.Version != command.Version) throw new ConflictException("A ordem foi alterada. Recarregue e revise as mudanças antes de concluir.", "agriculture.version_conflict");
         var issues = await IssuesAsync(c, t, orderId, row, cancellationToken); if (issues.Any(i => i.Severity == "BLOCKER")) throw new ConflictException("Resolva os bloqueios obrigatórios antes de concluir.", "agriculture.review_blocked");
+
+        // Operational Governance: Block completion if there is still material in team custody
+        var pendingCustody = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.field_work_order_materials where tenant_id=@TenantId and work_order_id=@Id and delivered_quantity > (consumed_quantity + returned_quantity + lost_quantity))", new { tenant.TenantId, Id = orderId }, t, cancellationToken: cancellationToken));
+        if (pendingCustody) throw new ConflictException("A ordem não pode ser encerrada enquanto houver materiais sob custódia da equipe. Realize a baixa ou devolução.", "agriculture.material_custody_pending");
+
         var changed = await c.ExecuteAsync(new CommandDefinition("update agro360.agriculture_records set status='COMPLETED',data=jsonb_set(data,'{actualFinishedAt}',to_jsonb(now()),true),updated_at=now(),updated_by=@UserId,version=version+1 where tenant_id=@TenantId and id=@Id and version=@Version and status='AWAITING_REVIEW'", new { tenant.TenantId, Id = orderId, command.Version, tenant.UserId }, t, cancellationToken: cancellationToken)); if (changed != 1) throw new ConflictException("Somente uma conferência pode concluir a ordem.");
+
+
+        // Post activity costs upon completion
+        var data = JsonSerializer.Deserialize<Dictionary<string, object?>>(row.Data, JsonOptions) ?? [];
+        var farmIdStr = data["propertyId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(farmIdStr)) throw new DomainException("A ordem não possui uma propriedade vinculada.", "agriculture.order_farm_missing");
+        var farmId = Guid.Parse(farmIdStr);
+        var logs = await c.QueryAsync<WorkLogRow>(new CommandDefinition("select id,operator_id,equipment_id,stage,starts_at,ends_at,performed_quantity,unit,physical_area_ha,initial_meter,final_meter,interruption_minutes,interruption_reason,notes,evidence_reference,confirmed_at,version from agro360.field_work_logs where tenant_id=@TenantId and work_order_id=@Id and deleted_at is null", new { tenant.TenantId, Id = orderId }, t, cancellationToken: cancellationToken));
+        foreach (var log in logs)
+        {
+            // In a real system, labor/equipment costs would be looked up from a price list.
+            // Here we implement a simplified logic: a fixed cost per log for demonstration of the flow.
+            decimal cost = 50.00m;
+            await postingService.PostActivityCostAsync(tenant.TenantId, farmId, orderId, $"Activity: {log.Stage}", cost, DateTimeOffset.UtcNow, cancellationToken);
+        }
+
         await c.ExecuteAsync(new CommandDefinition("insert into agro360.field_work_order_reviews(id,tenant_id,work_order_id,order_version,outcome,summary,notes,created_by) values(@Id,@TenantId,@OrderId,@Version,'COMPLETED',cast(@Summary as jsonb),@Notes,@UserId)", new { Id = Guid.CreateVersion7(), tenant.TenantId, OrderId = orderId, command.Version, Summary = JsonSerializer.Serialize(issues, JsonOptions), command.Notes, tenant.UserId }, t, cancellationToken: cancellationToken));
         await c.ExecuteAsync(new CommandDefinition("""
             update agro360.agriculture_plan_operations o set status='COMPLETED',updated_at=now(),updated_by=@UserId,version=version+1
@@ -182,4 +276,5 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
     private sealed record WorkLogRow(Guid WorkOrderId, Guid OperatorId, Guid? EquipmentId, string Stage, DateTimeOffset StartsAt,
         DateTimeOffset EndsAt, decimal PerformedQuantity, string Unit, decimal? PhysicalAreaHa, decimal? InitialMeter,
         decimal? FinalMeter, int InterruptionMinutes, string? InterruptionReason, string? Notes, string? EvidenceReference);
+    private sealed record IncidentSourceRow(Guid SupplierId, Guid ReceiptItemId, Guid ProductId);
 }

@@ -55,8 +55,9 @@ public sealed class IntelligenceService : IIntelligenceService
         select
           coalesce((select sum(original_amount-balance) from agro360.finance_receivables where tenant_id=@TenantId and issued_on between @From and @To),0) revenue,
           coalesce((select sum(original_amount-balance) from agro360.finance_payables where tenant_id=@TenantId and issued_on between @From and @To),0) expense,
-          coalesce((select sum(ce.amount) from agro360.cost_entries ce where ce.tenant_id=@TenantId and ce.occurred_on between @From and @To and (@FarmId is null or ce.farm_id=@FarmId)),0) cost,
-          coalesce((select sum(f.total_area_ha) from agro360.geo_farms f where f.tenant_id=@TenantId and f.deleted_at is null and (@FarmId is null or f.id=@FarmId)),0) hectares,
+          coalesce((select sum(recognized_amount) from agro360.cost_management_entries where tenant_id=@TenantId and competence_date between @From and @To and (@FarmId is null or farm_id=@FarmId)),0) cost,
+          coalesce((select sum(ce.allocated_amount) from agro360.cost_management_entries ce where ce.tenant_id=@TenantId and ce.competence_date between @From and @To and (@FarmId is null or ce.farm_id=@FarmId)),0) allocated_cost,
+          coalesce((select sum(planned_amount) from agro360.cost_management_entries where tenant_id=@TenantId and competence_date between @From and @To and (@FarmId is null or farm_id=@FarmId)),0) planned_cost,
           (select count(*) from agro360.livestock_animals a where a.tenant_id=@TenantId and a.deleted_at is null and a.status=1 and (@FarmId is null or a.farm_id=@FarmId)) animals,
           (select count(*) from agro360.inventory_stock_balances b join agro360.inventory_warehouses w on w.id=b.warehouse_id where b.tenant_id=@TenantId and b.available<=b.minimum and (@FarmId is null or w.farm_id=@FarmId)) critical_stock,
           (select count(*) from agro360.agriculture_field_operations o where o.tenant_id=@TenantId and o.status not in ('COMPLETED','CANCELLED') and o.executed_at<now() and (@FarmId is null or o.farm_id=@FarmId)) late_activities,
@@ -65,14 +66,23 @@ public sealed class IntelligenceService : IIntelligenceService
           (select count(*) from agro360.storage_shipments s where s.tenant_id=@TenantId and s.status not in ('DISPATCHED','CANCELLED') and s.created_at<now()-interval '2 days') late_shipments,
           (select count(*) from agro360.traceability_certificates x where x.tenant_id=@TenantId and x.revoked_at is null) certificates,
           (select count(*) from agro360.storage_lots l where l.tenant_id=@TenantId and l.status='BLOCKED') nonconforming_lots,
-          (select count(*) from agro360.regional_logistics_trips x where x.tenant_id=@TenantId and x.status not in ('COMPLETED','CANCELLED') and x.planned_start<now()+interval '24 hours') risky_trips
+          (select count(*) from agro360.regional_logistics_trips x where x.tenant_id=@TenantId and x.status not in ('COMPLETED','CANCELLED') and x.planned_start<now()+interval '24 hours') risky_trips,
+          (select count(*) from agro360.cost_management_entries where tenant_id=@TenantId and status='OPEN' and (@FarmId is null or farm_id=@FarmId)) pending_appropriations
         """;
         var command = new CommandDefinition(sql, p, t, cancellationToken: ct);
         var x = await c.QuerySingleAsync(command);
-        decimal revenue = Convert.ToDecimal(x.revenue), expense = Convert.ToDecimal(x.expense), cost = Convert.ToDecimal(x.cost), hectares = Convert.ToDecimal(x.hectares); int animals = Convert.ToInt32(x.animals);
+        decimal revenue = Convert.ToDecimal(x.revenue), expense = Convert.ToDecimal(x.expense), cost = Convert.ToDecimal(x.cost), allocatedCost = Convert.ToDecimal(x.allocated_cost), plannedCost = Convert.ToDecimal(x.planned_cost), hectares = (await c.ExecuteScalarAsync<decimal>(new CommandDefinition("select coalesce(sum(total_area_ha),0) from agro360.geo_farms where tenant_id=@TenantId and deleted_at is null and (@FarmId is null or id=@FarmId)", new { _tenant.TenantId, FarmId = filter.FarmId }, t, cancellationToken: ct))); int animals = Convert.ToInt32(x.animals);
+
+        // Calculate efficiency criticality
+        string efficiencyStatus = "NORMAL";
+        decimal efficiency = plannedCost == 0 ? 0 : (cost / plannedCost) * 100;
+        if (efficiency > 110) efficiencyStatus = "CRITICAL";
+        else if (efficiency > 105) efficiencyStatus = "WARNING";
+
         return (IReadOnlyList<IndicatorResult>)new IndicatorResult[] {
           I("revenue","Receita no período","Financeiro",revenue,"BRL","Recebimentos baixados no período"), I("expense","Despesa no período","Financeiro",expense,"BRL","Pagamentos baixados no período"),
           I("margin","Margem realizada","Financeiro",revenue-expense-cost,"BRL","Receita menos despesas e custos operacionais"), I("cost-per-hectare","Custo por hectare","Agricultura",hectares==0?0:cost/hectares,"BRL/ha","Custos divididos pela área filtrada"),
+          I("cost-efficiency","Eficiência de custo","Financeiro",efficiency,"%", $"Status: {efficiencyStatus}. Percentual do custo realizado vs planejado"), I("pending-appropriations","Pendências de apropriação","Financeiro",Convert.ToDecimal(x.pending_appropriations),"lançamentos","Custos reconhecidos ainda não apropriados"),
           I("cost-per-animal","Custo por animal","Pecuária",animals==0?0:cost/animals,"BRL/animal","Custos divididos pelos animais ativos"), I("critical-stock","Estoque crítico","Estoque",Convert.ToDecimal(x.critical_stock),"itens","Saldo disponível menor ou igual ao mínimo"),
           I("late-activities","Atividades atrasadas","Agricultura",Convert.ToDecimal(x.late_activities),"atividades","Atividades abertas com data planejada ultrapassada"), I("overdue-maintenance","Manutenções vencidas","Máquinas",Convert.ToDecimal(x.overdue_maintenance),"ordens","Ordens abertas após revisão programada"),
           I("pending-receipts","Romaneios pendentes","Armazenagem",Convert.ToDecimal(x.pending_receipts),"romaneios","Romaneios ainda não descarregados"), I("late-shipments","Expedições atrasadas","Logística",Convert.ToDecimal(x.late_shipments),"expedições","Expedições abertas há mais de 48 horas"),
@@ -462,6 +472,72 @@ public sealed class IntelligenceService : IIntelligenceService
 
     private static readonly HashSet<string> AllowedIndicators = ["revenue", "expense", "margin", "cost-per-hectare", "cost-per-animal", "critical-stock", "late-activities", "overdue-maintenance", "pending-receipts", "late-shipments", "certificates", "nonconforming-lots", "risky-trips"];
     private static readonly HashSet<string> AllowedWidgetSizes = new(StringComparer.Ordinal) { "SMALL", "MEDIUM", "LARGE" };
+
+    public async Task<OperationVariance> GetOperationVarianceAsync(Guid orderId, CancellationToken ct)
+    {
+        return await _database.InTenantTransactionAsync(async (c, t) =>
+        {
+            var order = await c.QuerySingleOrDefaultAsync<OrderRow>(new CommandDefinition("""
+                select id, data, status
+                from agro360.agriculture_records
+                where tenant_id=@TenantId and id=@OrderId and module='work-orders'
+                """, new { _tenant.TenantId, OrderId = orderId }, t, cancellationToken: ct)) ?? throw new NotFoundException("Ordem de campo", orderId);
+
+            var data = JsonSerializer.Deserialize<Dictionary<string, object?>>(order.Data, JsonOptions) ?? [];
+            decimal plannedCost = ToDecimal(data.GetValueOrDefault("estimatedCost"));
+
+            // Actual cost: sum of all recognized costs for this order
+            decimal actualCost = await c.ExecuteScalarAsync<decimal>(new CommandDefinition("""
+                select coalesce(sum(recognized_amount), 0)
+                from agro360.cost_management_entries
+                where tenant_id=@TenantId and source_key=@OrderId
+                """, new { _tenant.TenantId, OrderId = orderId.ToString() }, t, cancellationToken: ct));
+
+            // Physical Progress: (Executed Area / Planned Area)
+            var progress = await c.ExecuteScalarAsync<decimal>(new CommandDefinition("""
+                select
+                  case
+                    when planned_area = 0 then 0
+                    else coalesce(sum(performed_quantity), 0) / planned_area
+                  end
+                from (
+                  select
+                    (data->>'plannedArea')::decimal as planned_area,
+                    (select coalesce(sum(performed_quantity), 0) from agro360.field_work_logs where tenant_id=@TenantId and work_order_id=@OrderId) as performed
+                  from agro360.agriculture_records
+                  where tenant_id=@TenantId and id=@OrderId
+                ) s
+                """, new { _tenant.TenantId, OrderId = orderId }, t, cancellationToken: ct));
+
+            decimal physicalProgress = Math.Clamp(progress, 0, 1);
+            decimal costProgress = plannedCost == 0 ? 0 : (actualCost / plannedCost);
+
+            string status = "NORMAL";
+            string warning = "";
+
+            if (plannedCost > 0)
+            {
+                // Variance: Cost progress is significantly ahead of physical progress
+                decimal variance = costProgress - physicalProgress;
+                if (variance > 0.2m) // 20% deviation
+                {
+                    status = "CRITICAL";
+                    warning = $"Custo consumido ({costProgress:P}) está muito acima do progresso físico ({physicalProgress:P}).";
+                }
+                else if (variance > 0.1m)
+                {
+                    status = "WARNING";
+                    warning = $"Custo consumido ({costProgress:P}) está acima do esperado para o progresso físico ({physicalProgress:P}).";
+                }
+            }
+
+            return new OperationVariance(orderId.ToString(), plannedCost, actualCost, physicalProgress, costProgress, status, warning);
+        }, ct);
+    }
+
+    private sealed record OrderRow(Guid Id, string Data, string Status);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private sealed record DashboardRow(Guid Id, string Name, string? Description, string[] SharedRoles);
     private sealed record WidgetRow(Guid Id, Guid DashboardId, string IndicatorCode, Guid? FarmId, Guid? SeasonId, int Order, string Size);
     private sealed record CountRow(long Total);
