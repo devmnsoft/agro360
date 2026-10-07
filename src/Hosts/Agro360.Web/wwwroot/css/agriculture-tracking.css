@@ -1,8 +1,253 @@
-:root{--ag-surface:#fff;--ag-canvas:#f4f7f5;--ag-text:#17251d;--ag-muted:#607066;--ag-green:#287a4b;--ag-border:#d9e3dc;--ag-radius:12px;--ag-space:1rem;--ag-focus:0 0 0 3px #80c99c;--ag-control:44px}
-.season-tracking{background:var(--ag-surface);color:var(--ag-text);border:1px solid var(--ag-border);border-radius:var(--ag-radius);box-shadow:0 1px 2px #1020180a;margin-bottom:var(--ag-space)}
-.season-context-filter{display:grid;grid-template-columns:minmax(14rem,2fr) minmax(11rem,1fr) auto auto;gap:var(--ag-space);align-items:end}.season-context-filter label{display:grid;gap:.35rem;color:var(--ag-muted)}.season-context-filter input,.season-context-filter button{min-height:var(--ag-control)}
-.season-context-filter :focus-visible,.season-tracking a:focus-visible{outline:0;box-shadow:var(--ag-focus)}.season-title{display:flex;justify-content:space-between;gap:1rem;align-items:start;border-bottom:1px solid var(--ag-border);padding-bottom:1rem}.season-title h3{margin:.2rem 0}.season-title>strong{color:var(--ag-green)}
-.season-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1px;background:var(--ag-border);border:1px solid var(--ag-border);margin:1rem 0}.season-metrics a{display:grid;gap:.35rem;background:var(--ag-surface);padding:1rem;color:inherit;text-decoration:none}.season-metrics span{color:var(--ag-muted);font-size:.78rem}.season-pending{list-style:none;padding:0}.season-pending li{display:flex;align-items:start;gap:.75rem;padding:.75rem 0;border-bottom:1px solid var(--ag-border)}.season-pending li div{flex:1}.season-pending p{margin:.2rem 0;color:var(--ag-muted)}.season-data-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}.season-tracking h4{margin:1.25rem 0 .5rem}
-@media(max-width:760px){.season-context-filter,.season-data-columns{grid-template-columns:1fr}.season-title{display:block}.season-metrics{grid-template-columns:1fr}.season-pending li{flex-wrap:wrap}}
-.material-cards{display:grid;gap:.75rem}.material-cards article{border:1px solid var(--ag-border);border-radius:var(--ag-radius);padding:1rem}.material-cards dl{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.75rem;margin:0}.material-cards dl div{display:grid;gap:.2rem}.material-cards dt{color:var(--ag-muted);font-size:.8rem}.material-cards dd{font-weight:700;margin:0}.material-actions{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1rem}.action-blocked{color:var(--ag-muted);margin:.75rem 0 0}.field-table{max-width:100%;overflow-x:auto}
-@media(max-width:760px){.material-cards dl{grid-template-columns:repeat(2,minmax(0,1fr))}.material-actions>*{width:100%;min-height:var(--ag-control)}}
+.agriculture-360 {
+    --ag-surface: var(--surface, #fff);
+    --ag-canvas: var(--bg, #f4f7f5);
+    --ag-text: var(--text, #17251d);
+    --ag-muted: var(--muted, #607066);
+    --ag-green: var(--accent, #287a4b);
+    --ag-border: var(--border, #d9e3dc);
+    --ag-radius: 12px;
+    --ag-space: 1rem;
+    --ag-control: 44px;
+    --ag-focus: 0 0 0 3px color-mix(in srgb, var(--ag-green) 50%, transparent);
+}
+
+.agriculture-360 .season-tracking,
+.agriculture-360 .material-cards article {
+    background: var(--ag-surface);
+    color: var(--ag-text);
+    border: 1px solid var(--ag-border);
+    border-radius: var(--ag-radius);
+}
+
+.agriculture-360 .season-tracking {
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--ag-text) 5%, transparent);
+    margin-bottom: var(--ag-space);
+}
+
+.agriculture-360 .season-context-filter {
+    display: grid;
+    grid-template-columns: minmax(14rem, 2fr) minmax(11rem, 1fr) auto auto;
+    gap: var(--ag-space);
+    align-items: end;
+}
+
+.agriculture-360 .season-context-filter label,
+.agriculture-360 .agriculture-form-grid label {
+    display: grid;
+    gap: .4rem;
+    color: var(--ag-muted);
+}
+
+.agriculture-360 .season-context-filter input,
+.agriculture-360 .season-context-filter button {
+    min-height: var(--ag-control);
+}
+
+.agriculture-360 :focus-visible {
+    outline: 0;
+    box-shadow: var(--ag-focus);
+}
+
+.agriculture-360 .season-title {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: start;
+    border-bottom: 1px solid var(--ag-border);
+    padding-bottom: 1rem;
+}
+
+.agriculture-360 .season-title h3 { margin: .2rem 0; }
+.agriculture-360 .season-title > strong { color: var(--ag-green); }
+
+.agriculture-360 .season-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 1px;
+    background: var(--ag-border);
+    border: 1px solid var(--ag-border);
+    margin: 1rem 0;
+}
+
+.agriculture-360 .season-metrics a {
+    display: grid;
+    gap: .35rem;
+    background: var(--ag-surface);
+    color: var(--ag-text);
+    padding: 1rem;
+    text-decoration: none;
+}
+
+.agriculture-360 .season-metrics span,
+.agriculture-360 .season-pending p,
+.agriculture-360 .material-cards dt {
+    color: var(--ag-muted);
+}
+
+.agriculture-360 .season-metrics span { font-size: .78rem; }
+.agriculture-360 .season-pending { list-style: none; padding: 0; }
+
+.agriculture-360 .season-pending li {
+    display: flex;
+    align-items: start;
+    gap: .75rem;
+    padding: .75rem 0;
+    border-bottom: 1px solid var(--ag-border);
+}
+
+.agriculture-360 .season-pending li div { flex: 1; }
+.agriculture-360 .season-pending p { margin: .2rem 0; }
+.agriculture-360 .season-data-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.agriculture-360 .season-tracking h4 { margin: 1.25rem 0 .5rem; }
+.agriculture-360 .material-cards { display: grid; gap: .75rem; }
+.agriculture-360 .material-cards article { padding: 1rem; }
+.agriculture-360 .material-cards dl { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .75rem; margin: 0; }
+.agriculture-360 .material-cards dl div { display: grid; gap: .2rem; }
+.agriculture-360 .material-cards dt { font-size: .8rem; }
+.agriculture-360 .material-cards dd { font-weight: 700; margin: 0; }
+.agriculture-360 .material-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+.agriculture-360 .action-blocked { color: var(--ag-muted); margin: .75rem 0 0; }
+.agriculture-360 .field-table { max-width: 100%; overflow-x: auto; }
+
+.agriculture-360 .agriculture-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+    gap: 1rem;
+}
+
+.agriculture-360 .agriculture-form-grid label { color: var(--ag-text); font-weight: 700; }
+
+.agriculture-360 .agriculture-form-grid input,
+.agriculture-360 .agriculture-form-grid select,
+.agriculture-360 .agriculture-form-grid textarea,
+.agriculture-360 .lookup-results button {
+    color: var(--ag-text);
+    background: var(--surface-input, var(--ag-surface));
+    border: 1px solid var(--ag-border);
+    border-radius: .6rem;
+}
+
+.agriculture-360 .agriculture-form-grid input,
+.agriculture-360 .agriculture-form-grid select,
+.agriculture-360 .agriculture-form-grid textarea { min-width: 0; padding: .75rem; }
+
+.agriculture-360 .form-wide { grid-column: 1 / -1; }
+
+.agriculture-360 .validation-summary {
+    margin: 1rem 0;
+    padding: 1rem;
+    border: 1px solid color-mix(in srgb, var(--red, #9b251d) 35%, var(--ag-border));
+    border-radius: .6rem;
+    background: color-mix(in srgb, var(--red, #9b251d) 10%, var(--ag-surface));
+    color: var(--red, #8d251d);
+}
+
+.agriculture-360 .field-error { color: var(--red, #9b251d); font-size: .8rem; }
+
+.agriculture-360 .lookup-results {
+    position: relative;
+    z-index: 10;
+    max-height: 220px;
+    overflow: auto;
+    border: 1px solid var(--ag-border);
+    border-radius: .6rem;
+    background: var(--ag-surface);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--ag-text) 13%, transparent);
+}
+
+.agriculture-360 .lookup-results button {
+    display: block;
+    width: 100%;
+    padding: .7rem;
+    border-width: 0 0 1px;
+    border-radius: 0;
+    text-align: left;
+    cursor: pointer;
+}
+
+.agriculture-360 .lookup-results button:hover { background: var(--surface-3, var(--ag-canvas)); }
+
+.agriculture-360 .agriculture-help {
+    margin: 1rem 0;
+    padding: 1rem;
+    border: 1px solid var(--ag-border);
+    border-radius: .75rem;
+    background: var(--ag-surface);
+    color: var(--ag-text);
+}
+
+.agriculture-360 .agriculture-help summary { cursor: pointer; font-weight: 700; color: var(--ag-green); }
+
+.agriculture-360 .agriculture-record {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+    border-bottom: 1px solid var(--ag-border);
+}
+
+.agriculture-360 .agriculture-record > div { display: grid; gap: .25rem; }
+
+.agriculture-360 .field-status {
+    display: inline-flex;
+    width: max-content;
+    padding: .25rem .55rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--ag-green) 15%, var(--ag-surface));
+    color: var(--ag-text);
+    font-size: .8rem;
+    font-weight: 700;
+}
+
+.agriculture-360 .order-summary,
+.agriculture-360 .order-actions,
+.agriculture-360 .order-sections {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    flex-wrap: wrap;
+}
+
+.agriculture-360 .order-sections {
+    justify-content: flex-start;
+    margin: 1rem 0;
+    padding: .75rem;
+    border-radius: .6rem;
+    background: var(--surface-2, var(--ag-canvas));
+}
+
+.agriculture-360 .order-sections a { color: var(--ag-green); font-weight: 700; }
+.agriculture-360 .order-summary ~ section { padding: 1rem 0; border-top: 1px solid var(--ag-border); }
+.agriculture-360 .field-table table { width: 100%; border-collapse: collapse; }
+.agriculture-360 .field-table th,
+.agriculture-360 .field-table td { padding: .65rem; text-align: left; border-bottom: 1px solid var(--ag-border); white-space: nowrap; }
+
+.agriculture-360 .review-box {
+    padding: 1rem !important;
+    border: 1px solid var(--amber, #ead9aa) !important;
+    border-radius: .65rem;
+    background: color-mix(in srgb, var(--amber, #ead9aa) 12%, var(--ag-surface));
+}
+
+.agriculture-360 .cost-pending { color: var(--amber, #8a5b00); font-weight: 700; }
+
+@media (max-width: 760px) {
+    .agriculture-360 .season-context-filter,
+    .agriculture-360 .season-data-columns { grid-template-columns: 1fr; }
+    .agriculture-360 .season-title { display: block; }
+    .agriculture-360 .season-metrics { grid-template-columns: 1fr; }
+    .agriculture-360 .season-pending li { flex-wrap: wrap; }
+    .agriculture-360 .material-cards dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .agriculture-360 .material-actions > * { width: 100%; min-height: var(--ag-control); }
+}
+
+@media (max-width: 680px) {
+    .agriculture-360 .agriculture-record { align-items: stretch; flex-direction: column; }
+    .agriculture-360 .agriculture-record button,
+    .agriculture-360 .order-actions button,
+    .agriculture-360 #field-order-detail section > button { min-height: var(--ag-control); width: 100%; }
+    .agriculture-360 .order-summary { align-items: stretch; flex-direction: column; }
+    .agriculture-360 .order-actions { display: grid; width: 100%; }
+}

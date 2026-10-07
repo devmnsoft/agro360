@@ -12,10 +12,10 @@
 }
 
 .intelligence-page > header,
-.panel-heading,
-.decision-row,
-.score-row,
-.recommendation-card {
+.intelligence-page .panel-heading,
+.intelligence-page .decision-row,
+.intelligence-page .score-row,
+.intelligence-page .recommendation-card {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -110,11 +110,11 @@
 .bi-panel button:disabled { opacity: .65; cursor: not-allowed; }
 .intelligence-page .primary-button { background: var(--intelligence-accent); color: var(--on-accent, #fff); }
 
-.bi-tabs { display: flex; gap: .5rem; overflow-x: auto; padding: .25rem .1rem .6rem; }
-.bi-tabs button { white-space: nowrap; border-radius: 99px; }
-.bi-tabs .active { background: var(--intelligence-accent); border-color: var(--intelligence-accent); color: var(--on-accent, #fff); }
-.bi-panel { display: none; padding-top: 1rem; }
-.bi-panel.active { display: block; }
+.intelligence-page .bi-tabs { display: flex; gap: .5rem; overflow-x: auto; padding: .25rem .1rem .6rem; }
+.intelligence-page .bi-tabs button { white-space: nowrap; border-radius: 99px; }
+.intelligence-page .bi-tabs .active { background: var(--intelligence-accent); border-color: var(--intelligence-accent); color: var(--on-accent, #fff); }
+.intelligence-page .bi-panel { display: none; padding-top: 1rem; }
+.intelligence-page .bi-panel.active { display: block; }
 
 .indicator-grid {
     display: grid;
@@ -135,36 +135,52 @@
 
 .indicator-card strong { display: block; font-size: 1.7rem; margin: .45rem 0; }
 .indicator-card small { display: block; }
-.data-list { display: grid; gap: .7rem; }
-.table-scroll { overflow: auto; }
-.table-scroll table { border-collapse: collapse; width: 100%; }
-.table-scroll th,
-.table-scroll td {
+.intelligence-page .data-list { display: grid; gap: .7rem; }
+.intelligence-page .table-scroll { max-width: 100%; overflow: auto; }
+.intelligence-page .table-scroll table { border-collapse: collapse; width: 100%; }
+.intelligence-page .table-scroll th,
+.intelligence-page .table-scroll td {
     padding: .65rem;
     text-align: left;
     border-bottom: 1px solid var(--intelligence-border);
     color: var(--intelligence-text);
 }
 
-.bi-status { padding: 1rem; text-align: center; }
-.bi-status:empty { display: none; }
-.recommendation-card > div:nth-child(2) { flex: 1; min-width: min(240px, 100%); }
-.risk-badge { display: inline-flex; padding: .3rem .65rem; border-radius: 999px; font-size: .72rem; font-weight: 800; }
-.risk-critical { background: #6d2228; color: #fff0f1; }
-.risk-high { background: #6b4314; color: #fff3df; }
-.risk-attention { background: #5f5512; color: #fffbd9; }
-.risk-low,
-.risk-accepted,
-.risk-ativa { background: #174f37; color: #e8fff1; }
-.score-orb {
+.intelligence-page .bi-status { padding: 1rem; text-align: center; }
+.intelligence-page .bi-status:empty { display: none; }
+.intelligence-page .recommendation-card > div:nth-child(2) { flex: 1; min-width: min(240px, 100%); }
+.intelligence-page .risk-badge { display: inline-flex; padding: .3rem .65rem; border-radius: 999px; font-size: .72rem; font-weight: 800; }
+.intelligence-page .risk-critical { background: #6d2228; color: #fff0f1; }
+.intelligence-page .risk-high { background: #6b4314; color: #fff3df; }
+.intelligence-page .risk-attention { background: #5f5512; color: #fffbd9; }
+.intelligence-page .risk-low,
+.intelligence-page .risk-accepted,
+.intelligence-page .risk-ativa { background: #174f37; color: #e8fff1; }
+.intelligence-page .score-orb {
     min-width: 58px;
     height: 58px;
     border-radius: 50%;
     display: grid;
     place-items: center;
     font-weight: 850;
-    background: conic-gradient(var(--intelligence-accent) calc(var(--score)*1%), var(--intelligence-border) 0);
+    color: var(--intelligence-text);
+    background: var(--intelligence-surface);
     border: 6px solid var(--intelligence-surface);
+    position: relative;
+}
+
+.intelligence-page .score-orb::before {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    z-index: -1;
+    border-radius: inherit;
+    background: conic-gradient(var(--intelligence-accent) calc(var(--score)*1%), var(--intelligence-border) 0);
+    mask: radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 5px));
+}
+
+.intelligence-page .score-orb {
+    isolation: isolate;
 }
 
 .intelligence-empty {
@@ -175,22 +191,22 @@
     border-radius: 18px;
 }
 
-.bi-panel form.rule-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .85rem; }
-.rule-form .wide { grid-column: 1 / -1; }
-.rule-form textarea { min-height: 78px; }
-.row-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
-.assistant-note { padding: .8rem 1rem; border-left: 3px solid var(--intelligence-accent); background: var(--intelligence-surface); }
-.assistant-help { border: 1px solid var(--intelligence-border); border-radius: 10px; padding: .75rem 1rem; background: var(--intelligence-surface); }
-.assistant-help summary { cursor: pointer; font-weight: 700; }
-.assistant-help li { margin-block: .3rem; }
+.intelligence-page .bi-panel form.rule-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .85rem; }
+.intelligence-page .rule-form .wide { grid-column: 1 / -1; }
+.intelligence-page .rule-form textarea { min-height: 78px; }
+.intelligence-page .row-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+.intelligence-page .assistant-note { padding: .8rem 1rem; border-left: 3px solid var(--intelligence-accent); background: var(--intelligence-surface); }
+.intelligence-page .assistant-help { border: 1px solid var(--intelligence-border); border-radius: 10px; padding: .75rem 1rem; background: var(--intelligence-surface); }
+.intelligence-page .assistant-help summary { cursor: pointer; font-weight: 700; }
+.intelligence-page .assistant-help li { margin-block: .3rem; }
 
 @media (max-width: 760px) {
     .intelligence-page > header { align-items: start; flex-direction: column; }
     .bi-filters > *,
     .bi-panel form > * { max-width: 100%; }
-    .rule-form { grid-template-columns: 1fr; }
-    .decision-row,
-    .score-row,
-    .recommendation-card { align-items: flex-start; flex-wrap: wrap; }
-    .row-actions { width: 100%; }
+    .intelligence-page .rule-form { grid-template-columns: 1fr; }
+    .intelligence-page .decision-row,
+    .intelligence-page .score-row,
+    .intelligence-page .recommendation-card { align-items: flex-start; flex-wrap: wrap; }
+    .intelligence-page .row-actions { width: 100%; }
 }

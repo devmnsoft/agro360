@@ -110,6 +110,35 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
                     return;
                 }
 
+                var supportAccessTokenId = context.User.FindFirstValue("jti");
+                var supportAccessTokenActive = Guid.TryParse(supportAccessTokenId, out var supportAccessTokenJti)
+                    && await Dapper.SqlMapper.ExecuteScalarAsync<bool>(conn, new Dapper.CommandDefinition(
+                        """
+                        select exists(
+                            select 1
+                            from agro360.identity_refresh_tokens rt
+                            join agro360.identity_users u on u.tenant_id=rt.tenant_id and u.id=rt.user_id
+                            where u.id=@UserId and rt.access_token_jti=@AccessTokenId
+                              and u.status='ACTIVE' and u.deleted_at is null
+                              and rt.revoked_at is null and rt.expires_at>now()
+                        )
+                        """,
+                        new { UserId = userId, AccessTokenId = supportAccessTokenJti },
+                        transaction: tx,
+                        cancellationToken: context.RequestAborted)).ConfigureAwait(false);
+                if (!supportAccessTokenActive)
+                {
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        type = "session_revoked",
+                        title = "A sessão de suporte foi revogada ou não está mais ativa",
+                        status = 401,
+                        traceId = context.TraceIdentifier
+                    }, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                    return;
+                }
+
                 var isEndingSupport = context.Request.Path.StartsWithSegments("/api/platform/support-session/end", StringComparison.OrdinalIgnoreCase);
                 var isMutation = HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method) || HttpMethods.IsPatch(context.Request.Method) || HttpMethods.IsDelete(context.Request.Method);
 
@@ -180,6 +209,33 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
                     }, cancellationToken: context.RequestAborted).ConfigureAwait(false);
                     return;
                 }
+
+                var accessTokenId = context.User.FindFirstValue("jti");
+                var sessionActive = Guid.TryParse(accessTokenId, out var accessTokenJti)
+                    && await Dapper.SqlMapper.ExecuteScalarAsync<bool>(conn, new Dapper.CommandDefinition(
+                        """
+                        select exists(
+                            select 1 from agro360.identity_refresh_tokens
+                            where tenant_id=@TenantId and user_id=@UserId and access_token_jti=@AccessTokenId
+                              and revoked_at is null and expires_at>now()
+                        )
+                        """,
+                        new { TenantId = tenantId, UserId = userId, AccessTokenId = accessTokenJti },
+                        transaction: tx,
+                        cancellationToken: context.RequestAborted)).ConfigureAwait(false);
+
+                if (!sessionActive)
+                {
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        type = "session_revoked",
+                        title = "A sessão foi revogada ou não está mais ativa",
+                        status = 401,
+                        traceId = context.TraceIdentifier
+                    }, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                    return;
+                }
             }
 
             if (organizationId.HasValue || farmId.HasValue)
@@ -240,10 +296,6 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
                         return;
                     }
 
-                    if (!organizationId.HasValue)
-                    {
-                        organizationId = farmOrgId.Value;
-                    }
                 }
 
                 if (isPortalUser)
@@ -291,44 +343,64 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
 
             if (!isPortalUser && !isSupportSession)
             {
-                var isPrivilegedAdmin = context.User.IsInRole("SUPER_ADMIN")
-                    || context.User.IsInRole("PLATFORM_SUPER_ADMIN")
-                    || context.User.IsInRole("tenant-administrator")
-                    || context.User.HasClaim("role", "SUPER_ADMIN")
-                    || context.User.HasClaim("role", "PLATFORM_SUPER_ADMIN")
-                    || context.User.HasClaim("role", "tenant-administrator");
+                var userScopes = (await Dapper.SqlMapper.QueryAsync<UserUnitScopeRow>(conn, new Dapper.CommandDefinition(
+                    """
+                    select scope_type as ScopeType, organization_id as OrganizationId, farm_id as FarmId
+                    from agro360.identity_user_unit_scopes
+                    where tenant_id = @TenantId and user_id = @UserId
+                    """,
+                    new { TenantId = tenantId, UserId = userId },
+                    transaction: tx,
+                    cancellationToken: context.RequestAborted)).ConfigureAwait(false)).ToList();
 
-                if (!isPrivilegedAdmin)
+                if (userScopes.Count == 0)
                 {
-                    var userScopes = (await Dapper.SqlMapper.QueryAsync<UserUnitScopeRow>(conn, new Dapper.CommandDefinition(
-                        """
-                        select scope_type as ScopeType, organization_id as OrganizationId, farm_id as FarmId
-                        from agro360.identity_user_unit_scopes
-                        where tenant_id = @TenantId and user_id = @UserId
-                        """,
-                        new { TenantId = tenantId, UserId = userId },
-                        transaction: tx,
-                        cancellationToken: context.RequestAborted)).ConfigureAwait(false)).ToList();
-
-                    // Ausência de concessão: usuário sem nenhum escopo cadastrado
-                    if (userScopes.Count == 0)
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new
                     {
-                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                        await context.Response.WriteAsJsonAsync(new
+                        type = "forbidden_unit_scope",
+                        title = "Usuário não possui nenhuma unidade ou fazenda concedida",
+                        status = 403,
+                        traceId = context.TraceIdentifier
+                    }, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                    return;
+                }
+
+                var hasAllScope = userScopes.Any(s => string.Equals(s.ScopeType, "ALL", StringComparison.OrdinalIgnoreCase));
+                if (!hasAllScope)
+                {
+                    if (!farmId.HasValue && !organizationId.HasValue)
+                    {
+                        var selectableScopes = userScopes
+                            .Where(s =>
+                                (string.Equals(s.ScopeType, "FARM", StringComparison.OrdinalIgnoreCase) && s.FarmId.HasValue)
+                                || (string.Equals(s.ScopeType, "ORGANIZATION", StringComparison.OrdinalIgnoreCase) && s.OrganizationId.HasValue))
+                            .DistinctBy(s => (s.ScopeType.ToUpperInvariant(), s.OrganizationId, s.FarmId))
+                            .ToArray();
+                        if (selectableScopes.Length == 1 && string.Equals(selectableScopes[0].ScopeType, "FARM", StringComparison.OrdinalIgnoreCase))
+                            farmId = selectableScopes[0].FarmId;
+                        else if (selectableScopes.Length == 1)
+                            organizationId = selectableScopes[0].OrganizationId;
+                        else
                         {
-                            type = "forbidden_unit_scope",
-                            title = "Usuário não possui nenhuma unidade ou fazenda concedida",
-                            status = 403,
-                            traceId = context.TraceIdentifier
-                        }, cancellationToken: context.RequestAborted).ConfigureAwait(false);
-                        return;
+                            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                            await context.Response.WriteAsJsonAsync(new
+                            {
+                                type = "forbidden_unit_scope",
+                                title = "Selecione uma fazenda autorizada antes de consultar dados operacionais",
+                                status = 403,
+                                traceId = context.TraceIdentifier
+                            }, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                            return;
+                        }
                     }
 
-                    var hasAllScope = userScopes.Any(s => string.Equals(s.ScopeType, "ALL", StringComparison.OrdinalIgnoreCase));
-                    if (!hasAllScope)
+                    if (organizationId.HasValue && !farmId.HasValue)
                     {
-                        if (organizationId.HasValue && !userScopes.Any(s =>
-                            string.Equals(s.ScopeType, "ORGANIZATION", StringComparison.OrdinalIgnoreCase) && s.OrganizationId == organizationId.Value))
+                        var organizationAuthorized = userScopes.Any(s =>
+                            string.Equals(s.ScopeType, "ORGANIZATION", StringComparison.OrdinalIgnoreCase)
+                            && s.OrganizationId == organizationId);
+                        if (!organizationAuthorized)
                         {
                             context.Response.StatusCode = StatusCodes.Status403Forbidden;
                             await context.Response.WriteAsJsonAsync(new
@@ -340,9 +412,31 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
                             }, cancellationToken: context.RequestAborted).ConfigureAwait(false);
                             return;
                         }
+                    }
 
-                        if (farmId.HasValue && !userScopes.Any(s =>
-                            string.Equals(s.ScopeType, "FARM", StringComparison.OrdinalIgnoreCase) && s.FarmId == farmId.Value))
+                    if (farmId.HasValue)
+                    {
+                        var farmAuthorized = await Dapper.SqlMapper.ExecuteScalarAsync<bool>(conn, new Dapper.CommandDefinition(
+                            """
+                            select exists(
+                                select 1
+                                from agro360.geo_farms f
+                                where f.tenant_id=@TenantId and f.id=@FarmId and f.deleted_at is null
+                                  and (
+                                      exists(select 1 from agro360.identity_user_unit_scopes s
+                                             where s.tenant_id=@TenantId and s.user_id=@UserId
+                                               and s.scope_type='FARM' and s.farm_id=f.id)
+                                      or exists(select 1 from agro360.identity_user_unit_scopes s
+                                                where s.tenant_id=@TenantId and s.user_id=@UserId
+                                                  and s.scope_type='ORGANIZATION' and s.organization_id=f.organization_id)
+                                  )
+                            )
+                            """,
+                            new { TenantId = tenantId, UserId = userId, FarmId = farmId },
+                            transaction: tx,
+                            cancellationToken: context.RequestAborted)).ConfigureAwait(false);
+
+                        if (!farmAuthorized)
                         {
                             context.Response.StatusCode = StatusCodes.Status403Forbidden;
                             await context.Response.WriteAsJsonAsync(new
@@ -355,9 +449,19 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
                             return;
                         }
 
-                        if (!farmId.HasValue && userScopes.Count == 1 && string.Equals(userScopes[0].ScopeType, "FARM", StringComparison.OrdinalIgnoreCase))
+                        if (organizationId.HasValue && !userScopes.Any(s =>
+                                string.Equals(s.ScopeType, "ORGANIZATION", StringComparison.OrdinalIgnoreCase)
+                                && s.OrganizationId == organizationId))
                         {
-                            farmId = userScopes[0].FarmId;
+                            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                            await context.Response.WriteAsJsonAsync(new
+                            {
+                                type = "forbidden_unit_scope",
+                                title = "Usuário não possui permissão para a organização especificada",
+                                status = 403,
+                                traceId = context.TraceIdentifier
+                            }, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                            return;
                         }
                     }
                 }

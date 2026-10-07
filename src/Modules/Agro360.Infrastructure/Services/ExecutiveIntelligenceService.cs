@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Text;
+using Agro360.Application;
 using Agro360.Application.Contracts;
 using Agro360.Infrastructure.Persistence;
+using Agro360.Infrastructure.Security;
 using Agro360.Multitenancy;
 using Agro360.SharedKernel;
 using Dapper;
@@ -12,6 +14,24 @@ namespace Agro360.Infrastructure.Services;
 public sealed class ExecutiveIntelligenceService(DatabaseExecutor database, ITenantContext tenant, ILogger<ExecutiveIntelligenceService> logger) : IExecutiveIntelligenceService
 {
     private static readonly HashSet<string> Sources = new(StringComparer.OrdinalIgnoreCase) { "FINANCE", "PROCUREMENT", "INVENTORY", "PRODUCTION", "QUALITY", "EXPORT", "FISCAL", "LOGISTICS", "COMPLIANCE", "TRACEABILITY", "AGRICULTURE", "LIVESTOCK" };
+    private static readonly IReadOnlyDictionary<string, string[]> ReportCategoryPermissions =
+        new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["FINANCE"] = [Permissions.FinanceRead],
+            ["PROCUREMENT"] = [Permissions.PurchasingRead],
+            ["INVENTORY"] = [Permissions.InventoryRead],
+            ["PRODUCTION"] = [Permissions.ProductionRead],
+            ["QUALITY"] = [Permissions.ComplianceRead, Permissions.ProductionQuality, Permissions.StorageRead],
+            ["EXPORT"] = [Permissions.ExportRead],
+            ["FISCAL"] = [Permissions.FiscalRead],
+            ["LOGISTICS"] = [Permissions.LogisticsRead, Permissions.RegionalLogisticsRead],
+            ["COMPLIANCE"] = [Permissions.ComplianceRead],
+            ["TRACEABILITY"] = [Permissions.TraceabilityRead],
+            ["AGRICULTURE"] = [Permissions.AgricultureRead],
+            ["LIVESTOCK"] = [Permissions.LivestockRead],
+            ["SUSTAINABILITY"] = [Permissions.SustainabilityRead, Permissions.EsgRead],
+            ["STRATEGIC"] = [Permissions.IntelligenceStrategic]
+        };
 
     public Task<ExecutivePanel> GetPanelAsync(CancellationToken cancellationToken) => Guard("panel", () => database.InTenantTransactionAsync(async (c, t) =>
     {
@@ -55,6 +75,10 @@ public sealed class ExecutiveIntelligenceService(DatabaseExecutor database, ITen
             ArgumentNullException.ThrowIfNull(filter);
             if (userId == Guid.Empty)
                 throw new ArgumentException("Usuário inválido.", nameof(userId));
+            if (userId != tenant.UserId)
+                throw new ForbiddenException("A exportação deve pertencer ao usuário autenticado.");
+
+            var allowedCategories = await GetAuthorizedExportCategoriesAsync(c, t, cancellationToken);
 
             var reportId = report?.Trim().ToLowerInvariant();
             var spec = reportId switch
@@ -63,6 +87,7 @@ public sealed class ExecutiveIntelligenceService(DatabaseExecutor database, ITen
                     select id,code,name,category,unit,target,active
                     from agro360.intelligence_kpi_definitions
                     where tenant_id=@TenantId and deleted_at is null
+                      and category=any(@AllowedCategories)
                       and (@Status is null or case when active then 'ACTIVE' else 'INACTIVE' end=@Status)
                       and (@Module is null or category ilike @Module)
                       and (@Search is null or code ilike @SearchPattern or name ilike @SearchPattern)
@@ -74,6 +99,7 @@ public sealed class ExecutiveIntelligenceService(DatabaseExecutor database, ITen
                     from agro360.intelligence_kpi_snapshots s
                     join agro360.intelligence_kpi_definitions d on d.id=s.kpi_id and d.tenant_id=s.tenant_id
                     where s.tenant_id=@TenantId and d.deleted_at is null
+                      and d.category=any(@AllowedCategories)
                       and (@Status is null or s.status=@Status)
                       and (@Module is null or d.category ilike @Module)
                       and (@Search is null or d.code ilike @SearchPattern or d.name ilike @SearchPattern)
@@ -84,6 +110,7 @@ public sealed class ExecutiveIntelligenceService(DatabaseExecutor database, ITen
                     select id,type,category,severity,source_module,origin,description,recommendation,status,due_at,created_at
                     from agro360.intelligence_alerts
                     where tenant_id=@TenantId
+                      and upper(source_module)=any(@AllowedCategories)
                       and (@Status is null or status=@Status)
                       and (@Severity is null or severity=@Severity)
                       and (@Module is null or source_module ilike @Module)
@@ -95,6 +122,7 @@ public sealed class ExecutiveIntelligenceService(DatabaseExecutor database, ITen
                     select id,type,source_module,cause,severity,impact,recommendation,detected_at,status,created_at
                     from agro360.intelligence_risks
                     where tenant_id=@TenantId and deleted_at is null
+                      and upper(source_module)=any(@AllowedCategories)
                       and (@Status is null or status=@Status)
                       and (@Severity is null or severity=@Severity)
                       and (@Module is null or source_module ilike @Module)
@@ -106,6 +134,7 @@ public sealed class ExecutiveIntelligenceService(DatabaseExecutor database, ITen
                     select id,title,description,severity,source_module,related_entity_type,related_entity_id,status,decision_reason,created_at
                     from agro360.intelligence_recommendations
                     where tenant_id=@TenantId and deleted_at is null
+                      and upper(source_module)=any(@AllowedCategories)
                       and (@Status is null or status=@Status)
                       and (@Severity is null or severity=@Severity)
                       and (@Module is null or source_module ilike @Module)
@@ -117,6 +146,7 @@ public sealed class ExecutiveIntelligenceService(DatabaseExecutor database, ITen
                     select id,module,entity_type,entity_id,action,user_id,correlation_id,created_at
                     from agro360.intelligence_audit_events
                     where tenant_id=@TenantId
+                      and upper(module)=any(@AllowedCategories)
                       and (@Module is null or module ilike @Module)
                       and (@Search is null or entity_type ilike @SearchPattern or action ilike @SearchPattern)
                     order by created_at desc,id
@@ -134,6 +164,7 @@ public sealed class ExecutiveIntelligenceService(DatabaseExecutor database, ITen
             var parameters = new
             {
                 tenant.TenantId,
+                AllowedCategories = allowedCategories,
                 Status = status,
                 Severity = severity,
                 Module = module,
@@ -172,6 +203,77 @@ public sealed class ExecutiveIntelligenceService(DatabaseExecutor database, ITen
 
             return Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv.ToString())).ToArray();
         }, cancellationToken));
+
+    private async Task<string[]> GetAuthorizedExportCategoriesAsync(
+        System.Data.IDbConnection connection,
+        System.Data.IDbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var modulesRequired = Permissions.ModulesForPermission(Permissions.IntelligenceExport);
+        var state = await connection.QuerySingleAsync<ExportAccessState>(new CommandDefinition(
+            $"""
+            select exists(
+                       select 1 from agro360.identity_users u
+                       join agro360.identity_user_roles ur on ur.tenant_id=u.tenant_id and ur.user_id=u.id
+                       join agro360.identity_role_permissions rp on rp.tenant_id=ur.tenant_id and rp.role_id=ur.role_id
+                       join agro360.identity_permissions p on p.id=rp.permission_id
+                       where u.tenant_id=@TenantId and u.id=@UserId and u.status='ACTIVE' and u.deleted_at is null
+                         and p.code=@ExportPermission
+                   ) HasExportPermission,
+                   exists(select 1 from agro360.identity_user_unit_scopes
+                          where tenant_id=@TenantId and user_id=@UserId and scope_type='ALL') HasAllUnitScope,
+                   exists(select 1 from ({EntitlementQueries.ModuleCodeSelect}) effective_modules
+                          where module_code=any(@ExportModules)) HasExportContract,
+                   exists(select 1 from ({EntitlementQueries.ModuleCodeSelect}) effective_modules) HasAnyContract
+            """,
+            new
+            {
+                tenant.TenantId,
+                UserId = tenant.UserId,
+                ExportPermission = Permissions.IntelligenceExport,
+                ExportModules = modulesRequired
+            },
+            transaction,
+            cancellationToken: cancellationToken));
+
+        if (!state.HasExportPermission || !state.HasExportContract || !state.HasAnyContract)
+            throw new ForbiddenException("Seu perfil não possui permissão efetiva ou entitlement vigente para exportar Inteligência.");
+        if (!state.HasAllUnitScope)
+            throw new ForbiddenException("Este relatório contém dados consolidados sem vínculo confiável de fazenda; exige escopo ALL explícito.");
+
+        var permissions = (await connection.QueryAsync<string>(new CommandDefinition(
+            """
+            select distinct p.code
+            from agro360.identity_users u
+            join agro360.identity_user_roles ur on ur.tenant_id=u.tenant_id and ur.user_id=u.id
+            join agro360.identity_role_permissions rp on rp.tenant_id=ur.tenant_id and rp.role_id=ur.role_id
+            join agro360.identity_permissions p on p.id=rp.permission_id
+            where u.tenant_id=@TenantId and u.id=@UserId and u.status='ACTIVE' and u.deleted_at is null
+            """,
+            new { tenant.TenantId, UserId = tenant.UserId },
+            transaction,
+            cancellationToken: cancellationToken)).ConfigureAwait(false)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var contractedModules = (await connection.QueryAsync<string>(new CommandDefinition(
+            EntitlementQueries.ModuleCodeSelect,
+            new { tenant.TenantId },
+            transaction,
+            cancellationToken: cancellationToken)).ConfigureAwait(false)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return ReportCategoryPermissions
+            .Where(category => category.Value.Any(permission =>
+                permissions.Contains(permission) &&
+                Permissions.ModulesForPermission(permission).Any(contractedModules.Contains)))
+            .Select(category => category.Key.ToUpperInvariant())
+            .ToArray();
+    }
+
+    private sealed class ExportAccessState
+    {
+        public bool HasExportPermission { get; init; }
+        public bool HasAllUnitScope { get; init; }
+        public bool HasExportContract { get; init; }
+        public bool HasAnyContract { get; init; }
+    }
 
     private sealed record ExportSpec(string Title, string[] Columns, string Sql);
 

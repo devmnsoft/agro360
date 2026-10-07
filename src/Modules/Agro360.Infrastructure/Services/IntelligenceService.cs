@@ -290,26 +290,27 @@ public sealed class IntelligenceService : IIntelligenceService
                        where module_code=any(@Modules)
                    ) HasContract,
                    exists(
-                       select 1 from agro360.identity_users u
-                       join agro360.platform_super_admins a on a.user_id=u.id
-                       where u.tenant_id=@TenantId and u.id=@UserId
-                         and u.status='ACTIVE' and u.deleted_at is null
-                         and a.active and a.deleted_at is null
-                   ) IsPlatformAdmin,
-                   exists(
-                       select 1 from agro360.identity_users u
-                       join agro360.identity_user_roles ur on ur.tenant_id=u.tenant_id and ur.user_id=u.id
-                       join agro360.identity_roles r on r.tenant_id=ur.tenant_id and r.id=ur.role_id
-                       where u.tenant_id=@TenantId and u.id=@UserId
-                         and u.status='ACTIVE' and u.deleted_at is null
-                         and lower(r.code) in ('super_admin','platform_super_admin','tenant-administrator')
-                   ) IsTenantAdmin,
-                   exists(
                        select 1 from agro360.identity_user_unit_scopes s
                        where s.tenant_id=@TenantId and s.user_id=@UserId and s.scope_type='ALL'
-                   ) HasAllUnitScope
+                   ) HasAllUnitScope,
+                   @FarmId is null or exists(
+                       select 1 from agro360.geo_farms f
+                       where f.tenant_id=@TenantId and f.id=@FarmId and f.deleted_at is null
+                   ) FarmActive,
+                   @FarmId is null or exists(
+                       select 1 from agro360.geo_farms f
+                       where f.tenant_id=@TenantId and f.id=@FarmId and f.deleted_at is null
+                         and (
+                             exists(select 1 from agro360.identity_user_unit_scopes s
+                                    where s.tenant_id=@TenantId and s.user_id=@UserId
+                                      and s.scope_type='FARM' and s.farm_id=f.id)
+                             or exists(select 1 from agro360.identity_user_unit_scopes s
+                                       where s.tenant_id=@TenantId and s.user_id=@UserId
+                                         and s.scope_type='ORGANIZATION' and s.organization_id=f.organization_id)
+                         )
+                   ) FarmInScope
             """,
-            new { _tenant.TenantId, UserId = _tenant.UserId, Permission = permission, Modules = modules },
+            new { _tenant.TenantId, UserId = _tenant.UserId, FarmId = _tenant.FarmId, Permission = permission, Modules = modules },
             transaction,
             cancellationToken: cancellationToken));
 
@@ -317,17 +318,21 @@ public sealed class IntelligenceService : IIntelligenceService
             throw new ForbiddenException("Seu perfil não possui permissão efetiva para consultar este módulo.");
         if (!access.HasContract)
             throw new ForbiddenException("O módulo consultado não está contratado ou vigente para esta organização.");
+        if (!access.FarmActive)
+            throw new ForbiddenException("A fazenda ativa não pertence ao tenant ou está inativa.");
+        if (!access.HasAllUnitScope && !access.FarmInScope)
+            throw new ForbiddenException("A fazenda ativa não está no escopo concedido ao usuário.");
 
-        return access.IsPlatformAdmin || access.IsTenantAdmin || access.HasAllUnitScope;
+        return access.HasAllUnitScope;
     }
 
     private sealed class AssistantAccess
     {
         public bool HasPermission { get; init; }
         public bool HasContract { get; init; }
-        public bool IsPlatformAdmin { get; init; }
-        public bool IsTenantAdmin { get; init; }
         public bool HasAllUnitScope { get; init; }
+        public bool FarmActive { get; init; }
+        public bool FarmInScope { get; init; }
     }
 
     public Task<IReadOnlyList<CustomDashboard>> GetDashboardsAsync(CancellationToken ct) => Guard("dashboards", () => _database.InTenantTransactionAsync(async (connection, transaction) =>
