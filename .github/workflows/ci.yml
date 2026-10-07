@@ -56,7 +56,10 @@ jobs:
           ./scripts/validate-full-sql.sh database/agro360-postgres-full.sql
           cd database/releases/v0.6.0 && sha256sum --check checksums.sha256
       - name: Test
-        run: dotnet test MNSOFT.Agro360.sln --configuration Release --no-build --report-trx --results-directory TestResults
+        run: |
+          dotnet test --project tests/Agro360.UnitTests/Agro360.UnitTests.csproj --configuration Release --no-build --report-xunit-trx --results-directory TestResults
+          dotnet test --project tests/Agro360.ArchitectureTests/Agro360.ArchitectureTests.csproj --configuration Release --no-build --report-xunit-trx --results-directory TestResults
+          dotnet test --project tests/Agro360.IntegrationTests/Agro360.IntegrationTests.csproj --configuration Release --no-build --report-xunit-trx --results-directory TestResults
       - name: Audit vulnerable packages
         run: dotnet list MNSOFT.Agro360.sln package --vulnerable --include-transitive
       - name: Publish test reports

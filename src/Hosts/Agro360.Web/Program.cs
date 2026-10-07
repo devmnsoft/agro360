@@ -28,8 +28,15 @@ builder.Services.AddHttpClient();
 
 var pageIssuer = builder.Configuration["Jwt:Issuer"] ?? "MNSOFT.Agro360";
 var pageAudience = builder.Configuration["Jwt:Audience"] ?? "MNSOFT.Agro360.Clients";
-var pageSigningKey = builder.Configuration["Jwt:SigningKey"] ?? "agro360-dev-insecure-jwt-key-not-for-prod-32b";
+var pageSigningKey = PageTokenAuthOptions.ResolveSigningKey(
+    builder.Configuration["Jwt:SigningKey"],
+    builder.Environment.IsDevelopment());
+var configuredApiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "http://localhost:8081";
+var apiOrigin = Uri.TryCreate(configuredApiBaseUrl, UriKind.Absolute, out var apiUri)
+    ? apiUri.GetLeftPart(UriPartial.Authority)
+    : "http://localhost:8081";
 
+builder.Services.AddHttpClient("PageSessionValidation", client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services
     .AddAuthentication(PageTokenAuthHandler.SchemeName)
     .AddScheme<PageTokenAuthOptions, PageTokenAuthHandler>(PageTokenAuthHandler.SchemeName, options =>
@@ -37,6 +44,7 @@ builder.Services
         options.Issuer = pageIssuer;
         options.Audience = pageAudience;
         options.SigningKey = pageSigningKey;
+        options.SessionValidationUrl = $"{apiOrigin}/api/v1/auth/session";
     });
 
 builder.Services.AddAuthorization(options => options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
@@ -51,10 +59,6 @@ builder.Services.Configure<RazorPagesOptions>(options =>
 });
 
 var app = builder.Build();
-var configuredApiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "http://localhost:8081";
-var apiOrigin = Uri.TryCreate(configuredApiBaseUrl, UriKind.Absolute, out var apiUri)
-    ? apiUri.GetLeftPart(UriPartial.Authority)
-    : "http://localhost:8081";
 
 if (!app.Environment.IsDevelopment())
 {
@@ -149,31 +153,23 @@ async Task<IResult> HandlePageTokenSync(HttpContext context)
         return InvalidPageToken(context, "Sessão expirada.");
     }
 
-    // Validação com o backend confiável: usuário/tenant ativos e sessão não revogada
     var httpClientFactory = context.RequestServices.GetRequiredService<IHttpClientFactory>();
-    var httpClient = httpClientFactory.CreateClient();
-    using var sessionReq = new HttpRequestMessage(HttpMethod.Get, $"{apiOrigin}/api/v1/auth/session");
-    sessionReq.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
-    try
+    var validation = await PageTokenAuthHandler.ValidateSessionAsync(
+        httpClientFactory,
+        $"{apiOrigin}/api/v1/auth/session",
+        accessToken,
+        principal,
+        context.RequestAborted).ConfigureAwait(false);
+    if (validation.Principal is null)
     {
-        using var sessionResp = await httpClient.SendAsync(sessionReq, context.RequestAborted).ConfigureAwait(false);
-        if (!sessionResp.IsSuccessStatusCode)
+        return Results.Json(new
         {
-            var problem = await sessionResp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: context.RequestAborted).ConfigureAwait(false);
-            var detail = problem.TryGetProperty("detail", out var d) ? d.GetString() : "Usuário ou tenant inativo ou bloqueado.";
-            return Results.Json(new
-            {
-                type = "session_rejected",
-                title = "Acesso negado.",
-                detail,
-                status = (int)sessionResp.StatusCode,
-                traceId = context.TraceIdentifier
-            }, statusCode: (int)sessionResp.StatusCode);
-        }
-    }
-    catch (HttpRequestException)
-    {
-        // Se a API estiver temporariamente inacessível durante o sync, a validação criptográfica do token já garantiu a integridade
+            type = "session_rejected",
+            title = "Acesso negado.",
+            detail = validation.Error,
+            status = validation.StatusCode,
+            traceId = context.TraceIdentifier
+        }, statusCode: validation.StatusCode);
     }
 
     var protector = context.RequestServices.GetRequiredService<IDataProtectionProvider>().CreateProtector(PageTokenAuthHandler.Purpose);
@@ -187,4 +183,3 @@ async Task<IResult> HandlePageTokenSync(HttpContext context)
     });
     return Results.Json(new { ok = true });
 }
-

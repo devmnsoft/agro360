@@ -74,8 +74,15 @@
                 if (typeof showLogin === "function") {
                     showLogin();
                 }
+            } else if (!resp.ok && typeof showToast === "function") {
+                const problem = await resp.json().catch(() => ({}));
+                showToast("danger", "Validação indisponível", problem.detail || "Não foi possível confirmar sua sessão. Tente novamente.", "session-validation-unavailable");
             }
-        } catch { }
+        } catch {
+            if (typeof showToast === "function") {
+                showToast("danger", "Validação indisponível", "Não foi possível confirmar sua sessão. Tente novamente.", "session-validation-unavailable");
+            }
+        }
     }
 
     function normalizePermission(value) {

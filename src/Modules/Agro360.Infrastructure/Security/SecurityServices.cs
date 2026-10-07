@@ -149,11 +149,12 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options, IClock clock) 
     {
         var now = clock.UtcNow;
         var expiresAt = now.AddMinutes(_options.AccessTokenMinutes);
+        var accessTokenId = Guid.CreateVersion7();
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, userId.ToString()),
             new(JwtRegisteredClaimNames.Email, email),
-            new(JwtRegisteredClaimNames.Jti, Guid.CreateVersion7().ToString()),
+            new(JwtRegisteredClaimNames.Jti, accessTokenId.ToString()),
             new("tenant_id", tenantId.ToString())
         };
         claims.AddRange(permissions.Select(permission => new Claim("permission", permission)));
@@ -176,7 +177,7 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options, IClock clock) 
         var accessToken = new JwtSecurityTokenHandler().WriteToken(jwt);
         var random = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(48));
         var refreshToken = $"{tenantId:N}.{random}";
-        return new TokenPair(accessToken, refreshToken, expiresAt);
+        return new TokenPair(accessToken, refreshToken, expiresAt, accessTokenId);
     }
 
     public string HashRefreshToken(string refreshToken)

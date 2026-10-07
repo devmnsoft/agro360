@@ -357,8 +357,10 @@ public sealed class IdentityService(
         var sub = principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
             ?? principal.FindFirst("sub")?.Value;
         var tenantStr = principal.FindFirst("tenant_id")?.Value;
+        var accessTokenIdText = principal.FindFirst("jti")?.Value;
 
-        if (!Guid.TryParse(sub, out var userId) || !Guid.TryParse(tenantStr, out var tenantId))
+        if (!Guid.TryParse(sub, out var userId) || !Guid.TryParse(tenantStr, out var tenantId) ||
+            !Guid.TryParse(accessTokenIdText, out var accessTokenId))
         {
             return new SessionValidationResult(false, ErrorCode: "invalid_claims", ErrorMessage: "Claims de identificação inválidas no token.");
         }
@@ -397,27 +399,59 @@ public sealed class IdentityService(
                 return new SessionValidationResult(false, tenantId, userId, ErrorCode: "user_blocked", ErrorMessage: "Usuário inativo, excluído ou bloqueado.");
             }
 
+            var activeSession = await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
+                """
+                select exists (
+                    select 1
+                    from agro360.identity_refresh_tokens
+                    where tenant_id = @TenantId
+                      and user_id = @UserId
+                      and access_token_jti = @AccessTokenId
+                      and revoked_at is null
+                      and expires_at > now()
+                );
+                """,
+                new { TenantId = tenantId, UserId = userId, AccessTokenId = accessTokenId },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+            if (!activeSession)
+            {
+                return new SessionValidationResult(false, tenantId, userId, ErrorCode: "session_revoked", ErrorMessage: "Esta sessão foi revogada ou não está mais ativa.");
+            }
+
             var roles = (await connection.QueryAsync<string>(new CommandDefinition(
                 """
-                select r.code
+                select distinct r.code
                 from agro360.identity_user_roles ur
                 join agro360.identity_roles r on r.tenant_id = ur.tenant_id and r.id = ur.role_id
                 where ur.tenant_id = @TenantId and ur.user_id = @UserId;
                 """,
-                new { TenantId = tenantId, UserId = userId }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
+                new { TenantId = tenantId, UserId = userId }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false)).ToArray();
+            if (roles.Length == 0)
+            {
+                return new SessionValidationResult(false, tenantId, userId, ErrorCode: "profile_not_linked", ErrorMessage: "O usuário não possui um perfil ativo.");
+            }
 
             var permissions = (await connection.QueryAsync<string>(new CommandDefinition(
-                $"""
+                """
                 select distinct p.code
                 from agro360.identity_user_roles ur
                 join agro360.identity_role_permissions rp on rp.tenant_id = ur.tenant_id and rp.role_id = ur.role_id
                 join agro360.identity_permissions p on p.id = rp.permission_id
                 where ur.tenant_id = @TenantId and ur.user_id = @UserId
-                  and exists (select 1 from ({EntitlementQueries.ModuleCodeSelect}) m where m.module_code = p.module);
+                order by p.code;
                 """,
                 new { TenantId = tenantId, UserId = userId }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
+            var (effectiveRoles, effectivePermissions) = await FilterEffectiveAccessAsync(
+                connection,
+                transaction,
+                tenantId,
+                userId,
+                roles,
+                permissions.ToArray(),
+                cancellationToken).ConfigureAwait(false);
 
-            return new SessionValidationResult(true, tenantId, userId, user.Name, user.Email, roles, permissions);
+            return new SessionValidationResult(true, tenantId, userId, user.Name, user.Email, effectiveRoles, effectivePermissions);
         }, cancellationToken).ConfigureAwait(false);
     }
 
@@ -466,33 +500,16 @@ public sealed class IdentityService(
             throw new ForbiddenException("Seu perfil não possui permissão para acessar esta área.");
         }
 
-        var isGlobalAdministrator = roles.Contains("SUPER_ADMIN", StringComparer.OrdinalIgnoreCase)
-            && await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
-                "select exists(select 1 from agro360.platform_super_admins where user_id=@UserId and active and deleted_at is null)",
-                new { UserId = user.Id }, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        if (!isGlobalAdministrator)
-            roles = roles.Where(role => !role.Equals("SUPER_ADMIN", StringComparison.OrdinalIgnoreCase)).ToArray();
+        var (effectiveRoles, effectivePermissions) = await FilterEffectiveAccessAsync(
+            connection,
+            transaction,
+            user.TenantId,
+            user.Id,
+            roles,
+            grantedPermissions,
+            cancellationToken).ConfigureAwait(false);
 
-        var permissions = isGlobalAdministrator
-            ? grantedPermissions
-            : grantedPermissions.Where(permission => !permission.Equals(Permissions.PlatformAdmin, StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (!isGlobalAdministrator)
-        {
-            var contractedModules = (await connection.QueryAsync<string>(new CommandDefinition(
-                $"""
-                {EntitlementQueries.ModuleCodeSelect}
-                """,
-                new { user.TenantId },
-                transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false))
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            permissions = grantedPermissions
-                .Where(permission => IsPermissionContracted(permission, contractedModules))
-                .ToArray();
-        }
-
-        var pair = tokenService.Create(user.TenantId, user.Id, user.Email, permissions, roles);
+        var pair = tokenService.Create(user.TenantId, user.Id, user.Email, effectivePermissions, effectiveRoles);
         var refreshExpiresAt = clock.UtcNow.AddDays(14);
         await connection.ExecuteAsync(new CommandDefinition(
             """
@@ -501,9 +518,9 @@ public sealed class IdentityService(
             where tenant_id = @TenantId and id = @UserId;
 
             insert into agro360.identity_refresh_tokens
-                (id, tenant_id, user_id, token_hash, expires_at, created_at)
+                (id, tenant_id, user_id, token_hash, access_token_jti, expires_at, created_at)
             values
-                (@Id, @TenantId, @UserId, @TokenHash, @ExpiresAt, now());
+                (@Id, @TenantId, @UserId, @TokenHash, @AccessTokenId, @ExpiresAt, now());
             """,
             new
             {
@@ -511,6 +528,7 @@ public sealed class IdentityService(
                 user.TenantId,
                 UserId = user.Id,
                 TokenHash = tokenService.HashRefreshToken(pair.RefreshToken),
+                pair.AccessTokenId,
                 ExpiresAt = refreshExpiresAt
             },
             transaction,
@@ -524,8 +542,47 @@ public sealed class IdentityService(
             pair.AccessToken,
             pair.RefreshToken,
             pair.ExpiresAt,
-            permissions,
-            roles);
+            effectivePermissions,
+            effectiveRoles);
+    }
+
+    private static async Task<(string[] Roles, string[] Permissions)> FilterEffectiveAccessAsync(
+        Npgsql.NpgsqlConnection connection,
+        Npgsql.NpgsqlTransaction transaction,
+        Guid tenantId,
+        Guid userId,
+        string[] roles,
+        string[] grantedPermissions,
+        CancellationToken cancellationToken)
+    {
+        var isGlobalAdministrator = roles.Contains("SUPER_ADMIN", StringComparer.OrdinalIgnoreCase)
+            && await connection.ExecuteScalarAsync<bool>(new CommandDefinition(
+                "select exists(select 1 from agro360.platform_super_admins where user_id=@UserId and active and deleted_at is null)",
+                new { UserId = userId },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        if (isGlobalAdministrator)
+        {
+            return (roles, grantedPermissions);
+        }
+
+        var effectiveRoles = roles
+            .Where(role => !role.Equals("SUPER_ADMIN", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var contractedModules = (await connection.QueryAsync<string>(new CommandDefinition(
+            $"{EntitlementQueries.ModuleCodeSelect}",
+            new { TenantId = tenantId },
+            transaction,
+            cancellationToken: cancellationToken)).ConfigureAwait(false))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var effectivePermissions = grantedPermissions
+            .Where(permission =>
+                !permission.Equals(Permissions.PlatformAdmin, StringComparison.OrdinalIgnoreCase) &&
+                IsPermissionContracted(permission, contractedModules))
+            .ToArray();
+
+        return (effectiveRoles, effectivePermissions);
     }
 
     private static bool IsPermissionContracted(string permission, IReadOnlySet<string> contractedModules)

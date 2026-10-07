@@ -43,9 +43,23 @@ public sealed class DatabaseFoundationTests
             "select extname from pg_extension where extname = any(array['pg_trgm','unaccent','pgcrypto']) order by extname;"))
             .ToArray();
         var migrations = await connection.ExecuteScalarAsync<int>("select count(*) from agro360.platform_schema_versions;");
+        var accessSessionJtiColumn = await connection.ExecuteScalarAsync<bool>(
+            """
+            select exists (
+                select 1
+                from information_schema.columns
+                where table_schema = 'agro360'
+                  and table_name = 'identity_refresh_tokens'
+                  and column_name = 'access_token_jti'
+            );
+            """);
+        var sessionRevocationMigration = await connection.ExecuteScalarAsync<bool>(
+            "select exists(select 1 from agro360.platform_schema_versions where version = '11.18.0');");
 
         Assert.Equal(["pg_trgm", "pgcrypto", "unaccent"], extensions);
         Assert.True(migrations >= 4);
+        Assert.True(accessSessionJtiColumn);
+        Assert.True(sessionRevocationMigration);
     }
 
     [Fact]

@@ -1,8 +1,10 @@
+using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Agro360.Web.Security;
+using Microsoft.AspNetCore.Http;
 using Xunit;
 
 namespace Agro360.UnitTests;
@@ -147,5 +149,129 @@ public sealed class WebPageTokenAuthTests
 
         Assert.Null(principal);
         Assert.Equal("Credencial em formato inválido.", error);
+    }
+
+    [Fact]
+    public void MissingProductionSigningKeyIsRejected()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => PageTokenAuthOptions.ResolveSigningKey(null, isDevelopment: false));
+
+        Assert.Contains("precisa ser configurada", exception.Message);
+    }
+
+    [Fact]
+    public void DevelopmentSigningKeyIsNotAcceptedOutsideDevelopment()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            PageTokenAuthOptions.ResolveSigningKey("agro360-dev-insecure-jwt-key-not-for-prod-32b", isDevelopment: false));
+
+        Assert.Contains("insegura", exception.Message);
+    }
+
+    [Fact]
+    public void DevelopmentSigningKeyCannotBeExtendedForProduction()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            PageTokenAuthOptions.ResolveSigningKey("agro360-dev-insecure-jwt-key-not-for-prod-32b-extra", isDevelopment: false));
+
+        Assert.Contains("insegura", exception.Message);
+    }
+
+    [Fact]
+    public void ShortSigningKeyIsRejected()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => PageTokenAuthOptions.ResolveSigningKey("short", isDevelopment: true));
+
+        Assert.Contains("32 bytes", exception.Message);
+    }
+
+    [Fact]
+    public async Task SessionValidationRefreshesRolesAndPermissionsFromApi()
+    {
+        var token = CreateJwt(SigningKey, role: "operator");
+        var (principal, _, _) = PageTokenAuthHandler.ValidateToken(token, ExpectedIssuer, ExpectedAudience, SigningKey);
+        var responseBody = """
+            {
+              "isValid": true,
+              "tenantId": "22222222-2222-2222-2222-222222222222",
+              "userId": "11111111-1111-1111-1111-111111111111",
+              "name": "Updated User",
+              "email": "updated@agro360.local",
+              "roles": ["manager"],
+              "permissions": ["work.admin"]
+            }
+            """;
+        var factory = new StubHttpClientFactory(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
+        });
+
+        var result = await PageTokenAuthHandler.ValidateSessionAsync(
+            factory,
+            "https://api.agro360.local/api/v1/auth/session",
+            token,
+            principal!,
+            CancellationToken.None);
+
+        Assert.NotNull(result.Principal);
+        Assert.Null(result.Error);
+        Assert.True(result.Principal!.IsInRole("manager"));
+        Assert.False(result.Principal.IsInRole("operator"));
+        Assert.Contains(result.Principal.Claims, claim => claim.Type == "permission" && claim.Value == "work.admin");
+        Assert.Equal("Updated User", result.Principal.Identity!.Name);
+        Assert.Equal("updated@agro360.local", result.Principal.FindFirst(ClaimTypes.Email)?.Value);
+    }
+
+    [Fact]
+    public async Task SessionValidationFailsClosedWhenApiIsUnavailable()
+    {
+        var token = CreateJwt(SigningKey);
+        var (principal, _, _) = PageTokenAuthHandler.ValidateToken(token, ExpectedIssuer, ExpectedAudience, SigningKey);
+        var factory = new StubHttpClientFactory(_ => throw new HttpRequestException("API unavailable"));
+
+        var result = await PageTokenAuthHandler.ValidateSessionAsync(
+            factory,
+            "https://api.agro360.local/api/v1/auth/session",
+            token,
+            principal!,
+            CancellationToken.None);
+
+        Assert.Null(result.Principal);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, result.StatusCode);
+        Assert.Contains("acesso negado", result.Error);
+    }
+
+    [Fact]
+    public async Task MalformedSuccessfulSessionResponseIsRejected()
+    {
+        var token = CreateJwt(SigningKey);
+        var (principal, _, _) = PageTokenAuthHandler.ValidateToken(token, ExpectedIssuer, ExpectedAudience, SigningKey);
+        var factory = new StubHttpClientFactory(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"isValid":true}""", Encoding.UTF8, "application/json")
+        });
+
+        var result = await PageTokenAuthHandler.ValidateSessionAsync(
+            factory,
+            "https://api.agro360.local/api/v1/auth/session",
+            token,
+            principal!,
+            CancellationToken.None);
+
+        Assert.Null(result.Principal);
+        Assert.Equal(StatusCodes.Status502BadGateway, result.StatusCode);
+        Assert.Contains("resposta", result.Error);
+    }
+
+    private sealed class StubHttpClientFactory(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) =>
+            new(new StubHttpMessageHandler(responseFactory));
+    }
+
+    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(responseFactory(request));
     }
 }
