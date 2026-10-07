@@ -1,31 +1,49 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
+using Agro360.SharedKernel;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace Agro360.Infrastructure.Services.Ai;
 
 public interface IAiProviderFactory
 {
     IAiProvider GetProvider(string? preferredProvider = null);
+    IReadOnlyList<string> GetAvailableProviders();
 }
 
 public sealed class AiProviderFactory(
-    IServiceProvider serviceProvider) : IAiProviderFactory
+    IServiceProvider serviceProvider,
+    IConfiguration configuration) : IAiProviderFactory
 {
     public IAiProvider GetProvider(string? preferredProvider = null)
     {
-        var providers = serviceProvider.GetServices<IAiProvider>().ToList();
+        var providers = serviceProvider.GetServices<IAiProvider>().Where(p => p.IsEnabled).ToList();
 
-        if (!string.IsNullOrEmpty(preferredProvider))
+        if (!string.IsNullOrWhiteSpace(preferredProvider))
         {
-            var provider = providers.FirstOrDefault(p => p.ProviderName.Equals(preferredProvider, StringComparison.OrdinalIgnoreCase));
-            if (provider != null) return provider;
+            var preferred = providers.FirstOrDefault(p => p.ProviderName.Equals(preferredProvider.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (preferred != null) return preferred;
         }
 
-        return providers.FirstOrDefault() ?? throw new InvalidOperationException("Nenhum provedor de IA configurado.");
+        var defaultProviderName = configuration["Ai:DefaultProvider"] ?? "Groq";
+        var defaultProvider = providers.FirstOrDefault(p => p.ProviderName.Equals(defaultProviderName.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (defaultProvider != null) return defaultProvider;
+
+        var any = providers.FirstOrDefault();
+        if (any != null) return any;
+
+        throw new DomainException(
+            "Nenhum provedor de IA habilitado e configurado no momento.",
+            "ai.provider.unavailable");
+    }
+
+    public IReadOnlyList<string> GetAvailableProviders()
+    {
+        return serviceProvider.GetServices<IAiProvider>()
+            .Where(p => p.IsEnabled)
+            .Select(p => p.ProviderName)
+            .ToList();
     }
 }

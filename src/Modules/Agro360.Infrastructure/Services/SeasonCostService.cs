@@ -46,7 +46,8 @@ public sealed class SeasonCostService(DatabaseExecutor db, ITenantContext tenant
     public Task<Guid> ConfirmAsync(ConfirmCostAllocationCommand command, CancellationToken ct)
     {
         Guard.Required(command.IdempotencyKey, nameof(command.IdempotencyKey), 160);
-        return Tx(async (c, t) => {
+        return Tx(async (c, t) =>
+        {
             // 1. Strict Idempotency Check
             var old = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition("select id from agro360.cost_allocation_batches where tenant_id=@TenantId and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
             if (old.HasValue) return old.Value;

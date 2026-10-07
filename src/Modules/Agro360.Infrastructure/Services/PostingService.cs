@@ -30,17 +30,18 @@ public sealed class PostingService(DatabaseExecutor database, ITenantContext ten
                     @Amount, 'BRL', 'MATERIAL', @SourceKey,
                     @SourceDocument, @Description, 'OPEN', @UserId
                 )
-                """, new {
-                    Id = Guid.CreateVersion7(),
-                    TenantId = tenantId,
-                    FarmId = farmId,
-                    CompetenceDate = competenceDate,
-                    Amount = recognizedAmount,
-                    SourceKey = materialId,
-                    SourceDocument = sourceDocument,
-                    Description = description,
-                    UserId = tenant.UserId
-                }, tx, cancellationToken: ct));
+                """, new
+            {
+                Id = Guid.CreateVersion7(),
+                TenantId = tenantId,
+                FarmId = farmId,
+                CompetenceDate = competenceDate,
+                Amount = recognizedAmount,
+                SourceKey = materialId,
+                SourceDocument = sourceDocument,
+                Description = description,
+                UserId = tenant.UserId
+            }, tx, cancellationToken: ct));
         }, ct);
     }
 
@@ -60,16 +61,17 @@ public sealed class PostingService(DatabaseExecutor database, ITenantContext ten
                     @Amount, 'BRL', 'ACTIVITY', @SourceKey,
                     null, @Description, 'OPEN', @UserId
                 )
-                """, new {
-                    Id = Guid.CreateVersion7(),
-                    TenantId = tenantId,
-                    FarmId = farmId,
-                    CompetenceDate = competenceDate,
-                    Amount = amount,
-                    SourceKey = orderId,
-                    Description = description,
-                    UserId = tenant.UserId
-                }, tx, cancellationToken: ct));
+                """, new
+            {
+                Id = Guid.CreateVersion7(),
+                TenantId = tenantId,
+                FarmId = farmId,
+                CompetenceDate = competenceDate,
+                Amount = amount,
+                SourceKey = orderId,
+                Description = description,
+                UserId = tenant.UserId
+            }, tx, cancellationToken: ct));
         }, ct);
     }
 }

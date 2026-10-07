@@ -82,4 +82,14 @@ internal static partial class InfrastructureLogMessages
     internal static partial void InvalidInspectionProcessCode(ILogger logger, string processCode);
     [LoggerMessage(1039, LogLevel.Error, "Falha ao registrar/iniciar gatilho de inspeção por evento {ProcessCode}:{OriginId}")]
     internal static partial void OperationalInspectionTriggerFailed(ILogger logger, string processCode, Guid originId, Exception exception);
+    [LoggerMessage(1040, LogLevel.Error, "Falha na execução do assistente de estoque para o tenant {TenantId}")]
+    internal static partial void AiStockAssistantFailed(ILogger logger, Guid tenantId, Exception exception);
+    [LoggerMessage(1041, LogLevel.Error, "Falha na verificação de ciclo de ponta a ponta")]
+    internal static partial void CycleVerificationFailed(ILogger logger, Exception exception);
+    [LoggerMessage(1042, LogLevel.Error, "Falha na operação de quota de IA {Operation} para o tenant {TenantId}")]
+    internal static partial void AiQuotaOperationFailed(ILogger logger, string operation, Guid tenantId, Exception exception);
+    [LoggerMessage(1043, LogLevel.Error, "Falha na execução de IA no provedor {Provider} para o tenant {TenantId}")]
+    internal static partial void AiExecutionFailed(ILogger logger, string provider, Guid tenantId, Exception exception);
+    [LoggerMessage(1044, LogLevel.Warning, "Falha ao consultar fonte {Source} do Meu Dia para o tenant {TenantId}")]
+    internal static partial void MyDaySourceFailed(ILogger logger, string source, Guid tenantId, Exception exception);
 }

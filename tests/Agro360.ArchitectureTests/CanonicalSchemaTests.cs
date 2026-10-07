@@ -92,6 +92,20 @@ public sealed class CanonicalSchemaTests
         Assert.EndsWith("commit;", installer.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void AiGovernanceSchemaIsMigratedIncrementallyAndMirroredInFullScript()
+    {
+        var migration = File.ReadAllText(Path.Combine(Root(), "database/migrations/129_ai_executions_and_quotas.sql"));
+        var installer = Sql;
+
+        Assert.Contains("create table if not exists agro360.tenant_ai_quotas", migration);
+        Assert.Contains("create table if not exists agro360.ai_executions", migration);
+        Assert.Contains("'11.19.0'", migration);
+        Assert.Contains("create table if not exists agro360.tenant_ai_quotas", installer);
+        Assert.Contains("create table if not exists agro360.ai_executions", installer);
+        Assert.Contains("'11.19.0'", installer);
+    }
+
     private static string Root()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

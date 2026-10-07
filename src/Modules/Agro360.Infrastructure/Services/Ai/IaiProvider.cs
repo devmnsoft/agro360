@@ -20,11 +20,13 @@ public record AiResponse(
     string Model,
     int PromptTokens,
     int CompletionTokens,
-    TimeSpan Duration);
+    TimeSpan Duration,
+    string TokenConfidence = "EXACT");
 
 public interface IAiProvider
 {
     string ProviderName { get; }
     string DefaultModel { get; }
+    bool IsEnabled { get; }
     Task<AiResponse> GenerateCompletionAsync(AiRequest request, CancellationToken ct = default);
 }

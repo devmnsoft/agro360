@@ -92,6 +92,23 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
                 return;
             }
             await c.ExecuteAsync(new CommandDefinition("update agro360.agriculture_plan_operations o set status='PARTIAL',updated_at=now(),updated_by=@UserId,version=version+1 from agro360.agriculture_operation_orders l where l.tenant_id=o.tenant_id and l.operation_id=o.id and l.work_order_id=@OrderId and o.tenant_id=@TenantId and o.status='PLANNED'", new { tenant.TenantId, OrderId = orderId, tenant.UserId }, t, cancellationToken: cancellationToken));
+
+            if (command.EquipmentId is not null && command.FinalMeter is not null)
+            {
+                await c.ExecuteAsync(new CommandDefinition("""
+                    update agro360.fleet_assets
+                    set hour_meter = greatest(coalesce(hour_meter, 0), @FinalMeter),
+                        updated_at = now(),
+                        updated_by = @UserId
+                    where tenant_id = @TenantId and id = @EquipmentId;
+
+                    insert into agro360.fleet_meter_readings
+                        (id, tenant_id, asset_id, meter_kind, occurred_at, physical_value, operational_accumulated, unit, origin, responsible_id, created_by)
+                    values
+                        (gen_random_uuid(), @TenantId, @EquipmentId, 'HOUR_METER', @EndsAt, @FinalMeter, @FinalMeter, 'HOURS', 'WORK_ORDER', @OperatorId, @UserId)
+                    on conflict do nothing;
+                    """, new { tenant.TenantId, command.EquipmentId, command.FinalMeter, command.EndsAt, command.OperatorId, tenant.UserId }, t, cancellationToken: cancellationToken));
+            }
         }, cancellationToken);
     }
 
@@ -156,7 +173,9 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
             }
         }
         Guid? movement = null;
-        if (kind is "CONSUME" or "LOSS" or "RETURN" or "REVERSAL") { if (m.WarehouseId is null) throw new ConflictException("Defina o depósito antes de movimentar estoque."); var qty = kind is "RETURN" or "REVERSAL" ? command.Quantity : -command.Quantity; movement = await c.ExecuteScalarAsync<Guid>(new CommandDefinition("select agro360.inventory_apply_stock_movement(@TenantId,@WarehouseId,@ProductId,@Quantity,coalesce(@UnitCost,0),@Type,@Reference,null,null,@UserId,@Reason)", new { tenant.TenantId, m.WarehouseId, m.ProductId, Quantity = qty, m.UnitCost, Type = kind is "RETURN" or "REVERSAL" ? "ENTRY" : "EXIT", Reference = orderId, tenant.UserId, command.Reason }, t, cancellationToken: cancellationToken));
+        if (kind is "CONSUME" or "LOSS" or "RETURN" or "REVERSAL")
+        {
+            if (m.WarehouseId is null) throw new ConflictException("Defina o depósito antes de movimentar estoque."); var qty = kind is "RETURN" or "REVERSAL" ? command.Quantity : -command.Quantity; movement = await c.ExecuteScalarAsync<Guid>(new CommandDefinition("select agro360.inventory_apply_stock_movement(@TenantId,@WarehouseId,@ProductId,@Quantity,coalesce(@UnitCost,0),@Type,@Reference,null,null,@UserId,@Reason)", new { tenant.TenantId, m.WarehouseId, m.ProductId, Quantity = qty, m.UnitCost, Type = kind is "RETURN" or "REVERSAL" ? "ENTRY" : "EXIT", Reference = orderId, tenant.UserId, command.Reason }, t, cancellationToken: cancellationToken));
         }
         if (kind is "CONSUME" or "LOSS")
         {
@@ -193,8 +212,7 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
                         m.Id,
                         "REJECTION_AT_USE",
                         "HIGH",
-                        $"Material bloqueado para consumo no campo. Status de quarentena: {m.Status}",
-                        cancellationToken), t);
+                        "Material bloqueado para consumo no campo."), cancellationToken);
                 }
 
                 // Early Warning System: Trigger variance check
