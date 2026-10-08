@@ -1,11 +1,12 @@
 using Agro360.Application;
 using Agro360.Application.Contracts;
+using Agro360.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 namespace Agro360.Api.Controllers;
 
 [ApiController, Route("api/procurement"), Authorize]
-public sealed class ProcurementController(IProcurementService service, IAuthorizationService authorization) : ControllerBase
+public sealed class ProcurementController(IProcurementService service, IQuotationService quotationService, IAuthorizationService authorization) : ControllerBase
 {
     [HttpGet("dashboard"), Authorize(Policy = Permissions.PurchasingRead)] public async Task<IActionResult> Dashboard(CancellationToken ct) => Ok(await service.DashboardAsync(ct));
     [HttpGet("suppliers"), Authorize(Policy = Permissions.PurchasingRead)] public Task<IReadOnlyList<dynamic>> Suppliers([FromQuery] ProcurementQuery q, CancellationToken ct) => service.SuppliersAsync(q, ct);
@@ -21,6 +22,10 @@ public sealed class ProcurementController(IProcurementService service, IAuthoriz
     [HttpPost("requisitions/{id:guid}/decision"), Authorize(Policy = Permissions.PurchasingApprove)] public async Task<IActionResult> DecideRequisition(Guid id, RequisitionDecisionCommand x, CancellationToken ct) { await service.DecideRequisitionAsync(id, x, ct); return NoContent(); }
     [HttpPost("requisitions/{id:guid}/cancel"), Authorize(Policy = Permissions.PurchasingRequest)] public async Task<IActionResult> CancelRequisition(Guid id, RequisitionTransitionCommand x, CancellationToken ct) { await service.CancelRequisitionAsync(id, x, ct); return NoContent(); }
     [HttpGet("approval-queue"), Authorize(Policy = Permissions.PurchasingApprove)] public Task<IReadOnlyList<dynamic>> ApprovalQueue([FromQuery] ProcurementQuery q, CancellationToken ct) => service.ApprovalQueueAsync(q, ct);
+    [HttpPost("quotations"), Authorize(Policy = Permissions.PurchasingWrite)] public async Task<IActionResult> RequestQuotation(QuotationRequestCommand x, CancellationToken ct) => Created("api/procurement/quotations", new { id = await quotationService.RequestQuotationsAsync(x, ct) });
+    [HttpPost("quotations/responses"), Authorize(Policy = Permissions.PurchasingWrite)] public async Task<IActionResult> SubmitQuotation(SubmitQuotationCommand x, CancellationToken ct) => Created("api/procurement/quotations/responses", new { id = await quotationService.SubmitQuotationAsync(x, ct) });
+    [HttpGet("requisitions/{id:guid}/quotations/compare"), Authorize(Policy = Permissions.PurchasingRead)] public Task<dynamic> CompareQuotations(Guid id, CancellationToken ct) => quotationService.CompareQuotationsAsync(id, ct);
+    [HttpPost("quotations/{id:guid}/convert-to-order"), Authorize(Policy = Permissions.PurchasingWrite)] public async Task<IActionResult> ConvertQuotation(Guid id, CancellationToken ct) => Created("api/procurement/orders", new { id = await quotationService.ConvertToOrderAsync(id, ct) });
     [HttpGet("orders"), Authorize(Policy = Permissions.PurchasingRead)] public Task<IReadOnlyList<dynamic>> Orders([FromQuery] ProcurementQuery q, CancellationToken ct) => service.OrdersAsync(q, ct);
     [HttpPost("orders"), Authorize(Policy = Permissions.PurchasingWrite)] public async Task<IActionResult> Order(PurchaseOrderCommand x, CancellationToken ct) => Created("api/procurement/orders", new { id = await service.CreateOrderAsync(x, ct) });
     [HttpPost("orders/{id:guid}/approve"), Authorize(Policy = Permissions.PurchasingApprove)] public async Task<IActionResult> Approve(Guid id, [FromBody] string? comment, CancellationToken ct) { await service.ApproveOrderAsync(id, comment, ct); return NoContent(); }

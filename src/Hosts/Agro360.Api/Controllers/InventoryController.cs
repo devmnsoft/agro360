@@ -1,14 +1,19 @@
 using Agro360.Application;
 using Agro360.Application.Contracts;
+using Agro360.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Agro360.Api.Controllers;
 
+public sealed record StockAssistantQueryRequest(string Question);
+
 [ApiController]
 [Route("api/v1/inventory")]
 [Authorize]
-public sealed class InventoryController(IInventoryService inventory) : ControllerBase
+public sealed class InventoryController(
+    IInventoryService inventory,
+    IAiStockAssistant assistant) : ControllerBase
 {
     [HttpPost("products")]
     [Authorize(Policy = Permissions.InventoryMove)]
@@ -44,4 +49,20 @@ public sealed class InventoryController(IInventoryService inventory) : Controlle
         [FromQuery] string? search = null,
         CancellationToken cancellationToken = default) =>
         inventory.ListBalancesAsync(page, pageSize, search, cancellationToken);
+
+    [HttpPost("assistant/query")]
+    [Authorize(Policy = Permissions.InventoryRead)]
+    public async Task<ActionResult<AiStockAssistantResponse>> QueryAssistant(
+        [FromBody] StockAssistantQueryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request?.Question))
+        {
+            return BadRequest(new { message = "A pergunta não pode ser vazia." });
+        }
+
+        var response = await assistant.AskAsync(request.Question, cancellationToken).ConfigureAwait(false);
+        return Ok(response);
+    }
 }
+

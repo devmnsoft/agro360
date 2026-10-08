@@ -16,7 +16,37 @@
  async function openAssignment(item){currentOccurrence=item;assignmentSummary.textContent=item.title+' — '+item.reason;currentResponsible.textContent=item.responsibleName||'Não atribuído';assignmentForm.expectedVersion.value=item.assignmentVersion;assignmentForm.reason.value='';assignmentForm.querySelector('.form-error').textContent='';assignmentDialog.showModal();await eligibleUsers();assignee.focus()}
  async function saveAssignment(responsibleId){const reason=assignmentForm.reason.value.trim();if((currentOccurrence.responsibleId||!responsibleId)&&!reason){assignmentForm.querySelector('.form-error').textContent='Informe o motivo da transferência ou retirada.';assignmentForm.reason.focus();return}const submit=assignmentForm.querySelector('.primary');submit.disabled=true;assignmentForm.querySelector('.form-error').textContent='';try{await request(`/api/operation-center/${encodeURIComponent(currentOccurrence.key)}/assignment`,{method:'PUT',body:JSON.stringify({responsibleId:responsibleId||null,reason,expectedVersion:Number(assignmentForm.expectedVersion.value)})});assignmentDialog.close();notify(responsibleId?'Acompanhamento atribuído com sucesso.':'Atribuição retirada com sucesso.');await load()}catch(e){assignmentForm.querySelector('.form-error').textContent=e.message}finally{submit.disabled=false}}
 
- async function load(){remember();content.innerHTML='<span class="loading">Carregando dados permitidos…</span>';try{if(tab==='center'){await loadCenter();return}let path=tab==='tasks'?`/api/tasks?search=${encodeURIComponent(search.value)}&status=${status.value}`:tab==='calendar'?`/api/operational-calendar?from=${new Date(Date.now()-864e5*7).toISOString()}&to=${new Date(Date.now()+864e5*30).toISOString()}`:tab==='notifications'?'/api/work-notifications':tab==='outbox'?'/api/communication-outbox':`/api/${tab}`;let x=await request(path);x=x.items||x;content.innerHTML=x.length?x.map(i=>`<article class="row"><strong>${esc(i.title||i.name||i.type||i.channel)}</strong><span class="badge">${esc(i.status||i.severity||i.action||'')}</span><span>${esc(i.module||i.priority||'')}</span><span>${esc(i.responsibleName||i.approverName||i.message||'')}</span><time>${esc(formatDate(i.dueAt||i.createdAt||i.openedAt||i.startsAt))}</time></article>`).join(''):'<div class="empty"><h3>Nada pendente</h3><p>Os dados aparecerão aqui quando existirem para sua organização.</p></div>'}catch(e){content.innerHTML=`<div class="empty critical"><h3>Falha ao carregar</h3><p>${esc(e.message)}</p></div>`}}
+  async function loadMyDay() {
+    const data = await request('/api/work/my-day');
+    let banner = '';
+    if (data.unavailableSources && data.unavailableSources.length > 0) {
+      banner = `<div class="warning-banner" role="alert" style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:12px;border-radius:8px;margin-bottom:12px;"><p>⚠️ <strong>Aviso:</strong> Algumas fontes operacionais não puderam ser sincronizadas no momento (${esc(data.unavailableSources.join(', '))}). As pendências disponíveis estão listadas abaixo.</p></div>`;
+    }
+    if (!data.items || data.items.length === 0) {
+      content.innerHTML = banner + '<div class="empty"><h3>Tudo em dia!</h3><p>Nenhuma pendência prioritária aguardando sua ação nas fontes autorizadas.</p></div>';
+      return;
+    }
+    content.innerHTML = banner + `<div class="occurrences my-day-grid">${data.items.map(i => `
+      <article class="occurrence priority-${esc(i.priority.toLowerCase())}">
+        <header>
+          <span class="badge">${esc(i.source)}</span>
+          <span class="badge">${esc(i.category)}</span>
+          <span class="priority">${esc(labels[i.priority] || i.priority)}</span>
+        </header>
+        <h3>${esc(i.title)}</h3>
+        <dl>
+          ${i.unitName ? `<div><dt>Unidade</dt><dd>${esc(i.unitName)}</dd></div>` : ''}
+          <div><dt>Prazo</dt><dd>${esc(formatDate(i.deadline))}</dd></div>
+        </dl>
+        <footer>
+          <a class="primary" href="${esc(i.link)}">${esc(i.suggestedAction)}</a>
+        </footer>
+      </article>
+    `).join('')}</div>`;
+  }
+
+  async function load(){remember();content.innerHTML='<span class="loading">Carregando dados permitidos…</span>';try{if(tab==='center'){await loadCenter();return}if(tab==='my-day'){await loadMyDay();return}let path=tab==='tasks'?`/api/tasks?search=${encodeURIComponent(search.value)}&status=${status.value}`:tab==='calendar'?`/api/operational-calendar?from=${new Date(Date.now()-864e5*7).toISOString()}&to=${new Date(Date.now()+864e5*30).toISOString()}`:tab==='notifications'?'/api/work-notifications':tab==='outbox'?'/api/communication-outbox':`/api/${tab}`;let x=await request(path);x=x.items||x;content.innerHTML=x.length?x.map(i=>`<article class="row"><strong>${esc(i.title||i.name||i.type||i.channel)}</strong><span class="badge">${esc(i.status||i.severity||i.action||'')}</span><span>${esc(i.module||i.priority||'')}</span><span>${esc(i.responsibleName||i.approverName||i.message||'')}</span><time>${esc(formatDate(i.dueAt||i.createdAt||i.openedAt||i.startsAt))}</time></article>`).join(''):'<div class="empty"><h3>Nada pendente</h3><p>Os dados aparecerão aqui quando existirem para sua organização.</p></div>'}catch(e){content.innerHTML=`<div class="empty critical"><h3>Falha ao carregar</h3><p>${esc(e.message)}</p></div>`}}
+
  document.querySelectorAll('[data-tab]').forEach(b=>{b.classList.toggle('active',b.dataset.tab===tab);b.onclick=()=>{document.querySelector('.tabs .active')?.classList.remove('active');b.classList.add('active');tab=b.dataset.tab;page=1;load()}});
  document.querySelector('#refresh').onclick=()=>Promise.all([metrics(),load()]);let timer;search.oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>{page=1;load()},300)};status.onchange=moduleFilter.onchange=priority.onchange=scope.onchange=startDate.onchange=endDate.onchange=overdue.onchange=unassigned.onchange=()=>{page=1;load()};document.querySelector('#clearFilters').onclick=()=>{search.value=moduleFilter.value=status.value=priority.value='';scope.value='ALL';startDate.value=endDate.value='';overdue.checked=unassigned.checked=false;page=1;load()};
  document.querySelector('#newTask').onclick=async()=>{const users=await request('/api/work/users');taskForm.responsibleId.innerHTML='<option value="">Selecione uma pessoa ativa</option>'+users.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('');taskDialog.showModal()};

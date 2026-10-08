@@ -95,15 +95,22 @@ public sealed class CanonicalSchemaTests
     [Fact]
     public void AiGovernanceSchemaIsMigratedIncrementallyAndMirroredInFullScript()
     {
-        var migration = File.ReadAllText(Path.Combine(Root(), "database/migrations/129_ai_executions_and_quotas.sql"));
+        var migration129 = File.ReadAllText(Path.Combine(Root(), "database/migrations/129_ai_executions_and_quotas.sql"));
+        var migration130 = File.ReadAllText(Path.Combine(Root(), "database/migrations/130_ai_governance_and_my_day_hardening.sql"));
         var installer = Sql;
 
-        Assert.Contains("create table if not exists agro360.tenant_ai_quotas", migration);
-        Assert.Contains("create table if not exists agro360.ai_executions", migration);
-        Assert.Contains("'11.19.0'", migration);
+        Assert.Contains("create table if not exists agro360.tenant_ai_quotas", migration129);
+        Assert.Contains("create table if not exists agro360.ai_executions", migration129);
+        Assert.Contains("'11.19.0'", migration129);
+        Assert.Contains("payload_hash varchar(64)", migration130);
+        Assert.Contains("ix_ai_executions_abandoned", migration130);
+        Assert.Contains("'11.20.0'", migration130);
+
         Assert.Contains("create table if not exists agro360.tenant_ai_quotas", installer);
         Assert.Contains("create table if not exists agro360.ai_executions", installer);
-        Assert.Contains("'11.19.0'", installer);
+        Assert.Contains("payload_hash varchar(64)", installer);
+        Assert.Contains("ix_ai_executions_abandoned", installer);
+        Assert.Contains("'11.20.0'", installer);
     }
 
     private static string Root()

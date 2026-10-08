@@ -1,5 +1,15 @@
 # Matriz de rastreabilidade v0.2.0
 
+## Incremento 2026-10-08 — Compras com escopo operacional e evidência descartável
+
+| Dependência/capacidade | Estado real | Evidência/limite |
+|---|---|---|
+| Segurança de evidências de homologação | **Validado em runtime** | `scripts/verify-remaining-homologation.ps1` cria cluster PostgreSQL descartável próprio em porta dinâmica e bancos únicos; E2E PASS em `artifacts/remaining-homologation-e2e-b5b48586661a436c8fee660711ab4b87/SUMMARY.txt`. |
+| Escopo operacional em Compras | **Implementado e parcialmente validado** | `ProcurementService` aplica escopo por `identity_user_unit_scopes` em requisições, pedidos, recebimentos, pendências e indicadores; cadastros compartilhados (fornecedores/catálogo) permanecem por tenant. Build/testes passaram; falta cenário E2E específico fazenda A vs B nos endpoints de Compras. |
+| Indicadores de Compras | **Implementado e validado estaticamente/build** | Dashboard separa `DRAFT`, `AWAITING_APPROVAL`, aprovadas com saldo e urgentes elegíveis; cotações contam estados existentes. Build/testes/rotas passaram; falta validação visual com dados reais. |
+| Cotações de Compras | **Parcial** | `QuotationService` grava cotações/propostas em tabelas canônicas e converte para pedido idempotentemente quando há vencedor único. UI completa de cotações, decisão por justificativa e múltiplos fornecedores continuam pendentes. |
+| UI de Compras | **Parcial** | `/Procurement` remove referência interna de sprint, inclui unidade operacional nos formulários e preserva chave idempotente em reenvios. Sem homologação autenticada mobile/zoom/tema nesta rodada. |
+
 ## Incremento 2026-09-30 — MVP Operacional: Pedido, Programação e Atendimento Rastreável (AG-OPS-MVP-001)
 
 | Dependência/capacidade | Estado real | Evidência/limite |

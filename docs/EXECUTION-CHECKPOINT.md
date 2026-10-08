@@ -1,3 +1,48 @@
+## Incremento de homologação Compras e escopo operacional — 2026-10-08
+
+Branch `main`. HEAD reconfirmado antes das alterações: `c6f05c83b507ef434b7adde3c3589a3c46150ed9`. A skill solicitada `evoluir-saas` não estava disponível nesta sessão; execução feita por leitura direta de código, README, checkpoint, plano mestre, matriz e documentação de Compras. A árvore já tinha diffs locais em Estoque/Work/IA/SaaS/SQL; esses arquivos foram preservados como trabalho pré-existente, exceto os arquivos de Compras/verificação/documentação desta rodada. Sem commit, push, merge ou publicação.
+
+**Matriz inicial resumida**
+
+| Capacidade | Classificação inicial | Evidência usada |
+|---|---|---|
+| Escopo operacional no middleware e administração de escopos | Implementada com evidência | `TenantContextMiddleware`, `identity_user_unit_scopes`, endpoints de scopes e `verify-remaining-homologation.ps1` anteriores |
+| Filtro por fazenda nas operações de Compras | Parcial | consultas filtravam tenant; operações com `property_id` não eram consistentemente restringidas no serviço |
+| Delegação/transferência SaaS | Implementada com evidência | E2E de escopos/transferência e revalidação transacional |
+| Indicadores de Compras | Quebrada | dashboard contava `OPEN`, mas requisições nascem `DRAFT`/`AWAITING_APPROVAL`; cotação tentava `OPEN` fora do CHECK canônico |
+| Jornada de cotações | Parcial | tabelas existiam; serviço tinha escrita incompleta e conversão pendente |
+| UI autenticada de Compras | Parcial | formulários reais existiam, mas descartavam unidade/vínculos; sem homologação visual autenticada nesta rodada |
+
+**Implementado**
+- `scripts/verify-remaining-homologation.ps1` agora sempre cria cluster PostgreSQL descartável em porta dinâmica e bancos com nomes únicos (`agro360_clean_*`, `agro360_homolog_*`). Foi removida a reutilização da porta fixa 55432 e o `DROP DATABASE` de nome fixo fora de cluster próprio.
+- `ProcurementService` passou a aplicar escopo operacional canônico nas operações com `property_id`: requisições, aprovação, pedidos, recebimentos, detalhes, pendências, CSVs indiretos e opções de unidade. Cadastros compartilhados por tenant, como fornecedores e catálogo, continuam sem filtro indiscriminado por fazenda.
+- Criação de requisição/pedido resolve a fazenda do contexto, rejeita corpo com unidade diferente da selecionada e exige unidade quando o usuário não possui `ALL`.
+- Dashboard de Compras agora separa rascunhos, aguardando aprovação, aprovadas com saldo e urgentes elegíveis; pedidos/recebimentos/cotações respeitam a unidade operacional autorizada.
+- `QuotationService` foi reconciliado ao schema existente: cotação nasce `SENT`, gera número, cria itens a partir da requisição aprovada, valida fornecedores participantes, grava respostas em `procurement_quotation_responses` e converte cotação em pedido sem duplicar se já houver pedido da cotação.
+- `/Procurement` removeu referência interna de sprint, adicionou aba de Cotações, expôs seletor de unidade operacional e parou de enviar `propertyId` nulo por padrão. O JS preserva chaves estáveis de idempotência para recebimento/conferência até confirmação do servidor.
+
+**Verificações executadas**
+- `dotnet build MNSOFT.Agro360.sln -c Release`: sucesso, 0 erros, 0 avisos.
+- `dotnet test MNSOFT.Agro360.sln -c Release --no-build`: 573 total; 568 aprovados; 5 ignorados por ausência de `AGRO360_TEST_CONNECTION_STRING`; 0 falhas.
+- `dotnet format MNSOFT.Agro360.sln --verify-no-changes --no-restore`: sucesso.
+- `python tools/check-api-routes.py`: sucesso, 935 operações únicas.
+- `node --check src/Hosts/Agro360.Web/wwwroot/js/procurement.js`: sucesso.
+- `node scripts/verify-offline-shell.mjs`: PASS.
+- `scripts/verify-remaining-homologation.ps1`: PASS completo em PostgreSQL descartável próprio, porta `54231`, API `51566`, schema `11.17.0`. Evidência: `artifacts/remaining-homologation-e2e-b5b48586661a436c8fee660711ab4b87/SUMMARY.txt`.
+
+**Bloqueado ou não executado**
+- Homologação visual autenticada de Compras/SaaS em 360, 768, 1440 px e zoom nativo 200% não foi executada nesta rodada.
+- `git diff --check` segue falhando por linhas em branco no EOF de arquivos já modificados antes desta execução (`database/agro360-postgres-full.sql`, Inventory, material-requests, AI quota tests etc.). Não foram limpos para não misturar trabalho alheio.
+- Não foi executado `dotnet restore` isolado porque o build restaurou/confirmou projetos atualizados; não houve validação limpa/upgrade do SQL consolidado além do E2E descartável do script.
+
+**Pendências**
+- Completar UI de Cotações com abertura por requisição aprovada, propostas por item, decisão auditável e conversão visual.
+- Homologar pela interface real a sequência requisição → aprovação → cotação → pedido → aprovação → recebimento parcial → qualidade → estoque → previsão financeira → conferência documental.
+- Criar/automatizar cenários específicos de usuário restrito à fazenda A contra operações de Compras da fazenda B por ID, CSV, indicadores e alteração com `propertyId` divergente.
+- Manter no backlog: devolução ao fornecedor, gatilho financeiro configurável no recebimento, Campo/Pecuária e integrações externas de IA/pagamento/fiscal.
+
+---
+
 ## Reexecução e responsividade — 2026-10-06
 
 HEAD verificado durante a execução: `3b71b72946d81286a63e302f991d50cde097ce40`. As funcionalidades de escopo, transferência e contexto já estavam presentes; a migration 127 / schema `11.17.0` já existia. Ajustei estilos responsivos no shell e na tela SaaS para conter overflow em viewport estreito, permitir quebra de cabeçalhos e manter cartões/formulários e diálogo dentro do viewport. O overflow na tela SaaS e o texto intrínseco do cabeçalho foram reproduzidos e corrigidos.

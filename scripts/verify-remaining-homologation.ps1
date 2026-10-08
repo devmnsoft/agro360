@@ -29,7 +29,8 @@ New-Item -ItemType Directory -Path $evidenceDir | Out-Null
 $processes = [Collections.Generic.List[Diagnostics.Process]]::new()
 $startedDatabase = $false
 $dataDir = ''
-$dbName = 'agro360_homolog'
+$dbName = 'agro360_homolog_' + [guid]::NewGuid().ToString('N').Substring(0, 12)
+$cleanDbName = 'agro360_clean_' + [guid]::NewGuid().ToString('N').Substring(0, 12)
 
 function Get-FreePort {
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
@@ -78,15 +79,23 @@ function Invoke-Api([string]$Method, [string]$Path, $Body = $null, [string]$Toke
     } catch {
         $resp = $_.Exception.Response
         if ($null -eq $resp) { throw "HTTP ${Method} ${Path}: $($_.Exception.Message)" }
-        $stream = $resp.GetResponseStream()
-        $reader = [IO.StreamReader]::new($stream)
-        $content = $reader.ReadToEnd()
+        if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+            $content = $_.ErrorDetails.Message
+        } elseif ($resp -and $resp.PSObject.Methods.Name -contains 'GetResponseStream') {
+            $stream = $resp.GetResponseStream()
+            $reader = [IO.StreamReader]::new($stream)
+            $content = $reader.ReadToEnd()
+        } elseif ($resp -and $resp.Content) {
+            $content = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        } else {
+            $content = ''
+        }
         $result = if ($content -and $content.Length -gt 2) { try { $content | ConvertFrom-Json } catch { $content } } else { $null }
         return @{ Status = [int]$resp.StatusCode; Body = $result }
     }
 }
 
-Add-Type -TypeDefinition @"
+Add-Type -IgnoreWarnings -TypeDefinition @"
 using System;
 using System.Net;
 using System.Text;
@@ -164,31 +173,22 @@ public class HttpRaceCoordinator
 
 try {
     # ============ BLOCK 0: SETUP — Isolated PostgreSQL Cluster ============
-    $pgPort = 55432
-    $prevEAP = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    $verCheck = & $psql '-p' $pgPort.ToString() '-U' 'postgres' '-h' '127.0.0.1' '-d' 'postgres' '-t' '-A' '-c' "select version();" 2>&1
-    $verExit = $LASTEXITCODE
-    $ErrorActionPreference = $prevEAP
-    if ($verExit -ne 0) {
-        Write-Host "Iniciando cluster PostgreSQL descartavel isolado..." -ForegroundColor Cyan
-        $pgPort = Get-FreePort
-        $dataDir = Join-Path $evidenceDir 'pgdata'
-        $initOut = & $initdb -D $dataDir -U postgres -A trust --encoding=UTF8 --locale=C 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "initdb falhou: $initOut" }
-        $pgLog = Join-Path $evidenceDir 'postgres.log'
-        & $pg_ctl -D $dataDir -l $pgLog -o "-h 127.0.0.1 -p $pgPort" -w start
-        if ($LASTEXITCODE -ne 0) { throw "pg_ctl start falhou na porta $pgPort" }
-        $startedDatabase = $true
-        cmd.exe /c "`"$psql`" -p $pgPort -U postgres -h 127.0.0.1 -d postgres -c `"create database agro360_clean;`" 2>&1" | Out-Null
-        $fullSqlPath = Join-Path $root 'database/agro360-postgres-full.sql'
-        $installOut = Invoke-PsqlFile $fullSqlPath 'agro360_clean'
-    }
+    Write-Host "Iniciando cluster PostgreSQL descartavel isolado..." -ForegroundColor Cyan
+    $pgPort = Get-FreePort
+    $dataDir = Join-Path $evidenceDir 'pgdata'
+    $initOut = & $initdb -D $dataDir -U postgres -A trust --encoding=UTF8 --locale=C 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "initdb falhou: $initOut" }
+    $pgLog = Join-Path $evidenceDir 'postgres.log'
+    & $pg_ctl -D $dataDir -l $pgLog -o "-h 127.0.0.1 -p $pgPort" -w start
+    if ($LASTEXITCODE -ne 0) { throw "pg_ctl start falhou na porta $pgPort" }
+    $startedDatabase = $true
+    cmd.exe /c "`"$psql`" -p $pgPort -U postgres -h 127.0.0.1 -d postgres -c `"create database ${cleanDbName};`" 2>&1" | Out-Null
+    $fullSqlPath = Join-Path $root 'database/agro360-postgres-full.sql'
+    $installOut = Invoke-PsqlFile $fullSqlPath $cleanDbName
     Write-Host "PostgreSQL pronto na porta $pgPort" -ForegroundColor Cyan
 
-    # Clone database for testing
-    $dbName = 'agro360_homolog'
-    cmd.exe /c "`"$psql`" -p $pgPort -U postgres -h 127.0.0.1 -d postgres -c `"drop database if exists ${dbName};`" 2>&1" | Out-Null
-    cmd.exe /c "`"$psql`" -p $pgPort -U postgres -h 127.0.0.1 -d postgres -c `"create database ${dbName} template agro360_clean;`" 2>&1" | Out-Null
+    # Clone database for testing. Both names are unique and live in this disposable cluster.
+    cmd.exe /c "`"$psql`" -p $pgPort -U postgres -h 127.0.0.1 -d postgres -c `"create database ${dbName} template ${cleanDbName};`" 2>&1" | Out-Null
     $schemaVer = Invoke-Psql "select version from agro360.platform_schema_versions where version='11.17.0';"
     Assert-Step 'Schema-clone' ($schemaVer -eq '11.17.0') "required schema version=$schemaVer"
 
@@ -573,11 +573,6 @@ finally {
     }
     if ($startedDatabase -and (Test-Path $dataDir)) {
         & $pg_ctl -D $dataDir -m immediate stop 2>&1 | Out-Null
-    }
-    if (-not $KeepRunning -and -not $startedDatabase) {
-        $prevEAP = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-        & $psql '-p' $pgPort.ToString() '-U' 'postgres' '-h' '127.0.0.1' '-d' 'postgres' '-c' "drop database if exists ${dbName};" 2>&1 | Out-Null
-        $ErrorActionPreference = $prevEAP
     }
 }
 

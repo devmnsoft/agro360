@@ -26,8 +26,16 @@ public sealed record MyDayItem(
     string Category,
     string? UnitName = null);
 
+public sealed record MyDayResult(
+    IReadOnlyList<MyDayItem> Items,
+    IReadOnlyList<string> SourcesConsulted,
+    IReadOnlyList<string> UnavailableSources,
+    DateTimeOffset Timestamp,
+    int TotalCount);
+
 public interface IMyDayService
 {
+    Task<MyDayResult> GetMyDayAsync(CancellationToken ct = default);
     Task<IReadOnlyList<MyDayItem>> GetPendingTasksAsync(CancellationToken ct = default);
 }
 
@@ -38,56 +46,98 @@ public sealed class MyDayService(
 {
     public async Task<IReadOnlyList<MyDayItem>> GetPendingTasksAsync(CancellationToken ct = default)
     {
+        var result = await GetMyDayAsync(ct).ConfigureAwait(false);
+        return result.Items;
+    }
+
+    public async Task<MyDayResult> GetMyDayAsync(CancellationToken ct = default)
+    {
         if (!tenant.IsAvailable || tenant.TenantId == Guid.Empty || tenant.UserId == Guid.Empty)
         {
-            return Array.Empty<MyDayItem>();
+            return new MyDayResult(
+                Items: Array.Empty<MyDayItem>(),
+                SourcesConsulted: Array.Empty<string>(),
+                UnavailableSources: Array.Empty<string>(),
+                Timestamp: DateTimeOffset.UtcNow,
+                TotalCount: 0);
         }
 
         var items = new List<MyDayItem>();
+        var consulted = new List<string>();
+        var unavailable = new List<string>();
 
-        await db.InTenantTransactionAsync(async (conn, tx) =>
+        // 1. Obter permissões efetivas, contratos ativos e escopo de unidade do usuário
+        HashSet<string> permissions = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> contractedModules = new(StringComparer.OrdinalIgnoreCase);
+        bool isPlatformAdmin = false;
+        bool isTenantAdmin = false;
+        bool hasAllScope = false;
+
+        try
         {
-            // 1. Obter permissões efetivas e contratos ativos do usuário
-            var permissions = (await conn.QueryAsync<string>(new CommandDefinition(
-                """
-                select distinct p.code
-                from agro360.identity_users u
-                join agro360.identity_user_roles ur on ur.tenant_id=u.tenant_id and ur.user_id=u.id
-                join agro360.identity_role_permissions rp on rp.tenant_id=ur.tenant_id and rp.role_id=ur.role_id
-                join agro360.identity_permissions p on p.id=rp.permission_id
-                where u.tenant_id=@TenantId and u.id=@UserId and u.status='ACTIVE' and u.deleted_at is null
-                """,
-                new { tenant.TenantId, tenant.UserId },
-                tx,
-                cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            var contractedModules = (await conn.QueryAsync<string>(new CommandDefinition(
-                $"""
-                select module_code from ({EntitlementQueries.ModuleCodeSelect}) em
-                """,
-                new { tenant.TenantId },
-                tx,
-                cancellationToken: ct))).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            var isPlatformAdmin = permissions.Contains("platform.admin");
-            var isTenantAdmin = permissions.Contains("saas.admin") || permissions.Contains("account.manage");
-
-            var hasAllScope = isPlatformAdmin || isTenantAdmin || await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
-                """
-                select exists(
-                    select 1 from agro360.identity_user_unit_scopes
-                    where tenant_id=@TenantId and user_id=@UserId and scope_type='ALL'
-                )
-                """,
-                new { tenant.TenantId, tenant.UserId },
-                tx,
-                cancellationToken: ct));
-
-            // 2. Compras: Requisições aguardando aprovação
-            if (contractedModules.Contains("procurement") &&
-                (isTenantAdmin || permissions.Contains("procurement.approve") || permissions.Contains("procurement.manage") || permissions.Contains("procurement.view")))
+            await db.InTenantTransactionAsync(async (conn, tx) =>
             {
-                try
+                var perms = await conn.QueryAsync<string>(new CommandDefinition(
+                    """
+                    select distinct p.code
+                    from agro360.identity_users u
+                    join agro360.identity_user_roles ur on ur.tenant_id=u.tenant_id and ur.user_id=u.id
+                    join agro360.identity_role_permissions rp on rp.tenant_id=ur.tenant_id and rp.role_id=ur.role_id
+                    join agro360.identity_permissions p on p.id=rp.permission_id
+                    where u.tenant_id=@TenantId and u.id=@UserId and u.status='ACTIVE' and u.deleted_at is null
+                    """,
+                    new { tenant.TenantId, tenant.UserId },
+                    tx,
+                    cancellationToken: ct)).ConfigureAwait(false);
+
+                foreach (var p in perms) permissions.Add(p);
+
+                var modules = await conn.QueryAsync<string>(new CommandDefinition(
+                    $"""
+                    select module_code from ({EntitlementQueries.ModuleCodeSelect}) em
+                    """,
+                    new { tenant.TenantId },
+                    tx,
+                    cancellationToken: ct)).ConfigureAwait(false);
+
+                foreach (var m in modules) contractedModules.Add(m);
+
+                isPlatformAdmin = permissions.Contains("platform.admin");
+                isTenantAdmin = permissions.Contains("saas.admin") || permissions.Contains("account.manage");
+
+                hasAllScope = isPlatformAdmin || isTenantAdmin || await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+                    """
+                    select exists(
+                        select 1 from agro360.identity_user_unit_scopes
+                        where tenant_id=@TenantId and user_id=@UserId and scope_type='ALL'
+                    )
+                    """,
+                    new { tenant.TenantId, tenant.UserId },
+                    tx,
+                    cancellationToken: ct)).ConfigureAwait(false);
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            InfrastructureLogMessages.MyDaySourceFailed(logger, "Identity.Entitlements", tenant.TenantId, ex);
+            unavailable.Add("Identity.Entitlements");
+            return new MyDayResult(
+                Items: Array.Empty<MyDayItem>(),
+                SourcesConsulted: consulted,
+                UnavailableSources: unavailable,
+                Timestamp: DateTimeOffset.UtcNow,
+                TotalCount: 0);
+        }
+
+        // 2. Compras: Requisições aguardando aprovação
+        if (contractedModules.Contains("procurement") &&
+            (isTenantAdmin || permissions.Contains("procurement.approve") || permissions.Contains("procurement.manage") || permissions.Contains("procurement.view")))
+        {
+            const string sourceName = "Procurement.Requisitions";
+            consulted.Add(sourceName);
+            try
+            {
+                await db.InTenantTransactionAsync(async (conn, tx) =>
                 {
                     var reqs = await conn.QueryAsync<dynamic>(new CommandDefinition(
                         """
@@ -108,7 +158,7 @@ public sealed class MyDayService(
                         """,
                         new { tenant.TenantId, tenant.UserId, HasAllScope = hasAllScope },
                         tx,
-                        cancellationToken: ct));
+                        cancellationToken: ct)).ConfigureAwait(false);
 
                     foreach (var r in reqs)
                     {
@@ -121,22 +171,28 @@ public sealed class MyDayService(
                             Deadline: deadline,
                             Priority: priority,
                             SuggestedAction: "Analisar Requisição",
-                            Link: $"/Procurement/Requisitions",
+                            Link: "/Procurement#requisitions",
                             Category: "APPROVAL",
                             UnitName: (string?)r.farm_name));
                     }
-                }
-                catch (Exception ex)
-                {
-                    InfrastructureLogMessages.MyDaySourceFailed(logger, "Procurement.Requisitions", tenant.TenantId, ex);
-                }
+                }, ct).ConfigureAwait(false);
             }
-
-            // 3. Recebimento e Qualidade: Itens em Quarentena / Inspeção Pendente
-            if (contractedModules.Contains("procurement") &&
-                (isTenantAdmin || permissions.Contains("procurement.receive") || permissions.Contains("procurement.quality") || permissions.Contains("quality.manage")))
+            catch (Exception ex)
             {
-                try
+                InfrastructureLogMessages.MyDaySourceFailed(logger, sourceName, tenant.TenantId, ex);
+                unavailable.Add(sourceName);
+            }
+        }
+
+        // 3. Recebimento e Qualidade: Itens em Quarentena / Inspeção Pendente
+        if (contractedModules.Contains("procurement") &&
+            (isTenantAdmin || permissions.Contains("procurement.receive") || permissions.Contains("procurement.quality") || permissions.Contains("quality.manage")))
+        {
+            const string sourceName = "Procurement.Quarantine";
+            consulted.Add(sourceName);
+            try
+            {
+                await db.InTenantTransactionAsync(async (conn, tx) =>
                 {
                     var quarantine = await conn.QueryAsync<dynamic>(new CommandDefinition(
                         """
@@ -150,7 +206,7 @@ public sealed class MyDayService(
                         """,
                         new { tenant.TenantId },
                         tx,
-                        cancellationToken: ct));
+                        cancellationToken: ct)).ConfigureAwait(false);
 
                     foreach (var q in quarantine)
                     {
@@ -162,21 +218,27 @@ public sealed class MyDayService(
                             Deadline: createdAt?.AddDays(2),
                             Priority: "HIGH",
                             SuggestedAction: "Inspecionar Lote",
-                            Link: $"/Procurement/Receipts",
+                            Link: "/Procurement#receipts",
                             Category: "QUALITY"));
                     }
-                }
-                catch (Exception ex)
-                {
-                    InfrastructureLogMessages.MyDaySourceFailed(logger, "Procurement.Quarantine", tenant.TenantId, ex);
-                }
+                }, ct).ConfigureAwait(false);
             }
-
-            // 4. Operações de Campo: Ordens de Serviço sob responsabilidade ou aguardando revisão
-            if (contractedModules.Contains("agriculture") &&
-                (isTenantAdmin || permissions.Contains("agriculture.execute") || permissions.Contains("agriculture.view") || permissions.Contains("agriculture.manage")))
+            catch (Exception ex)
             {
-                try
+                InfrastructureLogMessages.MyDaySourceFailed(logger, sourceName, tenant.TenantId, ex);
+                unavailable.Add(sourceName);
+            }
+        }
+
+        // 4. Operações de Campo: Ordens de Serviço sob responsabilidade ou aguardando revisão
+        if (contractedModules.Contains("agriculture") &&
+            (isTenantAdmin || permissions.Contains("agriculture.execute") || permissions.Contains("agriculture.view") || permissions.Contains("agriculture.manage")))
+        {
+            const string sourceName = "FieldOperations.WorkOrders";
+            consulted.Add(sourceName);
+            try
+            {
+                await db.InTenantTransactionAsync(async (conn, tx) =>
                 {
                     var workOrders = await conn.QueryAsync<dynamic>(new CommandDefinition(
                         """
@@ -199,7 +261,7 @@ public sealed class MyDayService(
                         """,
                         new { tenant.TenantId, tenant.UserId, HasAllScope = hasAllScope },
                         tx,
-                        cancellationToken: ct));
+                        cancellationToken: ct)).ConfigureAwait(false);
 
                     foreach (var o in workOrders)
                     {
@@ -212,7 +274,6 @@ public sealed class MyDayService(
                         };
                         var priority = status == "AWAITING_REVIEW" ? "HIGH" : "MEDIUM";
                         var action = status == "AWAITING_REVIEW" ? "Revisar e Concluir" : "Apontar Operação";
-
                         DateTimeOffset? createdAt = o.created_at is DateTimeOffset dto ? dto : null;
 
                         items.Add(new MyDayItem(
@@ -222,22 +283,28 @@ public sealed class MyDayService(
                             Deadline: createdAt?.AddDays(3),
                             Priority: priority,
                             SuggestedAction: action,
-                            Link: $"/Agriculture/WorkOrders",
+                            Link: "/Field",
                             Category: "OPERATION",
                             UnitName: (string?)o.farm_name));
                     }
-                }
-                catch (Exception ex)
-                {
-                    InfrastructureLogMessages.MyDaySourceFailed(logger, "FieldOperations", tenant.TenantId, ex);
-                }
+                }, ct).ConfigureAwait(false);
             }
-
-            // 5. Financeiro: Títulos vencidos a pagar (SOMENTE com permissão e contrato financeiro)
-            if (contractedModules.Contains("finance") &&
-                (isTenantAdmin || permissions.Contains("finance.view") || permissions.Contains("finance.payables") || permissions.Contains("finance.manage")))
+            catch (Exception ex)
             {
-                try
+                InfrastructureLogMessages.MyDaySourceFailed(logger, sourceName, tenant.TenantId, ex);
+                unavailable.Add(sourceName);
+            }
+        }
+
+        // 5. Financeiro: Títulos vencidos a pagar (SOMENTE com permissão e contrato financeiro)
+        if (contractedModules.Contains("finance") &&
+            (isTenantAdmin || permissions.Contains("finance.view") || permissions.Contains("finance.payables") || permissions.Contains("finance.manage")))
+        {
+            const string sourceName = "Finance.Payables";
+            consulted.Add(sourceName);
+            try
+            {
+                await db.InTenantTransactionAsync(async (conn, tx) =>
                 {
                     var overduePayables = await conn.QueryAsync<dynamic>(new CommandDefinition(
                         """
@@ -253,7 +320,7 @@ public sealed class MyDayService(
                         """,
                         new { tenant.TenantId },
                         tx,
-                        cancellationToken: ct));
+                        cancellationToken: ct)).ConfigureAwait(false);
 
                     foreach (var f in overduePayables)
                     {
@@ -267,22 +334,28 @@ public sealed class MyDayService(
                             Deadline: deadline,
                             Priority: "CRITICAL",
                             SuggestedAction: "Regularizar Pagamento",
-                            Link: $"/Finance/Payables",
+                            Link: "/Finance#payables",
                             Category: "FINANCE",
                             UnitName: (string?)f.farm_name));
                     }
-                }
-                catch (Exception ex)
-                {
-                    InfrastructureLogMessages.MyDaySourceFailed(logger, "Finance.Payables", tenant.TenantId, ex);
-                }
+                }, ct).ConfigureAwait(false);
             }
-
-            // 6. Conciliação: Divergências de 3-Way Matching de Faturas
-            if (contractedModules.Contains("procurement") &&
-                (isTenantAdmin || permissions.Contains("procurement.manage") || permissions.Contains("procurement.view") || permissions.Contains("finance.view")))
+            catch (Exception ex)
             {
-                try
+                InfrastructureLogMessages.MyDaySourceFailed(logger, sourceName, tenant.TenantId, ex);
+                unavailable.Add(sourceName);
+            }
+        }
+
+        // 6. Conciliação: Divergências de 3-Way Matching de Faturas
+        if (contractedModules.Contains("procurement") &&
+            (isTenantAdmin || permissions.Contains("procurement.manage") || permissions.Contains("procurement.view") || permissions.Contains("finance.view")))
+        {
+            const string sourceName = "Procurement.MatchDivergences";
+            consulted.Add(sourceName);
+            try
+            {
+                await db.InTenantTransactionAsync(async (conn, tx) =>
                 {
                     var matchDivergences = await conn.QueryAsync<dynamic>(new CommandDefinition(
                         """
@@ -299,7 +372,7 @@ public sealed class MyDayService(
                         """,
                         new { tenant.TenantId },
                         tx,
-                        cancellationToken: ct));
+                        cancellationToken: ct)).ConfigureAwait(false);
 
                     foreach (var d in matchDivergences)
                     {
@@ -311,21 +384,27 @@ public sealed class MyDayService(
                             Deadline: createdAt?.AddDays(2),
                             Priority: "HIGH",
                             SuggestedAction: "Resolver Divergência",
-                            Link: $"/Procurement/Matches",
+                            Link: "/Procurement#matches",
                             Category: "CONCILIATION"));
                     }
-                }
-                catch (Exception ex)
-                {
-                    InfrastructureLogMessages.MyDaySourceFailed(logger, "Procurement.MatchDivergences", tenant.TenantId, ex);
-                }
+                }, ct).ConfigureAwait(false);
             }
-
-            // 7. Frota: Manutenções Preventivas e Corretivas Vencidas / Próximas
-            if ((contractedModules.Contains("operations") || contractedModules.Contains("fleet")) &&
-                (isTenantAdmin || permissions.Contains("maintenance.read") || permissions.Contains("fleet.read") || permissions.Contains("operations.view")))
+            catch (Exception ex)
             {
-                try
+                InfrastructureLogMessages.MyDaySourceFailed(logger, sourceName, tenant.TenantId, ex);
+                unavailable.Add(sourceName);
+            }
+        }
+
+        // 7. Frota: Manutenções Preventivas e Corretivas Vencidas / Próximas
+        if ((contractedModules.Contains("operations") || contractedModules.Contains("fleet")) &&
+            (isTenantAdmin || permissions.Contains("maintenance.read") || permissions.Contains("fleet.read") || permissions.Contains("operations.view")))
+        {
+            const string sourceName = "Fleet.Maintenance";
+            consulted.Add(sourceName);
+            try
+            {
+                await db.InTenantTransactionAsync(async (conn, tx) =>
                 {
                     var fleetOrders = await conn.QueryAsync<dynamic>(new CommandDefinition(
                         """
@@ -341,7 +420,7 @@ public sealed class MyDayService(
                         """,
                         new { tenant.TenantId },
                         tx,
-                        cancellationToken: ct));
+                        cancellationToken: ct)).ConfigureAwait(false);
 
                     foreach (var m in fleetOrders)
                     {
@@ -356,22 +435,28 @@ public sealed class MyDayService(
                             Deadline: deadline,
                             Priority: priority,
                             SuggestedAction: "Executar Manutenção",
-                            Link: $"/Operations/Maintenance",
+                            Link: "/Fleet",
                             Category: "FLEET",
                             UnitName: (string?)m.farm_name));
                     }
-                }
-                catch (Exception ex)
-                {
-                    InfrastructureLogMessages.MyDaySourceFailed(logger, "Fleet.Maintenance", tenant.TenantId, ex);
-                }
+                }, ct).ConfigureAwait(false);
             }
-
-            // 8. Qualidade: Incidentes e Não Conformidades Abertas
-            if (contractedModules.Contains("procurement") &&
-                (isTenantAdmin || permissions.Contains("quality.manage") || permissions.Contains("quality.view") || permissions.Contains("procurement.quality")))
+            catch (Exception ex)
             {
-                try
+                InfrastructureLogMessages.MyDaySourceFailed(logger, sourceName, tenant.TenantId, ex);
+                unavailable.Add(sourceName);
+            }
+        }
+
+        // 8. Qualidade: Incidentes e Não Conformidades Abertas
+        if (contractedModules.Contains("procurement") &&
+            (isTenantAdmin || permissions.Contains("quality.manage") || permissions.Contains("quality.view") || permissions.Contains("procurement.quality")))
+        {
+            const string sourceName = "Procurement.QualityIncidents";
+            consulted.Add(sourceName);
+            try
+            {
+                await db.InTenantTransactionAsync(async (conn, tx) =>
                 {
                     var incidents = await conn.QueryAsync<dynamic>(new CommandDefinition(
                         """
@@ -387,7 +472,7 @@ public sealed class MyDayService(
                         """,
                         new { tenant.TenantId },
                         tx,
-                        cancellationToken: ct));
+                        cancellationToken: ct)).ConfigureAwait(false);
 
                     foreach (var inc in incidents)
                     {
@@ -402,21 +487,29 @@ public sealed class MyDayService(
                             Deadline: createdAt?.AddDays(1),
                             Priority: priority,
                             SuggestedAction: "Tratar Não Conformidade",
-                            Link: $"/Procurement/QualityIncidents",
+                            Link: "/Inspections",
                             Category: "QUALITY"));
                     }
-                }
-                catch (Exception ex)
-                {
-                    InfrastructureLogMessages.MyDaySourceFailed(logger, "Procurement.QualityIncidents", tenant.TenantId, ex);
-                }
+                }, ct).ConfigureAwait(false);
             }
-        }, ct);
+            catch (Exception ex)
+            {
+                InfrastructureLogMessages.MyDaySourceFailed(logger, sourceName, tenant.TenantId, ex);
+                unavailable.Add(sourceName);
+            }
+        }
 
-        return items
+        var sortedItems = items
             .OrderByDescending(x => x.Priority == "CRITICAL")
             .ThenByDescending(x => x.Priority == "HIGH")
             .ThenBy(x => x.Deadline ?? DateTimeOffset.MaxValue)
             .ToList();
+
+        return new MyDayResult(
+            Items: sortedItems,
+            SourcesConsulted: consulted,
+            UnavailableSources: unavailable,
+            Timestamp: DateTimeOffset.UtcNow,
+            TotalCount: sortedItems.Count);
     }
 }

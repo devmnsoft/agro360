@@ -802,6 +802,27 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
                 {
                     throw new ForbiddenException("Você não possui permissão para conceder acesso a todas as unidades.");
                 }
+                if (!actorHasAll)
+                {
+                    foreach (var scope in distinctScopes)
+                    {
+                        if (ActorCanDelegateScope(actorScopes, scope)) continue;
+                        var delegatedByOrganization = scope.ScopeType == "FARM" && scope.FarmId.HasValue
+                            && await c.ExecuteScalarAsync<bool>(
+                                """
+                                select exists(
+                                    select 1
+                                    from agro360.geo_farms f
+                                    join unnest(@OrganizationIds::uuid[]) actor_org(id) on actor_org.id=f.organization_id
+                                    where f.tenant_id=@TenantId and f.id=@FarmId and f.deleted_at is null
+                                )
+                                """,
+                                new { tenant.TenantId, FarmId = scope.FarmId.Value, OrganizationIds = actorScopes.Where(s => s.ScopeType == "ORGANIZATION" && s.OrganizationId.HasValue).Select(s => s.OrganizationId!.Value).ToArray() },
+                                t).ConfigureAwait(false);
+                        if (!delegatedByOrganization)
+                            throw new ForbiddenException("Você não possui permissão para conceder uma organização ou fazenda fora do seu próprio escopo.");
+                    }
+                }
             }
 
             await c.ExecuteAsync(
@@ -1314,6 +1335,16 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
             join agro360.identity_roles r on r.tenant_id=ur.tenant_id and r.id=ur.role_id
             where u.tenant_id=@TenantId and u.status='ACTIVE' and u.deleted_at is null and lower(r.code)='tenant-administrator'
             """, new { tenant.TenantId }, transaction);
+    private static bool ActorCanDelegateScope(IReadOnlyCollection<UserUnitScopeInput> actorScopes, UserUnitScopeInput requested)
+    {
+        if (requested.ScopeType == "ALL") return actorScopes.Any(s => s.ScopeType == "ALL");
+        if (actorScopes.Any(s => s.ScopeType == "ALL")) return true;
+        if (requested.ScopeType == "ORGANIZATION")
+            return requested.OrganizationId.HasValue && actorScopes.Any(s => s.ScopeType == "ORGANIZATION" && s.OrganizationId == requested.OrganizationId);
+        if (requested.ScopeType == "FARM")
+            return requested.FarmId.HasValue && actorScopes.Any(s => s.ScopeType == "FARM" && s.FarmId == requested.FarmId);
+        return false;
+    }
     private static ValidationException InvalidReferences(string field, string message) => new(new Dictionary<string, string[]> { [field] = [message] });
     private static string CreateInvitationToken(Guid tenantId) => $"{tenantId:N}.{Microsoft.IdentityModel.Tokens.Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32))}";
     private static string HashInvitationToken(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();

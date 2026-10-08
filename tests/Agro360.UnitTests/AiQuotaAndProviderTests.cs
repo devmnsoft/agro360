@@ -107,6 +107,66 @@ public sealed class AiQuotaAndProviderTests
         Assert.Equal("llama-3.1-8b-instant", provider.DefaultModel);
     }
 
+    [Fact]
+    public void AiExecutionRecordPreservesPayloadHashAndTokens()
+    {
+        var record = new AiExecutionRecord(
+            Id: Guid.NewGuid(),
+            TenantId: Guid.NewGuid(),
+            UserId: Guid.NewGuid(),
+            UseCase: "stock_assistant",
+            IdempotencyKey: "test-key",
+            PayloadHash: "hash123",
+            AttemptNumber: 1,
+            Status: "COMPLETED",
+            Provider: "Gemini",
+            Model: "gemini-1.5-flash",
+            ReservedTokens: 1000,
+            PromptTokens: 150,
+            CompletionTokens: 250,
+            TotalTokens: 400,
+            TokenConfidence: "EXACT",
+            Duration: TimeSpan.FromMilliseconds(350),
+            ErrorMessage: null,
+            OccurredAt: DateTimeOffset.UtcNow);
+
+        Assert.Equal("hash123", record.PayloadHash);
+        Assert.Equal(400, record.TotalTokens);
+        Assert.Equal("COMPLETED", record.Status);
+    }
+
+    [Fact]
+    public void MyDayResultMetadataStructureIsCorrect()
+    {
+        var item = new Agro360.Infrastructure.Services.MyDayItem(
+            Id: Guid.NewGuid(),
+            Source: "Procurement",
+            Title: "Req 123",
+            Deadline: DateTimeOffset.UtcNow.AddDays(1),
+            Priority: "HIGH",
+            SuggestedAction: "Aprovar",
+            Link: "/Procurement",
+            Category: "APPROVAL",
+            UnitName: "Fazenda A");
+
+        var items = new List<Agro360.Infrastructure.Services.MyDayItem> { item };
+        var consulted = new List<string> { "Procurement.Requisitions", "Fleet.Maintenance" };
+        var unavailable = new List<string> { "Fleet.Maintenance" };
+
+        var result = new Agro360.Infrastructure.Services.MyDayResult(
+            Items: items,
+            SourcesConsulted: consulted,
+            UnavailableSources: unavailable,
+            Timestamp: DateTimeOffset.UtcNow,
+            TotalCount: 1);
+
+        Assert.Single(result.Items);
+        Assert.Equal(2, result.SourcesConsulted.Count);
+        Assert.Single(result.UnavailableSources);
+        Assert.Equal(1, result.TotalCount);
+    }
+
+
     private sealed class MockAiProvider(string name, string model, bool enabled) : IAiProvider
     {
         public string ProviderName => name;
@@ -119,3 +179,4 @@ public sealed class AiQuotaAndProviderTests
         }
     }
 }
+

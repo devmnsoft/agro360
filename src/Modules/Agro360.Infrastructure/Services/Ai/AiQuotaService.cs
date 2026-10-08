@@ -25,6 +25,7 @@ public interface IAiQuotaService
         string useCase,
         int estimatedTokens,
         string? idempotencyKey = null,
+        string? payloadHash = null,
         CancellationToken ct = default);
 
     Task ReconcileAndCompleteAsync(
@@ -44,6 +45,8 @@ public interface IAiQuotaService
     Task<bool> HasQuotaAsync(Guid tenantId, string useCase, CancellationToken ct = default);
 
     Task DeductQuotaAsync(Guid tenantId, int tokens, string useCase, CancellationToken ct = default);
+
+    Task<int> CleanupAbandonedReservationsAsync(TimeSpan olderThan, CancellationToken ct = default);
 }
 
 public sealed class AiQuotaService(
@@ -59,6 +62,7 @@ public sealed class AiQuotaService(
         string useCase,
         int estimatedTokens,
         string? idempotencyKey = null,
+        string? payloadHash = null,
         CancellationToken ct = default)
     {
         if (estimatedTokens <= 0) estimatedTokens = 1000;
@@ -69,16 +73,28 @@ public sealed class AiQuotaService(
             if (!string.IsNullOrWhiteSpace(idempotencyKey))
             {
                 var existing = await executionService.GetExecutionByIdempotencyAsync(tenantId, useCase, idempotencyKey, ct);
-                if (existing != null && existing.Status == "COMPLETED")
+                if (existing != null)
                 {
-                    return new AiReservation(
-                        ExecutionId: existing.Id,
-                        TenantId: tenantId,
-                        UseCase: useCase,
-                        ReservedTokens: 0,
-                        IdempotencyKey: idempotencyKey,
-                        IsReplay: true,
-                        ReplayRecord: existing);
+                    if (!string.IsNullOrEmpty(existing.PayloadHash) &&
+                        !string.IsNullOrEmpty(payloadHash) &&
+                        !string.Equals(existing.PayloadHash, payloadHash, StringComparison.Ordinal))
+                    {
+                        throw new DomainException(
+                            "A chave de idempotência fornecida já foi utilizada com uma consulta ou parâmetros diferentes.",
+                            "ai.idempotency.payload_mismatch");
+                    }
+
+                    if (existing.Status == "COMPLETED")
+                    {
+                        return new AiReservation(
+                            ExecutionId: existing.Id,
+                            TenantId: tenantId,
+                            UseCase: useCase,
+                            ReservedTokens: 0,
+                            IdempotencyKey: idempotencyKey,
+                            IsReplay: true,
+                            ReplayRecord: existing);
+                    }
                 }
             }
 
@@ -132,6 +148,7 @@ public sealed class AiQuotaService(
                 useCase,
                 estimatedTokens,
                 idempotencyKey,
+                payloadHash,
                 ct);
 
             return new AiReservation(
@@ -337,4 +354,10 @@ public sealed class AiQuotaService(
                 cancellationToken: ct));
         }, ct);
     }
+
+    public Task<int> CleanupAbandonedReservationsAsync(TimeSpan olderThan, CancellationToken ct = default)
+    {
+        return executionService.CleanupAbandonedReservationsAsync(olderThan, ct);
+    }
 }
+

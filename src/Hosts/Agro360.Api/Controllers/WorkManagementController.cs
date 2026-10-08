@@ -1,13 +1,17 @@
 using Agro360.Application;
 using Agro360.Application.Contracts;
+using Agro360.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Agro360.Api.Controllers;
 
 [ApiController, Authorize]
-public sealed class WorkManagementController(IWorkManagementService service) : ControllerBase
+public sealed class WorkManagementController(
+    IWorkManagementService service,
+    IMyDayService myDayService) : ControllerBase
 {
+    [HttpGet("api/work/my-day"), Authorize(Policy = Permissions.WorkRead)] public Task<MyDayResult> MyDay(CancellationToken ct) => myDayService.GetMyDayAsync(ct);
     [HttpGet("api/work/users"), Authorize(Policy = Permissions.WorkRead)] public Task<IReadOnlyList<WorkLookup>> Users(string? search, CancellationToken ct) => service.ActiveUsersAsync(search, ct);
     [HttpGet("api/tasks"), Authorize(Policy = Permissions.WorkRead)] public Task<PagedResult<OperationalTaskRow>> Tasks(string? search, string? status, string? priority, [FromQuery(Name = "module")] string? moduleCode, Guid? responsibleId, [FromQuery(Name = "from")] DateTimeOffset? startDate, [FromQuery(Name = "to")] DateTimeOffset? endDate, int page = 1, int pageSize = 25, CancellationToken ct = default) => service.TasksAsync(search, status, priority, moduleCode, responsibleId, startDate, endDate, page, pageSize, ct);
     [HttpPost("api/tasks"), Authorize(Policy = Permissions.WorkWrite)] public async Task<IActionResult> CreateTask(TaskCommand x, CancellationToken ct) { var id = await service.CreateTaskAsync(x, ct); return Created($"/api/tasks/{id}", new { id }); }

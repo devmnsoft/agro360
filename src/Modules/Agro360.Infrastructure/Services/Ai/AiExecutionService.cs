@@ -13,6 +13,7 @@ public record AiExecutionRecord(
     Guid UserId,
     string UseCase,
     string? IdempotencyKey,
+    string? PayloadHash,
     int AttemptNumber,
     string Status,
     string? Provider,
@@ -34,6 +35,7 @@ public interface IAiExecutionService
         string useCase,
         int estimatedTokens,
         string? idempotencyKey,
+        string? payloadHash = null,
         CancellationToken ct = default);
 
     Task CompleteExecutionAsync(
@@ -63,6 +65,8 @@ public interface IAiExecutionService
         string useCase,
         bool success,
         CancellationToken ct = default);
+
+    Task<int> CleanupAbandonedReservationsAsync(TimeSpan olderThan, CancellationToken ct = default);
 }
 
 public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecutionService
@@ -73,6 +77,7 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
         string useCase,
         int estimatedTokens,
         string? idempotencyKey,
+        string? payloadHash = null,
         CancellationToken ct = default)
     {
         return await database.InTenantTransactionAsync(async (conn, tx) =>
@@ -81,10 +86,10 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
             await conn.ExecuteAsync(new CommandDefinition(
                 """
                 insert into agro360.ai_executions
-                    (id, tenant_id, user_id, use_case, idempotency_key, attempt_number, status,
+                    (id, tenant_id, user_id, use_case, idempotency_key, payload_hash, attempt_number, status,
                      reserved_tokens, prompt_tokens, completion_tokens, total_tokens, token_confidence, duration_ms, occurred_at, created_at, updated_at)
                 values
-                    (@Id, @TenantId, @UserId, @UseCase, @IdempotencyKey, 1, 'RESERVED',
+                    (@Id, @TenantId, @UserId, @UseCase, @IdempotencyKey, @PayloadHash, 1, 'RESERVED',
                      @EstimatedTokens, 0, 0, 0, 'ESTIMATED', 0, now(), now(), now())
                 """,
                 new
@@ -94,6 +99,7 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
                     UserId = userId,
                     UseCase = useCase,
                     IdempotencyKey = idempotencyKey,
+                    PayloadHash = payloadHash,
                     EstimatedTokens = estimatedTokens
                 },
                 tx,
@@ -178,7 +184,7 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
             var row = await conn.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition(
                 """
                 select id, tenant_id as tenantid, user_id as userid, use_case as usecase,
-                       idempotency_key as idempotencykey, attempt_number as attemptnumber,
+                       idempotency_key as idempotencykey, payload_hash as payloadhash, attempt_number as attemptnumber,
                        status, provider, model, reserved_tokens as reservedtokens,
                        prompt_tokens as prompttokens, completion_tokens as completiontokens,
                        total_tokens as totaltokens, token_confidence as tokenconfidence,
@@ -200,6 +206,7 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
                 UserId: (Guid)row.userid,
                 UseCase: (string)row.usecase,
                 IdempotencyKey: (string?)row.idempotencykey,
+                PayloadHash: (string?)row.payloadhash,
                 AttemptNumber: (int)row.attemptnumber,
                 Status: (string)row.status,
                 Provider: (string?)row.provider,
@@ -258,6 +265,64 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
                 },
                 tx,
                 cancellationToken: ct));
+        }, ct);
+    }
+
+    public async Task<int> CleanupAbandonedReservationsAsync(TimeSpan olderThan, CancellationToken ct = default)
+    {
+        return await database.InTenantTransactionAsync(async (conn, tx) =>
+        {
+            var cutoff = DateTimeOffset.UtcNow.Subtract(olderThan);
+
+            var stale = (await conn.QueryAsync<dynamic>(new CommandDefinition(
+                """
+                select id, tenant_id as tenantid, use_case as usecase, reserved_tokens as reservedtokens
+                from agro360.ai_executions
+                where status in ('RESERVED', 'IN_PROGRESS')
+                  and created_at < @Cutoff
+                for update
+                """,
+                new { Cutoff = cutoff },
+                tx,
+                cancellationToken: ct))).ToList();
+
+            if (stale.Count == 0) return 0;
+
+            foreach (var s in stale)
+            {
+                var execId = (Guid)s.id;
+                var tenantId = (Guid)s.tenantid;
+                var useCase = (string)s.usecase;
+                int reserved = (int)s.reservedtokens;
+
+                // Devolve tokens reservados para a quota ativa
+                await conn.ExecuteAsync(new CommandDefinition(
+                    """
+                    update agro360.tenant_ai_quotas
+                    set reserved_tokens = greatest(0, reserved_tokens - @ReservedTokens),
+                        updated_at = now()
+                    where tenant_id = @TenantId and use_case = @UseCase and active = true
+                      and current_date between period_start and period_end
+                    """,
+                    new { TenantId = tenantId, UseCase = useCase, ReservedTokens = reserved },
+                    tx,
+                    cancellationToken: ct));
+
+                // Marca execução como liberada
+                await conn.ExecuteAsync(new CommandDefinition(
+                    """
+                    update agro360.ai_executions
+                    set status = 'RELEASED',
+                        error_message = 'Reserva abandonada liberada por tempo limite excedido',
+                        updated_at = now()
+                    where id = @ExecutionId
+                    """,
+                    new { ExecutionId = execId },
+                    tx,
+                    cancellationToken: ct));
+            }
+
+            return stale.Count;
         }, ct);
     }
 }

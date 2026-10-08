@@ -68,7 +68,7 @@ public sealed class AiStockAssistant(
         // 2. Autorização estrita de acesso a IA, Estoque, Entitlement e Escopo de Unidade
         var access = await AuthorizeStockAssistantAccessAsync(ct);
 
-        // 3. Reserva Atômica de Quota com idempotência
+        // 3. Reserva Atômica de Quota com idempotência e payloadHash
         var idempotencyHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{tenant.TenantId}:{tenant.UserId}:{normalizedQuestion}")))[..32];
         var reservation = await quotaService.ReserveQuotaAsync(
             tenant.TenantId,
@@ -76,6 +76,7 @@ public sealed class AiStockAssistant(
             UseCase,
             estimatedTokens: 1500,
             idempotencyKey: idempotencyHash,
+            payloadHash: idempotencyHash,
             ct: ct);
 
         // Se for repetição idempotente concluída anteriormente, retorna sem reexecutar
@@ -230,7 +231,25 @@ public sealed class AiStockAssistant(
         }
         catch (OperationCanceledException)
         {
-            await quotaService.ReleaseReservationAsync(reservation.ExecutionId, "Cancelado pelo usuário", CancellationToken.None);
+            if (totalPromptTokens + totalCompletionTokens > 0)
+            {
+                await quotaService.ReconcileAndCompleteAsync(
+                    executionId: reservation.ExecutionId,
+                    provider: provider.ProviderName,
+                    model: provider.DefaultModel,
+                    promptTokens: totalPromptTokens,
+                    completionTokens: totalCompletionTokens,
+                    duration: DateTime.UtcNow - startTime,
+                    tokenConfidence: "ESTIMATED",
+                    success: false,
+                    errorMessage: "Cancelado pelo usuário durante processamento",
+                    ct: CancellationToken.None);
+            }
+            else
+            {
+                await quotaService.ReleaseReservationAsync(reservation.ExecutionId, "Cancelado pelo usuário", CancellationToken.None);
+            }
+
             throw;
         }
         catch (Exception ex)

@@ -9161,8 +9161,21 @@ from agro360.platform_tenants t
 where t.deleted_at is null
 on conflict (tenant_id, use_case, period_start, period_end) do nothing;
 
--- 5. Atualização da Versão Canônica do Schema
+-- 5. Atualização da Versão Canônica do Schema (11.19.0)
 insert into agro360.platform_schema_versions(version, description, installed_at)
 values('11.19.0', 'Tabelas de governança de IA, quotas atômicas por competência e auditoria de execuções', now())
 on conflict (version) do update set description = excluded.description;
+
+-- Migration 130: Governança de IA com hash de payload de idempotência, índices de recuperação de reservas e hardening de MyDay.
+alter table agro360.ai_executions
+    add column if not exists payload_hash varchar(64);
+
+create index if not exists ix_ai_executions_abandoned
+    on agro360.ai_executions(tenant_id, status, created_at)
+    where status in ('RESERVED', 'IN_PROGRESS');
+
+insert into agro360.platform_schema_versions(version, description, installed_at)
+values('11.20.0', 'Governança de IA com validação de payload de idempotência e recuperação de reservas', now())
+on conflict (version) do update set description = excluded.description;
 commit;
+
