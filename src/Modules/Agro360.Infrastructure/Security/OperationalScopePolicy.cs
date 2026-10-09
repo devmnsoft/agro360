@@ -14,13 +14,17 @@ namespace Agro360.Infrastructure.Security;
 /// somente a dimensão de unidade, sempre a partir de identity_user_unit_scopes.
 /// Todo serviço que expõe ou grava dados vinculados a geo_farms deve usar estas mesmas expressões,
 /// sem variações locais (requisições, cotações, pedidos, recebimentos, my-day).
-/// As consultas exigem os parâmetros @TenantId e @UserId no mesmo comando.
+/// As consultas exigem os parâmetros @TenantId, @UserId e @FarmId no mesmo comando.
+/// @FarmId expressa o CONTEXTO SELECIONADO (X-Farm-Id), nunca amplia autorização: nulo significa
+/// "todas as unidades autorizadas" e valor significa "somente a unidade selecionada", sempre
+/// sobreposto ao conjunto concedido em identity_user_unit_scopes.
 /// </summary>
 public static class OperationalScopePolicy
 {
     /// <summary>Filtro para tabelas/aliases que carregam property_id (entidades operacionais).</summary>
     public static string Sql(string alias) =>
         $"""
+        and (@FarmId::uuid is null or {alias}.property_id=@FarmId)
         and (
             exists(select 1 from agro360.identity_user_unit_scopes scope_all where scope_all.tenant_id=@TenantId and scope_all.user_id=@UserId and scope_all.scope_type='ALL')
             or ({alias}.property_id is not null and exists(
@@ -38,6 +42,7 @@ public static class OperationalScopePolicy
     /// <summary>Filtro direto sobre o alias da própria fazenda (geo_farms).</summary>
     public static string FarmSql(string alias) =>
         $"""
+        and (@FarmId::uuid is null or {alias}.id=@FarmId)
         and (
             exists(select 1 from agro360.identity_user_unit_scopes scope_all where scope_all.tenant_id=@TenantId and scope_all.user_id=@UserId and scope_all.scope_type='ALL')
             or exists(select 1 from agro360.identity_user_unit_scopes scope_direct where scope_direct.tenant_id=@TenantId and scope_direct.user_id=@UserId and scope_direct.scope_type='FARM' and scope_direct.farm_id={alias}.id)

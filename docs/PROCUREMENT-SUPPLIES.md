@@ -40,3 +40,43 @@ Pedidos vinculados exigem requisição aprovada e vínculo de cada linha ao item
 * implementar devolução ao fornecedor vinculada ao saldo aceito/consumido;
 * separar por configuração o gatilho legado de previsão financeira no recebimento;
 * executar homologação dinâmica PostgreSQL e navegador onde esses runtimes estejam disponíveis.
+
+## Evolução 11.22 — conversão de cotação com confirmação explícita e atomicidade multi-fornecedor
+
+A recomendação de menor preço continua sendo apenas recomendação: quando algum item seria decidido
+silenciosamente pelo menor preço, a conversão recusa com `agro360.quotation.confirmation_required`
+(409) antes de gravar qualquer linha, e só prossegue quando o usuário confirma explicitamente
+(`?confirmLowestPrice=true` na API; a tela captura o 409 e pede confirmação). Decisões confirmadas
+são persistidas como registro comercial auditável com justificativa padrão e `lowest_total` corrigido.
+
+A conversão agora executa em uma única transação do kernel canônico de pedidos
+(`IPurchaseOrderKernel`, mesma regra usada pela criação direta): bloqueio da cotação com `for update`,
+validação de fornecedores (bloqueio de fornecedor derruba todos os pedidos, sem sucesso parcial),
+um pedido por fornecedor vencedor, consumo do saldo autorizado da requisição, virada de status e
+auditoria (`CONVERSION_STARTED`, `CONVERSION_ORDER_CREATED`, `CONVERTED`; falhas registram
+`CONVERSION_FAILED` fora da transação apenas com código higienizado). Replay devolve exatamente os
+mesmos pedidos — inclusive cancelados — sem recriação automática; reabastecimento vem de novo comando
+explícito na requisição, nunca da conversão. Cancelamento de pedido reabre o saldo correspondente e
+retorna a requisição para aprovação.
+
+O registro das consultas de IA ao plano passa a vincular a execução à cota ativa do período corrente
+(`quota_id`), mantendo linhas antigas `NULL` como histórico honesto. A governança das concessões da
+migration 131 (migration 132, versão `11.22.0`) separa registro de catálogo, direitos comerciais por
+plano (reparação por módulo, completando planos parcialmente atualizados), snapshot retroativo das
+organizações ativas e fixtures de homologação: concessões automáticas por padrão de nome foram
+revogadas e os tenants de teste passam exclusivamente do `seed-test-access.sql` com tuplas nominais.
+
+### Atualização
+
+1. Faça backup e aplique `database/migrations/132_module_grant_governance_and_partial_plan_repair.sql`
+   com uma role de migração; é idempotente e reaplicável.
+2. Confirme a versão `11.22.0` em `agro360.platform_schema_versions`.
+3. Instalação limpa usa somente `database/agro360-postgres-full.sql` (espelho byte a byte).
+
+### Validação
+
+`tests/Agro360.IntegrationTests/ProcurementConversionJourneyTests.cs` executa a jornada real sobre
+PostgreSQL com os serviços em produção (não stubs): recusa sem decisão (zero escritas), decisão parcial
+não silencia a guarda, conversão confirmada multiprovecedor com auditoria e saldo integral, rollback
+total com fornecedor bloqueado mais recuperação sem duplicação, concorrência serializada com replay
+idêntico e cancelamento que reabre saldo sem recriação automática.

@@ -191,10 +191,16 @@
     if (assistantResult) assistantResult.hidden = true;
 
     try {
+      // Chave da intenção: gerada quando o usuário envia a pergunta. Uma re-tentativa da MESMA
+      // intenção reaproveita a resposta sem novo consumo de cota; perguntar de novo é outra
+      // intenção (nova chave) e recalcula com dados frescos.
+      const operationKey = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const res = await fetch('/api/v1/inventory/assistant/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, operationKey }),
         signal: assistantAbortController.signal
       });
 

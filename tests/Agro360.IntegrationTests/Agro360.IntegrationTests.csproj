@@ -16,4 +16,7 @@
     <PackageReference Include="Dapper" />
     <PackageReference Include="Npgsql" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Modules\Agro360.Infrastructure\Agro360.Infrastructure.csproj" />
+  </ItemGroup>
 </Project>

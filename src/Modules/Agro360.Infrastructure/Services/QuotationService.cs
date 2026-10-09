@@ -20,7 +20,7 @@ public interface IQuotationService
     Task<dynamic> DetailAsync(Guid quotationId, CancellationToken ct = default);
     Task<IReadOnlyList<dynamic>> CompareQuotationsAsync(Guid requisitionId, CancellationToken ct = default);
     Task DecideAsync(Guid quotationId, QuotationDecisionCommand command, CancellationToken ct = default);
-    Task<IReadOnlyList<Guid>> ConvertToOrderAsync(Guid quotationId, CancellationToken ct = default);
+    Task<IReadOnlyList<Guid>> ConvertToOrderAsync(Guid quotationId, bool confirmLowestPrice = false, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -29,9 +29,14 @@ public interface IQuotationService
 /// fornecedores e catálogo permanecem compartilhados do tenant. A decisão por item fica registrada
 /// em procurement_quotation_decisions (com justificativa quando acima do menor valor) e a conversão
 /// honra essas decisões, gerando um pedido por fornecedor vencedor vinculado às linhas aprovadas da
-/// requisição via requisition_item_id, sem ultrapassar o saldo autorizado (validado em CreateOrderAsync).
+/// requisição via requisition_item_id. A conversão é uma transação única que reutiliza o núcleo
+/// canônico de criação de pedido (IPurchaseOrderKernel): falha em qualquer fornecedor derruba tudo,
+/// o saldo autorizado é validado sob lock no mesmo commit e replay nunca recria pedidos — inclusive
+/// cancelados, cujo reabastecimento vem de comando explícito na requisição. Itens sem decisão
+/// explícita recebem apenas a recomendação de menor preço, que exige confirmação explícita do
+/// conversor (nunca aprovação silenciosa) para virar decisão auditável.
 /// </summary>
-public sealed class QuotationService(DatabaseExecutor db, ITenantContext tenant, IProcurementService procurement) : IQuotationService
+public sealed class QuotationService(DatabaseExecutor db, ITenantContext tenant, IPurchaseOrderKernel procurement) : IQuotationService
 {
     private static readonly string[] OpenStatuses = ["SENT", "PARTIAL", "RESPONDED", "ANALYSIS"];
     private static readonly string[] ConvertibleStatuses = ["PARTIAL", "RESPONDED", "ANALYSIS", "APPROVED"];
@@ -478,51 +483,76 @@ public sealed class QuotationService(DatabaseExecutor db, ITenantContext tenant,
         }, ct);
     }
 
-    public async Task<IReadOnlyList<Guid>> ConvertToOrderAsync(Guid quotationId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<Guid>> ConvertToOrderAsync(Guid quotationId, bool confirmLowestPrice = false, CancellationToken ct = default)
     {
-        var plan = await db.InTenantTransactionAsync<ConversionPlan>((conn, tx) => ConvertPlanAsync(conn, tx, quotationId, ct), ct);
-        if (plan.ReplayOrderIds.Count > 0) return plan.ReplayOrderIds;
-
-        var created = new List<Guid>();
-        foreach (var draft in plan.Drafts)
+        try
         {
-            try
+            // Fase única: a trava da cotação (for update) e a criação de todos os pedidos ocorrem na
+            // mesma transação. Qualquer fornecedor que falhar derruba tudo (nunca há conversão
+            // parcial apresentada como conclusão) e o saldo autorizado é validado pelo núcleo
+            // canônico sob lock FOR UPDATE dentro desta mesma transação.
+            return await db.InTenantTransactionAsync<IReadOnlyList<Guid>>(async (conn, tx) =>
             {
-                created.Add(await procurement.CreateOrderAsync(new PurchaseOrderCommand(
-                    draft.SupplierId,
-                    plan.RequisitionId,
-                    quotationId,
-                    plan.CostCenterId,
-                    plan.PropertyId,
-                    draft.PaymentTerms,
-                    draft.DeliveryOn,
-                    draft.DeliveryAddress,
-                    draft.Freight,
-                    draft.Taxes,
-                    draft.Lines), ct));
-            }
-            catch (ConflictException) when (created.Count == 0)
-            {
-                // Corrida: outra conversão criou o(s) pedido(s) entre o snapshot e a criação; reproduz o resultado.
-                var raced = await FindConvertedOrderIdsAsync(quotationId, ct);
-                if (raced.Count > 0) return raced;
-                throw;
-            }
+                var plan = await ConvertPlanAsync(conn, tx, quotationId, confirmLowestPrice, ct);
+                if (plan.ReplayOrderIds.Count > 0) return plan.ReplayOrderIds;
+
+                await Audit(conn, tx, quotationId, "CONVERSION_STARTED", new { Suppliers = plan.Drafts.Count, Items = plan.Drafts.Sum(draft => draft.Lines.Count) }, ct);
+
+                var created = new List<Guid>();
+                foreach (var draft in plan.Drafts)
+                {
+                    // Etapa auditável por pedido: o núcleo canônico grava evento do pedido e o
+                    // vínculo à requisição; aqui permanecem as contas (sem dados sensíveis).
+                    created.Add(await procurement.CreateOrderWithinTransactionAsync(conn, tx, new PurchaseOrderCommand(
+                        draft.SupplierId,
+                        plan.RequisitionId,
+                        quotationId,
+                        plan.CostCenterId,
+                        plan.PropertyId,
+                        draft.PaymentTerms,
+                        draft.DeliveryOn,
+                        draft.DeliveryAddress,
+                        draft.Freight,
+                        draft.Taxes,
+                        draft.Lines), ct));
+                    await Audit(conn, tx, quotationId, "CONVERSION_ORDER_CREATED", new { Order = created.Count, Total = plan.Drafts.Count }, ct);
+                }
+
+                await conn.ExecuteAsync(new CommandDefinition(
+                    "update agro360.procurement_quotations set status='APPROVED',updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id and status in('PARTIAL','RESPONDED','ANALYSIS') and deleted_at is null",
+                    ScopeParams(new { Id = quotationId }), tx, cancellationToken: ct));
+                await Audit(conn, tx, quotationId, "CONVERTED", new { Suppliers = created.Count, OrderIds = created }, ct);
+                return created;
+            }, ct);
         }
-
-        await db.InTenantTransactionAsync(async (conn, tx) =>
+        catch (Exception exception) when (exception is not OperationCanceledException && exception is not DomainException { Code: "agro360.quotation.confirmation_required" })
         {
-            await conn.ExecuteAsync(new CommandDefinition(
-                "update agro360.procurement_quotations set status='APPROVED',updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id and status in('PARTIAL','RESPONDED','ANALYSIS') and deleted_at is null",
-                ScopeParams(new { Id = quotationId }), tx, cancellationToken: ct));
-            await Audit(conn, tx, quotationId, "CONVERTED", new { OrderIds = created }, ct);
-        }, ct);
-        return created;
+            // A falha é auditada fora da transação (que já sofreu rollback), apenas com código
+            // higienizado — nunca com mensagem que possa expor dados de negócio ou SQL.
+            await AuditConversionFailureAsync(quotationId, exception, ct);
+            throw;
+        }
     }
 
-    private async Task<ConversionPlan> ConvertPlanAsync(Npgsql.NpgsqlConnection conn, Npgsql.NpgsqlTransaction tx, Guid quotationId, CancellationToken ct)
+    private async Task AuditConversionFailureAsync(Guid quotationId, Exception exception, CancellationToken ct)
     {
-        var header = await conn.QuerySingleOrDefaultAsync<ConvertHeader>(new CommandDefinition(
+        var code = exception is DomainException domain ? domain.Code : "conversion_error";
+        try
+        {
+            await db.InTenantTransactionAsync(async (conn, tx) =>
+            {
+                await Audit(conn, tx, quotationId, "CONVERSION_FAILED", new { Code = code }, ct);
+            }, ct);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            // Auditoria de falha é melhor esforço: jamais mascarar a falha original.
+        }
+    }
+
+    private async Task<ConversionPlan> ConvertPlanAsync(Npgsql.NpgsqlConnection conn, Npgsql.NpgsqlTransaction tx, Guid quotationId, bool confirmLowestPrice, CancellationToken ct)
+    {
+        var header = await conn.QuerySingleOrDefaultAsync<(string Status, Guid RequisitionId, string RequisitionStatus, Guid? CostCenterId, Guid? PropertyId, string RequisitionNumber, string Number, DateOnly NeededOn, string FarmName)>(new CommandDefinition(
             $"""
             select q.status Status,r.id RequisitionId,r.status RequisitionStatus,r.cost_center_id CostCenterId,r.property_id PropertyId,
                    r.number RequisitionNumber,q.number Number,r.needed_on NeededOn,coalesce(f.name,'unidade operacional') FarmName
@@ -533,13 +563,15 @@ public sealed class QuotationService(DatabaseExecutor db, ITenantContext tenant,
             for update of q
             """,
             ScopeParams(new { Id = quotationId }), tx, cancellationToken: ct));
-        if (header is null) throw new NotFoundException("Cotação", quotationId);
+        if (string.IsNullOrEmpty(header.Status)) throw new NotFoundException("Cotação", quotationId);
         if (!ConvertibleStatuses.Contains(header.Status))
             throw new ConflictException("Cotação inexistente ou sem propostas aptas para conversão.", "agro360.quotation.not_convertible");
 
-        // Replay: pedidos já vinculados (não cancelados) são devolvidos em vez de criar duplicata.
+        // Replay: qualquer pedido já vinculado à cotação encerra o planejamento — inclusive os
+        // cancelados. Cancelamento é tratado por comando explícito (novo pedido a partir da
+        // requisição, que reabre ao cancelar), nunca por recriação automática na conversão.
         var existing = (await conn.QueryAsync<Guid>(new CommandDefinition(
-            "select o.id from agro360.procurement_purchase_orders o where o.tenant_id=@TenantId and o.quotation_id=@Id and o.status<>'CANCELLED' and o.deleted_at is null order by o.created_at",
+            "select o.id from agro360.procurement_purchase_orders o where o.tenant_id=@TenantId and o.quotation_id=@Id and o.deleted_at is null order by o.created_at",
             ScopeParams(new { Id = quotationId }), tx, cancellationToken: ct))).AsList();
         if (existing.Count > 0)
             return new ConversionPlan(existing, header.RequisitionId, header.CostCenterId, header.PropertyId, Array.Empty<ConversionDraft>());
@@ -608,14 +640,20 @@ public sealed class QuotationService(DatabaseExecutor db, ITenantContext tenant,
             chosen.Add((item, proposal));
         }
 
-        // Persiste as decisões automáticas para que o histórico fique completo e auditável.
+        // Menor preço é recomendação, não aprovação silenciosa: sem confirmação explícita do
+        // conversor a operação para aqui, antes de qualquer gravação. Confirmada, a recomendação
+        // vira decisão auditável atribuída ao usuário que confirmou.
+        if (autoDecisions.Count > 0 && !confirmLowestPrice)
+            throw new DomainException("Há itens sem decisão explícita; a conversão aplicaria a recomendação automática de menor preço. Confirme a conversão para registrar essa decisão.", "agro360.quotation.confirmation_required");
+
+        // Persiste as decisões confirmadas sobre a recomendação para que o histórico fique completo e auditável.
         if (autoDecisions.Count > 0)
             await conn.ExecuteAsync(new CommandDefinition(
                 """
                 insert into agro360.procurement_quotation_decisions
                     (id, tenant_id, quotation_id, quotation_item_id, quotation_supplier_id, selected_total, lowest_total, justification, decided_at, decided_by, created_by, updated_by)
                 values
-                    (@Id, @TenantId, @QuotationId, @QuotationItemId, @QuotationSupplierId, @SelectedTotal, @LowestTotal, null, now(), @UserId, @UserId, @UserId)
+                    (@Id, @TenantId, @QuotationId, @QuotationItemId, @QuotationSupplierId, @SelectedTotal, @LowestTotal, @Justification, now(), @UserId, @UserId, @UserId)
                 """,
                 autoDecisions.Select(decision => new
                 {
@@ -625,7 +663,8 @@ public sealed class QuotationService(DatabaseExecutor db, ITenantContext tenant,
                     QuotationItemId = decision.ItemId,
                     QuotationSupplierId = decision.Proposal.SupplierRowId,
                     SelectedTotal = decision.Proposal.Total,
-                    decision.Lowest,
+                    LowestTotal = decision.Lowest,
+                    Justification = "Conversão confirmada sobre a recomendação de menor preço",
                     tenant.UserId
                 }), tx, cancellationToken: ct));
 
@@ -655,20 +694,13 @@ public sealed class QuotationService(DatabaseExecutor db, ITenantContext tenant,
         return new ConversionPlan(Array.Empty<Guid>(), header.RequisitionId, header.CostCenterId, header.PropertyId, drafts);
     }
 
-    private Task<IReadOnlyList<Guid>> FindConvertedOrderIdsAsync(Guid quotationId, CancellationToken ct)
-        => db.InTenantTransactionAsync<IReadOnlyList<Guid>>(async (conn, tx) =>
-        {
-            var ids = await conn.QueryAsync<Guid>(new CommandDefinition(
-                "select o.id from agro360.procurement_purchase_orders o where o.tenant_id=@TenantId and o.quotation_id=@Id and o.status<>'CANCELLED' and o.deleted_at is null order by o.created_at",
-                new { tenant.TenantId, Id = quotationId }, tx, cancellationToken: ct));
-            return ids.AsList();
-        }, ct);
-
     private DynamicParameters ScopeParams(object? extra = null)
     {
         var p = new DynamicParameters(extra);
         p.Add("TenantId", tenant.TenantId);
         p.Add("UserId", tenant.UserId);
+        // Contexto operacional selecionado (X-Farm-Id): nulo = todas as unidades autorizadas.
+        p.Add("FarmId", tenant.FarmId);
         return p;
     }
 
@@ -684,7 +716,7 @@ public sealed class QuotationService(DatabaseExecutor db, ITenantContext tenant,
     private sealed record QuoteItemRow(Guid Id, decimal Quantity, Guid? RequisitionItemId, string ItemName);
     private sealed record DecisionCandidate(Guid QuotationItemId, decimal? LowestTotal);
     private sealed record DecisionProposal(Guid QuotationItemId, Guid QuotationSupplierId, decimal Total, Guid QuotationId, bool SupplierActive);
-    private sealed record ConvertHeader(Guid RequisitionId, string Status, string RequisitionStatus, string Number, string FarmName, DateOnly NeededOn, Guid? CostCenterId, Guid? PropertyId);
+
     private sealed record ConvertItem(Guid ItemId, Guid CatalogItemId, decimal Quantity, string Unit, Guid? RequisitionItemId, string ItemName);
     private sealed record ConvertProposal(Guid ItemId, Guid SupplierRowId, Guid SupplierId, decimal UnitPrice, decimal Discount, decimal Total, int? DeliveryDays, string PaymentTerms, decimal Freight, decimal Taxes, DateOnly? ProposalValidUntil);
     private sealed record AutoDecision(Guid Id, Guid ItemId, ConvertProposal Proposal, decimal Lowest);

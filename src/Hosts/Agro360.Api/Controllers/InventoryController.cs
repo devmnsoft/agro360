@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Agro360.Api.Controllers;
 
-public sealed record StockAssistantQueryRequest(string Question);
+public sealed record StockAssistantQueryRequest(string Question, string? OperationKey = null);
 
 [ApiController]
 [Route("api/v1/inventory")]
@@ -61,7 +61,7 @@ public sealed class InventoryController(
             return BadRequest(new { message = "A pergunta não pode ser vazia." });
         }
 
-        var response = await assistant.AskAsync(request.Question, cancellationToken).ConfigureAwait(false);
+        var response = await assistant.AskAsync(request.Question, request.OperationKey, cancellationToken).ConfigureAwait(false);
         return Ok(response);
     }
 }

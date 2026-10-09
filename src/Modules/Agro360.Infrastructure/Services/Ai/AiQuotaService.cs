@@ -47,7 +47,7 @@ public interface IAiQuotaService
 
     Task DeductQuotaAsync(Guid tenantId, int tokens, string useCase, CancellationToken ct = default);
 
-    Task<int> CleanupAbandonedReservationsAsync(TimeSpan olderThan, CancellationToken ct = default);
+    Task<int> CleanupAbandonedReservationsAsync(Guid tenantId, TimeSpan olderThan, CancellationToken ct = default);
 }
 
 public sealed class AiQuotaService(
@@ -400,9 +400,9 @@ public sealed class AiQuotaService(
         }, ct);
     }
 
-    public Task<int> CleanupAbandonedReservationsAsync(TimeSpan olderThan, CancellationToken ct = default)
+    public Task<int> CleanupAbandonedReservationsAsync(Guid tenantId, TimeSpan olderThan, CancellationToken ct = default)
     {
-        return executionService.CleanupAbandonedReservationsAsync(olderThan, ct);
+        return executionService.CleanupAbandonedReservationsAsync(tenantId, olderThan, ct);
     }
 }
 

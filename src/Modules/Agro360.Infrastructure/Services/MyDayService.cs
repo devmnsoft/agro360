@@ -91,7 +91,7 @@ public sealed class MyDayService(
                     join agro360.identity_permissions p on p.id=rp.permission_id
                     where u.tenant_id=@TenantId and u.id=@UserId and u.status='ACTIVE' and u.deleted_at is null
                     """,
-                    new { tenant.TenantId, tenant.UserId },
+                    new { tenant.TenantId, tenant.UserId, tenant.FarmId },
                     tx,
                     cancellationToken: ct)).ConfigureAwait(false);
                 foreach (var p in perms) permissions.Add(p);
@@ -136,7 +136,7 @@ public sealed class MyDayService(
                     order by r.created_at desc
                     limit 20
                     """,
-                    new { tenant.TenantId, tenant.UserId },
+                    new { tenant.TenantId, tenant.UserId, tenant.FarmId },
                     tx,
                     cancellationToken: ct)).ConfigureAwait(false);
 
@@ -177,7 +177,7 @@ public sealed class MyDayService(
                     order by q.created_at asc
                     limit 20
                     """,
-                    new { tenant.TenantId, tenant.UserId },
+                    new { tenant.TenantId, tenant.UserId, tenant.FarmId },
                     tx,
                     cancellationToken: ct)).ConfigureAwait(false);
 
@@ -212,7 +212,7 @@ public sealed class MyDayService(
                     order by r.updated_at desc
                     limit 20
                     """,
-                    new { tenant.TenantId, tenant.UserId },
+                    new { tenant.TenantId, tenant.UserId, tenant.FarmId },
                     tx,
                     cancellationToken: ct)).ConfigureAwait(false);
 
@@ -252,7 +252,7 @@ public sealed class MyDayService(
                     order by p.due_on asc
                     limit 20
                     """,
-                    new { tenant.TenantId, tenant.UserId },
+                    new { tenant.TenantId, tenant.UserId, tenant.FarmId },
                     tx,
                     cancellationToken: ct)).ConfigureAwait(false);
 
@@ -291,7 +291,7 @@ public sealed class MyDayService(
                     order by d.due_at asc nulls last, d.created_at desc
                     limit 20
                     """,
-                    new { tenant.TenantId, tenant.UserId },
+                    new { tenant.TenantId, tenant.UserId, tenant.FarmId },
                     tx,
                     cancellationToken: ct)).ConfigureAwait(false);
 
@@ -329,7 +329,7 @@ public sealed class MyDayService(
                     order by due_date asc
                     limit 20
                     """,
-                    new { tenant.TenantId, tenant.UserId },
+                    new { tenant.TenantId, tenant.UserId, tenant.FarmId },
                     tx,
                     cancellationToken: ct)).ConfigureAwait(false);
 
@@ -367,7 +367,7 @@ public sealed class MyDayService(
                     order by n.due_on asc
                     limit 20
                     """,
-                    new { tenant.TenantId, tenant.UserId },
+                    new { tenant.TenantId, tenant.UserId, tenant.FarmId },
                     tx,
                     cancellationToken: ct)).ConfigureAwait(false);
 

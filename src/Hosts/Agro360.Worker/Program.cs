@@ -19,6 +19,7 @@ builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection(Outbo
 builder.Services.AddSingleton<IOutboxPublisher, LoggingOutboxPublisher>();
 builder.Services.AddHostedService<OutboxWorker>();
 builder.Services.AddHostedService<InspectionScheduleWorker>();
+builder.Services.AddHostedService<AiQuotaCleanupWorker>();
 
 var host = builder.Build();
 await host.RunAsync();

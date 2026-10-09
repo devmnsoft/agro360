@@ -97,7 +97,10 @@ public static class DependencyInjection
         services.AddScoped<ISstService, SstService>();
         services.AddScoped<IFleetService, FleetService>();
         services.AddScoped<IFleetOperationsService, FleetOperationsService>();
-        services.AddScoped<IProcurementService, ProcurementService>();
+        services.AddScoped<ProcurementService>();
+        services.AddScoped<IProcurementService>(p => p.GetRequiredService<ProcurementService>());
+        services.AddScoped<IPurchaseOrderKernel>(p => p.GetRequiredService<ProcurementService>());
+    services.AddScoped<IRequisitionKernel>(p => p.GetRequiredService<ProcurementService>());
         services.AddScoped<IReplenishmentService, ReplenishmentService>();
         services.AddScoped<IPostingService, PostingService>();
         services.AddScoped<ICycleVerificationService, CycleVerificationService>();

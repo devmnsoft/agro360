@@ -20,7 +20,11 @@ namespace Agro360.Infrastructure.Services;
 
 public interface IAiStockAssistant
 {
-    Task<AiStockAssistantResponse> AskAsync(string question, CancellationToken ct = default);
+    /// <summary>
+    /// <paramref name="operationKey"/> é a chave da INTENÇÃO do cliente (nova a cada pergunta enviada;
+    /// reutilizada apenas por re-tentativa da mesma intenção). Omissa ⇒ esta chamada é uma intenção nova.
+    /// </summary>
+    Task<AiStockAssistantResponse> AskAsync(string question, string? operationKey = null, CancellationToken ct = default);
 }
 
 public sealed record AiStockAssistantResponse(
@@ -55,7 +59,7 @@ public sealed class AiStockAssistant(
 {
     private const string UseCase = "stock_assistant";
 
-    public async Task<AiStockAssistantResponse> AskAsync(string question, CancellationToken ct = default)
+    public async Task<AiStockAssistantResponse> AskAsync(string question, string? operationKey = null, CancellationToken ct = default)
     {
         // 1. Validação de pergunta conforme regras canônicas
         var normalizedQuestion = AssistantQueryRules.NormalizeQuestion(question);
@@ -68,13 +72,17 @@ public sealed class AiStockAssistant(
         // 2. Autorização estrita de acesso a IA, Estoque, Entitlement e Escopo de Unidade
         var access = await AuthorizeStockAssistantAccessAsync(ct);
 
-        // 3. Reserva Atômica de Quota. Chave de operação ≠ hash de payload: a chave identifica a operação
-        // (tenant + usuário + unidade + pergunta) para reexecução idempotente; o hash guarda o conteúdo da
-        // pergunta contra reaproveitamento da chave. O contexto de unidade entra na chave para que a mesma
-        // pergunta em outra unidade não replique o resultado calculado para uma unidade diferente.
+        // 3. Reserva Atômica de Quota. A chave identifica a INTENÇÃO do cliente (turn), não o texto: o
+        // mesmo turno reenviado (re-tentativa) reaproveita o resultado sem novo consumo; "consultar
+        // novamente" é uma intenção nova e recalcula com dados frescos. O contexto de unidade entra no
+        // escopo da chave para que um turno nunca replique entre unidades diferentes. O payload hash da
+        // pergunta protege o reuso de uma mesma chave com pergunta diferente (recusa payload_mismatch).
+        var turnKey = string.IsNullOrWhiteSpace(operationKey) ? Guid.NewGuid().ToString("N") : operationKey.Trim();
+        if (turnKey.Length > 128)
+            throw new DomainException("Chave de operação de IA deve ter no máximo 128 caracteres.", "ai.operation_key_invalid");
         var farmContext = tenant.FarmId?.ToString() ?? "ALL";
-        var operationKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-            $"stock-assistant:operation:{tenant.TenantId}:{tenant.UserId}:{farmContext}:{normalizedQuestion}")))[..32];
+        var idempotencyKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"stock-assistant:operation:{tenant.TenantId}:{tenant.UserId}:{farmContext}:{turnKey}")))[..32];
         var payloadHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
             $"stock-assistant:payload:{normalizedQuestion}")))[..32];
         var reservation = await quotaService.ReserveQuotaAsync(
@@ -82,13 +90,13 @@ public sealed class AiStockAssistant(
             tenant.UserId,
             UseCase,
             estimatedTokens: 1500,
-            idempotencyKey: operationKey,
+            idempotencyKey: idempotencyKey,
             payloadHash: payloadHash,
             ct: ct);
 
-        // Se for repetição idempotente concluída anteriormente, restaura o resultado persistido
-        // (ai_executions.result_payload) sem reexecutar o provedor; a sanitização financeira é reaplicada
-        // conforme a autorização da sessão atual (acesso é revalidado antes da cota).
+        // Se o mesmo turno já foi concluído, restaura o resultado persistido (ai_executions.result_payload)
+        // sem reexecutar o provedor; a sanitização financeira é reaplicada conforme a autorização da
+        // sessão atual (acesso e permissões são revalidados antes da cota), inclusive no texto da resposta.
         if (reservation.IsReplay && reservation.ReplayRecord != null)
         {
             var replay = reservation.ReplayRecord;
@@ -105,8 +113,19 @@ public sealed class AiStockAssistant(
                 }
             }
 
+            var answer = stored?.Answer ?? replay.ErrorMessage ?? "Consulta recuperada do histórico recente.";
+            // A resposta textual da LLM pode embutir custos que eram visíveis a quem calculou. Se a
+            // autorização financeira de quem replays caiu desde então, sanitizar só a tabela Data vazaria
+            // custo pelo texto: os valores monetários são ocultados do Answer e da justificativa do Draft.
+            if (stored is { FinanceVisible: true } && !access.CanViewFinance)
+            {
+                answer = MaskFinancialValues(answer);
+                if (stored.Draft is { } replayDraft)
+                    stored = stored with { Draft = replayDraft with { Justification = MaskFinancialValues(replayDraft.Justification) } };
+            }
+
             return new AiStockAssistantResponse(
-                Answer: stored?.Answer ?? replay.ErrorMessage ?? "Consulta recuperada do histórico recente.",
+                Answer: answer,
                 Data: SanitizeFinancialData(stored?.Data, access.CanViewFinance),
                 SuggestsReplenishment: stored?.SuggestsReplenishment ?? false,
                 Draft: stored?.Draft,
@@ -237,7 +256,8 @@ public sealed class AiStockAssistant(
                 Data: visibleBalances,
                 SuggestsReplenishment: suggests,
                 Draft: draft,
-                TotalRecords: balancesResult.Total));
+                TotalRecords: balancesResult.Total,
+                FinanceVisible: access.CanViewFinance));
 
             // 10. Reconciliação Atômica da Quota (todas as chamadas somadas) + persistência do resultado.
             await quotaService.ReconcileAndCompleteAsync(
@@ -400,15 +420,26 @@ public sealed class AiStockAssistant(
 
     /// <summary>
     /// Resultado persistido em ai_executions.result_payload (jsonb) para que o replay idempotente devolva a
-    /// resposta completa — inclusive dados financeiros conforme a autorização de quem calculou — sem novo
-    /// consumo de cota. Dados sensíveis são gravados já sanitizados.
+    /// resposta completa sem novo consumo de cota. FinanceVisible registra se quem calculou via os custos:
+    /// replay por sessão sem autorização financeira oculta valores monetários do texto (e a tabela Data é
+    /// sanitizada de qualquer forma). Payloads antigos, sem o campo, assumem true — ocultar é sempre mais
+    /// seguro do que vazar custo.
     /// </summary>
     private sealed record AssistantResultPayload(
         string Answer,
         IReadOnlyList<StockBalanceDto>? Data,
         bool SuggestsReplenishment,
         ReplenishmentDraft? Draft,
-        long TotalRecords);
+        long TotalRecords,
+        bool FinanceVisible = true);
+
+    private static readonly System.Text.RegularExpressions.Regex CurrencyPattern = new(
+        @"R\$\s?\d[\d\.]*(,\d{1,2})?",
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>Oculta valores monetários (R$ ...) de textos gerados enquanto a LLM tinha visão financeira.</summary>
+    internal static string MaskFinancialValues(string? text)
+        => string.IsNullOrEmpty(text) ? string.Empty : CurrencyPattern.Replace(text, "R$ •••");
 
     private static IReadOnlyList<StockBalanceDto>? SanitizeFinancialData(IReadOnlyList<StockBalanceDto>? balances, bool canViewFinance)
         => canViewFinance || balances is null

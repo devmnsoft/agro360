@@ -156,10 +156,20 @@
     }
 
     async function convertQuotation(quotationId) {
-        if (!await window.confirmDialog("Converter cotação em pedidos", "Será criado um pedido de compra por fornecedor vencedor, vinculado à requisição e às decisões aprovadas. A operação é idempotente: repetir devolve os mesmos pedidos.", "Converter")) return;
+        if (!await window.confirmDialog("Converter cotação em pedidos", "Será criado um pedido de compra por fornecedor vencedor, vinculado à requisição e às decisões aprovadas. A conversão é uma transação única: falha em qualquer fornecedor não deixa pedido parcial, e repetir devolve os mesmos pedidos (cancelados incluem-se — o reabastecimento vem de novo pedido na requisição).", "Converter")) return;
+        const path = `quotations/${encodeURIComponent(quotationId)}/convert`;
         try {
-            const result = await request(`quotations/${encodeURIComponent(quotationId)}/convert`, { method: "POST" });
-            window.toastSuccess?.("Cotação convertida", `${result.order_ids.length} pedido(s) criado(s) para aprovação/entrega conforme as decisões.`);
+            let result;
+            try {
+                result = await request(path, { method: "POST" });
+            } catch (error) {
+                // Menor preço é recomendação: sem decisão explícita a API pede confirmação e nada foi gravado.
+                if (error.status !== 409 || error.problem?.code !== "agro360.quotation.confirmation_required") throw error;
+                const proceed = await window.confirmDialog("Confirmar recomendação de menor preço", `${error.message} Nenhum pedido foi criado ainda. Deseja confirmar a conversão aplicando o menor preço aos itens restantes?`, "Confirmar menor preço");
+                if (!proceed) return;
+                result = await request(`${path}?confirmLowestPrice=true`, { method: "POST" });
+            }
+            window.toastSuccess?.("Cotação convertida", `${result.order_ids.length} pedido(s) vinculado(s) à cotação para aprovação/entrega conforme as decisões.`);
             await Promise.all([showQuotation(quotationId), list("quotations"), list("orders"), dashboard()]);
         } catch (error) { window.toastWarning?.("Não foi possível converter", error.message); }
     }

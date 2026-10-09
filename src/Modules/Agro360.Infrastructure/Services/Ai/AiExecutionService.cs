@@ -69,7 +69,7 @@ public interface IAiExecutionService
         bool success,
         CancellationToken ct = default);
 
-    Task<int> CleanupAbandonedReservationsAsync(TimeSpan olderThan, CancellationToken ct = default);
+    Task<int> CleanupAbandonedReservationsAsync(Guid tenantId, TimeSpan olderThan, CancellationToken ct = default);
 }
 
 public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecutionService
@@ -254,14 +254,22 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
             var totalTokens = promptTokens + completionTokens;
             var status = success ? "COMPLETED" : "FAILED";
 
+            // quota_id é vinculado na inserção à cota vigente da competência: execuções novas nunca
+            // viram novos legados desvinculados; NULL só persiste quando não há período ativo
+            // (ausência honesta, nunca dedução).
             await conn.ExecuteAsync(new CommandDefinition(
                 """
                 insert into agro360.ai_executions
                     (id, tenant_id, user_id, use_case, attempt_number, status, provider, model,
-                     reserved_tokens, prompt_tokens, completion_tokens, total_tokens, token_confidence, duration_ms, occurred_at, created_at, updated_at)
+                     reserved_tokens, prompt_tokens, completion_tokens, total_tokens, token_confidence, duration_ms, quota_id, occurred_at, created_at, updated_at)
                 values
                     (@Id, @TenantId, @UserId, @UseCase, 1, @Status, @Provider, @Model,
-                     @TotalTokens, @PromptTokens, @CompletionTokens, @TotalTokens, 'EXACT', @DurationMs, now(), now(), now())
+                     @TotalTokens, @PromptTokens, @CompletionTokens, @TotalTokens, 'EXACT', @DurationMs,
+                     (select q.id from agro360.tenant_ai_quotas q
+                       where q.tenant_id = @TenantId and q.use_case = @UseCase and q.active
+                         and current_date between q.period_start and q.period_end
+                       order by q.period_end desc limit 1),
+                     now(), now(), now())
                 """,
                 new
                 {
@@ -282,9 +290,12 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
         }, ct);
     }
 
-    public async Task<int> CleanupAbandonedReservationsAsync(TimeSpan olderThan, CancellationToken ct = default)
+    public async Task<int> CleanupAbandonedReservationsAsync(Guid tenantId, TimeSpan olderThan, CancellationToken ct = default)
     {
-        return await database.InTenantTransactionAsync(async (conn, tx) =>
+        // Varredura por tenant explícito (convenção dos workers: sem contexto de requisição): o id da
+        // competência entra direto no executor, que configura app.tenant_id e portanto respeita a RLS
+        // tenant_isolation das tabelas de IA. As baixas usam quota_id vinculado (nunca suposição).
+        return await database.InTenantTransactionAsync(tenantId, async (conn, tx) =>
         {
             var cutoff = DateTimeOffset.UtcNow.Subtract(olderThan);
 
@@ -293,11 +304,12 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
                 select id, tenant_id as tenantid, use_case as usecase, reserved_tokens as reservedtokens,
                        quota_id as quotaid
                 from agro360.ai_executions
-                where status in ('RESERVED', 'IN_PROGRESS')
+                where tenant_id = @TenantId
+                  and status in ('RESERVED', 'IN_PROGRESS')
                   and created_at < @Cutoff
                 for update
                 """,
-                new { Cutoff = cutoff },
+                new { TenantId = tenantId, Cutoff = cutoff },
                 tx,
                 cancellationToken: ct))).ToList();
 
@@ -306,7 +318,7 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
             foreach (var s in stale)
             {
                 var execId = (Guid)s.id;
-                var tenantId = (Guid)s.tenantid;
+                var rowTenantId = (Guid)s.tenantid;
                 var useCase = (string)s.usecase;
                 int reserved = (int)s.reservedtokens;
                 object? quotaRaw = s.quotaid;
