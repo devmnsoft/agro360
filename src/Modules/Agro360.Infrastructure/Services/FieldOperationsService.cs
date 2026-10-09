@@ -261,11 +261,42 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
         if (string.IsNullOrWhiteSpace(farmIdStr)) throw new DomainException("A ordem não possui uma propriedade vinculada.", "agriculture.order_farm_missing");
         var farmId = Guid.Parse(farmIdStr);
         var logs = await c.QueryAsync<WorkLogRow>(new CommandDefinition("select id,operator_id,equipment_id,stage,starts_at,ends_at,performed_quantity,unit,physical_area_ha,initial_meter,final_meter,interruption_minutes,interruption_reason,notes,evidence_reference,confirmed_at,version from agro360.field_work_logs where tenant_id=@TenantId and work_order_id=@Id and deleted_at is null", new { tenant.TenantId, Id = orderId }, t, cancellationToken: cancellationToken));
+        // Custo de atividade: tarifa horária configurável por tenant (platform_tenant_settings.preferences →
+        // operacoes_de_campo.tarifa_horaria_brl, com override opcional por estágio em tarifas_horarias_por_estagio).
+        // Sem tarifa configurada o custo é indisponível: nunca se inventa valor fixo nem se lança como zero;
+        // a pendência é registrada na conferência e permanece visível para o financeiro (indisponível ≠ zero conhecido).
+        var fieldOpsPreferences = await c.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "select coalesce(ts.preferences->'operacoes_de_campo', '{}'::jsonb)::text from agro360.platform_tenant_settings ts where ts.tenant_id=@TenantId",
+            new { tenant.TenantId }, t, cancellationToken: cancellationToken));
+        decimal? defaultHourlyRate = null;
+        Dictionary<string, decimal> hourlyRatesByStage = new(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(fieldOpsPreferences))
+        {
+            using var preferences = JsonDocument.Parse(fieldOpsPreferences);
+            if (preferences.RootElement.TryGetProperty("tarifa_horaria_brl", out var defaultRate))
+            {
+                if (defaultRate.ValueKind == JsonValueKind.Number && defaultRate.TryGetDecimal(out var parsedDefault)) defaultHourlyRate = parsedDefault;
+                else if (defaultRate.ValueKind == JsonValueKind.String && decimal.TryParse(defaultRate.GetString(), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var parsedDefaultText)) defaultHourlyRate = parsedDefaultText;
+            }
+            if (preferences.RootElement.TryGetProperty("tarifas_horarias_por_estagio", out var byStage) && byStage.ValueKind == JsonValueKind.Object)
+                foreach (var entry in byStage.EnumerateObject())
+                    if (entry.Value.ValueKind == JsonValueKind.Number && entry.Value.TryGetDecimal(out var stageRate)) hourlyRatesByStage[entry.Name] = stageRate;
+        }
         foreach (var log in logs)
         {
-            // In a real system, labor/equipment costs would be looked up from a price list.
-            // Here we implement a simplified logic: a fixed cost per log for demonstration of the flow.
-            decimal cost = 50.00m;
+            var hours = (decimal)((log.EndsAt - log.StartsAt).TotalMinutes - log.InterruptionMinutes) / 60m;
+            var hourlyRate = hourlyRatesByStage.TryGetValue(log.Stage, out var stageOverride) ? stageOverride : defaultHourlyRate;
+            if (hourlyRate is null)
+            {
+                issues.Add(new FieldIssue("WARNING", "ACTIVITY_COST_UNAVAILABLE", $"Custo da atividade '{log.Stage}' indisponível: configure a tarifa horária em configurações do tenant (operacoes_de_campo.tarifa_horaria_brl).", "costs"));
+                continue;
+            }
+            if (hours <= 0m)
+            {
+                issues.Add(new FieldIssue("WARNING", "ACTIVITY_COST_UNAVAILABLE", $"Custo da atividade '{log.Stage}' indisponível: o apontamento não tem duração líquida (horas menos interrupções).", "costs"));
+                continue;
+            }
+            var cost = Math.Round(hourlyRate.Value * hours, 2, MidpointRounding.AwayFromZero);
             await postingService.PostActivityCostAsync(tenant.TenantId, farmId, orderId, $"Activity: {log.Stage}", cost, DateTimeOffset.UtcNow, cancellationToken);
         }
 

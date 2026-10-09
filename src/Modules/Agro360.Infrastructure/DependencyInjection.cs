@@ -100,7 +100,7 @@ public static class DependencyInjection
         services.AddScoped<ProcurementService>();
         services.AddScoped<IProcurementService>(p => p.GetRequiredService<ProcurementService>());
         services.AddScoped<IPurchaseOrderKernel>(p => p.GetRequiredService<ProcurementService>());
-    services.AddScoped<IRequisitionKernel>(p => p.GetRequiredService<ProcurementService>());
+        services.AddScoped<IRequisitionKernel>(p => p.GetRequiredService<ProcurementService>());
         services.AddScoped<IReplenishmentService, ReplenishmentService>();
         services.AddScoped<IPostingService, PostingService>();
         services.AddScoped<ICycleVerificationService, CycleVerificationService>();

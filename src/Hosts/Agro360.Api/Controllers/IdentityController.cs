@@ -62,4 +62,37 @@ public sealed class IdentityController(IIdentityService identityService, IConfig
         }
         return Ok(result);
     }
+
+    [HttpGet("auth/preferences/language")]
+    [Authorize]
+    public async Task<IActionResult> GetLanguagePreference(CancellationToken cancellationToken)
+    {
+        if (!TryGetUserScope(out var tenantId, out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var language = await identityService.GetCulturePreferenceAsync(tenantId, userId, cancellationToken).ConfigureAwait(false);
+        return Ok(new { language });
+    }
+
+    [HttpPut("auth/preferences/language")]
+    [Authorize]
+    public async Task<IActionResult> ChangeLanguagePreference(LanguagePreferenceCommand command, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserScope(out var tenantId, out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var language = await identityService.ChangeCulturePreferenceAsync(tenantId, userId, command.Language(), cancellationToken).ConfigureAwait(false);
+        return Ok(new { language });
+    }
+
+    private bool TryGetUserScope(out Guid tenantId, out Guid userId)
+    {
+        var tenantStr = User.FindFirst("tenant_id")?.Value;
+        var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
+        return Guid.TryParse(tenantStr, out tenantId) && Guid.TryParse(sub, out userId);
+    }
 }

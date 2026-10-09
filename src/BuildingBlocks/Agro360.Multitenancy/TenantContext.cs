@@ -14,6 +14,9 @@ public interface ITenantContext
 
     string TimeZoneId { get; }
 
+    /// <summary>Cultura de apresentação resolvida na autenticação (nunca altera contrato, moeda ou estado do negócio).</summary>
+    string Language { get; }
+
     bool IsAvailable { get; }
 }
 
@@ -29,7 +32,8 @@ public sealed record TenantScope(
     Guid UserId,
     Guid? OrganizationId,
     Guid? FarmId,
-    string TimeZoneId = "America/Belem");
+    string TimeZoneId = "America/Belem",
+    string Language = "pt-BR");
 
 public sealed class TenantContext : IMutableTenantContext
 {
@@ -47,6 +51,8 @@ public sealed class TenantContext : IMutableTenantContext
 
     public string TimeZoneId => _scope?.TimeZoneId ?? "UTC";
 
+    public string Language => _scope?.Language ?? "pt-BR";
+
     public bool IsAvailable => _scope is not null;
 
     public void SetScope(TenantScope scope)
@@ -60,7 +66,8 @@ public sealed class TenantContext : IMutableTenantContext
         {
             TenantId = Guard.Required(scope.TenantId, nameof(scope.TenantId)),
             UserId = Guard.Required(scope.UserId, nameof(scope.UserId)),
-            TimeZoneId = Guard.Required(scope.TimeZoneId, nameof(scope.TimeZoneId), 64)
+            TimeZoneId = Guard.Required(scope.TimeZoneId, nameof(scope.TimeZoneId), 64),
+            Language = Guard.Required(scope.Language, nameof(scope.Language), 10)
         };
     }
 

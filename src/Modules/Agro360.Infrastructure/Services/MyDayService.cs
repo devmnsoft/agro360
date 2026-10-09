@@ -390,6 +390,153 @@ public sealed class MyDayService(
             }, ct).ConfigureAwait(false);
         });
 
+        await RunSourceAsync("Procurement.QuotationDecisions", consulted, unavailable, Can(Permissions.PurchasingApprove), async () =>
+        {
+            // Cotações com propostas recebidas aguardam decisão de compra; o escopo de unidade vem da requisição de origem.
+            await db.InTenantTransactionAsync(async (conn, tx) =>
+            {
+                var quotations = await conn.QueryAsync<dynamic>(new CommandDefinition(
+                    $"""
+                    select q.id, q.number, q.valid_until, req.number as req_number, f.name as farm_name
+                    from agro360.procurement_quotations q
+                    left join agro360.procurement_requisitions req on req.tenant_id=q.tenant_id and req.id=q.requisition_id and req.deleted_at is null
+                    left join agro360.geo_farms f on f.tenant_id=q.tenant_id and f.id=req.property_id and f.deleted_at is null
+                    where q.tenant_id=@TenantId and q.status in ('RESPONDED','ANALYSIS') and q.deleted_at is null
+                      {OperationalScopePolicy.Sql("req")}
+                    order by q.valid_until asc nulls last, q.created_at desc
+                    limit 20
+                    """,
+                    new { tenant.TenantId, tenant.UserId, tenant.FarmId },
+                    tx,
+                    cancellationToken: ct)).ConfigureAwait(false);
+
+                foreach (var q in quotations)
+                {
+                    var origin = string.IsNullOrWhiteSpace((string?)q.req_number) ? string.Empty : $" (requisição {q.req_number})";
+                    DateOnly? validUntil = q.valid_until is DateOnly vu ? vu : null;
+                    items.Add(new MyDayItem(
+                        Id: (Guid)q.id,
+                        Source: "Procurement",
+                        Title: $"Cotação {q.number}{origin} com propostas aguardando decisão de compra",
+                        Deadline: ToDeadline(q.valid_until),
+                        // Proposta vencida ou vencendo em 3 dias sobe a prioridade; sem prazo registrado não inventa urgência.
+                        Priority: validUntil is not null && validUntil.Value <= DateOnly.FromDateTime(DateTime.UtcNow).AddDays(3) ? "HIGH" : "MEDIUM",
+                        SuggestedAction: "Decidir Cotação",
+                        Link: "/Procurement#quotations",
+                        Category: "APPROVAL",
+                        UnitName: (string?)q.farm_name));
+                }
+            }, ct).ConfigureAwait(false);
+        });
+
+        await RunSourceAsync("Procurement.PurchaseOrderApprovals", consulted, unavailable, Can(Permissions.PurchasingApprove), async () =>
+        {
+            await db.InTenantTransactionAsync(async (conn, tx) =>
+            {
+                var orders = await conn.QueryAsync<dynamic>(new CommandDefinition(
+                    $"""
+                    select po.id, po.number, po.delivery_on, s.legal_name as supplier_name, f.name as farm_name
+                    from agro360.procurement_purchase_orders po
+                    join agro360.procurement_suppliers s on s.tenant_id=po.tenant_id and s.id=po.supplier_id
+                    left join agro360.geo_farms f on f.tenant_id=po.tenant_id and f.id=po.property_id and f.deleted_at is null
+                    where po.tenant_id=@TenantId and po.status='AWAITING_APPROVAL' and po.deleted_at is null
+                      {OperationalScopePolicy.Sql("po")}
+                    order by po.created_at asc
+                    limit 20
+                    """,
+                    new { tenant.TenantId, tenant.UserId, tenant.FarmId },
+                    tx,
+                    cancellationToken: ct)).ConfigureAwait(false);
+
+                foreach (var po in orders)
+                {
+                    items.Add(new MyDayItem(
+                        Id: (Guid)po.id,
+                        Source: "Procurement",
+                        Title: $"Pedido de compra {po.number} ({po.supplier_name}) aguardando aprovação",
+                        Deadline: null, // delivery_on é prazo de entrega, não de aprovação — não inventar prazo.
+                        Priority: "HIGH",
+                        SuggestedAction: "Aprovar Pedido",
+                        Link: "/Procurement#orders",
+                        Category: "APPROVAL",
+                        UnitName: (string?)po.farm_name));
+                }
+            }, ct).ConfigureAwait(false);
+        });
+
+        await RunSourceAsync("Inventory.MaterialRequests", consulted, unavailable, Can(Permissions.InventoryAdjust), async () =>
+        {
+            await db.InTenantTransactionAsync(async (conn, tx) =>
+            {
+                var requests = await conn.QueryAsync<dynamic>(new CommandDefinition(
+                    $"""
+                    select r.id, 'REQ-'||lpad(r.number::text,6,'0') as number, r.needed_on, r.priority, f.name as farm_name
+                    from agro360.inventory_material_requests r
+                    join agro360.geo_farms f on f.tenant_id=r.tenant_id and f.id=r.farm_id and f.deleted_at is null
+                    where r.tenant_id=@TenantId and r.status='AWAITING_APPROVAL'
+                      {OperationalScopePolicy.FarmSql("f")}
+                    order by r.needed_on asc
+                    limit 20
+                    """,
+                    new { tenant.TenantId, tenant.UserId, tenant.FarmId },
+                    tx,
+                    cancellationToken: ct)).ConfigureAwait(false);
+
+                foreach (var r in requests)
+                {
+                    items.Add(new MyDayItem(
+                        Id: (Guid)r.id,
+                        Source: "Inventory",
+                        Title: $"Solicitação de material {r.number} aguardando aprovação",
+                        Deadline: ToDeadline(r.needed_on),
+                        Priority: ((string?)r.priority)?.ToUpperInvariant() is "URGENT" or "HIGH" ? "HIGH" : "MEDIUM",
+                        SuggestedAction: "Analisar Solicitação",
+                        Link: "/Inventory#requests",
+                        Category: "APPROVAL",
+                        UnitName: (string?)r.farm_name));
+                }
+            }, ct).ConfigureAwait(false);
+        });
+
+        await RunSourceAsync("Harvest.PlannedPendings", consulted, unavailable, Can(Permissions.AgricultureRead), async () =>
+        {
+            // Colheitas planejadas que ainda não iniciaram e chegam à janela de execução (14 dias).
+            await db.InTenantTransactionAsync(async (conn, tx) =>
+            {
+                var plans = await conn.QueryAsync<dynamic>(new CommandDefinition(
+                    $"""
+                    select h.id, h.planned_end, p.name as product_name, fl.name as field_name, f.name as farm_name
+                    from agro360.harvest_plans h
+                    join agro360.geo_farms f on f.tenant_id=h.tenant_id and f.id=h.farm_id and f.deleted_at is null
+                    left join agro360.geo_fields fl on fl.tenant_id=h.tenant_id and fl.id=h.field_id and fl.deleted_at is null
+                    left join agro360.inventory_products p on p.tenant_id=h.tenant_id and p.id=h.product_id and p.deleted_at is null
+                    where h.tenant_id=@TenantId and h.status='PLANNED' and h.planned_end <= current_date + 14
+                      {OperationalScopePolicy.FarmSql("f")}
+                    order by h.planned_end asc
+                    limit 20
+                    """,
+                    new { tenant.TenantId, tenant.UserId, tenant.FarmId },
+                    tx,
+                    cancellationToken: ct)).ConfigureAwait(false);
+
+                foreach (var h in plans)
+                {
+                    var deadline = ToDeadline(h.planned_end);
+                    var location = string.IsNullOrWhiteSpace((string?)h.field_name) ? (string?)h.farm_name : $"{h.field_name} · {h.farm_name}";
+                    items.Add(new MyDayItem(
+                        Id: (Guid)h.id,
+                        Source: "Harvest",
+                        Title: $"Colheita planejada de '{h.product_name}' em {location} ainda sem início",
+                        Deadline: deadline,
+                        Priority: deadline.HasValue && deadline.Value.Date < DateTimeOffset.UtcNow.Date ? "HIGH" : "MEDIUM",
+                        SuggestedAction: "Organizar Colheita",
+                        Link: "/Harvest",
+                        Category: "OPERATION",
+                        UnitName: (string?)h.farm_name));
+                }
+            }, ct).ConfigureAwait(false);
+        });
+
         var sortedItems = items
             .OrderByDescending(x => x.Priority == "CRITICAL")
             .ThenByDescending(x => x.Priority == "HIGH")

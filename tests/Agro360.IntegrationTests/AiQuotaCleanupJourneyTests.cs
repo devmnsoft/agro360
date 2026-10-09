@@ -11,7 +11,7 @@ namespace Agro360.IntegrationTests;
 /// Varredura de reservas de IA abandonadas sobre PostgreSQL real: a baixa do saldo reservado usa
 /// exatamente o quota_id que originou a reserva (nunca suposição de período), reservas jovens são
 /// execuções em voo (intocáveis), o legado sem vínculo compensa com clamp honesto sem negativo, e a
- /// varredura de um tenant jamais toca o saldo de outro (isolamento RLS + filtro explícito).
+/// varredura de um tenant jamais toca o saldo de outro (isolamento RLS + filtro explícito).
 /// </summary>
 public sealed class AiQuotaCleanupJourneyTests
 {

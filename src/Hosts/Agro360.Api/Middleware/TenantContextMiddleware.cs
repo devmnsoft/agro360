@@ -32,6 +32,7 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
 
         var organizationId = ReadOptionalGuid(context, "X-Organization-ID");
         var farmId = ReadOptionalGuid(context, "X-Farm-ID");
+        string culture;
 
         var connectionFactory = context.RequestServices.GetRequiredService<Agro360.Application.Abstractions.IDbConnectionFactory>();
         await using (var conn = await connectionFactory.OpenConnectionAsync(context.RequestAborted).ConfigureAwait(false))
@@ -467,11 +468,35 @@ public sealed class TenantContextMiddleware(RequestDelegate next)
                 }
             }
 
+            // Cultura de apresentação: header da sessão > preferência do usuário > idioma padrão da organização > pt-BR.
+            // A coluna ativa de platform_languages é a fonte do conjunto habilitado; valor inválido jamais derruba a requisição.
+            var requestedCulture = context.Request.Headers["X-Culture"].FirstOrDefault() ?? string.Empty;
+            var resolvedCulture = await Dapper.SqlMapper.ExecuteScalarAsync<string>(conn, new Dapper.CommandDefinition(
+                """
+                with habilitadas as (
+                    select culture from agro360.platform_languages where active
+                )
+                select coalesce(
+                    (select culture from habilitadas where lower(culture) = lower(@Requested)),
+                    (select culture from habilitadas where lower(culture) = lower(pu.language)),
+                    (select culture from habilitadas where lower(culture) = lower(ts.language)),
+                    t.default_language, 'pt-BR')
+                from agro360.platform_tenants t
+                left join agro360.platform_tenant_settings ts on ts.tenant_id = t.id
+                left join agro360.platform_user_preferences pu on pu.tenant_id = t.id and pu.user_id = @UserId
+                where t.id = @TenantId
+                """,
+                new { Requested = requestedCulture, TenantId = tenantId, UserId = userId },
+                transaction: tx,
+                cancellationToken: context.RequestAborted)).ConfigureAwait(false);
+
             await tx.CommitAsync(context.RequestAborted).ConfigureAwait(false);
+
+            culture = string.IsNullOrWhiteSpace(resolvedCulture) ? "pt-BR" : resolvedCulture;
         }
 
         var timeZone = context.Request.Headers["X-Timezone"].FirstOrDefault() ?? "America/Belem";
-        tenantContext.SetScope(new TenantScope(tenantId, userId, organizationId, farmId, timeZone));
+        tenantContext.SetScope(new TenantScope(tenantId, userId, organizationId, farmId, timeZone, culture));
 
         try
         {

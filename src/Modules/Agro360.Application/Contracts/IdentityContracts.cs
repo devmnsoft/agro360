@@ -23,7 +23,8 @@ public sealed record AuthenticationResult(
     string RefreshToken,
     DateTimeOffset ExpiresAt,
     IReadOnlyCollection<string> Permissions,
-    IReadOnlyCollection<string> Roles);
+    IReadOnlyCollection<string> Roles,
+    string Language = "pt-BR");
 
 public sealed record SessionValidationResult(
     bool IsValid,
@@ -34,7 +35,8 @@ public sealed record SessionValidationResult(
     IReadOnlyCollection<string>? Roles = null,
     IReadOnlyCollection<string>? Permissions = null,
     string? ErrorCode = null,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null,
+    string? Language = null);
 
 public interface IIdentityService
 {
@@ -47,5 +49,9 @@ public interface IIdentityService
     Task LogoutAsync(RefreshTokenCommand command, CancellationToken cancellationToken);
 
     Task<SessionValidationResult> ValidateSessionAsync(System.Security.Claims.ClaimsPrincipal principal, CancellationToken cancellationToken);
+
+    Task<string> GetCulturePreferenceAsync(Guid tenantId, Guid userId, CancellationToken cancellationToken);
+
+    Task<string> ChangeCulturePreferenceAsync(Guid tenantId, Guid userId, string language, CancellationToken cancellationToken);
 }
 

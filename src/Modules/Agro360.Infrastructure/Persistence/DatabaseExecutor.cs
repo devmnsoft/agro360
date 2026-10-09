@@ -34,9 +34,10 @@ public sealed partial class DatabaseExecutor(
         CancellationToken cancellationToken) =>
         ExecuteTransactionAsync(tenantId, "tenant-transaction", async (connection, transaction) =>
         {
+            // app.culture é apenas apresentação (relatórios/documentos); idioma nunca altera contrato, moeda nem estado do negócio.
             await connection.ExecuteAsync(new CommandDefinition(
-                "select set_config('app.tenant_id', @TenantId, true);",
-                new { TenantId = tenantId.ToString() },
+                "select set_config('app.tenant_id', @TenantId, true), set_config('app.culture', @Culture, true);",
+                new { TenantId = tenantId.ToString(), Culture = tenantContext.IsAvailable ? tenantContext.Language : "pt-BR" },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
