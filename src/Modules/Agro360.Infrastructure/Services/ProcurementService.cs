@@ -274,6 +274,168 @@ public sealed class ProcurementService(
         return decisionId;
     });
     public Task<IReadOnlyList<dynamic>> PendingOrderItemsAsync(Guid orderId, CancellationToken ct) => db.InTenantTransactionAsync<IReadOnlyList<dynamic>>(async (c, t) => (await c.QueryAsync(new CommandDefinition($"select oi.id,c.name,oi.unit,oi.quantity,oi.received_quantity,oi.quantity-oi.received_quantity pending_quantity,c.requires_lot,c.requires_expiry,c.requires_inspection,c.item_type,c.related_product_id from agro360.procurement_purchase_order_items oi join agro360.procurement_item_catalog c on c.tenant_id=oi.tenant_id and c.id=oi.catalog_item_id join agro360.procurement_purchase_orders o on o.tenant_id=oi.tenant_id and o.id=oi.purchase_order_id where oi.tenant_id=@TenantId and oi.purchase_order_id=@OrderId {OperationalScopeSql("o")} and oi.received_quantity<oi.quantity order by c.name", ScopeParams(new { OrderId = orderId }), t, cancellationToken: ct))).AsList(), ct);
+    public Task<IReadOnlyList<dynamic>> ReturnableItemsAsync(Guid receiptId, CancellationToken ct) => db.InTenantTransactionAsync<IReadOnlyList<dynamic>>(async (c, t) =>
+    {
+        var status = await c.ExecuteScalarAsync<string?>(new CommandDefinition($"select r.status from agro360.procurement_receipts r join agro360.procurement_purchase_orders o on o.tenant_id=r.tenant_id and o.id=r.purchase_order_id where r.tenant_id=@TenantId and r.id=@ReceiptId and r.deleted_at is null {OperationalScopeSql("o")}", ScopeParams(new { ReceiptId = receiptId }), t, cancellationToken: ct)) ?? throw new NotFoundException("Recebimento", receiptId);
+        if (status is not ("PARTIAL" or "RECEIVED" or "DIVERGENT")) throw new ConflictException("Somente recebimentos concluídos ou divergentes admitem devolução.");
+        return (await c.QueryAsync(new CommandDefinition("""
+            select ri.id,c.name,c.item_type,oi.unit,oi.unit_price,ri.quantity,ri.quality_status,ri.supplier_lot,ri.expires_on,
+                   coalesce(q.released_quantity,case when ri.quality_status='NOT_REQUIRED' then ri.quantity else 0 end) accepted_quantity,
+                   coalesce((select sum(sri.quantity) from agro360.procurement_supplier_return_items sri
+                       join agro360.procurement_supplier_returns sr on sr.tenant_id=sri.tenant_id and sr.id=sri.supplier_return_id
+                       where sri.tenant_id=ri.tenant_id and sri.receipt_item_id=ri.id and sri.deleted_at is null
+                         and sr.status in('PENDING_APPROVAL','APPROVED') and sr.deleted_at is null),0) returned_quantity
+              from agro360.procurement_receipt_items ri
+              join agro360.procurement_purchase_order_items oi on oi.tenant_id=ri.tenant_id and oi.id=ri.purchase_order_item_id
+              join agro360.procurement_item_catalog c on c.tenant_id=oi.tenant_id and c.id=oi.catalog_item_id
+              left join agro360.procurement_receipt_quarantine q on q.tenant_id=ri.tenant_id and q.receipt_item_id=ri.id
+             where ri.tenant_id=@TenantId and ri.receipt_id=@ReceiptId and ri.deleted_at is null
+             order by c.name,ri.supplier_lot
+            """, new { tenant.TenantId, ReceiptId = receiptId }, t, cancellationToken: ct))).AsList();
+    }, ct);
+    public async Task<Guid> CreateSupplierReturnAsync(Guid receiptId, SupplierReturnCommand x, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(x.Reason) || x.Reason.Trim().Length < 5) throw new DomainException("A devolução exige motivo com pelo menos 5 caracteres.", "procurement.supplier_return.reason_required");
+        if (x.Items.Count == 0) throw new DomainException("Informe ao menos um item devolvido.", "procurement.supplier_return.items_required");
+        if (x.Items.Any(i => i.Quantity <= 0)) throw new DomainException("As quantidades devolvidas devem ser positivas.", "procurement.supplier_return.quantity_invalid");
+        if (x.Items.GroupBy(i => i.ReceiptItemId).Any(g => g.Count() > 1)) throw new DomainException("Um mesmo item do recebimento não pode aparecer em duas linhas da devolução.", "procurement.supplier_return.duplicate_line");
+        if (string.IsNullOrWhiteSpace(x.IdempotencyKey) || x.IdempotencyKey.Trim().Length is < 16 or > 100) throw new DomainException("A chave de idempotência da devolução é obrigatória.", "procurement.supplier_return.identity_required");
+        var key = x.IdempotencyKey.Trim();
+        var fingerprint = SupplierReturnFingerprint(receiptId, x);
+        return await db.InTenantTransactionAsync(async (c, t) =>
+        {
+            await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@Key,0))", new { Key = $"supplier-return:{tenant.TenantId:N}:{key}" }, t, cancellationToken: ct));
+            var replay = await c.QuerySingleOrDefaultAsync<SupplierReturnReplayRow>(new CommandDefinition("select id,request_fingerprint RequestFingerprint from agro360.procurement_supplier_returns where tenant_id=@TenantId and idempotency_key=@Key", new { tenant.TenantId, Key = key }, t, cancellationToken: ct));
+            if (replay is not null)
+            {
+                if (!string.Equals(replay.RequestFingerprint, fingerprint, StringComparison.Ordinal)) throw new ConflictException("A chave de idempotência já foi utilizada com outra devolução.");
+                return replay.Id;
+            }
+            var receipt = await c.QuerySingleOrDefaultAsync<ReturnReceiptRow>(new CommandDefinition($"select r.id,r.status,o.id OrderId from agro360.procurement_receipts r join agro360.procurement_purchase_orders o on o.tenant_id=r.tenant_id and o.id=r.purchase_order_id where r.tenant_id=@TenantId and r.id=@ReceiptId and r.deleted_at is null {OperationalScopeSql("o")} for update of r", ScopeParams(new { ReceiptId = receiptId }), t, cancellationToken: ct)) ?? throw new NotFoundException("Recebimento", receiptId);
+            if (receipt.Status is not ("PARTIAL" or "RECEIVED" or "DIVERGENT")) throw new ConflictException("Somente recebimentos concluídos ou divergentes admitem devolução.");
+            var itemIds = x.Items.Select(i => i.ReceiptItemId).ToArray();
+            var rows = (await c.QueryAsync<ReturnItemContextRow>(new CommandDefinition("""
+                select ri.id,oi.id OrderItemId,oi.unit,oi.unit_price UnitCost,coalesce(q.warehouse_id,r.warehouse_id) WarehouseId,
+                       coalesce(q.released_quantity,case when ri.quality_status='NOT_REQUIRED' then ri.quantity else 0 end) AcceptedQuantity,
+                       c.item_type ItemType,c.related_product_id ProductId,ri.supplier_lot Lot,ri.expires_on ExpiresOn,
+                       coalesce((select sum(sri.quantity) from agro360.procurement_supplier_return_items sri
+                           join agro360.procurement_supplier_returns sr on sr.tenant_id=sri.tenant_id and sr.id=sri.supplier_return_id
+                           where sri.tenant_id=ri.tenant_id and sri.receipt_item_id=ri.id and sri.deleted_at is null
+                             and sr.status in('PENDING_APPROVAL','APPROVED') and sr.deleted_at is null),0) AlreadyClaimed
+                  from agro360.procurement_receipt_items ri
+                  join agro360.procurement_receipts r on r.tenant_id=ri.tenant_id and r.id=ri.receipt_id
+                  join agro360.procurement_purchase_order_items oi on oi.tenant_id=ri.tenant_id and oi.id=ri.purchase_order_item_id
+                  join agro360.procurement_item_catalog c on c.tenant_id=oi.tenant_id and c.id=oi.catalog_item_id
+                  left join agro360.procurement_receipt_quarantine q on q.tenant_id=ri.tenant_id and q.receipt_item_id=ri.id
+                 where ri.tenant_id=@TenantId and ri.receipt_id=@ReceiptId and ri.id=any(@ItemIds) and ri.deleted_at is null
+                 for update of ri, oi
+                """, new { tenant.TenantId, ReceiptId = receiptId, ItemIds = itemIds }, t, cancellationToken: ct))).ToDictionary(r => r.Id);
+            if (rows.Count != itemIds.Length) throw new DomainException("Um ou mais itens não pertencem ao recebimento informado.", "procurement.supplier_return.item_invalid");
+            foreach (var item in x.Items)
+            {
+                var row = rows[item.ReceiptItemId];
+                if (row.ItemType != "SERVICE" && (row.ProductId is null || row.WarehouseId is null)) throw new ConflictException("Item de estoque sem produto ou depósito de origem; regularize o recebimento antes da devolução.");
+                // Saldo elegível = aceito no estoque após a qualidade, menos devoluções já registradas (pendentes ou aprovadas): impede contar a mesma saída duas vezes.
+                var available = row.AcceptedQuantity - row.AlreadyClaimed;
+                if (item.Quantity > available) throw new ConflictException($"A devolução excede o saldo aceito e ainda não devolvido da linha ({Math.Max(available, 0):0.####} {row.Unit}).");
+            }
+            var id = Guid.CreateVersion7();
+            var number = await Number(c, t, "DEV", ct);
+            await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_supplier_returns(id,tenant_id,number,purchase_order_id,receipt_id,warehouse_id,status,reason,idempotency_key,request_fingerprint,created_by,updated_by) values(@Id,@TenantId,@Number,@OrderId,@ReceiptId,@WarehouseId,'PENDING_APPROVAL',@Reason,@Key,@Fingerprint,@UserId,@UserId)", new { Id = id, tenant.TenantId, Number = number, OrderId = receipt.OrderId, ReceiptId = receiptId, WarehouseId = receipt.WarehouseId, Reason = x.Reason.Trim(), Key = key, Fingerprint = fingerprint, tenant.UserId }, t, cancellationToken: ct));
+            foreach (var item in x.Items)
+            {
+                var row = rows[item.ReceiptItemId];
+                await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_supplier_return_items(id,tenant_id,supplier_return_id,receipt_item_id,purchase_order_item_id,product_id,quantity,unit,unit_cost,lot_number,expires_on,created_by,updated_by) values(@Id,@TenantId,@ReturnId,@ReceiptItemId,@OrderItemId,@ProductId,@Quantity,@Unit,@UnitCost,@Lot,@ExpiresOn,@UserId,@UserId)", new { Id = Guid.CreateVersion7(), tenant.TenantId, ReturnId = id, ReceiptItemId = row.Id, row.OrderItemId, row.ProductId, item.Quantity, row.Unit, row.UnitCost, row.Lot, row.ExpiresOn, tenant.UserId }, t, cancellationToken: ct));
+            }
+            await Audit(c, t, "SUPPLIER_RETURN", id, "REGISTERED", new { ReceiptId = receiptId, Number = number, Items = x.Items.Select(i => new { i.ReceiptItemId, i.Quantity }).ToArray() }, ct);
+            return id;
+        }, ct);
+    }
+    public Task DecideSupplierReturnAsync(Guid id, SupplierReturnDecisionCommand x, CancellationToken ct) => Tx(async (c, t) =>
+    {
+        var ret = await c.QuerySingleOrDefaultAsync<ReturnDecisionRow>(new CommandDefinition($"select sr.number,sr.status,sr.created_by CreatedBy,sr.purchase_order_id OrderId,o.supplier_id SupplierId from agro360.procurement_supplier_returns sr join agro360.procurement_purchase_orders o on o.tenant_id=sr.tenant_id and o.id=sr.purchase_order_id where sr.tenant_id=@TenantId and sr.id=@Id and sr.deleted_at is null {OperationalScopeSql("o")} for update of sr", ScopeParams(new { Id = id }), t, cancellationToken: ct)) ?? throw new NotFoundException("Devolução", id);
+        if (ret.Status != "PENDING_APPROVAL") throw new ConflictException("A devolução já foi decidida.");
+        if (ret.CreatedBy == tenant.UserId) throw new ConflictException("Quem registrou a devolução não pode decidi-la (segregação de funções).");
+        if (!x.Approve && string.IsNullOrWhiteSpace(x.Reason)) throw new DomainException("A reprovação da devolução exige motivo.", "procurement.supplier_return.rejection_reason_required");
+        if (!x.Approve)
+        {
+            await c.ExecuteAsync(new CommandDefinition("update agro360.procurement_supplier_returns set status='REJECTED',decided_at=now(),decided_by=@UserId,decision_reason=@Reason,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, tenant.UserId, Id = id, Reason = x.Reason!.Trim() }, t, cancellationToken: ct));
+            await Audit(c, t, "SUPPLIER_RETURN", id, "REJECTED", new { Reason = x.Reason }, ct);
+            return;
+        }
+        var items = (await c.QueryAsync<ReturnApprovedItemRow>(new CommandDefinition("""
+            select i.id,i.quantity,i.unit_cost UnitCost,i.product_id ProductId,i.lot_number Lot,i.expires_on ExpiresOn,
+                   oi.id OrderItemId,c.item_type ItemType,c.name,coalesce(q.warehouse_id,r.warehouse_id) WarehouseId
+              from agro360.procurement_supplier_return_items i
+              join agro360.procurement_receipt_items ri on ri.tenant_id=i.tenant_id and ri.id=i.receipt_item_id
+              join agro360.procurement_receipts r on r.tenant_id=ri.tenant_id and r.id=ri.receipt_id
+              join agro360.procurement_purchase_order_items oi on oi.tenant_id=i.tenant_id and oi.id=i.purchase_order_item_id
+              join agro360.procurement_item_catalog c on c.tenant_id=oi.tenant_id and c.id=oi.catalog_item_id
+              left join agro360.procurement_receipt_quarantine q on q.tenant_id=ri.tenant_id and q.receipt_item_id=ri.id
+             where i.tenant_id=@TenantId and i.supplier_return_id=@ReturnId and i.deleted_at is null
+             for update of i, oi
+            """, new { tenant.TenantId, ReturnId = id }, t, cancellationToken: ct))).ToList();
+        var credit = 0m;
+        foreach (var item in items)
+        {
+            if (item.ItemType != "SERVICE")
+            {
+                if (item.ProductId is null || item.WarehouseId is null) throw new ConflictException($"O item '{item.Name}' está sem produto ou depósito de origem; a devolução não pôde ser lançada.");
+                try
+                {
+                    // Saída negativa no ledger canônico: mesma função que integra recebimento, consumo e ajuste; a devolução não é consumo nem ajuste.
+                    var movementId = await c.ExecuteScalarAsync<Guid>(new CommandDefinition("select agro360.inventory_apply_stock_movement(@TenantId,@WarehouseId,@ProductId,@Quantity,@UnitCost,'RETURN_TO_SUPPLIER',@ReferenceId,@Lot,@ExpiresOn,@UserId,@Reason)", new { tenant.TenantId, item.WarehouseId, item.ProductId, Quantity = -item.Quantity, item.UnitCost, ReferenceId = item.Id, item.Lot, item.ExpiresOn, tenant.UserId, Reason = $"Devolução {ret.Number}" }, t, cancellationToken: ct));
+                    await c.ExecuteAsync(new CommandDefinition("update agro360.procurement_supplier_return_items set stock_movement_id=@Movement,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { Movement = movementId, tenant.TenantId, tenant.UserId, Id = item.Id }, t, cancellationToken: ct));
+                }
+                catch (PostgresException ex) when (ex.MessageText is "insufficient stock" or "insufficient stock in lot")
+                {
+                    throw new ConflictException($"Saldo insuficiente em estoque para devolver '{item.Name}' no depósito de origem.");
+                }
+                catch (PostgresException ex) when (ex.MessageText == "movement would consume reserved stock")
+                {
+                    throw new ConflictException($"O saldo de '{item.Name}' está reservado; liquide as reservas antes de aprovar a devolução.");
+                }
+                catch (PostgresException ex) when (ex.MessageText == "physical count blocks movements in this scope")
+                {
+                    throw new ConflictException($"Uma contagem física bloqueia movimentos no depósito de origem para o item '{item.Name}'.");
+                }
+            }
+            var reverted = await c.ExecuteAsync(new CommandDefinition("update agro360.procurement_purchase_order_items set received_quantity=received_quantity-@Quantity,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id and received_quantity>=@Quantity", new { Quantity = item.Quantity, tenant.TenantId, tenant.UserId, Id = item.OrderItemId }, t, cancellationToken: ct));
+            if (reverted != 1) throw new ConflictException($"A quantidade recebida do pedido mudou para o item '{item.Name}'; revalide a devolução.");
+            credit += item.Quantity * item.UnitCost;
+        }
+        await c.ExecuteAsync(new CommandDefinition("update agro360.procurement_supplier_returns set status='APPROVED',decided_at=now(),decided_by=@UserId,decision_reason=@Reason,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, tenant.UserId, Id = id, x.Reason }, t, cancellationToken: ct));
+        // Espelho do status do pedido: o que estava plenamente recebido volta a pendente quando a devolução reabre saldo.
+        await c.ExecuteAsync(new CommandDefinition("update agro360.procurement_purchase_orders set status='PARTIALLY_RECEIVED',updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@OrderId and status='RECEIVED' and exists(select 1 from agro360.procurement_purchase_order_items oi where oi.tenant_id=procurement_purchase_orders.tenant_id and oi.purchase_order_id=procurement_purchase_orders.id and oi.deleted_at is null and oi.received_quantity<oi.quantity)", new { tenant.TenantId, tenant.UserId, ret.OrderId }, t, cancellationToken: ct));
+        var total = decimal.Round(credit, 2, MidpointRounding.AwayFromZero);
+        if (total > 0)
+        {
+            var creditNumber = await Number(c, t, "CRED", ct);
+            // Crédito fica OPEN: nenhuma compensação automática de títulos; o financeiro decide a aplicação.
+            await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_supplier_credits(id,tenant_id,number,supplier_return_id,supplier_id,purchase_order_id,amount,status,created_by,updated_by) values(gen_random_uuid(),@TenantId,@Number,@ReturnId,@SupplierId,@OrderId,@Amount,'OPEN',@UserId,@UserId)", new { tenant.TenantId, Number = creditNumber, ReturnId = id, ret.SupplierId, OrderId = ret.OrderId, Amount = total, tenant.UserId }, t, cancellationToken: ct));
+        }
+        await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_purchase_order_events(id,tenant_id,purchase_order_id,event_type,comment,metadata,created_by,updated_by) values(gen_random_uuid(),@TenantId,@OrderId,'SUPPLIER_RETURN_APPROVED',@Comment,jsonb_build_object('supplierReturnId',@Id::text,'creditAmount',@Total),@UserId,@UserId)", new { tenant.TenantId, ret.OrderId, Comment = $"Devolução {ret.Number} aprovada (crédito R$ {total:0.00}).", Id = id, Total = total, tenant.UserId }, t, cancellationToken: ct));
+        await Audit(c, t, "SUPPLIER_RETURN", id, "APPROVED", new { Items = items.Select(i => new { i.Id, i.Quantity }).ToArray(), Total = total }, ct);
+    });
+    public Task<IReadOnlyList<dynamic>> SupplierReturnsAsync(ProcurementQuery q, CancellationToken ct) =>
+        List($"""select sr.id,sr.number,sr.status,sr.reason,sr.created_at,sr.decided_at,sr.decision_reason,s.legal_name supplier_name,r.number receipt_number,o.number order_number,(select coalesce(sum(sri.quantity*sri.unit_cost),0) from agro360.procurement_supplier_return_items sri where sri.tenant_id=sr.tenant_id and sri.supplier_return_id=sr.id and sri.deleted_at is null) total from agro360.procurement_supplier_returns sr join agro360.procurement_purchase_orders o on o.tenant_id=sr.tenant_id and o.id=sr.purchase_order_id join agro360.procurement_suppliers s on s.tenant_id=o.tenant_id and s.id=o.supplier_id join agro360.procurement_receipts r on r.tenant_id=sr.tenant_id and r.id=sr.receipt_id where sr.tenant_id=@TenantId and sr.deleted_at is null {OperationalScopeSql("o")} and (@Search is null or sr.number ilike '%'||@Search||'%' or s.legal_name ilike '%'||@Search||'%') and (@Status is null or sr.status=@Status) order by sr.created_at desc limit @Take offset @Skip""", q, ct);
+    public Task<dynamic> SupplierReturnAsync(Guid id, CancellationToken ct) => Tx<dynamic>(async (c, t) =>
+    {
+        var header = await c.QuerySingleOrDefaultAsync(new CommandDefinition($"select sr.id,sr.number,sr.status,sr.reason,sr.created_at,sr.decided_at,sr.decision_reason,sr.receipt_id,sr.purchase_order_id,o.number order_number,s.legal_name supplier_name,r.number receipt_number,c.id credit_id,c.number credit_number,c.amount credit_amount,c.status credit_status from agro360.procurement_supplier_returns sr join agro360.procurement_purchase_orders o on o.tenant_id=sr.tenant_id and o.id=sr.purchase_order_id join agro360.procurement_suppliers s on s.tenant_id=o.tenant_id and s.id=o.supplier_id join agro360.procurement_receipts r on r.tenant_id=sr.tenant_id and r.id=sr.receipt_id left join agro360.procurement_supplier_credits c on c.tenant_id=sr.tenant_id and c.supplier_return_id=sr.id where sr.tenant_id=@TenantId and sr.id=@Id and sr.deleted_at is null {OperationalScopeSql("o")}", ScopeParams(new { Id = id }), t, cancellationToken: ct)) ?? throw new NotFoundException("Devolução", id);
+        var items = (await c.QueryAsync(new CommandDefinition("""select i.id,i.quantity,i.unit,i.unit_cost,i.lot_number,i.expires_on,i.stock_movement_id,c.name,c.item_type from agro360.procurement_supplier_return_items i join agro360.procurement_purchase_order_items oi on oi.tenant_id=i.tenant_id and oi.id=i.purchase_order_item_id join agro360.procurement_item_catalog c on c.tenant_id=oi.tenant_id and c.id=oi.catalog_item_id where i.tenant_id=@TenantId and i.supplier_return_id=@Id and i.deleted_at is null order by c.name""", new { tenant.TenantId, Id = id }, t, cancellationToken: ct))).AsList();
+        return new { header, items };
+    });
+    private static string SupplierReturnFingerprint(Guid receiptId, SupplierReturnCommand command)
+    {
+        var canonical = string.Join("|", receiptId.ToString("N"), command.Reason.Trim(),
+            string.Join(";", command.Items.OrderBy(item => item.ReceiptItemId).Select(item => string.Join(",", item.ReceiptItemId.ToString("N"), item.Quantity.ToString(CultureInfo.InvariantCulture)))));
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+    private sealed class SupplierReturnReplayRow { public Guid Id { get; init; } public string? RequestFingerprint { get; init; } }
+    private sealed class ReturnReceiptRow { public Guid Id { get; init; } public string Status { get; init; } = string.Empty; public Guid? WarehouseId { get; init; } public Guid OrderId { get; init; } }
+    private sealed class ReturnItemContextRow { public Guid Id { get; init; } public Guid OrderItemId { get; init; } public string Unit { get; init; } = string.Empty; public decimal UnitCost { get; init; } public Guid? WarehouseId { get; init; } public decimal AcceptedQuantity { get; init; } public decimal AlreadyClaimed { get; init; } public string ItemType { get; init; } = string.Empty; public Guid? ProductId { get; init; } public string? Lot { get; init; } public DateOnly? ExpiresOn { get; init; } }
+    private sealed class ReturnDecisionRow { public string Number { get; init; } = string.Empty; public string Status { get; init; } = string.Empty; public Guid CreatedBy { get; init; } public Guid OrderId { get; init; } public Guid SupplierId { get; init; } }
+    private sealed class ReturnApprovedItemRow { public Guid Id { get; init; } public Guid OrderItemId { get; init; } public decimal Quantity { get; init; } public decimal UnitCost { get; init; } public Guid? ProductId { get; init; } public Guid? WarehouseId { get; init; } public string ItemType { get; init; } = string.Empty; public string Name { get; init; } = string.Empty; public string? Lot { get; init; } public DateOnly? ExpiresOn { get; init; } }
     public Task<dynamic> ReceiptOptionsAsync(CancellationToken ct) => db.InTenantTransactionAsync<dynamic>(async (c, t) =>
     {
         using var grid = await c.QueryMultipleAsync(new CommandDefinition("select id,code,name from agro360.inventory_warehouses where tenant_id=@TenantId and deleted_at is null order by name; select id,code,name,type from agro360.finance_chart_of_accounts where tenant_id=@TenantId and active and type in('EXPENSE','COST','LIABILITY') order by code,name; select id,sku,name,base_unit from agro360.inventory_products where tenant_id=@TenantId and deleted_at is null order by name; select id,coalesce(code,name) code,name from agro360.geo_farms f where f.tenant_id=@TenantId and f.deleted_at is null " + FarmScopeSql("f") + " order by name", ScopeParams(), t, cancellationToken: ct));

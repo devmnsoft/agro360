@@ -3,12 +3,37 @@
 
     const apiBase = document.querySelector('meta[name="api-base"]')?.content?.replace(/\/$/, "") ?? "http://localhost:8081";
     const apiUnavailableMessage = "A API do Agro360 está indisponível. Tente novamente em instantes ou contate o suporte.";
-    const storageKeys = { session: "agro360.session", theme: "agro360.theme" };
+    const storageKeys = { session: "agro360.session", theme: "agro360.theme", culture: "agro360.culture" };
     const state = { session: readJson(storageKeys.session), searchTimer: 0, selectedSearch: -1, refreshPromise: null, refreshStopped: false, activeIncidents: new Set() };
     window.agro360Session = state.session ?? null;
-    const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
-    const number = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
-    const relativeTime = new Intl.RelativeTimeFormat("pt-BR", { numeric: "auto" });
+    // Idioma da interface na mesma convenção de forms.js/saas.js (localStorage agro360.culture).
+    // O idioma só muda apresentação: permissões, plano, moeda contratual (BRL) e estados persistidos
+    // são independentes da cultura; as formatações abaixo acompanham o idioma e nunca o definem.
+    const supportedCultures = ["pt-BR", "en-US", "es-ES"];
+    const currentCulture = () => {
+        const stored = localStorage.getItem(storageKeys.culture);
+        return supportedCultures.includes(stored) ? stored : "pt-BR";
+    };
+    let money, number, relativeTime;
+    function applyCulture(locale) {
+        const culture = supportedCultures.includes(locale) ? locale : "pt-BR";
+        localStorage.setItem(storageKeys.culture, culture);
+        document.documentElement.lang = culture;
+        money = new Intl.NumberFormat(culture, { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+        number = new Intl.NumberFormat(culture, { maximumFractionDigits: 1 });
+        relativeTime = new Intl.RelativeTimeFormat(culture, { numeric: "auto" });
+        document.querySelectorAll("[data-culture-select]").forEach(select => { select.value = culture; });
+        window.dispatchEvent(new CustomEvent("agro360:culture", { detail: culture }));
+        return culture;
+    }
+    function setCulture(locale) {
+        const culture = applyCulture(locale);
+        // Persiste a preferência no backend (queda silenciosa para pt-BR no servidor em caso de falha).
+        if (state.session?.accessToken) {
+            api("/api/v1/auth/preferences/language", { method: "PUT", body: JSON.stringify({ language: culture }) }).catch(() => { });
+        }
+    }
+    applyCulture(currentCulture());
 
     const element = id => document.getElementById(id);
     const loginModal = element("login-modal");
@@ -30,6 +55,9 @@
             sessionStorage.setItem("agro360.accessToken", session.accessToken);
             sessionStorage.setItem("agro360.access_token", session.accessToken);
             sessionStorage.setItem("agro360.token", session.accessToken);
+            // Login/refresh devolvem o idioma resolvido pelo servidor (preferência > tenant > pt-BR):
+            // é a apresentação canônica da sessão, aplicada sem novo PUT.
+            if (session.language) applyCulture(session.language);
             state.refreshStopped = false;
         } else {
             localStorage.removeItem(storageKeys.session);
@@ -183,6 +211,7 @@
         if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
         if (state.session?.accessToken) headers.set("Authorization", `Bearer ${state.session.accessToken}`);
         headers.set("X-Timezone", Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Belem");
+        headers.set("X-Culture", currentCulture());
         try {
             const activeFarm = JSON.parse(localStorage.getItem("agro360.active_farm") || "null");
             if (activeFarm?.id) headers.set("X-Farm-Id", activeFarm.id);
@@ -861,7 +890,8 @@
 
     Object.assign(window, {
         toastSuccess, toastWarning, toastError, toastInfo, confirmDialog, agro360Feedback,
-        agro360Api: api, retrySessionRefresh, agro360SetSession: persistSession, agro360PersistSession: persistSession
+        agro360Api: api, retrySessionRefresh, agro360SetSession: persistSession, agro360PersistSession: persistSession,
+        agro360Culture: currentCulture, agro360SetCulture: setCulture, agro360SupportedCultures: supportedCultures
     });
 
     function setText(id, value) {
@@ -876,7 +906,7 @@
         if (Math.abs(minutes) < 60) return relativeTime.format(minutes, "minute");
         const hours = Math.round(minutes / 60);
         if (Math.abs(hours) < 24) return relativeTime.format(hours, "hour");
-        return new Date(value).toLocaleDateString("pt-BR");
+        return new Date(value).toLocaleDateString(document.documentElement.lang || "pt-BR");
     }
 
     function init() {
@@ -893,6 +923,10 @@
         element("search-trigger").addEventListener("click", openPalette);
         element("global-search").addEventListener("input", scheduleSearch);
         element("theme-button").addEventListener("click", toggleTheme);
+        document.querySelectorAll("[data-culture-select]").forEach(select => {
+            select.value = currentCulture();
+            select.addEventListener("change", () => setCulture(select.value));
+        });
         element("menu-button").addEventListener("click", () => document.body.classList.toggle("menu-open"));
         element("refresh-dashboard")?.addEventListener("click", loadDashboard);
         document.querySelectorAll("[data-feature]").forEach(button => button.addEventListener("click", featureMessage));

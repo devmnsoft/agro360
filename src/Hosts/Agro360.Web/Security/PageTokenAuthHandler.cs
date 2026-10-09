@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -51,7 +52,7 @@ public sealed class PageTokenAuthHandler : AuthenticationHandler<PageTokenAuthOp
 {
     public const string SchemeName = "Agro360.Web.Page";
     public const string CookieName = "agro360.page_token";
-    public const string Purpose = "Agro360.Web.PageToken.v1";
+    public const string Purpose = "Agro360.Web.PageToken.v2";
     private static readonly TimeSpan ClockSkew = TimeSpan.FromSeconds(30);
     private static readonly Action<ILogger, int, string?, Exception?> LogSessionValidationRejected =
         LoggerMessage.Define<int, string?>(
@@ -71,6 +72,52 @@ public sealed class PageTokenAuthHandler : AuthenticationHandler<PageTokenAuthOp
         _httpClientFactory = httpClientFactory;
     }
 
+    // O accessToken pode passar de 4 KB quando o perfil concentra muitas permissões; como o cookie
+    // protege o valor com DataProtection (inflação de ~1,3x), o texto puro estouraria o limite de
+    // 4096 bytes do RFC 6265 e o navegador descartaria o cookie silenciosamente. Por isso o token é
+    // comprimido (deflate) antes de ser protegido no cookie da página.
+    public static string ProtectCookie(IDataProtector protector, string accessToken) =>
+        Convert.ToBase64String(protector.Protect(Compress(Encoding.UTF8.GetBytes(accessToken))));
+
+    public static string? UnprotectCookie(IDataProtector protector, string cookie)
+    {
+        try
+        {
+            return Encoding.UTF8.GetString(Decompress(protector.Unprotect(Convert.FromBase64String(cookie))));
+        }
+        catch (CryptographicException)
+        {
+            return null;
+        }
+        catch (InvalidDataException)
+        {
+            return null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
+
+    private static byte[] Compress(byte[] payload)
+    {
+        using var output = new MemoryStream();
+        using (var deflate = new DeflateStream(output, CompressionLevel.SmallestSize, leaveOpen: true))
+        {
+            deflate.Write(payload, 0, payload.Length);
+        }
+        return output.ToArray();
+    }
+
+    private static byte[] Decompress(byte[] payload)
+    {
+        using var input = new MemoryStream(payload);
+        using var deflate = new DeflateStream(input, CompressionMode.Decompress);
+        using var output = new MemoryStream();
+        deflate.CopyTo(output);
+        return output.ToArray();
+    }
+
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var cookie = Request.Cookies[CookieName];
@@ -79,12 +126,17 @@ public sealed class PageTokenAuthHandler : AuthenticationHandler<PageTokenAuthOp
             return AuthenticateResult.NoResult();
         }
 
-        string rawToken;
+        string? rawToken;
         try
         {
-            rawToken = _protector.Unprotect(cookie);
+            rawToken = UnprotectCookie(_protector, cookie);
         }
         catch (CryptographicException)
+        {
+            return AuthenticateResult.Fail("Credencial da página é inválida.");
+        }
+
+        if (string.IsNullOrEmpty(rawToken))
         {
             return AuthenticateResult.Fail("Credencial da página é inválida.");
         }

@@ -451,7 +451,9 @@ public sealed class IdentityService(
                 permissions.ToArray(),
                 cancellationToken).ConfigureAwait(false);
 
-            return new SessionValidationResult(true, tenantId, userId, user.Name, user.Email, effectiveRoles, effectivePermissions);
+            // A revalidação de sessão devolve a cultura efetiva para o cliente reaplicar o idioma preferido em nova sessão.
+            var sessionLanguage = await ResolveLanguageAsync(connection, transaction, tenantId, userId, cancellationToken).ConfigureAwait(false);
+            return new SessionValidationResult(true, tenantId, userId, user.Name, user.Email, effectiveRoles, effectivePermissions, Language: sessionLanguage);
         }, cancellationToken).ConfigureAwait(false);
     }
 
@@ -534,6 +536,10 @@ public sealed class IdentityService(
             transaction,
             cancellationToken: cancellationToken)).ConfigureAwait(false);
 
+        // Mesma cadeia de cultura do TenantContextMiddleware (preferência do usuário > idioma do tenant > pt-BR);
+        // o casing canônico vem de platform_languages.active e um valor inválido nunca derruba o login.
+        var language = await ResolveLanguageAsync(connection, transaction, user.TenantId, user.Id, cancellationToken).ConfigureAwait(false);
+
         return new AuthenticationResult(
             user.TenantId,
             user.Id,
@@ -543,8 +549,61 @@ public sealed class IdentityService(
             pair.RefreshToken,
             pair.ExpiresAt,
             effectivePermissions,
-            effectiveRoles);
+            effectiveRoles,
+            Language: language);
     }
+
+    private static async Task<string> ResolveLanguageAsync(
+        Npgsql.NpgsqlConnection connection,
+        Npgsql.NpgsqlTransaction transaction,
+        Guid tenantId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var resolved = await connection.ExecuteScalarAsync<string?>(new CommandDefinition(
+            """
+            with habilitadas as (
+                select culture from agro360.platform_languages where active
+            )
+            select coalesce(
+                (select culture from habilitadas where lower(culture) = lower(pu.language)),
+                (select culture from habilitadas where lower(culture) = lower(ts.language)),
+                t.default_language, 'pt-BR')
+            from agro360.platform_tenants t
+            left join agro360.platform_tenant_settings ts on ts.tenant_id = t.id
+            left join agro360.platform_user_preferences pu on pu.tenant_id = t.id and pu.user_id = @UserId
+            where t.id = @TenantId
+            """,
+            new { TenantId = tenantId, UserId = userId },
+            transaction,
+            cancellationToken: cancellationToken)).ConfigureAwait(false);
+        return string.IsNullOrWhiteSpace(resolved) ? "pt-BR" : resolved;
+    }
+
+    public Task<string> GetCulturePreferenceAsync(Guid tenantId, Guid userId, CancellationToken cancellationToken) =>
+        database.InTenantTransactionAsync(tenantId, (connection, transaction) =>
+            ResolveLanguageAsync(connection, transaction, tenantId, userId, cancellationToken), cancellationToken);
+
+    public Task<string> ChangeCulturePreferenceAsync(Guid tenantId, Guid userId, string language, CancellationToken cancellationToken) =>
+        database.InTenantTransactionAsync(tenantId, async (connection, transaction) =>
+        {
+            var enabled = (await connection.QueryAsync<string>(new CommandDefinition(
+                "select culture from agro360.platform_languages where active",
+                transaction: transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false)).ToArray();
+            var resolved = SaasGovernanceRules.ResolveCulture(string.IsNullOrWhiteSpace(language) ? null : language.Trim(), enabled);
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                insert into agro360.platform_user_preferences (tenant_id, user_id, language, time_zone, created_at, updated_at, created_by, updated_by)
+                values (@TenantId, @UserId, @Language, coalesce((select s.time_zone from agro360.platform_tenant_settings s where s.tenant_id = @TenantId), 'America/Sao_Paulo'), now(), now(), @UserId, @UserId)
+                on conflict (tenant_id, user_id) do update
+                set language = excluded.language, updated_at = now(), updated_by = excluded.updated_by;
+                """,
+                new { TenantId = tenantId, UserId = userId, Language = resolved },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return resolved;
+        }, cancellationToken);
 
     private static async Task<(string[] Roles, string[] Permissions)> FilterEffectiveAccessAsync(
         Npgsql.NpgsqlConnection connection,

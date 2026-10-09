@@ -134,7 +134,7 @@ public sealed class SaasGovernanceTests
         Assert.Contains("AllowAnonymousToFolder(\"/Portal\")", program);
         Assert.Contains("public const string SchemeName = \"Agro360.Web.Page\"", handler);
         Assert.Contains("public const string CookieName = \"agro360.page_token\"", handler);
-        Assert.Contains("public const string Purpose = \"Agro360.Web.PageToken.v1\"", handler);
+        Assert.Contains("public const string Purpose = \"Agro360.Web.PageToken.v2\"", handler);
         Assert.Contains("[Authorize(Roles = \"SUPER_ADMIN,PLATFORM_SUPER_ADMIN\")]", platformPage);
         Assert.Contains("data-console=\"global\"", platformView);
         Assert.Contains("Administração Global MNSOFT", platformView);

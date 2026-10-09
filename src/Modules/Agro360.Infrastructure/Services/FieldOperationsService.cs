@@ -246,7 +246,7 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
     {
         var row = await c.QuerySingleOrDefaultAsync<OrderRow>(new CommandDefinition("select id,module,status,created_at CreatedAt,data::text Data,version from agro360.agriculture_records where tenant_id=@TenantId and id=@Id and module='work-orders' and deleted_at is null for update", new { tenant.TenantId, Id = orderId }, t, cancellationToken: cancellationToken));
         if (row is null) throw new NotFoundException("Ordem de campo", orderId); if (row.Version != command.Version) throw new ConflictException("A ordem foi alterada. Recarregue e revise as mudanças antes de concluir.", "agriculture.version_conflict");
-        var issues = await IssuesAsync(c, t, orderId, row, cancellationToken); if (issues.Any(i => i.Severity == "BLOCKER")) throw new ConflictException("Resolva os bloqueios obrigatórios antes de concluir.", "agriculture.review_blocked");
+        var issues = (await IssuesAsync(c, t, orderId, row, cancellationToken)).ToList(); if (issues.Any(i => i.Severity == "BLOCKER")) throw new ConflictException("Resolva os bloqueios obrigatórios antes de concluir.", "agriculture.review_blocked");
 
         // Operational Governance: Block completion if there is still material in team custody
         var pendingCustody = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.field_work_order_materials where tenant_id=@TenantId and work_order_id=@Id and delivered_quantity > (consumed_quantity + returned_quantity + lost_quantity))", new { tenant.TenantId, Id = orderId }, t, cancellationToken: cancellationToken));

@@ -14,6 +14,8 @@ public sealed record LoginCommand(string TenantSlug, string Email, string Passwo
 
 public sealed record RefreshTokenCommand(string RefreshToken);
 
+public sealed record LanguagePreferenceCommand(string Language);
+
 public sealed record AuthenticationResult(
     Guid TenantId,
     Guid UserId,

@@ -80,3 +80,25 @@ PostgreSQL com os serviços em produção (não stubs): recusa sem decisão (zer
 não silencia a guarda, conversão confirmada multiprovecedor com auditoria e saldo integral, rollback
 total com fornecedor bloqueado mais recuperação sem duplicação, concorrência serializada com replay
 idêntico e cancelamento que reabre saldo sem recriação automática.
+
+## Devolução ao fornecedor (migration 133 — versão `11.23.0`)
+
+A devolução de mercadoria ao fornecedor agora é uma jornada própria, separada do recebimento, da
+qualidade, do estoque e do financeiro:
+
+- **Elegibilidade por linha do recebimento**: `COALESCE(quantidade_liberada_pela_inspeção, quantidade_se_inspeção_NÃO_EXIGIDA)` menos a soma das devoluções em `PENDING_APPROVAL`/`APPROVED`. O saldo é calculado no banco e o formulário limita cada entrada a esse saldo; requisição acima do saldo falha com conflito.
+- **Registro ≠ decisão**: quem registra a devolução (`PurchasingReceive`) não pode aprová-la; a decisão é de outro usuário com `PurchasingApprove` (segregação verificada no serviço, conflito explícito). Reprovação exige motivo. Decisão dupla é conflito.
+- **Efeitos da aprovação (uma transação)**: lançamento canônico de saída no ledger via `inventory_apply_stock_movement` com quantidade negativa e `reference_type='RETURN_TO_SUPPLIER'` (referenciando a linha da devolução), decréscimo de `received_quantity` no item do pedido, espelho do pedido `RECEIVED → PARTIALLY_RECEIVED` quando há saldo reaberto e crédito `OPEN` em `procurement_supplier_credits` (prefixo `CRED`). Nada compensa títulos nem paga contas: `finance_payables` não aceita valores negativos, daí a tabela dedicada de créditos. Itens de serviço não geram movimento de estoque, mas revertem o saldo recebido e contam para o crédito.
+- **Idempotência**: criação protegida por advisory lock + fingerprint SHA-256 canônica (replay devolve o mesmo id; mesma chave com conteúdo diferente gera conflito). A decisão é guardada pela transição de status.
+- **Números e auditoria**: documentos `DEV-yyyy-nnnnnn`/`CRED-yyyy-nnnnnn` via sequência compartilhada; evento `SUPPLIER_RETURN_APPROVED` no pedido e trilha de auditoria em cada passo.
+- Interface: botão "Devolver itens ao fornecedor" no detalhe de recebimentos `PARTIAL/RECEIVED/DIVERGENT`, seletor com nome+código e saldo por linha, aba "Devoluções ao fornecedor" com filtros, detalhes com crédito aberto e ação de decidir para aprovadores.
+
+### Atualização (133)
+
+1. Aplique `database/migrations/133_supplier_returns.sql` com a role de migração (idempotente; amplia o CHECK `ck_stock_movements_type`, cria as três tabelas com RLS via `agro360.platform_enable_tenant_rls`).
+2. Confirme a versão `11.23.0` em `agro360.platform_schema_versions`.
+3. Instalação limpa usa somente `database/agro360-postgres-full.sql` (já contém o bloco 133 ao final).
+
+### Validação (133)
+
+`tests/Agro360.IntegrationTests/SupplierReturnJourneyTests.cs` executa sobre PostgreSQL real: aprovação com baixa no ledger, vínculo à linha, decréscimo do pedido, espelho `PARTIALLY_RECEIVED`, crédito `OPEN` sem tocar `finance_payables`; e guardas (replay idêntico, chave repetida com conteúdo diferente, excesso de elegibilidade, segregação de funções, reprovação sem motivo, reprovação sem efeitos e decisão dupla).

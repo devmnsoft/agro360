@@ -173,7 +173,7 @@ async Task<IResult> HandlePageTokenSync(HttpContext context)
     }
 
     var protector = context.RequestServices.GetRequiredService<IDataProtectionProvider>().CreateProtector(PageTokenAuthHandler.Purpose);
-    context.Response.Cookies.Append(PageTokenAuthHandler.CookieName, protector.Protect(accessToken), new CookieOptions
+    context.Response.Cookies.Append(PageTokenAuthHandler.CookieName, PageTokenAuthHandler.ProtectCookie(protector, accessToken), new CookieOptions
     {
         HttpOnly = true,
         Path = "/",

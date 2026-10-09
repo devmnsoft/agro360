@@ -85,7 +85,7 @@ public sealed class IdentityController(IIdentityService identityService, IConfig
             return Unauthorized();
         }
 
-        var language = await identityService.ChangeCulturePreferenceAsync(tenantId, userId, command.Language(), cancellationToken).ConfigureAwait(false);
+        var language = await identityService.ChangeCulturePreferenceAsync(tenantId, userId, command.Language, cancellationToken).ConfigureAwait(false);
         return Ok(new { language });
     }
 
@@ -93,6 +93,8 @@ public sealed class IdentityController(IIdentityService identityService, IConfig
     {
         var tenantStr = User.FindFirst("tenant_id")?.Value;
         var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
-        return Guid.TryParse(tenantStr, out tenantId) && Guid.TryParse(sub, out userId);
+        var tenantOk = Guid.TryParse(tenantStr, out tenantId);
+        var userOk = Guid.TryParse(sub, out userId);
+        return tenantOk && userOk;
     }
 }

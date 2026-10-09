@@ -59,6 +59,30 @@ public sealed class WebPageTokenAuthTests
     }
 
     [Fact]
+    public void CookieRoundTripCompressesLargeTokenUnderBrowserLimit()
+    {
+        var protector = new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider()
+            .CreateProtector(PageTokenAuthHandler.Purpose);
+        var token = CreateJwt(SigningKey) + "." + string.Concat(Enumerable.Repeat("inventory.receive.permission.", 200));
+        Assert.True(token.Length > 4096);
+
+        var cookie = PageTokenAuthHandler.ProtectCookie(protector, token);
+
+        Assert.True(cookie.Length < 4096, $"Cookie com {cookie.Length} bytes excede o limite de 4096 do navegador.");
+        Assert.Equal(token, PageTokenAuthHandler.UnprotectCookie(protector, cookie));
+    }
+
+    [Fact]
+    public void UnprotectCookieRejectsGarbageWithoutThrowing()
+    {
+        var protector = new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider()
+            .CreateProtector(PageTokenAuthHandler.Purpose);
+
+        Assert.Null(PageTokenAuthHandler.UnprotectCookie(protector, "not-a-protected-payload"));
+        Assert.Null(PageTokenAuthHandler.UnprotectCookie(protector, Convert.ToBase64String(new byte[] { 1, 2, 3 })));
+    }
+
+    [Fact]
     public void ValidTokenAuthenticatesSuccessfully()
     {
         var token = CreateJwt(SigningKey);
