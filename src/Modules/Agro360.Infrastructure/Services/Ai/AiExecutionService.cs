@@ -25,7 +25,8 @@ public record AiExecutionRecord(
     string TokenConfidence,
     TimeSpan Duration,
     string? ErrorMessage,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    string? ResultPayload = null);
 
 public interface IAiExecutionService
 {
@@ -36,6 +37,7 @@ public interface IAiExecutionService
         int estimatedTokens,
         string? idempotencyKey,
         string? payloadHash = null,
+        Guid? quotaId = null,
         CancellationToken ct = default);
 
     Task CompleteExecutionAsync(
@@ -48,6 +50,7 @@ public interface IAiExecutionService
         string tokenConfidence,
         bool success,
         string? errorMessage,
+        string? resultPayload = null,
         CancellationToken ct = default);
 
     Task ReleaseExecutionAsync(Guid executionId, string reason, CancellationToken ct = default);
@@ -78,6 +81,7 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
         int estimatedTokens,
         string? idempotencyKey,
         string? payloadHash = null,
+        Guid? quotaId = null,
         CancellationToken ct = default)
     {
         return await database.InTenantTransactionAsync(async (conn, tx) =>
@@ -86,10 +90,14 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
             await conn.ExecuteAsync(new CommandDefinition(
                 """
                 insert into agro360.ai_executions
-                    (id, tenant_id, user_id, use_case, idempotency_key, payload_hash, attempt_number, status,
+                    (id, tenant_id, user_id, use_case, quota_id, idempotency_key, payload_hash, attempt_number, status,
                      reserved_tokens, prompt_tokens, completion_tokens, total_tokens, token_confidence, duration_ms, occurred_at, created_at, updated_at)
                 values
-                    (@Id, @TenantId, @UserId, @UseCase, @IdempotencyKey, @PayloadHash, 1, 'RESERVED',
+                    (@Id, @TenantId, @UserId, @UseCase, @QuotaId, @IdempotencyKey, @PayloadHash,
+                     (select coalesce(max(e.attempt_number), 0) + 1
+                        from agro360.ai_executions e
+                       where e.tenant_id = @TenantId and e.use_case = @UseCase and e.idempotency_key = @IdempotencyKey),
+                     'RESERVED',
                      @EstimatedTokens, 0, 0, 0, 'ESTIMATED', 0, now(), now(), now())
                 """,
                 new
@@ -98,6 +106,7 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
                     TenantId = tenantId,
                     UserId = userId,
                     UseCase = useCase,
+                    QuotaId = quotaId,
                     IdempotencyKey = idempotencyKey,
                     PayloadHash = payloadHash,
                     EstimatedTokens = estimatedTokens
@@ -119,6 +128,7 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
         string tokenConfidence,
         bool success,
         string? errorMessage,
+        string? resultPayload = null,
         CancellationToken ct = default)
     {
         await database.InTenantTransactionAsync(async (conn, tx) =>
@@ -138,6 +148,7 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
                     token_confidence = @TokenConfidence,
                     duration_ms = @DurationMs,
                     error_message = @ErrorMessage,
+                    result_payload = coalesce(@ResultPayload::jsonb, result_payload),
                     updated_at = now()
                 where id = @ExecutionId and status in ('RESERVED', 'IN_PROGRESS')
                 """,
@@ -152,7 +163,8 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
                     TotalTokens = totalTokens,
                     TokenConfidence = tokenConfidence,
                     DurationMs = duration.TotalMilliseconds,
-                    ErrorMessage = errorMessage
+                    ErrorMessage = errorMessage,
+                    ResultPayload = resultPayload
                 },
                 tx,
                 cancellationToken: ct));
@@ -188,7 +200,8 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
                        status, provider, model, reserved_tokens as reservedtokens,
                        prompt_tokens as prompttokens, completion_tokens as completiontokens,
                        total_tokens as totaltokens, token_confidence as tokenconfidence,
-                       duration_ms as durationms, error_message as errormessage, occurred_at as occurredat
+                       duration_ms as durationms, error_message as errormessage, occurred_at as occurredat,
+                       (result_payload)::text as resultpayload
                 from agro360.ai_executions
                 where tenant_id = @TenantId and use_case = @UseCase and idempotency_key = @IdempotencyKey
                 order by occurred_at desc
@@ -218,7 +231,8 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
                 TokenConfidence: (string)row.tokenconfidence,
                 Duration: TimeSpan.FromMilliseconds((double)(decimal)row.durationms),
                 ErrorMessage: (string?)row.errormessage,
-                OccurredAt: (DateTimeOffset)row.occurredat);
+                OccurredAt: (DateTimeOffset)row.occurredat,
+                ResultPayload: (string?)row.resultpayload);
         }, ct);
     }
 
@@ -276,7 +290,8 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
 
             var stale = (await conn.QueryAsync<dynamic>(new CommandDefinition(
                 """
-                select id, tenant_id as tenantid, use_case as usecase, reserved_tokens as reservedtokens
+                select id, tenant_id as tenantid, use_case as usecase, reserved_tokens as reservedtokens,
+                       quota_id as quotaid
                 from agro360.ai_executions
                 where status in ('RESERVED', 'IN_PROGRESS')
                   and created_at < @Cutoff
@@ -294,19 +309,39 @@ public sealed class AiExecutionService(DatabaseExecutor database) : IAiExecution
                 var tenantId = (Guid)s.tenantid;
                 var useCase = (string)s.usecase;
                 int reserved = (int)s.reservedtokens;
+                object? quotaRaw = s.quotaid;
 
-                // Devolve tokens reservados para a quota ativa
-                await conn.ExecuteAsync(new CommandDefinition(
-                    """
-                    update agro360.tenant_ai_quotas
-                    set reserved_tokens = greatest(0, reserved_tokens - @ReservedTokens),
-                        updated_at = now()
-                    where tenant_id = @TenantId and use_case = @UseCase and active = true
-                      and current_date between period_start and period_end
-                    """,
-                    new { TenantId = tenantId, UseCase = useCase, ReservedTokens = reserved },
-                    tx,
-                    cancellationToken: ct));
+                // Baixa vinculada à cota que originou a reserva (ai_executions.quota_id). Sem greatest():
+                // inconsistência de saldo deve estourar o check >= 0 em vez de ser mascarada.
+                if (quotaRaw is Guid boundQuotaId)
+                {
+                    await conn.ExecuteAsync(new CommandDefinition(
+                        """
+                        update agro360.tenant_ai_quotas
+                        set reserved_tokens = reserved_tokens - @ReservedTokens,
+                            updated_at = now()
+                        where id = @QuotaId
+                        """,
+                        new { QuotaId = boundQuotaId, ReservedTokens = reserved },
+                        tx,
+                        cancellationToken: ct));
+                }
+                else
+                {
+                    // Fallback para reservas anteriores ao vínculo por quota_id: compensa na cota ativa do período
+                    // corrente com clamp honesto (o saldo pode não conter esta reserva).
+                    await conn.ExecuteAsync(new CommandDefinition(
+                        """
+                        update agro360.tenant_ai_quotas
+                        set reserved_tokens = reserved_tokens - least(reserved_tokens, @ReservedTokens),
+                            updated_at = now()
+                        where tenant_id = @TenantId and use_case = @UseCase and active = true
+                          and current_date between period_start and period_end
+                        """,
+                        new { TenantId = tenantId, UseCase = useCase, ReservedTokens = reserved },
+                        tx,
+                        cancellationToken: ct));
+                }
 
                 // Marca execução como liberada
                 await conn.ExecuteAsync(new CommandDefinition(

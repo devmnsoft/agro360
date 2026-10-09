@@ -68,31 +68,53 @@ public sealed class AiStockAssistant(
         // 2. Autorização estrita de acesso a IA, Estoque, Entitlement e Escopo de Unidade
         var access = await AuthorizeStockAssistantAccessAsync(ct);
 
-        // 3. Reserva Atômica de Quota com idempotência e payloadHash
-        var idempotencyHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{tenant.TenantId}:{tenant.UserId}:{normalizedQuestion}")))[..32];
+        // 3. Reserva Atômica de Quota. Chave de operação ≠ hash de payload: a chave identifica a operação
+        // (tenant + usuário + unidade + pergunta) para reexecução idempotente; o hash guarda o conteúdo da
+        // pergunta contra reaproveitamento da chave. O contexto de unidade entra na chave para que a mesma
+        // pergunta em outra unidade não replique o resultado calculado para uma unidade diferente.
+        var farmContext = tenant.FarmId?.ToString() ?? "ALL";
+        var operationKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"stock-assistant:operation:{tenant.TenantId}:{tenant.UserId}:{farmContext}:{normalizedQuestion}")))[..32];
+        var payloadHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"stock-assistant:payload:{normalizedQuestion}")))[..32];
         var reservation = await quotaService.ReserveQuotaAsync(
             tenant.TenantId,
             tenant.UserId,
             UseCase,
             estimatedTokens: 1500,
-            idempotencyKey: idempotencyHash,
-            payloadHash: idempotencyHash,
+            idempotencyKey: operationKey,
+            payloadHash: payloadHash,
             ct: ct);
 
-        // Se for repetição idempotente concluída anteriormente, retorna sem reexecutar
+        // Se for repetição idempotente concluída anteriormente, restaura o resultado persistido
+        // (ai_executions.result_payload) sem reexecutar o provedor; a sanitização financeira é reaplicada
+        // conforme a autorização da sessão atual (acesso é revalidado antes da cota).
         if (reservation.IsReplay && reservation.ReplayRecord != null)
         {
             var replay = reservation.ReplayRecord;
+            AssistantResultPayload? stored = null;
+            if (!string.IsNullOrWhiteSpace(replay.ResultPayload))
+            {
+                try
+                {
+                    stored = System.Text.Json.JsonSerializer.Deserialize<AssistantResultPayload>(replay.ResultPayload);
+                }
+                catch (System.Text.Json.JsonException)
+                {
+                    // Payload ilegível → responde apenas com o histórico mínimo (sem inventar dados).
+                }
+            }
+
             return new AiStockAssistantResponse(
-                Answer: replay.ErrorMessage ?? "Consulta recuperada do histórico recente.",
-                Data: null,
-                SuggestsReplenishment: false,
-                Draft: null,
+                Answer: stored?.Answer ?? replay.ErrorMessage ?? "Consulta recuperada do histórico recente.",
+                Data: SanitizeFinancialData(stored?.Data, access.CanViewFinance),
+                SuggestsReplenishment: stored?.SuggestsReplenishment ?? false,
+                Draft: stored?.Draft,
                 SourceProvider: replay.Provider ?? "Cache",
                 Model: replay.Model ?? "",
                 TotalTokens: replay.TotalTokens,
                 Duration: replay.Duration,
-                TotalRecords: 0
+                TotalRecords: stored?.TotalRecords ?? 0
             );
         }
 
@@ -167,20 +189,8 @@ public sealed class AiStockAssistant(
 
             var duration = DateTime.UtcNow - startTime;
 
-            // 8. Reconciliação Atômica da Quota (todas as chamadas somadas)
-            await quotaService.ReconcileAndCompleteAsync(
-                executionId: reservation.ExecutionId,
-                provider: provider.ProviderName,
-                model: synthesisResponse.Model,
-                promptTokens: totalPromptTokens,
-                completionTokens: totalCompletionTokens,
-                duration: duration,
-                tokenConfidence: synthesisResponse.TokenConfidence,
-                success: true,
-                errorMessage: null,
-                ct: ct);
-
-            // 9. Lógica Estruturada de Rascunho de Reposição
+            // 8. Lógica Estruturada de Rascunho de Reposição (antes da reconciliação: resposta e rascunho
+            // compõem o result_payload que permite replay completo sem novo consumo de cota).
             var criticalItem = balances.FirstOrDefault(b => b.Available < b.Minimum);
             ReplenishmentDraft? draft = null;
             bool suggests = false;
@@ -217,9 +227,35 @@ public sealed class AiStockAssistant(
                 );
             }
 
+            // 9. Sanitização financeira do DTO de resposta: sem finance.read vigente o custo médio é
+            // devolvido como indisponível (null), nunca como valor inventado. O payload persistido já é
+            // sanitizado — a mesma chave de operação só ocorre para o mesmo usuário e unidade.
+            var visibleBalances = SanitizeFinancialData(balances, access.CanViewFinance);
+
+            var resultPayload = System.Text.Json.JsonSerializer.Serialize(new AssistantResultPayload(
+                Answer: synthesisResponse.Content,
+                Data: visibleBalances,
+                SuggestsReplenishment: suggests,
+                Draft: draft,
+                TotalRecords: balancesResult.Total));
+
+            // 10. Reconciliação Atômica da Quota (todas as chamadas somadas) + persistência do resultado.
+            await quotaService.ReconcileAndCompleteAsync(
+                executionId: reservation.ExecutionId,
+                provider: provider.ProviderName,
+                model: synthesisResponse.Model,
+                promptTokens: totalPromptTokens,
+                completionTokens: totalCompletionTokens,
+                duration: duration,
+                tokenConfidence: synthesisResponse.TokenConfidence,
+                success: true,
+                errorMessage: null,
+                resultPayload: resultPayload,
+                ct: ct);
+
             return new AiStockAssistantResponse(
                 Answer: synthesisResponse.Content,
-                Data: balances,
+                Data: visibleBalances,
                 SuggestsReplenishment: suggests,
                 Draft: draft,
                 SourceProvider: provider.ProviderName,
@@ -287,46 +323,50 @@ public sealed class AiStockAssistant(
             var result = await conn.QuerySingleAsync<AssistantSecurityCheck>(new CommandDefinition(
                 $"""
                 select
-                    -- Permissão de Inteligência
+                    -- Permissão canônica de assistente de IA (código real de identity_permissions)
                     exists(
                         select 1 from agro360.identity_users u
                         join agro360.identity_user_roles ur on ur.tenant_id=u.tenant_id and ur.user_id=u.id
                         join agro360.identity_role_permissions rp on rp.tenant_id=ur.tenant_id and rp.role_id=ur.role_id
                         join agro360.identity_permissions p on p.id=rp.permission_id
                         where u.tenant_id=@TenantId and u.id=@UserId and u.status='ACTIVE' and u.deleted_at is null
-                          and p.code in ('intelligence.view', 'assistant.use')
+                          and p.code = 'intelligence.assistant.use'
                     ) HasAiPermission,
 
-                    -- Permissão de Estoque
+                    -- Permissão canônica de leitura de estoque
                     exists(
                         select 1 from agro360.identity_users u
                         join agro360.identity_user_roles ur on ur.tenant_id=u.tenant_id and ur.user_id=u.id
                         join agro360.identity_role_permissions rp on rp.tenant_id=ur.tenant_id and rp.role_id=ur.role_id
                         join agro360.identity_permissions p on p.id=rp.permission_id
                         where u.tenant_id=@TenantId and u.id=@UserId and u.status='ACTIVE' and u.deleted_at is null
-                          and p.code in ('inventory.view', 'inventory.balances', 'inventory.movements')
+                          and p.code = 'inventory.read'
                     ) HasInventoryPermission,
 
-                    -- Entitlement de Inteligência
+                    -- Entitlement de Inteligência (mesmo mapa permissão→módulo das policies HTTP)
                     exists(
                         select 1 from ({EntitlementQueries.ModuleCodeSelect}) em
-                        where em.module_code in ('intelligence', 'ai')
+                        where em.module_code in ('reports', 'intelligence', 'analytics', 'ai', 'predictive-ai')
                     ) HasAiContract,
 
-                    -- Entitlement de Estoque
+                    -- Entitlement de Estoque (inventory.read exige módulo 'inventory')
                     exists(
                         select 1 from ({EntitlementQueries.ModuleCodeSelect}) em
-                        where em.module_code in ('inventory', 'storage')
+                        where em.module_code = 'inventory'
                     ) HasInventoryContract,
 
-                    -- Permissão para visualizar custo financeiro
+                    -- Custo médio é dado financeiro: só com finance.read E módulo 'finance' vigente
                     exists(
                         select 1 from agro360.identity_users u
                         join agro360.identity_user_roles ur on ur.tenant_id=u.tenant_id and ur.user_id=u.id
                         join agro360.identity_role_permissions rp on rp.tenant_id=ur.tenant_id and rp.role_id=ur.role_id
                         join agro360.identity_permissions p on p.id=rp.permission_id
                         where u.tenant_id=@TenantId and u.id=@UserId and u.status='ACTIVE' and u.deleted_at is null
-                          and p.code in ('finance.view', 'finance.payables', 'finance.reports')
+                          and p.code = 'finance.read'
+                    )
+                    and exists(
+                        select 1 from ({EntitlementQueries.ModuleCodeSelect}) em
+                        where em.module_code = 'finance'
                     ) CanViewFinance
                 """,
                 new { tenant.TenantId, tenant.UserId },
@@ -357,4 +397,21 @@ public sealed class AiStockAssistant(
         public bool HasInventoryContract { get; init; }
         public bool CanViewFinance { get; init; }
     }
+
+    /// <summary>
+    /// Resultado persistido em ai_executions.result_payload (jsonb) para que o replay idempotente devolva a
+    /// resposta completa — inclusive dados financeiros conforme a autorização de quem calculou — sem novo
+    /// consumo de cota. Dados sensíveis são gravados já sanitizados.
+    /// </summary>
+    private sealed record AssistantResultPayload(
+        string Answer,
+        IReadOnlyList<StockBalanceDto>? Data,
+        bool SuggestsReplenishment,
+        ReplenishmentDraft? Draft,
+        long TotalRecords);
+
+    private static IReadOnlyList<StockBalanceDto>? SanitizeFinancialData(IReadOnlyList<StockBalanceDto>? balances, bool canViewFinance)
+        => canViewFinance || balances is null
+            ? balances
+            : balances.Select(b => b with { AverageCost = null }).ToList();
 }

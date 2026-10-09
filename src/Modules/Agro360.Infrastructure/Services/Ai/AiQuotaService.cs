@@ -38,6 +38,7 @@ public interface IAiQuotaService
         string tokenConfidence = "EXACT",
         bool success = true,
         string? errorMessage = null,
+        string? resultPayload = null,
         CancellationToken ct = default);
 
     Task ReleaseReservationAsync(Guid executionId, string reason, CancellationToken ct = default);
@@ -54,7 +55,7 @@ public sealed class AiQuotaService(
     IAiExecutionService executionService) : IAiQuotaService
 {
     private sealed record QuotaRow(Guid Id, long MaxTokens, long ReservedTokens, long ConsumedTokens);
-    private sealed record ExecutionRow(Guid Id, Guid TenantId, string UseCase, int ReservedTokens, string Status);
+    private sealed record ExecutionRow(Guid Id, Guid TenantId, string UseCase, int ReservedTokens, string Status, Guid? QuotaId);
 
     public async Task<AiReservation> ReserveQuotaAsync(
         Guid tenantId,
@@ -141,7 +142,8 @@ public sealed class AiQuotaService(
                 tx,
                 cancellationToken: ct));
 
-            // 4. Criar registro de execução no status RESERVED
+            // 4. Criar registro de execução no status RESERVED, vinculado à cota reservada (quota_id): a
+            // baixa/reconciliação futuros atingem exatamente o período que autorizou esta reserva.
             var executionId = await executionService.CreateReservationAsync(
                 tenantId,
                 userId,
@@ -149,6 +151,7 @@ public sealed class AiQuotaService(
                 estimatedTokens,
                 idempotencyKey,
                 payloadHash,
+                quota.Id,
                 ct);
 
             return new AiReservation(
@@ -171,13 +174,15 @@ public sealed class AiQuotaService(
         string tokenConfidence = "EXACT",
         bool success = true,
         string? errorMessage = null,
+        string? resultPayload = null,
         CancellationToken ct = default)
     {
         await database.InTenantTransactionAsync(async (conn, tx) =>
         {
             var exec = await conn.QuerySingleOrDefaultAsync<ExecutionRow>(new CommandDefinition(
                 """
-                select id as Id, tenant_id as TenantId, use_case as UseCase, reserved_tokens as ReservedTokens, status as Status
+                select id as Id, tenant_id as TenantId, use_case as UseCase, reserved_tokens as ReservedTokens, status as Status,
+                       quota_id as QuotaId
                 from agro360.ai_executions
                 where id = @ExecutionId
                 for update
@@ -190,36 +195,57 @@ public sealed class AiQuotaService(
 
             int actualTokens = promptTokens + completionTokens;
 
-            // Reconciliação atômica na quota
-            var quota = await conn.QuerySingleOrDefaultAsync<QuotaRow>(new CommandDefinition(
-                """
-                select id as Id, max_tokens as MaxTokens, reserved_tokens as ReservedTokens, consumed_tokens as ConsumedTokens
-                from agro360.tenant_ai_quotas
-                where tenant_id = @TenantId
-                  and use_case = @UseCase
-                  and active = true
-                  and current_date between period_start and period_end
-                order by period_end desc
-                limit 1
-                for update
-                """,
-                new { exec.TenantId, exec.UseCase },
-                tx,
-                cancellationToken: ct));
-
-            if (quota != null)
+            // Débito vinculado à cota que originou a reserva (ai_executions.quota_id): a baixa do período exato
+            // não vaza para a cota da competência corrente. Sem greatest(): o guard de status garante passe
+            // único e inconsistência de saldo deve estourar o check >= 0 em vez de ser mascarada.
+            if (exec.QuotaId.HasValue)
             {
                 await conn.ExecuteAsync(new CommandDefinition(
                     """
                     update agro360.tenant_ai_quotas
-                    set reserved_tokens = greatest(0, reserved_tokens - @ReservedTokens),
+                    set reserved_tokens = reserved_tokens - @ReservedTokens,
                         consumed_tokens = consumed_tokens + @ActualTokens,
                         updated_at = now()
                     where id = @QuotaId
                     """,
-                    new { QuotaId = quota.Id, ReservedTokens = exec.ReservedTokens, ActualTokens = actualTokens },
+                    new { QuotaId = exec.QuotaId.Value, ReservedTokens = exec.ReservedTokens, ActualTokens = actualTokens },
                     tx,
                     cancellationToken: ct));
+            }
+            else
+            {
+                // Fallback para reservas anteriores ao vínculo por quota_id: compensa a cota ativa do período
+                // corrente com clamp honesto (o saldo pode não conter esta reserva).
+                var legacyQuota = await conn.QuerySingleOrDefaultAsync<Guid>(new CommandDefinition(
+                    """
+                    select id
+                    from agro360.tenant_ai_quotas
+                    where tenant_id = @TenantId
+                      and use_case = @UseCase
+                      and active = true
+                      and current_date between period_start and period_end
+                    order by period_end desc
+                    limit 1
+                    for update
+                    """,
+                    new { exec.TenantId, exec.UseCase },
+                    tx,
+                    cancellationToken: ct));
+
+                if (legacyQuota != Guid.Empty)
+                {
+                    await conn.ExecuteAsync(new CommandDefinition(
+                        """
+                        update agro360.tenant_ai_quotas
+                        set reserved_tokens = reserved_tokens - least(reserved_tokens, @ReservedTokens),
+                            consumed_tokens = consumed_tokens + @ActualTokens,
+                            updated_at = now()
+                        where id = @QuotaId
+                        """,
+                        new { QuotaId = legacyQuota, ReservedTokens = exec.ReservedTokens, ActualTokens = actualTokens },
+                        tx,
+                        cancellationToken: ct));
+                }
             }
 
             // Finalizar execução
@@ -233,6 +259,7 @@ public sealed class AiQuotaService(
                 tokenConfidence,
                 success,
                 errorMessage,
+                resultPayload,
                 ct);
         }, ct);
     }
@@ -243,7 +270,8 @@ public sealed class AiQuotaService(
         {
             var exec = await conn.QuerySingleOrDefaultAsync<ExecutionRow>(new CommandDefinition(
                 """
-                select id as Id, tenant_id as TenantId, use_case as UseCase, reserved_tokens as ReservedTokens, status as Status
+                select id as Id, tenant_id as TenantId, use_case as UseCase, reserved_tokens as ReservedTokens, status as Status,
+                       quota_id as QuotaId
                 from agro360.ai_executions
                 where id = @ExecutionId
                 for update
@@ -254,34 +282,51 @@ public sealed class AiQuotaService(
 
             if (exec == null || exec.Status is "COMPLETED" or "RELEASED") return;
 
-            var quota = await conn.QuerySingleOrDefaultAsync<QuotaRow>(new CommandDefinition(
-                """
-                select id as Id, max_tokens as MaxTokens, reserved_tokens as ReservedTokens, consumed_tokens as ConsumedTokens
-                from agro360.tenant_ai_quotas
-                where tenant_id = @TenantId
-                  and use_case = @UseCase
-                  and active = true
-                  and current_date between period_start and period_end
-                order by period_end desc
-                limit 1
-                for update
-                """,
-                new { exec.TenantId, exec.UseCase },
-                tx,
-                cancellationToken: ct));
-
-            if (quota != null)
+            // Liberação vinculada à cota reservada (quota_id); fallback legado com clamp honesto.
+            if (exec.QuotaId.HasValue)
             {
                 await conn.ExecuteAsync(new CommandDefinition(
                     """
                     update agro360.tenant_ai_quotas
-                    set reserved_tokens = greatest(0, reserved_tokens - @ReservedTokens),
+                    set reserved_tokens = reserved_tokens - @ReservedTokens,
                         updated_at = now()
                     where id = @QuotaId
                     """,
-                    new { QuotaId = quota.Id, ReservedTokens = exec.ReservedTokens },
+                    new { QuotaId = exec.QuotaId.Value, ReservedTokens = exec.ReservedTokens },
                     tx,
                     cancellationToken: ct));
+            }
+            else
+            {
+                var legacyQuota = await conn.QuerySingleOrDefaultAsync<Guid>(new CommandDefinition(
+                    """
+                    select id
+                    from agro360.tenant_ai_quotas
+                    where tenant_id = @TenantId
+                      and use_case = @UseCase
+                      and active = true
+                      and current_date between period_start and period_end
+                    order by period_end desc
+                    limit 1
+                    for update
+                    """,
+                    new { exec.TenantId, exec.UseCase },
+                    tx,
+                    cancellationToken: ct));
+
+                if (legacyQuota != Guid.Empty)
+                {
+                    await conn.ExecuteAsync(new CommandDefinition(
+                        """
+                        update agro360.tenant_ai_quotas
+                        set reserved_tokens = reserved_tokens - least(reserved_tokens, @ReservedTokens),
+                            updated_at = now()
+                        where id = @QuotaId
+                        """,
+                        new { QuotaId = legacyQuota, ReservedTokens = exec.ReservedTokens },
+                        tx,
+                        cancellationToken: ct));
+                }
             }
 
             await executionService.ReleaseExecutionAsync(executionId, reason, ct);

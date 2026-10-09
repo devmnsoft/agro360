@@ -45,7 +45,8 @@ public sealed record StockBalanceDto(
     decimal Available,
     decimal Reserved,
     decimal Minimum,
-    decimal AverageCost,
+    // Custo médio é dado financeiro: o assistente de estoque exibe null quando o usuário não tem finance.read.
+    decimal? AverageCost,
     long Version);
 
 public sealed record StockMovementResult(Guid MovementId, decimal NewBalance, decimal AverageCost, long Version);

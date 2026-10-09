@@ -393,49 +393,10 @@ public sealed class ProcurementService(
         p.Add("UserId", tenant.UserId);
         return p;
     }
-    private static string OperationalScopeSql(string alias) =>
-        $"""
-        and (
-            exists(select 1 from agro360.identity_user_unit_scopes scope_all where scope_all.tenant_id=@TenantId and scope_all.user_id=@UserId and scope_all.scope_type='ALL')
-            or ({alias}.property_id is not null and exists(
-                select 1
-                from agro360.geo_farms scope_farm
-                where scope_farm.tenant_id={alias}.tenant_id and scope_farm.id={alias}.property_id and scope_farm.deleted_at is null
-                  and (
-                      exists(select 1 from agro360.identity_user_unit_scopes scope_direct where scope_direct.tenant_id=@TenantId and scope_direct.user_id=@UserId and scope_direct.scope_type='FARM' and scope_direct.farm_id=scope_farm.id)
-                      or exists(select 1 from agro360.identity_user_unit_scopes scope_org where scope_org.tenant_id=@TenantId and scope_org.user_id=@UserId and scope_org.scope_type='ORGANIZATION' and scope_org.organization_id=scope_farm.organization_id)
-                  )
-            ))
-        )
-        """;
-    private static string FarmScopeSql(string alias) =>
-        $"""
-        and (
-            exists(select 1 from agro360.identity_user_unit_scopes scope_all where scope_all.tenant_id=@TenantId and scope_all.user_id=@UserId and scope_all.scope_type='ALL')
-            or exists(select 1 from agro360.identity_user_unit_scopes scope_direct where scope_direct.tenant_id=@TenantId and scope_direct.user_id=@UserId and scope_direct.scope_type='FARM' and scope_direct.farm_id={alias}.id)
-            or exists(select 1 from agro360.identity_user_unit_scopes scope_org where scope_org.tenant_id=@TenantId and scope_org.user_id=@UserId and scope_org.scope_type='ORGANIZATION' and scope_org.organization_id={alias}.organization_id)
-        )
-        """;
-    private async Task<Guid?> ResolveOperationalFarmAsync(Npgsql.NpgsqlConnection c, Npgsql.NpgsqlTransaction t, Guid? requestedFarmId, CancellationToken ct)
-    {
-        if (tenant.FarmId is not null)
-        {
-            if (requestedFarmId is not null && requestedFarmId != tenant.FarmId)
-                throw new ForbiddenException("A unidade informada não corresponde ao contexto operacional selecionado.");
-            requestedFarmId = tenant.FarmId;
-        }
-
-        if (requestedFarmId is null)
-        {
-            var hasAll = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.identity_user_unit_scopes where tenant_id=@TenantId and user_id=@UserId and scope_type='ALL')", ScopeParams(), t, cancellationToken: ct));
-            if (hasAll) return null;
-            throw new DomainException("Selecione uma unidade operacional autorizada para esta operação.", "agro360.procurement_property_required");
-        }
-
-        var allowed = await c.ExecuteScalarAsync<bool>(new CommandDefinition($"select exists(select 1 from agro360.geo_farms f where f.tenant_id=@TenantId and f.id=@FarmId and f.deleted_at is null {FarmScopeSql("f")})", ScopeParams(new { FarmId = requestedFarmId }), t, cancellationToken: ct));
-        if (!allowed) throw new ForbiddenException("Usuário não possui permissão para a unidade operacional informada.");
-        return requestedFarmId;
-    }
+    private static string OperationalScopeSql(string alias) => Security.OperationalScopePolicy.Sql(alias);
+    private static string FarmScopeSql(string alias) => Security.OperationalScopePolicy.FarmSql(alias);
+    private Task<Guid?> ResolveOperationalFarmAsync(Npgsql.NpgsqlConnection c, Npgsql.NpgsqlTransaction t, Guid? requestedFarmId, CancellationToken ct) =>
+        Security.OperationalScopePolicy.ResolveOperationalFarmAsync(tenant, c, t, requestedFarmId, ct);
     private async Task<bool> Exists(Npgsql.NpgsqlConnection c, Npgsql.NpgsqlTransaction t, string table, Guid id, CancellationToken ct) => await c.ExecuteScalarAsync<bool>(new CommandDefinition($"select exists(select 1 from agro360.procurement_{table} where tenant_id=@TenantId and id=@Id and deleted_at is null)", new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
     private static async Task<string> Number(Npgsql.NpgsqlConnection c, Npgsql.NpgsqlTransaction t, string prefix, CancellationToken ct) { var n = await c.ExecuteScalarAsync<long>(new CommandDefinition("select nextval('agro360.procurement_document_number_seq')", transaction: t, cancellationToken: ct)); return $"{prefix}-{DateTime.UtcNow:yyyy}-{n:000000}"; }
     private async Task Audit(Npgsql.NpgsqlConnection c, Npgsql.NpgsqlTransaction t, string entity, Guid id, string action, object data, CancellationToken ct) => await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_audit_events(id,tenant_id,entity_type,entity_id,action,changed_fields,created_by,updated_by) values(gen_random_uuid(),@TenantId,@Entity,@Id,@Action,@Data::jsonb,@UserId,@UserId)", new { tenant.TenantId, tenant.UserId, Entity = entity, Id = id, Action = action, Data = System.Text.Json.JsonSerializer.Serialize(data) }, t, cancellationToken: ct));

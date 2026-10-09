@@ -9,7 +9,9 @@ public sealed record RequisitionCommand(Guid? CostCenterId, Guid? PropertyId, st
 public sealed record RequisitionDecisionCommand(long Version, string Decision, string? Reason);
 public sealed record RequisitionTransitionCommand(long Version, string? Reason);
 public sealed record QuotationRequestCommand(Guid RequisitionId, IReadOnlyList<Guid> SupplierIds, DateOnly DueDate);
-public sealed record SubmitQuotationCommand(Guid QuotationId, Guid SupplierId, Guid CatalogItemId, decimal UnitPrice, int DeliveryDays, string? Notes);
+public sealed record SubmitQuotationCommand(Guid QuotationId, Guid SupplierId, Guid CatalogItemId, decimal UnitPrice, int DeliveryDays, string? Notes, decimal Discount = 0, DateOnly? ProposalValidUntil = null, string? PaymentTerms = null, decimal? Freight = null, decimal? Taxes = null, Guid? QuotationItemId = null);
+public sealed record QuotationDecisionLine(Guid QuotationItemId, Guid QuotationSupplierId);
+public sealed record QuotationDecisionCommand(IReadOnlyList<QuotationDecisionLine> Items, string? Justification);
 public sealed record PurchaseOrderLineCommand(Guid CatalogItemId, decimal Quantity, string Unit, decimal UnitPrice, decimal Discount, Guid? RequisitionItemId = null);
 public sealed record PurchaseOrderCommand(Guid SupplierId, Guid? RequisitionId, Guid? QuotationId, Guid? CostCenterId, Guid? PropertyId, string PaymentTerms, DateOnly DeliveryOn, string DeliveryAddress, decimal Freight, decimal Taxes, IReadOnlyList<PurchaseOrderLineCommand> Items);
 public sealed record ReceiptLineCommand(Guid PurchaseOrderItemId, decimal Quantity, string? SupplierLot, DateOnly? ExpiresOn, string? Notes);
@@ -22,7 +24,7 @@ public sealed record PurchaseInvoiceMatchCommand(Guid PurchaseOrderId, string Do
 public sealed record MatchDivergenceDecisionCommand(string Decision, string Justification, string? EvidenceReference);
 public sealed record MatchToleranceCommand(decimal QuantityPercent, decimal QuantityAbsolute, decimal PricePercent, decimal PriceAbsolute,
     decimal TotalPercent, decimal TotalAbsolute, decimal ExcessPercent, decimal ExcessAbsolute, int DeliveryDays, bool SeparationOfDuties, long? Version);
-public sealed record ProcurementQuery(string? Search = null, string? Status = null, string? Category = null, DateOnly? From = null, DateOnly? To = null, int Page = 1, int PageSize = 30);
+public sealed record ProcurementQuery(string? Search = null, string? Status = null, string? Category = null, DateOnly? From = null, DateOnly? To = null, int Page = 1, int PageSize = 30, Guid? RequisitionId = null);
 public interface IProcurementService
 {
     Task<dynamic> DashboardAsync(CancellationToken ct); Task<IReadOnlyList<dynamic>> SuppliersAsync(ProcurementQuery q, CancellationToken ct); Task<Guid> SaveSupplierAsync(Guid? id, ProcurementSupplierCommand x, CancellationToken ct); Task HomologateAsync(Guid supplierId, bool approve, HomologationCommand x, CancellationToken ct);

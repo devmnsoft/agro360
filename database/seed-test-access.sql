@@ -21,7 +21,13 @@ insert into agro360.platform_module_catalog(code,name,description,active) values
  ('traceability','Rastreabilidade','Cadeia de origem até a entrega.',true),
  ('environment-esg','Compliance','Documentos, evidências e validade.',true),
  ('analytics','Relatórios','Indicadores e relatórios.',true),
- ('platform','Administração','Usuários, perfis e configurações.',true)
+ ('platform','Administração','Usuários, perfis e configurações.',true),
+ ('purchasing','Suprimentos','Requisições, cotações, pedidos de compra, recebimento e glosas.',true),
+ ('fleet','Frota e manutenção','Ativos, consumo, horas de máquina e ordens de manutenção.',true),
+ ('warehousing','Armazenagem','Armazéns, posições e capacidade além do estoque central.',true),
+ ('documents','Documentos','Documentos, evidências, dossiês e certidões anexadas.',true),
+ ('mobile','App de campo','Instalações offline, checklists de campo e fila de sincronização.',true),
+ ('cooperatives','Cooperativas','Quadro de cooperados, rateios e logística cooperativa.',true)
 on conflict(code) do update set name=excluded.name,description=excluded.description,
  active=true,updated_at=now();
 
@@ -72,11 +78,11 @@ begin
  insert into agro360.platform_tenant_module_entitlements(tenant_id,module_id,status,reason,activated_at)
  select santa_id,id,'ACTIVE','Fixture de homologação Santa Clara',now()
  from agro360.platform_module_catalog where code in
- ('agriculture','producers','properties','fields','seasons','inventory','commercial','contracts','orders','logistics','finance','traceability','environment-esg','analytics','platform')
+ ('agriculture','producers','properties','fields','seasons','inventory','commercial','contracts','orders','logistics','finance','traceability','environment-esg','analytics','platform','purchasing','fleet','warehousing','documents','mobile')
  on conflict(tenant_id,module_id) do nothing;
  insert into agro360.platform_tenant_module_entitlements(tenant_id,module_id,status,reason,activated_at)
  select vale_id,id,'ACTIVE','Fixture de isolamento Vale Verde',now()
- from agro360.platform_module_catalog where code in ('agriculture','inventory','commercial','logistics','traceability','analytics')
+ from agro360.platform_module_catalog where code in ('agriculture','inventory','commercial','logistics','traceability','analytics','purchasing','fleet','warehousing','cooperatives','documents','mobile')
  on conflict(tenant_id,module_id) do nothing;
  insert into agro360.platform_tenant_module_entitlements(tenant_id,module_id,status,reason,activated_at)
  select blocked_id,id,'ACTIVE','Módulos preservados; tenant bloqueado',now()

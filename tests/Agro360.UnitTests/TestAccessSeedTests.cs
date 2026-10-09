@@ -39,7 +39,7 @@ public sealed class TestAccessSeedTests
         Assert.Contains("on conflict(user_id) do nothing", sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("into user_id", sql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("password_hash=excluded.password_hash", sql, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("('agriculture','inventory','commercial','logistics','traceability','analytics')", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("('agriculture','inventory','commercial','logistics','traceability','analytics','purchasing','fleet','warehousing','cooperatives','documents','mobile')", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(3, Count(sql, "insert into agro360.platform_user_profiles"));
         Assert.Contains("profile_not_linked", File.ReadAllText(Path.Combine(Root, "src/Modules/Agro360.Infrastructure/Services/IdentityService.cs")), StringComparison.Ordinal);
     }
@@ -54,7 +54,7 @@ public sealed class TestAccessSeedTests
         {
             "admin.santaclara@agro360.local", "admin.valeverde@agro360.local",
             "operador.santaclara@agro360.local", "admin.bloqueado@agro360.local",
-            "('agriculture','inventory','commercial','logistics','traceability','analytics')",
+            "('agriculture','inventory','commercial','logistics','traceability','analytics','purchasing','fleet','warehousing','cooperatives','documents','mobile')",
             "name='Operador'", "platform_user_profiles"
         })
         {
