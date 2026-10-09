@@ -27,7 +27,7 @@ public sealed class AiQuotaCleanupJourneyTests
         Assert.Equal(2, released);
 
         var quotaReserved = await fixture.ExecuteScalarAsync<long>(
-            "select reserved_tokens from agro360.tenant_ai_quotas where id=@Id", new { fixture.QuotaId });
+            "select reserved_tokens from agro360.tenant_ai_quotas where id=@QuotaId", new { fixture.QuotaId });
         Assert.Equal(500, quotaReserved); // só a reserva jovem permanece baixando o saldo
 
         var staleStatus = await fixture.ExecuteScalarAsync<string>(
@@ -54,7 +54,7 @@ public sealed class AiQuotaCleanupJourneyTests
         Assert.Equal(2, released);
 
         var otherReserved = await fixture.ExecuteScalarAsync<long>(
-            "select reserved_tokens from agro360.tenant_ai_quotas where id=@Id", new { fixture.OtherTenantQuotaId });
+            "select reserved_tokens from agro360.tenant_ai_quotas where id=@OtherQuotaId", new { OtherQuotaId = fixture.OtherTenantQuotaId });
         Assert.Equal(900, otherReserved); // intocável pela varredura do tenant alheio
 
         var otherStatus = await fixture.ExecuteScalarAsync<string>(
@@ -142,9 +142,9 @@ public sealed class AiQuotaCleanupJourneyTests
                 new PostgreSqlConnectionConfiguration(connectionString!, "IntegrationTests", "integration-test", "Development", "password", "integration-test", false),
                 NullLogger<NpgsqlConnectionFactory>.Instance);
             var tenant = new TenantContext();
-            // Contexto de requisição vazio de propósito: a varredura recebe o tenant por parâmetro
-            // explícito (contrato do worker), exatamente como rodará no host semHttpContext.
-            tenant.SetScope(new TenantScope(Guid.Empty, Guid.Empty, null, null));
+            // Contexto de requisição apenas preenchível (não usado): a varredura recebe o tenant por
+            // parâmetro explícito (contrato do worker), exatamente como rodará no host sem HttpContext.
+            tenant.SetScope(new TenantScope(Guid.CreateVersion7(), Guid.CreateVersion7(), null, null));
             fixture.ExecutionService = new AiExecutionService(
                 new DatabaseExecutor(connectionFactory, tenant, NullLogger<DatabaseExecutor>.Instance));
 
