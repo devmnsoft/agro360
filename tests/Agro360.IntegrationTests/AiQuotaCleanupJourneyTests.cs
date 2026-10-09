@@ -130,9 +130,9 @@ public sealed class AiQuotaCleanupJourneyTests
                 StaleBound = fixture.StaleBoundExecution,
                 StaleLegacy = fixture.StaleLegacyExecution,
                 Fresh = fixture.FreshExecution,
-                OtherTenant = fixture.OtherTenantId,
+                OtherTenantId = fixture.OtherTenantId,
                 OtherTenantUserId = fixture.OtherTenantUserId,
-                OtherTenantQuota = fixture.OtherTenantQuotaId,
+                OtherTenantQuotaId = fixture.OtherTenantQuotaId,
                 OtherTenantStale = fixture.OtherTenantStaleExecution,
                 Document = Random.Shared.NextInt64(10000000000000, 99999999999999),
                 OtherDocument = Random.Shared.NextInt64(10000000000000, 99999999999999)
