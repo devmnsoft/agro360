@@ -1,5 +1,16 @@
 # Matriz de rastreabilidade v0.2.0
 
+## Incremento 2026-10-09 — francês (fr-FR), i18n do shell e isolamento de fazenda em Compras (mesmo tenant)
+
+| Dependência/capacidade | Estado real | Evidência/limite |
+|---|---|---|
+| Idioma fr-FR via catálogo canônico | **Validado em runtime** | Migration `134_french_language_support.sql` (schema `11.24.0`, aditiva, idempotente; espelhada no consolidado). Bloco L do E2E: catálogo `platform_languages` com 4 ativas, sem CHECK de cultura antigo nas 5 tabelas, insert/delete fr-FR ao vivo em `ui_message_templates`, login default pt-BR, PUT/GET de preferência com confirmação do servidor, re-login preservando fr-FR, `de-DE` → fallback `pt-BR` persistido, estado operacional invariante. Log `artifacts/e2e-rerun6.log`; resumo `artifacts/language-farm-isolation-e2e-52a7016f103243f08bb4433a6f4ff502/SUMMARY.txt`. |
+| i18n do shell (pt-BR/en-US/es-ES/fr-FR) | **Validado em nível de dicionário/estático** | `uiTranslations` com 103 chaves por idioma e paridade total; 97/97 chaves usadas no `_Layout.cshtml` traduzidas (`node artifacts/check-i18n-keys.cjs`); seletor em nomes nativos; persistência somente após 200 do servidor com retry. Limitações documentadas em `docs/I18N-COVERAGE-REPORT.md` (toasts, `data-help`, cópias longas de ajuda, títulos Razor e chaves `helpTitle`/`help` do Ecosystem permanecem pt-BR). Navegador real não executado nesta rodada. |
+| Isolamento de fazenda em Compras (mesmo tenant) | **Validado em runtime (E2E)** | Bloco F: operador com escopo `FARM` só na SC-SEDE-001 — LIST sem B (por `property_id` e número), DETAIL A=200/B=404/admin=200, escrita com `propertyId=B` no corpo = 403 sem efeito colateral (0 linhas), `X-Farm-ID=B` divergente = 403 `forbidden_unit_scope`, aprovação de pedido B por ID negada mantendo `AWAITING_APPROVAL`, recebimento de pedido B negado (422) com zero recibos, CSV do operador só com A (implícito e explícito), dashboard operador 1/0 vs admin 2/1. 58/58 PASS. |
+| Invariantes de idioma (BRL/tributação/UoM/permissões/estado) | **Validado** | Fábricas `Intl` sempre `currency:"BRL"`; E2E confirmou lista de fazendas idêntica antes/depois da troca de cultura; recusas canônicas e códigos estáveis preservados. |
+| Matriz plano→módulo→funcionalidade→permissão→menu→tela→endpoint→persistência→aceitação | **Entregue** | `docs/FEATURE-MATRIX-2026-10-09.md`. |
+| Homologação visual autenticada (360/768/1440 px, zoom 200%) | **Não executado** | Sem ferramenta de navegador real nesta sessão; não declarado como homologação visual. |
+
 ## Incremento 2026-10-08 — Compras com escopo operacional e evidência descartável
 
 | Dependência/capacidade | Estado real | Evidência/limite |

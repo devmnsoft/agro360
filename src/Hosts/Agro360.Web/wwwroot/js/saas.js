@@ -825,6 +825,7 @@
     const ui = {
         "en-US": { title: "SaaS Platform", help: "How to use this screen", refresh: "Refresh", loading: "Loading data…" },
         "es-ES": { title: "Plataforma SaaS", help: "Cómo usar esta pantalla", refresh: "Actualizar", loading: "Cargando datos…" },
+        "fr-FR": { title: "Plateforme SaaS", help: "Comment utiliser cet écran", refresh: "Actualiser", loading: "Chargement des données…" },
         "pt-BR": { title: "Plataforma SaaS", help: "Como usar esta tela", refresh: "Atualizar", loading: "Carregando dados…" }
     };
 
@@ -834,7 +835,7 @@
         document.querySelector(".saas-page h1").textContent = consoleScope === "global" ? "Administração Global MNSOFT" : "Administração da conta";
         document.querySelector(".contextual-help summary").textContent = translation.help;
         document.querySelector("#saas-refresh").textContent = translation.refresh;
-        if (["Carregando", "Loading", "Cargando"].some(term => status.textContent.includes(term))) status.textContent = translation.loading;
+        if (["Carregando", "Loading", "Cargando", "Chargement"].some(term => status.textContent.includes(term))) status.textContent = translation.loading;
     }
 
     document.querySelectorAll(".saas-tabs button").forEach(button => {
@@ -853,7 +854,10 @@
         });
     });
     document.querySelector("#saas-culture")?.addEventListener("change", event => {
-        localStorage.setItem("agro360.culture", event.target.value);
+        // Preferência do idioma segue o fluxo canônico (agro360.js): aplica localmente e persiste
+        // no servidor com aviso e nova tentativa em caso de falha.
+        if (typeof window.agro360SetCulture === "function") window.agro360SetCulture(event.target.value);
+        else localStorage.setItem("agro360.culture", event.target.value);
         applyCulture(event.target.value);
         load();
     });

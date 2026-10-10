@@ -52,77 +52,77 @@
                 <span><strong>AGRO</strong><b>360</b><small>by MNSOFT</small></span>
             </a>
             <div class="context-card">
-                <span class="eyebrow">Contexto ativo</span>
+                <span class="eyebrow" data-i18n="c.ctx">Contexto ativo</span>
                 <strong id="active-farm">Todas as fazendas</strong>
-                <button type="button" data-feature="context">Alterar contexto <svg><use href="#i-arrow" /></svg></button>
+                <button type="button" data-feature="context"><span data-i18n="c.switch">Alterar contexto</span><svg><use href="#i-arrow" /></svg></button>
             </div>
             <nav class="main-nav" aria-label="Navegação principal">
-                <span class="nav-label">Início</span>
-                <a class="active" href="/" data-permissions="dashboard.read"><svg><use href="#i-grid" /></svg><span>Início / Dashboard</span></a>
-                <a href="/Work" data-permissions="work.read"><svg><use href="#i-bell" /></svg><span>Tarefas e Alertas</span></a>
-                <a href="/Deployment" data-permissions="deployment.read"><svg><use href="#i-chart" /></svg><span>Central de Implantação</span></a>
+                <span class="nav-label" data-i18n="g.start">Início</span>
+                <a class="active" href="/" data-permissions="dashboard.read"><svg><use href="#i-grid" /></svg><span data-i18n="l.home">Início / Dashboard</span></a>
+                <a href="/Work" data-permissions="work.read"><svg><use href="#i-bell" /></svg><span data-i18n="l.tasks">Tarefas e Alertas</span></a>
+                <a href="/Deployment" data-permissions="deployment.read"><svg><use href="#i-chart" /></svg><span data-i18n="l.deploy">Central de Implantação</span></a>
 
-                <span class="nav-label">Produção e Campo</span>
-                <a href="/Properties" data-permissions="properties.read"><svg><use href="#i-map" /></svg><span>Fazendas e Unidades</span></a>
-                <a href="/Agriculture" data-permissions="agriculture.read"><svg><use href="#i-leaf" /></svg><span>Agricultura</span></a>
-                <a href="/field" data-permissions="mobile.read,agriculture.read"><svg><use href="#i-leaf" /></svg><span>Operação de Campo</span></a>
-                <a href="/Maps" data-permissions="properties.read,agriculture.read,maps.read"><svg><use href="#i-map" /></svg><span>Mapa Operacional</span></a>
-                <a href="/Harvest" data-permissions="agriculture.read"><svg><use href="#i-leaf" /></svg><span>Colheita e Recebimento</span></a>
-                <a href="/Costs" data-permissions="finance.read,agriculture.read"><svg><use href="#i-chart" /></svg><span>Custos da Safra</span></a>
-                <a href="/Production" data-permissions="production.read"><svg><use href="#i-chart" /></svg><span>Produção Agroindustrial</span></a>
+                <span class="nav-label" data-i18n="g.prod">Produção e Campo</span>
+                <a href="/Properties" data-permissions="properties.read"><svg><use href="#i-map" /></svg><span data-i18n="l.props">Fazendas e Unidades</span></a>
+                <a href="/Agriculture" data-permissions="agriculture.read"><svg><use href="#i-leaf" /></svg><span data-i18n="l.agri">Agricultura</span></a>
+                <a href="/field" data-permissions="mobile.read,agriculture.read"><svg><use href="#i-leaf" /></svg><span data-i18n="l.field">Operação de Campo</span></a>
+                <a href="/Maps" data-permissions="properties.read,agriculture.read,maps.read"><svg><use href="#i-map" /></svg><span data-i18n="l.maps">Mapa Operacional</span></a>
+                <a href="/Harvest" data-permissions="agriculture.read"><svg><use href="#i-leaf" /></svg><span data-i18n="l.harv">Colheita e Recebimento</span></a>
+                <a href="/Costs" data-permissions="finance.read,agriculture.read"><svg><use href="#i-chart" /></svg><span data-i18n="l.costs">Custos da Safra</span></a>
+                <a href="/Production" data-permissions="production.read"><svg><use href="#i-chart" /></svg><span data-i18n="l.prod2">Produção Agroindustrial</span></a>
 
-                <span class="nav-label">Pecuária</span>
-                <a href="/livestock" data-permissions="livestock.read"><svg><use href="#i-animal" /></svg><span>Pecuária</span></a>
+                <span class="nav-label" data-i18n="g.peq">Pecuária</span>
+                <a href="/livestock" data-permissions="livestock.read"><svg><use href="#i-animal" /></svg><span data-i18n="l.live">Pecuária</span></a>
 
-                <span class="nav-label">Estoques e Compras</span>
-                <a href="/Inventory" data-permissions="inventory.read,storage.read"><svg><use href="#i-box" /></svg><span>Estoque e Almoxarifado</span></a>
-                <a href="/Replenishment" data-permissions="inventory.read,purchasing.read"><svg><use href="#i-box" /></svg><span>Reposição e Necessidades</span></a>
-                <a href="/Procurement" data-permissions="purchasing.read"><svg><use href="#i-box" /></svg><span>Compras e Fornecedores</span></a>
+                <span class="nav-label" data-i18n="g.stock">Estoques e Compras</span>
+                <a href="/Inventory" data-permissions="inventory.read,storage.read"><svg><use href="#i-box" /></svg><span data-i18n="l.inv">Estoque e Almoxarifado</span></a>
+                <a href="/Replenishment" data-permissions="inventory.read,purchasing.read"><svg><use href="#i-box" /></svg><span data-i18n="l.repl">Reposição e Necessidades</span></a>
+                <a href="/Procurement" data-permissions="purchasing.read"><svg><use href="#i-box" /></svg><span data-i18n="l.proc">Compras e Fornecedores</span></a>
 
-                <span class="nav-label">Comercial</span>
-                <a href="/Commercial" data-permissions="commercial.read"><svg><use href="#i-coins" /></svg><span>Comercial e Vendas</span></a>
-                <a href="/crm" data-permissions="commercial.read,crm.read"><svg><use href="#i-coins" /></svg><span>CRM e Ciclo do Cliente</span></a>
-                <a href="/after-sales" data-permissions="after-sales.read"><svg><use href="#i-box" /></svg><span>Pós-venda</span></a>
+                <span class="nav-label" data-i18n="g.com">Comercial</span>
+                <a href="/Commercial" data-permissions="commercial.read"><svg><use href="#i-coins" /></svg><span data-i18n="l.comm">Comercial e Vendas</span></a>
+                <a href="/crm" data-permissions="commercial.read,crm.read"><svg><use href="#i-coins" /></svg><span data-i18n="l.crm">CRM e Ciclo do Cliente</span></a>
+                <a href="/after-sales" data-permissions="after-sales.read"><svg><use href="#i-box" /></svg><span data-i18n="l.after">Pós-venda</span></a>
 
-                <span class="nav-label">Logística</span>
-                <a href="/Logistics" data-permissions="logistics.read"><svg><use href="#i-truck" /></svg><span>Expedição e Entrega</span></a>
+                <span class="nav-label" data-i18n="g.log">Logística</span>
+                <a href="/Logistics" data-permissions="logistics.read"><svg><use href="#i-truck" /></svg><span data-i18n="l.logi">Expedição e Entrega</span></a>
 
-                <span class="nav-label">Financeiro/Fiscal</span>
-                <a href="/Finance" data-permissions="finance.read"><svg><use href="#i-coins" /></svg><span>Financeiro e Custos</span></a>
-                <a href="/Fiscal" data-permissions="fiscal.read"><svg><use href="#i-chart" /></svg><span>Fiscal</span></a>
-                <a href="/Documents" data-permissions="documents.read"><svg><use href="#i-box" /></svg><span>Documentos e Evidências</span></a>
+                <span class="nav-label" data-i18n="g.fin">Financeiro/Fiscal</span>
+                <a href="/Finance" data-permissions="finance.read"><svg><use href="#i-coins" /></svg><span data-i18n="l.fin2">Financeiro e Custos</span></a>
+                <a href="/Fiscal" data-permissions="fiscal.read"><svg><use href="#i-chart" /></svg><span data-i18n="l.fisc">Fiscal</span></a>
+                <a href="/Documents" data-permissions="documents.read"><svg><use href="#i-box" /></svg><span data-i18n="l.docs">Documentos e Evidências</span></a>
 
-                <span class="nav-label">Qualidade e Rastreabilidade</span>
-                <a href="/Compliance" data-permissions="compliance.read,esg.read"><svg><use href="#i-leaf" /></svg><span>Qualidade e Compliance</span></a>
-                <a href="/Inspections" data-permissions="compliance.read,compliance.inspections.execute"><svg><use href="#i-leaf" /></svg><span>Modelos e Inspeções</span></a>
+                <span class="nav-label" data-i18n="g.qual">Qualidade e Rastreabilidade</span>
+                <a href="/Compliance" data-permissions="compliance.read,esg.read"><svg><use href="#i-leaf" /></svg><span data-i18n="l.comp">Qualidade e Compliance</span></a>
+                <a href="/Inspections" data-permissions="compliance.read,compliance.inspections.execute"><svg><use href="#i-leaf" /></svg><span data-i18n="l.insp">Modelos e Inspeções</span></a>
 
-                <span class="nav-label">Pessoas e Recursos</span>
-                <a href="/RuralHr" data-permissions="rural-hr.read"><svg><use href="#i-users" /></svg><span>RH Rural</span></a>
-                <a href="/Sst" data-permissions="sst.read,compliance.read"><svg><use href="#i-users" /></svg><span>SST Rural</span></a>
-                <a href="/Fleet" data-permissions="fleet.read"><svg><use href="#i-truck" /></svg><span>Frota e Manutenção</span></a>
+                <span class="nav-label" data-i18n="g.people">Pessoas e Recursos</span>
+                <a href="/RuralHr" data-permissions="rural-hr.read"><svg><use href="#i-users" /></svg><span data-i18n="l.hr">RH Rural</span></a>
+                <a href="/Sst" data-permissions="sst.read,compliance.read"><svg><use href="#i-users" /></svg><span data-i18n="l.sst">SST Rural</span></a>
+                <a href="/Fleet" data-permissions="fleet.read"><svg><use href="#i-truck" /></svg><span data-i18n="l.fleet">Frota e Manutenção</span></a>
 
-                <span class="nav-label">Cooperativas</span>
-                <a href="/Cooperatives" data-permissions="cooperative.read,commercial.read"><svg><use href="#i-globe" /></svg><span>Cooperativas e Marketplace</span></a>
+                <span class="nav-label" data-i18n="g.coop">Cooperativas</span>
+                <a href="/Cooperatives" data-permissions="cooperative.read,commercial.read"><svg><use href="#i-globe" /></svg><span data-i18n="l.coop2">Cooperativas e Marketplace</span></a>
 
-                <span class="nav-label">Sustentabilidade/Exportação</span>
-                <a href="/sustentabilidade" data-permissions="esg.read,compliance.read,sustainability.read"><svg><use href="#i-leaf" /></svg><span>Sustentabilidade e ESG</span></a>
-                <a href="/Export" data-permissions="export.read,commercial.read"><svg><use href="#i-globe" /></svg><span>Exportação e Trading</span></a>
+                <span class="nav-label" data-i18n="g.sus">Sustentabilidade/Exportação</span>
+                <a href="/sustentabilidade" data-permissions="esg.read,compliance.read,sustainability.read"><svg><use href="#i-leaf" /></svg><span data-i18n="l.sus2">Sustentabilidade e ESG</span></a>
+                <a href="/Export" data-permissions="export.read,commercial.read"><svg><use href="#i-globe" /></svg><span data-i18n="l.exp">Exportação e Trading</span></a>
 
-                <span class="nav-label">Relatórios</span>
-                <a href="/Reports" data-permissions="intelligence.read,finance.export"><svg><use href="#i-chart" /></svg><span>Relatórios e Analytics</span></a>
-                <a href="/intelligence" data-permissions="intelligence.read"><svg><use href="#i-chart" /></svg><span>Inteligência Agro360</span></a>
-                <a href="/inteligencia-agro360" data-permissions="intelligence.read"><svg><use href="#i-chart" /></svg><span>Painel Executivo 360</span></a>
+                <span class="nav-label" data-i18n="g.rep">Relatórios</span>
+                <a href="/Reports" data-permissions="intelligence.read,finance.export"><svg><use href="#i-chart" /></svg><span data-i18n="l.rep2">Relatórios e Analytics</span></a>
+                <a href="/intelligence" data-permissions="intelligence.read"><svg><use href="#i-chart" /></svg><span data-i18n="l.int">Inteligência Agro360</span></a>
+                <a href="/inteligencia-agro360" data-permissions="intelligence.read"><svg><use href="#i-chart" /></svg><span data-i18n="l.exe">Painel Executivo 360</span></a>
 
-                <span class="nav-label">Minha organização</span>
-                <a href="/Saas?view=account" data-permissions="account.users.read,account.subscription.manage,account.settings.manage"><svg><use href="#i-grid" /></svg><span>Minha Organização</span></a>
-                <a href="/Saas?view=users" data-permissions="account.users.read"><svg><use href="#i-users" /></svg><span>Usuários e Perfis</span></a>
-                <a href="/Ecosystem" data-permissions="marketplace.read"><svg><use href="#i-grid" /></svg><span>Meus Módulos</span></a>
-                <a href="/Governance" data-permissions="governance.read,integrations.read"><svg><use href="#i-grid" /></svg><span>Configurações</span></a>
-                <a href="/Integrations" data-permissions="integrations.read,governance.read"><svg><use href="#i-grid" /></svg><span>Integrações</span></a>
-                <a href="/Support" data-public-menu="true"><svg><use href="#i-bell" /></svg><span>Ajuda / Suporte</span></a>
+                <span class="nav-label" data-i18n="g.org">Minha organização</span>
+                <a href="/Saas?view=account" data-permissions="account.users.read,account.subscription.manage,account.settings.manage"><svg><use href="#i-grid" /></svg><span data-i18n="l.org2">Minha Organização</span></a>
+                <a href="/Saas?view=users" data-permissions="account.users.read"><svg><use href="#i-users" /></svg><span data-i18n="l.users">Usuários e Perfis</span></a>
+                <a href="/Ecosystem" data-permissions="marketplace.read"><svg><use href="#i-grid" /></svg><span data-i18n="l.mods">Meus Módulos</span></a>
+                <a href="/Governance" data-permissions="governance.read,integrations.read"><svg><use href="#i-grid" /></svg><span data-i18n="l.sett">Configurações</span></a>
+                <a href="/Integrations" data-permissions="integrations.read,governance.read"><svg><use href="#i-grid" /></svg><span data-i18n="l.integ">Integrações</span></a>
+                <a href="/Support" data-public-menu="true"><svg><use href="#i-bell" /></svg><span data-i18n="l.sup">Ajuda / Suporte</span></a>
 
-                <span class="nav-label">Administração global</span>
-                <a href="/Platform" data-super-admin="true"><svg><use href="#i-grid" /></svg><span>Administração Global MNSOFT</span><i>global</i></a>
+                <span class="nav-label" data-i18n="g.glob">Administração global</span>
+                <a href="/Platform" data-super-admin="true"><svg><use href="#i-grid" /></svg><span data-i18n="l.glob2">Administração Global MNSOFT</span><i>global</i></a>
             </nav>
             <div class="sidebar-footer">
                 <div class="sync-state"><span></span><div><strong>Serviços online</strong><small id="sync-time">verificando agora</small></div></div>
@@ -135,21 +135,22 @@
 
         <main class="main-content" id="main-content">
             <header class="topbar">
-                <button class="icon-button menu-button" type="button" id="menu-button" aria-label="Abrir menu"><svg><use href="#i-menu" /></svg></button>
+                <button class="icon-button menu-button" type="button" id="menu-button" aria-label="Abrir menu" data-i18n-aria="a.menu"><svg><use href="#i-menu" /></svg></button>
                 <button class="search-trigger" type="button" id="search-trigger">
-                    <svg><use href="#i-search" /></svg><span>Buscar animal, fazenda, produto, safra...</span><kbd>Ctrl K</kbd>
+                    <svg><use href="#i-search" /></svg><span data-i18n="t.search">Buscar animal, fazenda, produto, safra...</span><kbd>Ctrl K</kbd>
                 </button>
                 <div class="top-actions">
-                    <label class="culture-select" title="Idioma da interface">
+                    <label class="culture-select" title="Idioma da interface" data-i18n-title="a.lang">
                         <svg><use href="#i-globe" /></svg>
-                        <select id="top-culture" data-culture-select aria-label="Idioma da interface">
-                            <option value="pt-BR">PT-BR</option>
-                            <option value="en-US">EN-US</option>
-                            <option value="es-ES">ES-ES</option>
+                        <select id="top-culture" data-culture-select aria-label="Idioma da interface" data-i18n-aria="a.lang">
+                            <option value="pt-BR">Português</option>
+                            <option value="en-US">English</option>
+                            <option value="es-ES">Español</option>
+                            <option value="fr-FR">Français</option>
                         </select>
                     </label>
-                    <button class="icon-button" type="button" id="theme-button" aria-label="Alternar tema"><svg><use href="#i-sun" /></svg></button>
-                    <a class="icon-button notification-button" href="/Compliance" aria-label="Alertas de conformidade"><svg><use href="#i-bell" /></svg><span></span></a>
+                    <button class="icon-button" type="button" id="theme-button" aria-label="Alternar tema" data-i18n-aria="a.theme"><svg><use href="#i-sun" /></svg></button>
+                    <a class="icon-button notification-button" href="/Compliance" aria-label="Alertas de conformidade" data-i18n-aria="a.alerts"><svg><use href="#i-bell" /></svg><span></span></a>
                 </div>
             </header>
             <div class="assisted-context-banner" id="assisted-context-banner" hidden data-visible="false" role="status">
@@ -157,7 +158,7 @@
                     <strong id="assisted-context-title">Contexto de suporte assistido</strong>
                     <small id="assisted-context-subtitle">Você está operando como SuperAdmin no ambiente do cliente. Toda ação é auditada no ator real.</small>
                 </div>
-                <button type="button" class="secondary-button" id="end-assisted-session-btn" style="white-space:nowrap;padding:0.35rem 0.75rem;font-size:12px;margin-left:auto;">Encerrar contexto</button>
+                <button type="button" class="secondary-button" id="end-assisted-session-btn" style="white-space:nowrap;padding:0.35rem 0.75rem;font-size:12px;margin-left:auto;" data-i18n="b.end">Encerrar contexto</button>
             </div>
             <nav class="page-breadcrumb" id="page-breadcrumb" aria-label="Você está em">
                 <span aria-current="page">@breadcrumb</span>
@@ -169,7 +170,7 @@
             else
             {
                 <details class="screen-help global-screen-help">
-                    <summary><span>Como funciona esta tela</span><small>orientação rápida</small></summary>
+                    <summary><span data-i18n="d.help">Como funciona esta tela</span><small data-i18n="d.hint">orientação rápida</small></summary>
                     <div>
                         <p><strong>Para que serve:</strong> esta área reúne os dados e ações de @ViewData["Title"] disponíveis para o seu cliente e perfil.</p>
                         <p><strong>Como trabalhar:</strong> confira o contexto ativo, preencha os campos marcados com * e use os seletores por nome — nunca informe IDs técnicos.</p>
@@ -197,67 +198,67 @@
         </aside>
         <form class="login-card" id="login-form" novalidate>
             <div class="login-brand"><span class="brand-mark"><svg><use href="#i-leaf" /></svg></span><span>AGRO <b>360</b></span></div>
-            <div class="login-heading"><span class="eyebrow">Acesso seguro</span><span class="environment-badge">@environmentName</span></div>
-            <h2 id="login-title">Bem-vindo ao Agro360</h2>
-            <p>Seu acesso é validado diretamente no banco e as permissões são carregadas conforme o seu perfil.</p>
-            <details class="contextual-help"><summary>Como funciona esta tela</summary><p>Informe a organização, seu e-mail, CPF ou CNPJ e a senha. Todos os campos são obrigatórios; documentos aceitam máscara. Ao entrar, o sistema valida usuário, tenant, perfil e módulos e abre somente as áreas autorizadas. Nunca compartilhe sua senha e confira a organização antes de continuar.</p></details>
-            <label>Cliente / Organização<input name="tenantSlug" autocomplete="organization" placeholder="ex.: minha-fazenda" aria-describedby="tenantSlug-help tenantSlug-error" data-help="Informe o identificador do ambiente fornecido pelo administrador; não use CNPJ ou um ID técnico." required /><small class="login-field-help" id="tenantSlug-help">Identificador exclusivo do ambiente da sua empresa.</small><span class="login-field-error" id="tenantSlug-error"></span></label>
-            <label>E-mail, CPF ou CNPJ<input name="email" type="text" inputmode="text" autocomplete="username" maxlength="254" placeholder="voce@empresa.com.br" aria-describedby="email-help email-error" data-help="Use o e-mail, CPF ou CNPJ habilitado pelo administrador do seu cliente." required /><small class="login-field-help" id="email-help">Documentos podem ser informados com ou sem máscara.</small><span class="login-field-error" id="email-error"></span></label>
-            <label>Senha<span class="password-input"><input id="login-password" name="password" type="password" autocomplete="current-password" minlength="12" placeholder="••••••••••••" aria-describedby="password-error" data-help="Digite sua senha de acesso. O Agro360 nunca exibe nem envia a senha em mensagens." required /><button type="button" class="password-toggle" aria-controls="login-password" aria-pressed="false">Mostrar</button></span><span class="login-field-error" id="password-error"></span></label>
-            <details class="contextual-help" id="login-additional-step"><summary>Primeiro acesso ou administração global</summary><label>Código MFA<input name="mfaCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"><small>Obrigatório para a administração global.</small></label><label>Nova senha<input name="newPassword" type="password" autocomplete="new-password" minlength="12"><small>Preencha quando o acesso inicial exigir troca de senha.</small></label><label>Confirmar nova senha<input name="newPasswordConfirmation" type="password" autocomplete="new-password" minlength="12"></label></details>
-            <button class="primary-button" type="submit"><span>Entrar no Agro360</span><svg><use href="#i-arrow" /></svg></button>
-            <button class="connection-button" id="test-api-connection" type="button"><i></i><span>Testar conexão com a API</span></button>
+            <div class="login-heading"><span class="eyebrow" data-i18n="lg.secure">Acesso seguro</span><span class="environment-badge">@environmentName</span></div>
+            <h2 id="login-title" data-i18n="lg.title">Bem-vindo ao Agro360</h2>
+            <p data-i18n="lg.sub">Seu acesso é validado diretamente no banco e as permissões são carregadas conforme o seu perfil.</p>
+            <details class="contextual-help"><summary data-i18n="d.help">Como funciona esta tela</summary><p>Informe a organização, seu e-mail, CPF ou CNPJ e a senha. Todos os campos são obrigatórios; documentos aceitam máscara. Ao entrar, o sistema valida usuário, tenant, perfil e módulos e abre somente as áreas autorizadas. Nunca compartilhe sua senha e confira a organização antes de continuar.</p></details>
+            <label><span data-i18n="lg.tenant">Cliente / Organização</span><input name="tenantSlug" autocomplete="organization" placeholder="ex.: minha-fazenda" aria-describedby="tenantSlug-help tenantSlug-error" data-help="Informe o identificador do ambiente fornecido pelo administrador; não use CNPJ ou um ID técnico." required /><small class="login-field-help" id="tenantSlug-help" data-i18n="lg.tenantHelp">Identificador exclusivo do ambiente da sua empresa.</small><span class="login-field-error" id="tenantSlug-error"></span></label>
+            <label><span data-i18n="lg.email">E-mail, CPF ou CNPJ</span><input name="email" type="text" inputmode="text" autocomplete="username" maxlength="254" placeholder="voce@empresa.com.br" aria-describedby="email-help email-error" data-help="Use o e-mail, CPF ou CNPJ habilitado pelo administrador do seu cliente." required /><small class="login-field-help" id="email-help" data-i18n="lg.emailHelp">Documentos podem ser informados com ou sem máscara.</small><span class="login-field-error" id="email-error"></span></label>
+            <label><span data-i18n="lg.password">Senha</span><span class="password-input"><input id="login-password" name="password" type="password" autocomplete="current-password" minlength="12" placeholder="••••••••••••" aria-describedby="password-error" data-help="Digite sua senha de acesso. O Agro360 nunca exibe nem envia a senha em mensagens." required /><button type="button" class="password-toggle" aria-controls="login-password" aria-pressed="false" data-i18n="lg.show">Mostrar</button></span><span class="login-field-error" id="password-error"></span></label>
+            <details class="contextual-help" id="login-additional-step"><summary data-i18n="lg.first">Primeiro acesso ou administração global</summary><label><span data-i18n="lg.mfa">Código MFA</span><input name="mfaCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"><small data-i18n="lg.mfaHelp">Obrigatório para a administração global.</small></label><label><span data-i18n="lg.newpw">Nova senha</span><input name="newPassword" type="password" autocomplete="new-password" minlength="12"><small data-i18n="lg.pwHelp">Preencha quando o acesso inicial exigir troca de senha.</small></label><label><span data-i18n="lg.newpw2">Confirmar nova senha</span><input name="newPasswordConfirmation" type="password" autocomplete="new-password" minlength="12"></label></details>
+            <button class="primary-button" type="submit"><span data-i18n="lg.enter">Entrar no Agro360</span><svg><use href="#i-arrow" /></svg></button>
+            <button class="connection-button" id="test-api-connection" type="button"><i></i><span data-i18n="lg.test">Testar conexão com a API</span></button>
             @if (HostEnvironment.IsDevelopment())
             {
                 <a class="swagger-link" href="@($"{apiBaseUrl.TrimEnd('/')}/swagger")" target="_blank" rel="noopener noreferrer">Abrir documentação Swagger ↗</a>
             }
             <div class="form-message" id="login-message" role="alert" aria-live="assertive"></div>
-            <small>Agro360 by MNSOFT · Sessão criptografada e isolada por cliente.</small>
+            <small data-i18n="lg.footer">Agro360 by MNSOFT · Sessão criptografada e isolada por cliente.</small>
         </form>
         </section>
     </div>
 
-    <div class="modal-backdrop palette-backdrop" id="command-palette" role="dialog" aria-modal="true" aria-label="Busca global" hidden>
+    <div class="modal-backdrop palette-backdrop" id="command-palette" role="dialog" aria-modal="true" aria-label="Busca global" data-i18n-aria="a.palette" hidden>
         <div class="command-palette">
-            <div class="palette-input"><svg><use href="#i-search" /></svg><input id="global-search" autocomplete="off" placeholder="O que você procura?" /><kbd>ESC</kbd></div>
-            <div class="palette-results" id="search-results"><p>Digite pelo menos dois caracteres para buscar em toda a operação.</p></div>
-            <footer><span>↑↓ navegar</span><span>↵ abrir</span><span>Resultados respeitam suas permissões</span></footer>
+            <div class="palette-input"><svg><use href="#i-search" /></svg><input id="global-search" autocomplete="off" placeholder="O que você procura?" data-i18n-placeholder="t.palette" /><kbd>ESC</kbd></div>
+            <div class="palette-results" id="search-results"><p data-i18n="t.paletteHint">Digite pelo menos dois caracteres para buscar em toda a operação.</p></div>
+            <footer><span>↑↓ navegar</span><span>↵ abrir</span><span data-i18n="t.perms">Resultados respeitam suas permissões</span></footer>
         </div>
     </div>
 
     <div class="toast-region" id="toast-region" aria-live="polite"></div>
     <dialog class="action-confirmation" id="context-switcher-dialog" aria-labelledby="context-switcher-title">
         <form method="dialog" id="context-switcher-form">
-            <span class="eyebrow">Filtro de Unidade</span>
-            <h2 id="context-switcher-title">Alternar contexto operacional</h2>
-            <p>Selecione a fazenda ou unidade de trabalho. A seleção filtra o conjunto autorizado e atualiza consultas e lançamentos nesta sessão.</p>
+            <span class="eyebrow" data-i18n="d.csUnit">Filtro de Unidade</span>
+            <h2 id="context-switcher-title" data-i18n="d.csTitle">Alternar contexto operacional</h2>
+            <p data-i18n="d.csDesc">Selecione a fazenda ou unidade de trabalho. A seleção filtra o conjunto autorizado e atualiza consultas e lançamentos nesta sessão.</p>
             <div id="context-switcher-fields">
-                <label for="context-farm-select">Unidade / Fazenda ativa
+                <label for="context-farm-select"><span data-i18n="d.csSelect">Unidade / Fazenda ativa</span>
                     <select id="context-farm-select" name="farmId" style="width:100%;padding:0.5rem;margin-top:0.35rem">
-                        <option value="">Todas as unidades autorizadas (união do escopo)</option>
+                        <option value="" data-i18n="d.csAll">Todas as unidades autorizadas (união do escopo)</option>
                     </select>
                 </label>
                 <div id="context-switcher-preview" style="margin-top:0.5rem;font-size:0.85rem;color:var(--color-muted,#555)"></div>
             </div>
             <div class="form-actions" style="margin-top:1rem">
-                <button type="submit" value="cancel" class="secondary-button">Cancelar</button>
-                <button type="submit" value="apply" class="primary-button" id="context-switcher-apply">Aplicar contexto</button>
+                <button type="submit" value="cancel" class="secondary-button" data-i18n="d.cancel">Cancelar</button>
+                <button type="submit" value="apply" class="primary-button" id="context-switcher-apply" data-i18n="d.apply">Aplicar contexto</button>
             </div>
         </form>
     </dialog>
     <dialog class="action-confirmation" id="action-confirmation" aria-labelledby="confirmation-title" aria-describedby="confirmation-consequence">
         <form method="dialog" id="confirmation-form">
             <span class="eyebrow" data-confirmation-kind>Ação sensível</span>
-            <h2 id="confirmation-title">Confirme a operação</h2>
+            <h2 id="confirmation-title" data-i18n="d.confirmTitle">Confirme a operação</h2>
             <p id="confirmation-consequence"></p>
-            <label id="confirmation-reason-field" hidden>Justificativa <span aria-hidden="true">*</span>
+            <label id="confirmation-reason-field" hidden><span data-i18n="d.reason">Justificativa</span> <span aria-hidden="true">*</span>
                 <textarea id="confirmation-reason" maxlength="1000"></textarea>
-                <small>Informe um motivo objetivo; ele será enviado ao endpoint e registrado na auditoria.</small>
+                <small data-i18n="d.reasonHint">Informe um motivo objetivo; ele será enviado ao endpoint e registrado na auditoria.</small>
                 <span class="field-validation" id="confirmation-reason-error" role="alert"></span>
             </label>
             <div class="form-actions">
-                <button type="submit" value="cancel" class="secondary-button">Voltar sem alterar</button>
-                <button type="submit" value="confirm" class="danger-button" id="confirmation-submit">Confirmar ação</button>
+                <button type="submit" value="cancel" class="secondary-button" data-i18n="d.back">Voltar sem alterar</button>
+                <button type="submit" value="confirm" class="danger-button" id="confirmation-submit" data-i18n="d.confirmBtn">Confirmar ação</button>
             </div>
         </form>
     </dialog>

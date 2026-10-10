@@ -2749,7 +2749,7 @@ create table if not exists agro360.platform_languages (
  is_fallback boolean not null default false, created_at timestamptz not null default now(), updated_at timestamptz, created_by uuid, updated_by uuid
 );
 create unique index if not exists ux_platform_fallback_language on agro360.platform_languages ((is_fallback)) where is_fallback;
-insert into agro360.platform_languages(culture,native_name,is_fallback) values ('pt-BR','Português (Brasil)',true),('en-US','English (United States)',false),('es-ES','Español',false) on conflict do nothing;
+insert into agro360.platform_languages(culture,native_name,is_fallback) values ('pt-BR','Português (Brasil)',true),('en-US','English (United States)',false),('es-ES','Español',false),('fr-FR','Français (France)',false) on conflict do nothing;
 
 create table if not exists agro360.platform_saas_plans (
  id uuid primary key default gen_random_uuid(), code varchar(50) not null unique, name varchar(120) not null, description text not null,
@@ -2836,7 +2836,7 @@ create table if not exists agro360.platform_api_request_logs(id uuid primary key
 create table if not exists agro360.platform_webhook_subscriptions(id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),app_id uuid not null,url varchar(2048) not null,events text[] not null,secret_hash char(64) not null,status varchar(20) not null check(status in('ACTIVE','INACTIVE','BLOCKED')),maximum_attempts int not null check(maximum_attempts between 1 and 10),created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid,updated_by uuid,deleted_at timestamptz,foreign key(tenant_id,app_id) references agro360.platform_external_apps(tenant_id,id));
 create table if not exists agro360.platform_webhook_events(id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),event_type varchar(80) not null,entity_id uuid,payload jsonb not null,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid,updated_by uuid,deleted_at timestamptz);
 create table if not exists agro360.platform_webhook_deliveries(id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),subscription_id uuid not null references agro360.platform_webhook_subscriptions(id),event_id uuid not null references agro360.platform_webhook_events(id),attempt int not null check(attempt between 1 and 10),status varchar(20) not null check(status in('PENDING','DELIVERED','FAILED','ABANDONED')),http_status int,response_excerpt varchar(500),next_retry_at timestamptz,delivered_at timestamptz,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid,updated_by uuid,deleted_at timestamptz);
-create table if not exists agro360.platform_developer_docs(id uuid primary key,slug varchar(100) not null,title varchar(200) not null,culture varchar(5) not null check(culture in('pt-BR','en-US','es-ES')),content text not null,example_payload jsonb,sort_order int not null default 0,active boolean not null default true,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid,updated_by uuid,deleted_at timestamptz,unique(slug,culture));
+create table if not exists agro360.platform_developer_docs(id uuid primary key,slug varchar(100) not null,title varchar(200) not null,culture varchar(5) not null check(culture in('pt-BR','en-US','es-ES','fr-FR')),content text not null,example_payload jsonb,sort_order int not null default 0,active boolean not null default true,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid,updated_by uuid,deleted_at timestamptz,unique(slug,culture));
 create table if not exists agro360.platform_commercial_catalog(id uuid primary key,name varchar(100) not null,description text not null,monthly_price numeric(18,2) not null check(monthly_price>=0),annual_price numeric(18,2) not null check(annual_price>=0),user_limit int not null,property_limit int not null,integration_limit int not null,webhook_limit int not null,languages text[] not null,status varchar(20) not null,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid,updated_by uuid,deleted_at timestamptz);
 create table if not exists agro360.platform_commercial_plan_features(id uuid primary key default gen_random_uuid(),catalog_id uuid not null references agro360.platform_commercial_catalog(id),feature_code varchar(100) not null,included boolean not null,limit_value int,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid,updated_by uuid,deleted_at timestamptz,unique(catalog_id,feature_code));
 create table if not exists agro360.platform_integration_audit_events(id uuid primary key,tenant_id uuid not null references agro360.tenancy_tenants(id),category varchar(40) not null,action varchar(80) not null,entity_id uuid,actor_id uuid,details jsonb not null default '{}',created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid,updated_by uuid,deleted_at timestamptz);
@@ -2919,7 +2919,7 @@ alter table agro360.operations_workflow_steps add column if not exists step_type
 create table if not exists agro360.operations_workflow_versions(id uuid primary key default gen_random_uuid(),tenant_id uuid not null references agro360.tenancy_tenants(id),definition_id uuid not null,version int not null check(version>0),status varchar(20) not null check(status in('DRAFT','ACTIVE','INACTIVE')),published_at timestamptz,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid not null references agro360.identity_users(id),updated_by uuid references agro360.identity_users(id),deleted_at timestamptz,foreign key(tenant_id,definition_id) references agro360.operations_workflow_definitions(tenant_id,id),unique(tenant_id,definition_id,version));
 create table if not exists agro360.operations_workflow_instance_events(id uuid primary key default gen_random_uuid(),tenant_id uuid not null references agro360.tenancy_tenants(id),instance_id uuid not null,event_type varchar(40) not null,previous_status varchar(20),new_status varchar(20),comment varchar(2000),evidence_key varchar(500),details jsonb not null default '{}',created_at timestamptz not null default now(),created_by uuid not null references agro360.identity_users(id),foreign key(tenant_id,instance_id) references agro360.operations_workflow_instances(tenant_id,id));
 create table if not exists agro360.operations_workflow_task_comments(id uuid primary key default gen_random_uuid(),tenant_id uuid not null references agro360.tenancy_tenants(id),task_id uuid not null,comment varchar(3000) not null check(length(trim(comment))>0),evidence_key varchar(500),created_at timestamptz not null default now(),created_by uuid not null references agro360.identity_users(id),foreign key(tenant_id,task_id) references agro360.operations_operational_tasks(tenant_id,id));
-create table if not exists agro360.operations_notification_templates(id uuid primary key default gen_random_uuid(),tenant_id uuid references agro360.tenancy_tenants(id),name varchar(160) not null,code varchar(80) not null,culture varchar(5) not null check(culture in('pt-BR','en-US','es-ES')),subject varchar(300),body text not null,channel varchar(20) not null check(channel in('INTERNAL','EMAIL','WHATSAPP','WEBHOOK')),allowed_variables text[] not null default '{}',status varchar(20) not null check(status in('DRAFT','ACTIVE','INACTIVE')),created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid not null references agro360.identity_users(id),updated_by uuid references agro360.identity_users(id),deleted_at timestamptz,unique(tenant_id,code,culture,channel),check(status<>'ACTIVE' or length(trim(body))>0),check(channel='INTERNAL' or length(trim(subject))>0));
+create table if not exists agro360.operations_notification_templates(id uuid primary key default gen_random_uuid(),tenant_id uuid references agro360.tenancy_tenants(id),name varchar(160) not null,code varchar(80) not null,culture varchar(5) not null check(culture in('pt-BR','en-US','es-ES','fr-FR')),subject varchar(300),body text not null,channel varchar(20) not null check(channel in('INTERNAL','EMAIL','WHATSAPP','WEBHOOK')),allowed_variables text[] not null default '{}',status varchar(20) not null check(status in('DRAFT','ACTIVE','INACTIVE')),created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid not null references agro360.identity_users(id),updated_by uuid references agro360.identity_users(id),deleted_at timestamptz,unique(tenant_id,code,culture,channel),check(status<>'ACTIVE' or length(trim(body))>0),check(channel='INTERNAL' or length(trim(subject))>0));
 create table if not exists agro360.operations_notification_outbox(id uuid primary key default gen_random_uuid(),tenant_id uuid not null references agro360.tenancy_tenants(id),template_id uuid,channel varchar(20) not null check(channel in('EMAIL','WHATSAPP','WEBHOOK')),recipient varchar(254) not null,payload jsonb not null,status varchar(30) not null default 'PENDING_NOT_CONFIGURED' check(status in('PENDING','PENDING_NOT_CONFIGURED','PROCESSING','SENT','FAILED')),provider varchar(80),attempts int not null default 0,last_error varchar(2000),attempted_at timestamptz,sent_at timestamptz,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid not null references agro360.identity_users(id),updated_by uuid references agro360.identity_users(id),foreign key(template_id) references agro360.operations_notification_templates(id),check(status<>'SENT' or sent_at is not null));
 create table if not exists agro360.operations_sla_policies(id uuid primary key default gen_random_uuid(),tenant_id uuid not null references agro360.tenancy_tenants(id),name varchar(160) not null,module varchar(50) not null,occurrence_type varchar(60) not null,priority varchar(16) not null check(priority in('LOW','MEDIUM','HIGH','CRITICAL')),due_minutes int not null check(due_minutes>0),initial_responsible_id uuid,manager_id uuid,timezone varchar(80) not null default 'America/Sao_Paulo',overdue_action varchar(40) not null,status varchar(20) not null check(status in('ACTIVE','INACTIVE')),created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid not null references agro360.identity_users(id),updated_by uuid references agro360.identity_users(id),deleted_at timestamptz,unique(tenant_id,id),unique(tenant_id,module,occurrence_type,priority));
 create table if not exists agro360.operations_sla_escalations(id uuid primary key default gen_random_uuid(),tenant_id uuid not null references agro360.tenancy_tenants(id),policy_id uuid not null,task_id uuid,workflow_instance_id uuid,escalated_to uuid not null,reason varchar(1000) not null,escalated_at timestamptz not null default now(),created_at timestamptz not null default now(),created_by uuid not null references agro360.identity_users(id),foreign key(tenant_id,policy_id) references agro360.operations_sla_policies(tenant_id,id),check(task_id is not null or workflow_instance_id is not null));
@@ -2940,10 +2940,10 @@ create index if not exists ix_agenda_range on agro360.operations_agenda_events(t
 
 insert into agro360.platform_schema_versions(version,description) values('4.9.0','Sprint 49 - workflows, tarefas, notificações, SLA, automação e agenda') on conflict(version) do nothing;
 -- Sprint 50 — UX, formulários, mensagens, ajuda e eventos auditáveis (PostgreSQL 15+)
-create table if not exists agro360.ui_contextual_help(id uuid primary key default gen_random_uuid(),tenant_id uuid references agro360.tenancy_tenants(id),page_key varchar(100) not null,module varchar(60) not null,culture varchar(5) not null check(culture in('pt-BR','en-US','es-ES')),audience varchar(24) not null check(audience in('ADMIN','TENANT','OPERATIONAL')),title varchar(160) not null,content text not null,status varchar(20) not null default 'ACTIVE' check(status in('DRAFT','ACTIVE','INACTIVE')),created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid references agro360.identity_users(id),updated_by uuid references agro360.identity_users(id),deleted_at timestamptz,unique nulls not distinct(tenant_id,page_key,culture,audience));
-create table if not exists agro360.ui_message_templates(id uuid primary key default gen_random_uuid(),tenant_id uuid references agro360.tenancy_tenants(id),code varchar(100) not null,module varchar(60) not null,culture varchar(5) not null check(culture in('pt-BR','en-US','es-ES')),message_type varchar(24) not null check(message_type in('SUCCESS','ERROR','WARNING','INFO','CONFIRMATION','BLOCK','PERMISSION_DENIED','VALIDATION','EVENT_RECORDED','CRITICAL_ACTION')),title varchar(160) not null,message text not null,status varchar(20) not null default 'ACTIVE' check(status in('DRAFT','ACTIVE','INACTIVE')),created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid references agro360.identity_users(id),updated_by uuid references agro360.identity_users(id),deleted_at timestamptz,unique nulls not distinct(tenant_id,code,culture));
+create table if not exists agro360.ui_contextual_help(id uuid primary key default gen_random_uuid(),tenant_id uuid references agro360.tenancy_tenants(id),page_key varchar(100) not null,module varchar(60) not null,culture varchar(5) not null check(culture in('pt-BR','en-US','es-ES','fr-FR')),audience varchar(24) not null check(audience in('ADMIN','TENANT','OPERATIONAL')),title varchar(160) not null,content text not null,status varchar(20) not null default 'ACTIVE' check(status in('DRAFT','ACTIVE','INACTIVE')),created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid references agro360.identity_users(id),updated_by uuid references agro360.identity_users(id),deleted_at timestamptz,unique nulls not distinct(tenant_id,page_key,culture,audience));
+create table if not exists agro360.ui_message_templates(id uuid primary key default gen_random_uuid(),tenant_id uuid references agro360.tenancy_tenants(id),code varchar(100) not null,module varchar(60) not null,culture varchar(5) not null check(culture in('pt-BR','en-US','es-ES','fr-FR')),message_type varchar(24) not null check(message_type in('SUCCESS','ERROR','WARNING','INFO','CONFIRMATION','BLOCK','PERMISSION_DENIED','VALIDATION','EVENT_RECORDED','CRITICAL_ACTION')),title varchar(160) not null,message text not null,status varchar(20) not null default 'ACTIVE' check(status in('DRAFT','ACTIVE','INACTIVE')),created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid references agro360.identity_users(id),updated_by uuid references agro360.identity_users(id),deleted_at timestamptz,unique nulls not distinct(tenant_id,code,culture));
 create table if not exists agro360.ui_form_validation_rules(id uuid primary key default gen_random_uuid(),tenant_id uuid references agro360.tenancy_tenants(id),page_key varchar(100) not null,field_key varchar(100) not null,rule_type varchar(30) not null,parameters jsonb not null default '{}',backend_rule varchar(160) not null,message_code varchar(100) not null,status varchar(20) not null default 'ACTIVE',created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid references agro360.identity_users(id),updated_by uuid references agro360.identity_users(id),deleted_at timestamptz,unique nulls not distinct(tenant_id,page_key,field_key,rule_type));
-create table if not exists agro360.ui_action_confirmations(id uuid primary key default gen_random_uuid(),tenant_id uuid references agro360.tenancy_tenants(id),action_key varchar(100) not null,module varchar(60) not null,culture varchar(5) not null check(culture in('pt-BR','en-US','es-ES')),title varchar(160) not null,consequence text not null,reason_required boolean not null default false,permission varchar(120) not null,audit_action varchar(100) not null,status varchar(20) not null default 'ACTIVE',created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid references agro360.identity_users(id),updated_by uuid references agro360.identity_users(id),deleted_at timestamptz,unique nulls not distinct(tenant_id,action_key,culture));
+create table if not exists agro360.ui_action_confirmations(id uuid primary key default gen_random_uuid(),tenant_id uuid references agro360.tenancy_tenants(id),action_key varchar(100) not null,module varchar(60) not null,culture varchar(5) not null check(culture in('pt-BR','en-US','es-ES','fr-FR')),title varchar(160) not null,consequence text not null,reason_required boolean not null default false,permission varchar(120) not null,audit_action varchar(100) not null,status varchar(20) not null default 'ACTIVE',created_at timestamptz not null default now(),updated_at timestamptz not null default now(),created_by uuid references agro360.identity_users(id),updated_by uuid references agro360.identity_users(id),deleted_at timestamptz,unique nulls not distinct(tenant_id,action_key,culture));
 create table if not exists agro360.ui_page_events(id uuid primary key default gen_random_uuid(),tenant_id uuid not null references agro360.tenancy_tenants(id),page_key varchar(100) not null,module varchar(60) not null,event_type varchar(40) not null,entity_type varchar(80),entity_id uuid,details jsonb not null default '{}',correlation_id varchar(100),created_at timestamptz not null default now(),created_by uuid references agro360.identity_users(id));
 create table if not exists agro360.ui_feedback_events(id uuid primary key default gen_random_uuid(),tenant_id uuid not null references agro360.tenancy_tenants(id),page_key varchar(100) not null,feedback_type varchar(30) not null,message varchar(1000) not null,created_at timestamptz not null default now(),created_by uuid references agro360.identity_users(id));
 create table if not exists agro360.ui_validation_audit(id uuid primary key default gen_random_uuid(),tenant_id uuid not null references agro360.tenancy_tenants(id),page_key varchar(100) not null,field_key varchar(100),rule_type varchar(30) not null,accepted boolean not null,correlation_id varchar(100),created_at timestamptz not null default now(),created_by uuid references agro360.identity_users(id));
@@ -9437,5 +9437,90 @@ select agro360.platform_enable_tenant_rls('agro360.procurement_supplier_credits'
 
 insert into agro360.platform_schema_versions(version, description, installed_at)
 values('11.23.0', 'Devolução ao fornecedor: documento com aprovação segregada, tipo RETURN_TO_SUPPLIER no ledger, reversão de received_quantity, nota de crédito aberta do fornecedor e idempotência no padrão do recebimento', now())
+on conflict (version) do update set description = excluded.description;
+
+-- Cauda idempotente da migration 134 (fr-FR): em bases já instaladas, relaza os CHECKs de cultura
+-- dos templates persistidos sem reescrever linhas; em instalação limpa todos os blocos são no-op.
+insert into agro360.platform_languages(culture, native_name, active, is_fallback)
+values ('fr-FR', 'Français (France)', true, false)
+on conflict (culture) do update set active = excluded.active, updated_at = now();
+
+do $$
+declare c record;
+begin
+  for c in select conname from pg_constraint
+           where conrelid = 'agro360.platform_developer_docs'::regclass and contype = 'c'
+             and pg_get_constraintdef(oid) like '%culture%'
+             and pg_get_constraintdef(oid) like '%pt-BR%'
+             and pg_get_constraintdef(oid) not like '%fr-FR%'
+  loop execute format('alter table agro360.platform_developer_docs drop constraint %I', c.conname);
+  end loop;
+   if not exists (select 1 from pg_constraint where conrelid = 'agro360.platform_developer_docs'::regclass and conname = 'ck_platform_developer_docs_culture') then
+     execute 'alter table agro360.platform_developer_docs add constraint ck_platform_developer_docs_culture check (culture in (''pt-BR'', ''en-US'', ''es-ES'', ''fr-FR''))';
+   end if;
+end $$;
+
+do $$
+declare c record;
+begin
+  for c in select conname from pg_constraint
+           where conrelid = 'agro360.operations_notification_templates'::regclass and contype = 'c'
+             and pg_get_constraintdef(oid) like '%culture%'
+             and pg_get_constraintdef(oid) like '%pt-BR%'
+             and pg_get_constraintdef(oid) not like '%fr-FR%'
+  loop execute format('alter table agro360.operations_notification_templates drop constraint %I', c.conname);
+  end loop;
+   if not exists (select 1 from pg_constraint where conrelid = 'agro360.operations_notification_templates'::regclass and conname = 'ck_operations_notification_templates_culture') then
+     execute 'alter table agro360.operations_notification_templates add constraint ck_operations_notification_templates_culture check (culture in (''pt-BR'', ''en-US'', ''es-ES'', ''fr-FR''))';
+   end if;
+end $$;
+
+do $$
+declare c record;
+begin
+  for c in select conname from pg_constraint
+           where conrelid = 'agro360.ui_contextual_help'::regclass and contype = 'c'
+             and pg_get_constraintdef(oid) like '%culture%'
+             and pg_get_constraintdef(oid) like '%pt-BR%'
+             and pg_get_constraintdef(oid) not like '%fr-FR%'
+  loop execute format('alter table agro360.ui_contextual_help drop constraint %I', c.conname);
+  end loop;
+   if not exists (select 1 from pg_constraint where conrelid = 'agro360.ui_contextual_help'::regclass and conname = 'ck_ui_contextual_help_culture') then
+     execute 'alter table agro360.ui_contextual_help add constraint ck_ui_contextual_help_culture check (culture in (''pt-BR'', ''en-US'', ''es-ES'', ''fr-FR''))';
+   end if;
+end $$;
+
+do $$
+declare c record;
+begin
+  for c in select conname from pg_constraint
+           where conrelid = 'agro360.ui_message_templates'::regclass and contype = 'c'
+             and pg_get_constraintdef(oid) like '%culture%'
+             and pg_get_constraintdef(oid) like '%pt-BR%'
+             and pg_get_constraintdef(oid) not like '%fr-FR%'
+  loop execute format('alter table agro360.ui_message_templates drop constraint %I', c.conname);
+  end loop;
+   if not exists (select 1 from pg_constraint where conrelid = 'agro360.ui_message_templates'::regclass and conname = 'ck_ui_message_templates_culture') then
+     execute 'alter table agro360.ui_message_templates add constraint ck_ui_message_templates_culture check (culture in (''pt-BR'', ''en-US'', ''es-ES'', ''fr-FR''))';
+   end if;
+end $$;
+
+do $$
+declare c record;
+begin
+  for c in select conname from pg_constraint
+           where conrelid = 'agro360.ui_action_confirmations'::regclass and contype = 'c'
+             and pg_get_constraintdef(oid) like '%culture%'
+             and pg_get_constraintdef(oid) like '%pt-BR%'
+             and pg_get_constraintdef(oid) not like '%fr-FR%'
+  loop execute format('alter table agro360.ui_action_confirmations drop constraint %I', c.conname);
+  end loop;
+   if not exists (select 1 from pg_constraint where conrelid = 'agro360.ui_action_confirmations'::regclass and conname = 'ck_ui_action_confirmations_culture') then
+     execute 'alter table agro360.ui_action_confirmations add constraint ck_ui_action_confirmations_culture check (culture in (''pt-BR'', ''en-US'', ''es-ES'', ''fr-FR''))';
+   end if;
+end $$;
+
+insert into agro360.platform_schema_versions(version, description, installed_at)
+values('11.24.0', 'Idioma francês (fr-FR) habilitado no catálogo de culturas e aceito nos templates persistidos de ajuda, mensagens, confirmações, notificações e documentação', now())
 on conflict (version) do update set description = excluded.description;
 commit;

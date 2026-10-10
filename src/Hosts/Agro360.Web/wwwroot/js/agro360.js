@@ -9,10 +9,138 @@
     // Idioma da interface na mesma convenção de forms.js/saas.js (localStorage agro360.culture).
     // O idioma só muda apresentação: permissões, plano, moeda contratual (BRL) e estados persistidos
     // são independentes da cultura; as formatações abaixo acompanham o idioma e nunca o definem.
-    const supportedCultures = ["pt-BR", "en-US", "es-ES"];
+    const supportedCultures = ["pt-BR", "en-US", "es-ES", "fr-FR"];
     const currentCulture = () => {
         const stored = localStorage.getItem(storageKeys.culture);
         return supportedCultures.includes(stored) ? stored : "pt-BR";
+    };
+    // Textos estáticos do shell (sidebar, busca, diálogos, login, alternador de contexto) nas quatro línguas aprovadas.
+    // O pt-BR é o próprio HTML original (fallback capturado em tempo de execução em data-i18nFallback):
+    // chave ausente nunca deixa o elemento vazio — a apresentação muda, nunca os estados persistidos.
+    const uiTranslations = {
+        "en-US": {
+            "g.start": "Home", "l.home": "Home / Dashboard", "l.tasks": "Tasks & Alerts", "l.deploy": "Deployment Center",
+            "g.prod": "Production & Field", "l.props": "Farms & Units", "l.agri": "Agriculture", "l.field": "Field Operations",
+            "l.maps": "Operations Map", "l.harv": "Harvest & Receipt", "l.costs": "Season Costs", "l.prod2": "Agri-industrial Production",
+            "g.peq": "Livestock", "l.live": "Livestock",
+            "g.stock": "Stock & Purchasing", "l.inv": "Inventory & Warehouse", "l.repl": "Replenishment & Needs", "l.proc": "Purchasing & Suppliers",
+            "g.com": "Commercial", "l.comm": "Sales & Commerce", "l.crm": "CRM & Customer Cycle", "l.after": "After-sales",
+            "g.log": "Logistics", "l.logi": "Dispatch & Delivery",
+            "g.fin": "Finance/Tax", "l.fin2": "Finance & Costs", "l.fisc": "Tax", "l.docs": "Documents & Evidence",
+            "g.qual": "Quality & Traceability", "l.comp": "Quality & Compliance", "l.insp": "Templates & Inspections",
+            "g.people": "People & Resources", "l.hr": "Rural HR", "l.sst": "Rural OHS", "l.fleet": "Fleet & Maintenance",
+            "g.coop": "Cooperatives", "l.coop2": "Cooperatives & Marketplace",
+            "g.sus": "Sustainability/Export", "l.sus2": "Sustainability & ESG", "l.exp": "Export & Trading",
+            "g.rep": "Reports", "l.rep2": "Reports & Analytics", "l.int": "Agro360 Intelligence", "l.exe": "Executive Panel 360",
+            "g.org": "My organization", "l.org2": "My Organization", "l.users": "Users & Profiles", "l.mods": "My Modules",
+            "l.sett": "Settings", "l.integ": "Integrations", "l.sup": "Help / Support",
+            "g.glob": "Global administration", "l.glob2": "MNSOFT Global Administration",
+            "c.ctx": "Active context", "c.switch": "Change context",
+            "t.search": "Search animal, farm, product, season...", "t.palette": "What are you looking for?",
+            "t.paletteHint": "Type at least two characters to search across the operation.", "t.perms": "Results respect your permissions",
+            "a.menu": "Open menu", "a.theme": "Toggle theme", "a.alerts": "Compliance alerts", "a.lang": "Interface language", "a.palette": "Global search",
+            "b.end": "End context",
+            "d.help": "How this screen works", "d.hint": "quick guidance",
+            "lg.secure": "Secure access", "lg.title": "Welcome to Agro360",
+            "lg.sub": "Your access is validated directly against the database and permissions are loaded according to your profile.",
+            "lg.tenant": "Client / Organization", "lg.tenantHelp": "The unique identifier of your company's environment.",
+            "lg.email": "Email, CPF or CNPJ", "lg.emailHelp": "Documents may be entered with or without formatting.",
+            "lg.password": "Password", "lg.show": "Show", "lg.hide": "Hide",
+            "lg.first": "First access or global administration", "lg.mfa": "MFA code", "lg.mfaHelp": "Required for global administration.",
+            "lg.newpw": "New password", "lg.pwHelp": "Fill in when the initial access requires a password change.", "lg.newpw2": "Confirm new password",
+            "lg.enter": "Sign in to Agro360", "lg.test": "Test API connection",
+            "lg.footer": "Agro360 by MNSOFT · Encrypted session, isolated per client.",
+            "d.csUnit": "Unit filter", "d.csTitle": "Switch operational context",
+            "d.csDesc": "Select the farm or work unit. The selection filters the authorized set and updates queries and entries in this session.",
+            "d.csSelect": "Active Unit / Farm", "d.csAll": "All authorized units (scope union)", "d.cancel": "Cancel", "d.apply": "Apply context",
+            "d.confirmTitle": "Confirm the operation", "d.reason": "Justification",
+            "d.reasonHint": "Provide an objective reason; it is sent to the endpoint and recorded in the audit log.",
+            "d.back": "Back without changes", "d.confirmBtn": "Confirm action",
+            "p.loading": "Loading authorized units…", "p.active": "Active context:", "p.activeEnd": ". The filter affects queries and reports.",
+            "p.none": "No individual filter: showing the authorized union of units.", "p.fail": "Could not load the list of authorized units."
+        },
+        "es-ES": {
+            "g.start": "Inicio", "l.home": "Inicio / Panel de control", "l.tasks": "Tareas y alertas", "l.deploy": "Centro de implementación",
+            "g.prod": "Producción y campo", "l.props": "Haciendas y unidades", "l.agri": "Agricultura", "l.field": "Operación de campo",
+            "l.maps": "Mapa operativo", "l.harv": "Cosecha y recepción", "l.costs": "Costos de la cosecha", "l.prod2": "Producción agroindustrial",
+            "g.peq": "Ganadería", "l.live": "Ganadería",
+            "g.stock": "Inventarios y compras", "l.inv": "Inventario y almacén", "l.repl": "Reposición y necesidades", "l.proc": "Compras y proveedores",
+            "g.com": "Comercial", "l.comm": "Ventas y comercio", "l.crm": "CRM y ciclo del cliente", "l.after": "Posventa",
+            "g.log": "Logística", "l.logi": "Despacho y entrega",
+            "g.fin": "Finanzas/fiscal", "l.fin2": "Finanzas y costos", "l.fisc": "Fiscal", "l.docs": "Documentos y evidencias",
+            "g.qual": "Calidad y trazabilidad", "l.comp": "Calidad y cumplimiento", "l.insp": "Plantillas e inspecciones",
+            "g.people": "Personas y recursos", "l.hr": "RR. HH. rural", "l.sst": "SST rural", "l.fleet": "Flota y mantenimiento",
+            "g.coop": "Cooperativas", "l.coop2": "Cooperativas y marketplace",
+            "g.sus": "Sostenibilidad/exportación", "l.sus2": "Sostenibilidad y ESG", "l.exp": "Exportación y trading",
+            "g.rep": "Informes", "l.rep2": "Informes y analítica", "l.int": "Inteligencia Agro360", "l.exe": "Panel ejecutivo 360",
+            "g.org": "Mi organización", "l.org2": "Mi organización", "l.users": "Usuarios y perfiles", "l.mods": "Mis módulos",
+            "l.sett": "Configuraciones", "l.integ": "Integraciones", "l.sup": "Ayuda / Soporte",
+            "g.glob": "Administración global", "l.glob2": "Administración Global MNSOFT",
+            "c.ctx": "Contexto activo", "c.switch": "Cambiar contexto",
+            "t.search": "Buscar animal, hacienda, producto, cosecha...", "t.palette": "¿Qué estás buscando?",
+            "t.paletteHint": "Escriba al menos dos caracteres para buscar en toda la operación.", "t.perms": "Los resultados respetan sus permisos",
+            "a.menu": "Abrir menú", "a.theme": "Alternar tema", "a.alerts": "Alertas de cumplimiento", "a.lang": "Idioma de la interfaz", "a.palette": "Búsqueda global",
+            "b.end": "Terminar contexto",
+            "d.help": "Cómo funciona esta pantalla", "d.hint": "orientación rápida",
+            "lg.secure": "Acceso seguro", "lg.title": "Bienvenido a Agro360",
+            "lg.sub": "Su acceso se valida directamente en la base de datos y los permisos se cargan según su perfil.",
+            "lg.tenant": "Cliente / Organización", "lg.tenantHelp": "Identificador exclusivo del ambiente de su empresa.",
+            "lg.email": "Correo, CPF o CNPJ", "lg.emailHelp": "Los documentos pueden informarse con o sin máscara.",
+            "lg.password": "Contraseña", "lg.show": "Mostrar", "lg.hide": "Ocultar",
+            "lg.first": "Primer acceso o administración global", "lg.mfa": "Código MFA", "lg.mfaHelp": "Obligatorio para la administración global.",
+            "lg.newpw": "Nueva contraseña", "lg.pwHelp": "Complete cuando el acceso inicial exija cambio de contraseña.", "lg.newpw2": "Confirmar nueva contraseña",
+            "lg.enter": "Entrar en Agro360", "lg.test": "Probar conexión con la API",
+            "lg.footer": "Agro360 de MNSOFT · Sesión cifrada e aislada por cliente.",
+            "d.csUnit": "Filtro de unidad", "d.csTitle": "Cambiar contexto operativo",
+            "d.csDesc": "Seleccione la hacienda o unidad de trabajo. La selección filtra el conjunto autorizado y actualiza consultas y registros en esta sesión.",
+            "d.csSelect": "Unidad / Hacienda activa", "d.csAll": "Todas las unidades autorizadas (unión del ámbito)", "d.cancel": "Cancelar", "d.apply": "Aplicar contexto",
+            "d.confirmTitle": "Confirme la operación", "d.reason": "Justificación",
+            "d.reasonHint": "Indique un motivo objetivo; será enviado al endpoint y registrado en la auditoría.",
+            "d.back": "Volver sin cambios", "d.confirmBtn": "Confirmar acción",
+            "p.loading": "Cargando unidades autorizadas…", "p.active": "Contexto activo:", "p.activeEnd": ". El filtro afecta consultas y registros.",
+            "p.none": "Sin filtro individual: mostrando la unión autorizada de unidades.", "p.fail": "No se pudo cargar la lista de unidades autorizadas."
+        },
+        "fr-FR": {
+            "g.start": "Accueil", "l.home": "Accueil / Tableau de bord", "l.tasks": "Tâches et alertes", "l.deploy": "Centre de déploiement",
+            "g.prod": "Production et terrain", "l.props": "Fermes et unités", "l.agri": "Agriculture", "l.field": "Opérations de terrain",
+            "l.maps": "Carte opérationnelle", "l.harv": "Récolte et réception", "l.costs": "Coûts de la récolte", "l.prod2": "Production agroindustrielle",
+            "g.peq": "Élevage", "l.live": "Élevage",
+            "g.stock": "Stocks et achats", "l.inv": "Inventaire et entrepôt", "l.repl": "Réapprovisionnement et besoins", "l.proc": "Achats et fournisseurs",
+            "g.com": "Commercial", "l.comm": "Commercial et ventes", "l.crm": "CRM et cycle client", "l.after": "Après-vente",
+            "g.log": "Logistique", "l.logi": "Expédition et livraison",
+            "g.fin": "Finances/Fiscalité", "l.fin2": "Finances et coûts", "l.fisc": "Fiscalité", "l.docs": "Documents et preuves",
+            "g.qual": "Qualité et traçabilité", "l.comp": "Qualité et conformité", "l.insp": "Modèles et inspections",
+            "g.people": "Personnel et ressources", "l.hr": "RH rural", "l.sst": "SST rurale", "l.fleet": "Flotte et maintenance",
+            "g.coop": "Coopératives", "l.coop2": "Coopératives et marketplace",
+            "g.sus": "Durabilité/Exportation", "l.sus2": "Durabilité et RSE", "l.exp": "Exportation et négoce",
+            "g.rep": "Rapports", "l.rep2": "Rapports et analyses", "l.int": "Intelligence Agro360", "l.exe": "Tableau exécutif 360",
+            "g.org": "Mon organisation", "l.org2": "Mon organisation", "l.users": "Utilisateurs et profils", "l.mods": "Mes modules",
+            "l.sett": "Paramètres", "l.integ": "Intégrations", "l.sup": "Aide / Support",
+            "g.glob": "Administration globale", "l.glob2": "Administration Globale MNSOFT",
+            "c.ctx": "Contexte actif", "c.switch": "Changer de contexte",
+            "t.search": "Rechercher animal, ferme, produit, récolte...", "t.palette": "Que recherchez-vous ?",
+            "t.paletteHint": "Saisissez au moins deux caractères pour rechercher dans toute l'opération.", "t.perms": "Les résultats respectent vos permissions",
+            "a.menu": "Ouvrir le menu", "a.theme": "Changer de thème", "a.alerts": "Alertes de conformité", "a.lang": "Langue de l'interface", "a.palette": "Recherche globale",
+            "b.end": "Mettre fin au contexte",
+            "d.help": "Comment fonctionne cet écran", "d.hint": "aide rapide",
+            "lg.secure": "Accès sécurisé", "lg.title": "Bienvenue sur Agro360",
+            "lg.sub": "Votre accès est validé directement en base de données et les autorisations sont chargées selon votre profil.",
+            "lg.tenant": "Client / Organisation", "lg.tenantHelp": "Identifiant exclusif de l'environnement de votre entreprise.",
+            "lg.email": "E-mail, CPF ou CNPJ", "lg.emailHelp": "Les documents peuvent être saisis avec ou sans masque.",
+            "lg.password": "Mot de passe", "lg.show": "Afficher", "lg.hide": "Masquer",
+            "lg.first": "Premier accès ou administration globale", "lg.mfa": "Code MFA", "lg.mfaHelp": "Obligatoire pour l'administration globale.",
+            "lg.newpw": "Nouveau mot de passe", "lg.pwHelp": "À remplir lorsque l'accès initial impose un changement de mot de passe.", "lg.newpw2": "Confirmer le nouveau mot de passe",
+            "lg.enter": "Se connecter à Agro360", "lg.test": "Tester la connexion à l'API",
+            "lg.footer": "Agro360 par MNSOFT · Session chiffrée et isolée par client.",
+            "d.csUnit": "Filtre d'unité", "d.csTitle": "Changer de contexte opérationnel",
+            "d.csDesc": "Sélectionnez la ferme ou l'unité de travail. La sélection filtre l'ensemble autorisé et met à jour requêtes et saisies dans cette session.",
+            "d.csSelect": "Unité / Ferme active", "d.csAll": "Toutes les unités autorisées (union des périmètres)", "d.cancel": "Annuler", "d.apply": "Appliquer le contexte",
+            "d.confirmTitle": "Confirmez l'opération", "d.reason": "Justification",
+            "d.reasonHint": "Indiquez une raison objective ; elle est envoyée à l'endpoint et enregistrée dans l'audit.",
+            "d.back": "Retour sans modification", "d.confirmBtn": "Confirmer l'action",
+            "p.loading": "Chargement des unités autorisées…", "p.active": "Contexte actif :", "p.activeEnd": ". Le filtre affecte les requêtes et les saisies.",
+            "p.none": "Aucun filtre individuel : affichage de l'union autorisée des unités.", "p.fail": "Impossible de charger la liste des unités autorisées."
+        }
     };
     let money, number, relativeTime;
     function applyCulture(locale) {
@@ -23,15 +151,64 @@
         number = new Intl.NumberFormat(culture, { maximumFractionDigits: 1 });
         relativeTime = new Intl.RelativeTimeFormat(culture, { numeric: "auto" });
         document.querySelectorAll("[data-culture-select]").forEach(select => { select.value = culture; });
+        applyUiText(culture);
         window.dispatchEvent(new CustomEvent("agro360:culture", { detail: culture }));
         return culture;
     }
+    // Aplica textos/placeholders/títulos/aria-labels dos elementos marcados com data-i18n*.
+    // O fallback é o próprio HTML (pt-BR), capturado na primeira aplicação; para pt-BR nada muda.
+    function applyUiText(culture) {
+        const dict = uiTranslations[culture];
+        document.querySelectorAll("[data-i18n]").forEach(el => {
+            if (el.dataset.i18nFallback === undefined) el.dataset.i18nFallback = el.textContent;
+            const value = dict?.[el.dataset.i18n] ?? el.dataset.i18nFallback;
+            if (el.textContent !== value) el.textContent = value;
+        });
+        document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+            if (el.dataset.i18nFallbackPlaceholder === undefined) el.dataset.i18nFallbackPlaceholder = el.placeholder ?? "";
+            el.placeholder = dict?.[el.dataset.i18nPlaceholder] ?? el.dataset.i18nFallbackPlaceholder;
+        });
+        document.querySelectorAll("[data-i18n-title]").forEach(el => {
+            if (el.dataset.i18nFallbackTitle === undefined) el.dataset.i18nFallbackTitle = el.getAttribute("title") ?? "";
+            el.setAttribute("title", dict?.[el.dataset.i18nTitle] ?? el.dataset.i18nFallbackTitle);
+        });
+        document.querySelectorAll("[data-i18n-aria]").forEach(el => {
+            if (el.dataset.i18nFallbackAria === undefined) el.dataset.i18nFallbackAria = el.getAttribute("aria-label") ?? "";
+            el.setAttribute("aria-label", dict?.[el.dataset.i18nAria] ?? el.dataset.i18nFallbackAria);
+        });
+    }
+    // O idioma é aplicado imediatamente neste dispositivo; a confirmação do servidor é um passo
+    // separado. Sucesso só aparece após a resposta do backend; falha exibe aviso persistente com
+    // "Tentar novamente" — a preferência local nunca é perdida silenciosamente.
     function setCulture(locale) {
         const culture = applyCulture(locale);
-        // Persiste a preferência no backend (queda silenciosa para pt-BR no servidor em caso de falha).
-        if (state.session?.accessToken) {
-            api("/api/v1/auth/preferences/language", { method: "PUT", body: JSON.stringify({ language: culture }) }).catch(() => { });
+        saveCulturePreference(culture);
+    }
+    async function saveCulturePreference(culture) {
+        const saved = culture ?? currentCulture();
+        if (!state.session?.accessToken) return;
+        try {
+            await api("/api/v1/auth/preferences/language", { method: "PUT", body: JSON.stringify({ language: saved }) }, false);
+            dismissCultureSaveNotice();
+            toastSuccess("Idioma salvo", "A preferência foi confirmada pelo servidor e será reaplicada nos próximos acessos.");
+        } catch {
+            showCultureSaveNotice(saved);
         }
+    }
+    function showCultureSaveNotice(culture) {
+        if (document.querySelector("[data-culture-save-notice]")) return;
+        const item = document.createElement("div");
+        item.className = "toast warning";
+        item.setAttribute("role", "alert");
+        item.dataset.cultureSaveNotice = culture;
+        item.innerHTML = `<span class="toast-icon" aria-hidden="true"></span><div><strong>Idioma ativo apenas neste dispositivo</strong><small>${escapeHtml(culture)} já está aplicado aqui, mas o salvamento da preferência no servidor falhou. Use “Tentar novamente” para persistir.</small><div class="toast-actions"><button type="button" class="toast-retry">Tentar novamente</button></div></div><button type="button" aria-label="Fechar aviso">×</button>`;
+        const close = () => item.remove();
+        item.querySelector(".toast-retry").addEventListener("click", () => { close(); saveCulturePreference(item.dataset.cultureSaveNotice); });
+        item.querySelector('button[aria-label="Fechar aviso"]').addEventListener("click", close);
+        element("toast-region").append(item);
+    }
+    function dismissCultureSaveNotice() {
+        document.querySelector("[data-culture-save-notice]")?.remove();
     }
     applyCulture(currentCulture());
 
@@ -410,7 +587,7 @@
         } finally {
             button.disabled = false;
             form.setAttribute("aria-busy", "false");
-            button.querySelector("span").textContent = "Entrar no Agro360";
+            button.querySelector("span").textContent = (uiTranslations[currentCulture()] ?? {})["lg.enter"] ?? "Entrar no Agro360";
         }
     }
 
@@ -420,7 +597,8 @@
         const show = input.type === "password";
         input.type = show ? "text" : "password";
         button.setAttribute("aria-pressed", String(show));
-        button.textContent = show ? "Ocultar" : "Mostrar";
+        const ui = uiTranslations[currentCulture()] ?? {};
+        button.textContent = show ? (ui["lg.hide"] ?? "Ocultar") : (ui["lg.show"] ?? "Mostrar");
         input.focus();
     });
 
@@ -677,8 +855,9 @@
         let activeFarm = null;
         try { activeFarm = JSON.parse(localStorage.getItem("agro360.active_farm") || "null"); } catch { }
 
-        preview.textContent = "Carregando unidades autorizadas…";
-        select.innerHTML = '<option value="">Todas as unidades autorizadas (união do escopo)</option>';
+        const ui = uiTranslations[currentCulture()] ?? {};
+        preview.textContent = ui["p.loading"] ?? "Carregando unidades autorizadas…";
+        select.innerHTML = `<option value="">${escapeHtml(ui["d.csAll"] ?? "Todas as unidades autorizadas (união do escopo)")}</option>`;
 
         try {
             const properties = await api("/api/v1/properties").catch(() => ({ items: [] }));
@@ -691,10 +870,10 @@
                 select.appendChild(opt);
             });
             preview.textContent = activeFarm
-                ? `Contexto ativo: ${activeFarm.name}. O filtro afeta consultas e relatórios.`
-                : "Sem filtro individual: exibindo a união autorizada de unidades.";
+                ? `${ui["p.active"] ?? "Contexto ativo:"} ${activeFarm.name}${ui["p.activeEnd"] ?? ". O filtro afeta consultas e relatórios."}`
+                : ui["p.none"] ?? "Sem filtro individual: exibindo a união autorizada de unidades.";
         } catch {
-            preview.textContent = "Não foi possível carregar a lista de unidades autorizadas.";
+            preview.textContent = ui["p.fail"] ?? "Não foi possível carregar a lista de unidades autorizadas.";
         }
 
         const form = element("context-switcher-form");
@@ -769,10 +948,11 @@
         error: (title, detail) => showToast("error", title, detail || ""),
         info: (title, detail) => showToast("info", title, detail || ""),
         confirm: (options, ...args) => {
-            let title = "Confirme a operação";
+            const ui = uiTranslations[currentCulture()] ?? {};
+            let title = ui["d.confirmTitle"] ?? "Confirme a operação";
             let message = "";
-            let confirmText = "Confirmar ação";
-            let cancelText = "Voltar sem alterar";
+            let confirmText = ui["d.confirmBtn"] ?? "Confirmar ação";
+            let cancelText = ui["d.back"] ?? "Voltar sem alterar";
             let requireReason = false;
             let reasonPlaceholder = "";
             let minReasonLength = 3;

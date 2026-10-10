@@ -1,3 +1,66 @@
+## Incremento integrado: francês (fr-FR), i18n do shell e isolamento de fazenda em Compras — 2026-10-09
+
+Branch `main`. HEAD de baseline reconfirmado antes das alterações: `307ed62`. A árvore continha alterações locais pré-existentes (Estoque/Work/IA/SaaS/SQL/Compras das rodadas anteriores); todas preservadas. Sem commit, push, merge ou publicação. Processos do usuário `Agro360.Api.exe`/`Agro360.Web.exe` (PID 19568/32268) parados para o build e **reiniciados ao final desta rodada** (ver abaixo).
+
+**Reinício dos hosts dev (detalhe)**
+- Executados dos bins Release com `DOTNET_ENVIRONMENT=Development`, espelhando os perfis de `launchSettings.json`.
+- API (novo PID 50516): `https://localhost:7081;http://localhost:8081`; Swagger 200 e endpoint de login respondendo com validação canônica 400. Variáveis de ambiente: `Jwt__SigningKey` com a chave de desenvolvimento canônica do repositório (`agro360-dev-insecure-jwt-key-not-for-prod-32b`, mesma que o Web usa como fallback em Development — os tokens se validam entre os hosts) e `ConnectionStrings__Agro360`/`ConnectionStrings__DefaultConnection` **iguais** apontando para o cluster do serviço (`localhost:5432`, DB `postgres`) — iguais por exigência do fail-closed de `PostgreSqlConnectionConfiguration` (em Development, duas chaves com valores diferentes abortam o host; é por isso que o processo original precisava dessas variáveis). O valor original exato da chave JWT do processo anterior não está registrado em nenhum artefato do ambiente; sessões antigas exigem novo login.
+- Web (novo PID 37428): `https://localhost:7080` somente — **desvio documentado**: `http://localhost:8080` estava ocupado pelo container `sigov-web` (Docker Desktop, projeto do usuário, up 11 h; não tocado). Página inicial 200.
+- `GET /health` da API = **Unhealthy por estado pré-existente**: o schema `agro360` do banco dev (`postgres` no cluster Docker) está na versão `9.8.0` (faltam `platform_tenant_modules.trial_ends_at` e `finance_commercial_receivables.paid_amount`, entre outros da 10+/11+). Condição anterior a esta rodada; banco do usuário não foi migrado nem modificado nesta execução.
+- Clusters existentes mantidos: serviço `localhost:5432` e descartável `opencode/pg18-disposable` (porta 55321). Os processos dotnet do projeto Odca.Solutions do usuário continuam vivos.
+
+**Implementado/entregue nesta rodada**
+- **fr-FR pelo catálogo canônico**: migration `database/migrations/134_french_language_support.sql` (schema `11.24.0`, transacional, aditiva e idempotente) + espelho idempotente na cauda de `database/agro360-postgres-full.sql`. Seed `fr-FR` (`Français (France)`) em `platform_languages`; soltura determinística (loop sobre `pg_constraint`, independente do nome auto gerado) e substituição do CHECK em 5 tabelas de templates persistidos por `ck_…_culture check (culture in ('pt-BR','en-US','es-ES','fr-FR'))`. Cadeia de resolução continua 100% catálogo-driven (`TenantContextMiddleware`, `IdentityService.ResolveLanguageAsync/ChangeCulturePreferenceAsync`, `SaasGovernanceRules.ResolveCulture`).
+- **Cliente i18n do shell**: `_Layout.cshtml` com crome completo marcado (`data-i18n`, `-placeholder`, `-title`, `-aria`; pt-BR original capturado em runtime como fallback); `agro360.js` com `uiTranslations` (en-US/es-ES/fr-FR, 103 chaves cada) e `applyUiText` via `applyCulture`; seletor em nomes nativos (Português/English/Español/Français); consoles SaaS/Ecosystem/Platform rotam por `window.agro360SetCulture`; fábricas `Intl` sempre BRL.
+- **Persistência honesta da preferência**: `setCulture` → `PUT /api/v1/auth/preferences/language`; sucesso declarado somente após 200 do servidor; falha exibe aviso persistente com "Tentar novamente" (cultura local nunca perdida).
+- **Compras (Bloco F)**: escopo operacional validado ponta a ponta — leituras escopadas viram 404 no detalhe, escritas viram 403 (`ResolveOperationalFarmAsync`), middleware rejeita `X-Farm-ID` fora do escopo (403 `forbidden_unit_scope`), export CSV e dashboard respeitam o escopo.
+- **Documentação**: novos `docs/I18N-COVERAGE-REPORT.md` e `docs/FEATURE-MATRIX-2026-10-09.md`; seção fr-FR em `docs/MULTILANGUAGE.md`; incremento em `docs/TRACEABILITY-MATRIX-v0.2.0.md`; `PROMPT-PROXIMA-EXECUCAO.md` reescrito.
+
+**Gates executados (após todas as edições)**
+- `dotnet build MNSOFT.Agro360.sln -c Release`: 0 erros, 0 avisos.
+- `Agro360.UnitTests`: **390/390** (via `dotnet exec` do DLL — `dotnet test` sai 5 por "Zero testes executados" neste host).
+- `Agro360.ArchitectureTests`: **186/186**.
+- `dotnet format --verify-no-changes --no-restore`: exit 0. `python tools/check-api-routes.py`: OK, **945 operações**. `node --check` ×6 JS alterados: OK. `node scripts/verify-offline-shell.mjs`: PASS.
+- Instalação limpa do consolidado no E2E: exit 0, schema `11.24.0` + `11.17.0` (asserts iniciais de cada execução).
+- **E2E `scripts/verify-language-farm-isolation-e2e.ps1`: 58/58 PASS, 0 FAIL** — PostgreSQL 18 descartável próprio (porta 62298), API 55621. Log: `artifacts/e2e-rerun6.log`; resumo: `artifacts/language-farm-isolation-e2e-52a7016f103243f08bb4433a6f4ff502/SUMMARY.txt`.
+
+**Resultado por item (classificação pelo resultado real)**
+
+| # | Item | Classificação |
+|---|---|---|
+| L.1–L.9 | Bloco L idiomas (catálogo ×4; CHECKs; insert/delete fr-FR ao vivo; default pt-BR; PUT 200 confirmado; GET persistido; re-login fr-FR; invariância de estado; fallback de-DE→pt-BR persistido) | **Aprovado (E2E)** |
+| F.1–F.7 | Bloco F isolamento de fazenda (fixtures; LIST sem B por ID/número; DETAIL A=200/B=404/admin=200; corpo `propertyId=B`=403 sem efeito colateral; `X-Farm-ID=B`=403 `forbidden_unit_scope`; approve pedido B=404 mantendo `AWAITING_APPROVAL`; recebimento B=422 com zero recibos; CSV só A implícito/explícito; dashboard operador 1 draft/0 ordens vs admin 2/1) | **Aprovado (E2E)** |
+| I.1 | Paridade do dicionário i18n (103 chaves ×3, 97/97 chaves do `_Layout`) | **Aprovado (auditoria estática reproduzível)** |
+| I.2 | UI de persistência da preferência (retry) | Aprovado em nível de código/API; **nível navegador não executado** |
+| V.1 | Homologação visual autenticada em 360/768/1440 px e zoom nativo 200% (seletor, Compras, comparação de cotações) | **Bloqueado** — sem ferramenta de navegador real nesta sessão; não declarada como homologação visual |
+| V.2 | CI do GitHub sobre esta árvore | **Não executado** |
+| V.3 | RLS com papel restrito (`set role agro360_app`) exercido por HTTP sobre os fluxos desta rodada | **Não executado** (RLS já exercido em rodadas anteriores sobre a base do consolidado) |
+
+**Falhas encontradas e corrigidas nesta rodada (causa/componente/impacto/evidência)**
+
+Todas as falhas abaixo foram **do lado de teste ou de sintaxe SQL da migration**, sem alteração de comportamento do produto:
+
+1. **Migration 134 — `ADD CONSTRAINT IF NOT EXISTS` não é sintaxe válida em PostgreSQL** (componente: `134_…sql`/consolidado). Causa: PostgreSQL não suporta essa forma nem em `ADD CONSTRAINT` dentro de bloco `DO`. Impacto: instalação limpa do consolidado quebrou duas vezes (forma direta no DO e forma dentro de `execute`). Correção final: loop de drop sobre `pg_constraint` (condição: definição contém cultura sem fr-FR) + `if not exists … execute 'alter table … add constraint ck_… check (…)';`. Evidência: instalação limpa verde nas execuções 3, 4 e 6 do E2E (schema 11.24.0 assertado).
+2. **E2E — `Invoke-Psql` unia arrays multi-linha por espaço (`$OFS`)** (componente: script). Causa: PowerShell joina arrays com `$OFS` (espaço); consumidores faziam split em `\n`. Impacto: consultas multi-linha retornavam texto colado. Correção: unão explícita por `` `n ``. Evidência: runs 3+.
+3. **E2E — agregado inválido em query de fixtures** (script). Causa: `farm_id` solto junto de `count(*)` e uso de `min(uuid)` (inexistente). Correção: `min(farm_id::text)`. Evidência: run 3+.
+4. **E2E — `Priority='NORMAL'` violava CHECK** (script ×4). Causa: canônico é `LOW/MEDIUM/HIGH/URGENT` (migration 037). Correção: `'MEDIUM'`. Evidência: fixtures 201 nos runs 3+.
+5. **E2E — bloco `DO $$…$$` expandido pelo here-string duplo** (script, fixture da conta financeira). Causa: aqui-string PowerShell dupla expande `$$`/`$v_admin` antes do psql ver o SQL → `syntax error at or near "declare"`. Correção: INSERT condicional simples (`select … where not exists`), sem PL/pgSQL. Evidência: run 6 `Receive-*` PASS.
+6. **E2E — `ConvertFrom-Json` aplicado a resposta CSV 200** (script, `Invoke-Api`). Causa: parse JSON de `text/csv` lançava dentro do `try`, caía no `catch` e a chamada 200 virava exceção falsa ("JSON primitivo inválido"). Correção: parsear JSON apenas quando `Content-Type` contém `json`. Evidência: run 6 `Export-*` PASS (4 asserções).
+7. **E2E — saída estranha `True` no cleanup** (script, `finally`). Causa: retorno de `WaitForExit(5000)` impresso. Correção: `| Out-Null`. Evidência: cauda limpa do log.
+8. **E2E — psql podia ficar pendurado indefinidamente em connect** (script). Correção: `$env:PGCONNECT_TIMEOUT='20'` no topo. Nota: um único hang transitório (~15 min) na etapa `create database` ocorreu uma vez e não se repetiu com o mesmo código; classificado transitório e agora limitado pelo timeout.
+
+**Instruções de homologação da migration**
+- **Bases já instaladas**: aplicar apenas `database/migrations/134_french_language_support.sql` (rodada única, transacional, idempotente — reaplicável). Não reexecutar migrações anteriores.
+- **Instalações limpas**: usar o `database/agro360-postgres-full.sql` atualizado (cauda idempotente espelha a 134; versão final `11.24.0`). Verificação mínima pós-aplicação: `select culture from agro360.platform_languages where active order by culture;` → `en-US, es-ES, fr-FR, pt-BR`; e `select version from agro360.platform_schema_versions where version='11.24.0';` → 1 linha.
+- **Regra de sintaxe para o time**: nunca usar `ADD CONSTRAINT IF NOT EXISTS` em SQL desta base; preferir loop de `pg_constraint` + `if not exists … execute …`.
+
+**Pendências/next moves**
+- Navegador real autenticado: seletor de idioma, Compras e comparação de cotações em 360/768/1440 px e zoom 200% (item bloqueado acima).
+- Internacionalizar cópias longas por módulo (começar por Compras), toasts dinâmicos, textos `data-help` e as chaves `helpTitle`/`help` do `Pages/Ecosystem/Index.cshtml` (virar chaves canônicas prefixadas).
+- Backlog mantido: devolução ao fornecedor, gatilho financeiro configurável, Campo/Pecuária, integrações externas IA/pagamento/fiscal.
+
+---
+
 ## Incremento de homologação Compras e escopo operacional — 2026-10-08
 
 Branch `main`. HEAD reconfirmado antes das alterações: `c6f05c83b507ef434b7adde3c3589a3c46150ed9`. A skill solicitada `evoluir-saas` não estava disponível nesta sessão; execução feita por leitura direta de código, README, checkpoint, plano mestre, matriz e documentação de Compras. A árvore já tinha diffs locais em Estoque/Work/IA/SaaS/SQL; esses arquivos foram preservados como trabalho pré-existente, exceto os arquivos de Compras/verificação/documentação desta rodada. Sem commit, push, merge ou publicação.

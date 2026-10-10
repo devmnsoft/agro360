@@ -213,7 +213,19 @@
             if (!rows.length) { content.innerHTML = '<div class="proc-empty">Esta requisição ainda não possui propostas registradas para comparar.</div>'; return; }
             const groups = new Map();
             rows.forEach(row => { const key = `${row.quotation_item_id}`; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(row); });
-            content.innerHTML = [...groups.entries()].map(([key, offers]) => `<h3>${t(offers[0].item)} · ${t(offers[0].quantity)} ${t(offers[0].unit)}</h3><p class="proc-help">Menor total do item: <b>${money(offers[0].lowest_total)}</b>${offers.some(offer => offer.quote_deadline) ? ` · propostas válidas até ${fmtDate(offers[0].quote_deadline)}` : ""}</p><div class="proc-table"><table><thead><tr><th>Cotação</th><th>Fornecedor</th><th>Unitário</th><th>Desconto</th><th>Total</th><th>Entrega</th><th>Pagamento</th><th>Situação</th></tr></thead><tbody>${offers.map(offer => `<tr><td>${t(offer.number)}</td><td>${t(offer.supplier)}</td><td>${money(offer.unit_price)}</td><td>${money(offer.discount)}</td><td><b>${money(offer.total)}</b></td><td>${offer.delivery_days == null ? "—" : `${t(offer.delivery_days)} dias`}</td><td>${t(offer.payment_terms)}</td><td>${offer.is_lowest ? badge("MENOR PROPOSTA") : ""} ${offer.decided ? badge("DECIDIDO") : ""}</td></tr>`).join("")}</tbody></table></div>`).join("");
+            // Memória do custo comparado por item: cada componente é exibido e o custo completo
+            // (mercadoria + frete + tributos) é derivado somente dos valores registrados — nenhuma
+            // conversão de unidade ou taxa é inventada.
+            const allInCost = offer => Number(offer.total) + Number(offer.freight || 0) + Number(offer.taxes || 0);
+            content.innerHTML = [...groups.entries()].map(([key, offers]) => {
+                const lowestAllIn = Math.min(...offers.map(allInCost));
+                return `<h3>${t(offers[0].item)} · ${t(offers[0].quantity)} ${t(offers[0].unit)}</h3>
+                <p class="proc-help">Menor total da mercadoria (unitário × quantidade − desconto): <b>${money(offers[0].lowest_total)}</b> · menor custo completo com frete e tributos: <b>${money(lowestAllIn)}</b>${offers.some(offer => offer.quote_deadline) ? ` · propostas válidas até ${fmtDate(offers[0].quote_deadline)}` : ""}</p>
+                <div class="proc-table"><table><thead><tr><th>Cotação</th><th>Fornecedor</th><th>Unitário</th><th>Desconto</th><th>Frete</th><th>Tributos</th><th>Total mercadoria</th><th>Custo completo</th><th>Entrega</th><th>Pagamento</th><th>Situação</th></tr></thead><tbody>${offers.map(offer => {
+                    const allIn = allInCost(offer);
+                    return `<tr><td>${t(offer.number)}</td><td>${t(offer.supplier)}</td><td>${money(offer.unit_price)}</td><td>${money(offer.discount)}</td><td>${money(offer.freight ?? 0)}</td><td>${money(offer.taxes ?? 0)}</td><td><b>${money(offer.total)}</b></td><td>${money(allIn)}${allIn === lowestAllIn ? " · menor" : ""}</td><td>${offer.delivery_days == null ? "—" : `${t(offer.delivery_days)} dias`}</td><td>${t(offer.payment_terms)}</td><td>${offer.is_lowest ? badge("MENOR PROPOSTA") : ""} ${offer.decided ? badge("DECIDIDO") : ""}</td></tr>`;
+                }).join("")}</tbody></table></div>`;
+            }).join("");
         } catch (error) { content.innerHTML = `<div class="proc-empty" role="alert">${escape(error.message)}</div>`; }
     }
 

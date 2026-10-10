@@ -3,7 +3,8 @@ const culture=()=>localStorage.getItem('agro360.culture')||document.documentElem
 const copy={
 'pt-BR':{required:'Este campo é obrigatório.',email:'Informe um e-mail válido.',invalid:'Revise o valor informado.',summary:'Revise os campos destacados antes de continuar.',help:'Como usar esta tela'},
 'en-US':{required:'This field is required.',email:'Enter a valid email.',invalid:'Review the entered value.',summary:'Review the highlighted fields before continuing.',help:'How to use this screen'},
-'es-ES':{required:'Este campo es obligatorio.',email:'Ingrese un correo válido.',invalid:'Revise el valor ingresado.',summary:'Revise los campos destacados antes de continuar.',help:'Cómo usar esta pantalla'}};
+'es-ES':{required:'Este campo es obligatorio.',email:'Ingrese un correo válido.',invalid:'Revise el valor ingresado.',summary:'Revise los campos destacados antes de continuar.',help:'Cómo usar esta pantalla'},
+'fr-FR':{required:'Ce champ est obligatoire.',email:'Saisissez une adresse e-mail valide.',invalid:'Vérifiez la valeur saisie.',summary:'Vérifiez les champs mis en évidence avant de continuer.',help:"Comment utiliser cet écran"}};
 const helps={
 default:'Use esta tela para consultar e manter os dados autorizados do tenant ativo. Preencha os campos marcados como obrigatórios e use os seletores para localizar cadastros, sem digitar IDs técnicos. As ações disponíveis dependem do seu perfil e regras do módulo. Antes de salvar, revise os dados; cancelamentos e ações críticas pedem confirmação. Depois da conclusão, o registro é auditado e os indicadores relacionados são atualizados.',
 Agriculture:'Cadastre propriedades, produtores, talhões e safras do tenant ativo. Use os filtros para localizar registros; campos marcados são obrigatórios e alterações dependem da sua permissão.',
