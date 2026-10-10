@@ -18,6 +18,20 @@
     // O pt-BR é o próprio HTML original (fallback capturado em tempo de execução em data-i18nFallback):
     // chave ausente nunca deixa o elemento vazio — a apresentação muda, nunca os estados persistidos.
     const uiTranslations = {
+        // pt-BR canônico dos textos cross-cutting adicionados neste incremento. Ele existe para que os
+        // textos dinâmicos (busca, avisos, ajuda genérica) também tenham fonte pt-BR e para o verificador
+        // de paridade exigir 4-way em todos os blocos. Elementos estáticos em pt-BR continuam usando o
+        // HTML como fallback: a apresentação muda, nunca os estados persistidos.
+        "pt-BR": {
+            "gh.purpose": "Para que serve:", "gh.servesA": "esta área reúne os dados e ações de", "gh.servesB": "disponíveis para o seu cliente e perfil.",
+            "gh.how": "Como trabalhar:", "gh.howBody": "confira o contexto ativo, preencha os campos marcados com * e use os seletores por nome — nunca informe IDs técnicos.",
+            "gh.rules": "Regras e resultado:", "gh.rulesBody": "plano, status, permissões e validações podem limitar ações. Ao salvar, o dado é persistido e auditado; ações críticas pedem confirmação e qualquer falha apresenta uma orientação ou código de suporte.",
+            "pl.searching": "Buscando com seu escopo de acesso...", "pl.noResults": "Nenhum resultado autorizado foi encontrado.", "pl.open": "abrir",
+            "lg.saved": "Idioma salvo", "lg.savedSub": "A preferência foi confirmada pelo servidor e será reaplicada nos próximos acessos.",
+            "lg.localOnly": "Idioma ativo apenas neste dispositivo", "lg.localOnlySub": "já está aplicado aqui, mas o salvamento da preferência no servidor falhou. Use “Tentar novamente” para persistir.", "lg.retry": "Tentar novamente",
+            "ns.clientCtx": "Contexto de cliente necessário", "ns.clientCtxSub": "Para operar recursos deste módulo, selecione uma organização e inicie a sessão de suporte assistido em Administração SaaS.",
+            "eco.helpTitle": "Como funciona esta tela", "eco.help": "Para que serve: consultar módulos disponíveis e contratados. Informações necessárias: módulo e justificativa. Ação principal: confirmar uma solicitação. Efeito: ela fica pendente para análise do SuperAdmin e não ativa módulo nem pagamento. Dependências ausentes, módulo indisponível ou pedido já pendente são impedimentos comuns."
+        },
         "en-US": {
             "g.start": "Home", "l.home": "Home / Dashboard", "l.tasks": "Tasks & Alerts", "l.deploy": "Deployment Center",
             "g.prod": "Production & Field", "l.props": "Farms & Units", "l.agri": "Agriculture", "l.field": "Field Operations",
@@ -57,7 +71,15 @@
             "d.reasonHint": "Provide an objective reason; it is sent to the endpoint and recorded in the audit log.",
             "d.back": "Back without changes", "d.confirmBtn": "Confirm action",
             "p.loading": "Loading authorized units…", "p.active": "Active context:", "p.activeEnd": ". The filter affects queries and reports.",
-            "p.none": "No individual filter: showing the authorized union of units.", "p.fail": "Could not load the list of authorized units."
+            "p.none": "No individual filter: showing the authorized union of units.", "p.fail": "Could not load the list of authorized units.",
+            "gh.purpose": "Purpose:", "gh.servesA": "this area gathers the data and actions of", "gh.servesB": " available for your client and profile.",
+            "gh.how": "How to work:", "gh.howBody": "check the active context, fill in the fields marked with * and use the name selectors — never enter technical IDs.",
+            "gh.rules": "Rules and outcome:", "gh.rulesBody": "plan, status, permissions and validations may limit actions. On save, the data is persisted and audited; critical actions ask for confirmation and any failure presents guidance or a support code.",
+            "pl.searching": "Searching with your access scope...", "pl.noResults": "No authorized results were found.", "pl.open": "open",
+            "lg.saved": "Language saved", "lg.savedSub": "The preference was confirmed by the server and will reapply on your next accesses.",
+            "lg.localOnly": "Language active only on this device", "lg.localOnlySub": "is already applied here, but the server save of the preference failed. Use “Try again” to persist.", "lg.retry": "Try again",
+            "ns.clientCtx": "Client context required", "ns.clientCtxSub": "To operate features of this module, select an organization and start the assisted support session in SaaS Administration.",
+            "eco.helpTitle": "How this screen works", "eco.help": "Purpose: consult available and contracted modules. Information needed: module and justification. Main action: confirm a request. Effect: it stays pending for SuperAdmin review and does not activate a module or any payment. Missing dependencies, an unavailable module or an already pending request are common blockers."
         },
         "es-ES": {
             "g.start": "Inicio", "l.home": "Inicio / Panel de control", "l.tasks": "Tareas y alertas", "l.deploy": "Centro de implementación",
@@ -98,7 +120,15 @@
             "d.reasonHint": "Indique un motivo objetivo; será enviado al endpoint y registrado en la auditoría.",
             "d.back": "Volver sin cambios", "d.confirmBtn": "Confirmar acción",
             "p.loading": "Cargando unidades autorizadas…", "p.active": "Contexto activo:", "p.activeEnd": ". El filtro afecta consultas y registros.",
-            "p.none": "Sin filtro individual: mostrando la unión autorizada de unidades.", "p.fail": "No se pudo cargar la lista de unidades autorizadas."
+            "p.none": "Sin filtro individual: mostrando la unión autorizada de unidades.", "p.fail": "No se pudo cargar la lista de unidades autorizadas.",
+            "gh.purpose": "Para qué sirve:", "gh.servesA": "esta área reúne los datos y acciones de", "gh.servesB": "disponibles para su cliente y perfil.",
+            "gh.how": "Cómo trabajar:", "gh.howBody": "confirme el contexto activo, complete los campos marcados con * y use los selectores por nombre — nunca informe IDs técnicos.",
+            "gh.rules": "Reglas y resultado:", "gh.rulesBody": "plan, estado, permisos y validaciones pueden limitar acciones. Al guardar, el dato se persiste y audita; las acciones críticas piden confirmación y cualquier falla presenta una orientación o código de soporte.",
+            "pl.searching": "Buscando con su ámbito de acceso...", "pl.noResults": "No se encontró ningún resultado autorizado.", "pl.open": "abrir",
+            "lg.saved": "Idioma guardado", "lg.savedSub": "La preferencia fue confirmada por el servidor y se reaplicará en sus próximos accesos.",
+            "lg.localOnly": "Idioma activo solo en este dispositivo", "lg.localOnlySub": "ya está aplicado aquí, pero el guardado de la preferencia en el servidor falló. Use “Reintentar” para persistir.", "lg.retry": "Reintentar",
+            "ns.clientCtx": "Contexto de cliente necesario", "ns.clientCtxSub": "Para operar recursos de este módulo, seleccione una organización e inicie la sesión de soporte asistido en Administración SaaS.",
+            "eco.helpTitle": "Cómo funciona esta pantalla", "eco.help": "Para qué sirve: consultar módulos disponibles y contratados. Información necesaria: módulo y justificación. Acción principal: confirmar una solicitud. Efecto: queda pendiente para análisis del SuperAdmin y no activa módulo ni pago. Dependencias ausentes, módulo no disponible o solicitud ya pendiente son impedimentos comunes."
         },
         "fr-FR": {
             "g.start": "Accueil", "l.home": "Accueil / Tableau de bord", "l.tasks": "Tâches et alertes", "l.deploy": "Centre de déploiement",
@@ -139,9 +169,20 @@
             "d.reasonHint": "Indiquez une raison objective ; elle est envoyée à l'endpoint et enregistrée dans l'audit.",
             "d.back": "Retour sans modification", "d.confirmBtn": "Confirmer l'action",
             "p.loading": "Chargement des unités autorisées…", "p.active": "Contexte actif :", "p.activeEnd": ". Le filtre affecte les requêtes et les saisies.",
-            "p.none": "Aucun filtre individuel : affichage de l'union autorisée des unités.", "p.fail": "Impossible de charger la liste des unités autorisées."
+            "p.none": "Aucun filtre individuel : affichage de l'union autorisée des unités.", "p.fail": "Impossible de charger la liste des unités autorisées.",
+            "gh.purpose": "À quoi sert :", "gh.servesA": "cette zone regroupe les données et les actions de", "gh.servesB": " disponibles pour votre client et votre profil.",
+            "gh.how": "Comment travailler :", "gh.howBody": "vérifiez le contexte actif, remplissez les champs marqués de * et utilisez les sélecteurs par nom — ne saisissez jamais d'IDs techniques.",
+            "gh.rules": "Règles et résultat :", "gh.rulesBody": "le plan, le statut, les permissions et les validations peuvent limiter les actions. À l'enregistrement, la donnée est persistée et auditée ; les actions critiques demandent une confirmation et toute échec présente un guidage ou un code de support.",
+            "pl.searching": "Recherche avec votre périmètre d'accès...", "pl.noResults": "Aucun résultat autorisé n'a été trouvé.", "pl.open": "ouvrir",
+            "lg.saved": "Langue enregistrée", "lg.savedSub": "La préférence a été confirmée par le serveur et sera réappliquée à vos prochains accès.",
+            "lg.localOnly": "Langue active uniquement sur cet appareil", "lg.localOnlySub": "est déjà appliquée ici, mais l'enregistrement de la préférence sur le serveur a échoué. Utilisez « Réessayer » pour persister.", "lg.retry": "Réessayer",
+            "ns.clientCtx": "Contexte client requis", "ns.clientCtxSub": "Pour exploiter les fonctionnalités de ce module, sélectionnez une organisation et démarrez la session de support assisté dans l'Administration SaaS.",
+            "eco.helpTitle": "Comment fonctionne cet écran", "eco.help": "À quoi sert : consulter les modules disponibles et contractés. Informations nécessaires : module et justification. Action principale : confirmer une demande. Effet : elle reste en attente d'analyse du SuperAdmin et n'active ni module ni paiement. Dépendances absentes, module indisponible ou demande déjà en attente sont des blocages courants."
         }
     };
+    // Textos dinâmicos do shell (busca, avisos de idioma, navegação): idioma ativo primeiro,
+    // pt-BR canônico como fallback — chave ausente nunca deixa o texto vazio.
+    const tr2 = key => uiTranslations[currentCulture()]?.[key] ?? uiTranslations["pt-BR"]?.[key] ?? key;
     let money, number, relativeTime;
     function applyCulture(locale) {
         const culture = supportedCultures.includes(locale) ? locale : "pt-BR";
@@ -152,6 +193,7 @@
         relativeTime = new Intl.RelativeTimeFormat(culture, { numeric: "auto" });
         document.querySelectorAll("[data-culture-select]").forEach(select => { select.value = culture; });
         applyUiText(culture);
+        applyPageTitle(culture);
         window.dispatchEvent(new CustomEvent("agro360:culture", { detail: culture }));
         return culture;
     }
@@ -177,6 +219,25 @@
             el.setAttribute("aria-label", dict?.[el.dataset.i18nAria] ?? el.dataset.i18nFallbackAria);
         });
     }
+    // Título da página e breadcrumb acompanham o idioma derivando do próprio menu: cada rota da
+    // navegação já tem data-i18n aprovado (l.*), então não existe mapa por página para manter fonte única.
+    // Em pt-BR o lookup não resolve e o título server-side permanece.
+    function applyPageTitle(culture) {
+        const path = window.location.pathname.toLowerCase().replace(/\/$/, "") || "/";
+        const dict = uiTranslations[culture];
+        let title = null;
+        document.querySelectorAll(".main-nav a").forEach(link => {
+            if (title) return;
+            const linkPath = new URL(link.href, window.location.origin).pathname.toLowerCase().replace(/\/$/, "") || "/";
+            if (linkPath !== path) return;
+            const key = link.querySelector("[data-i18n]")?.dataset.i18n;
+            title = key ? dict?.[key] ?? null : null;
+        });
+        if (!title) return;
+        const breadcrumb = document.querySelector("#page-breadcrumb span");
+        if (breadcrumb) breadcrumb.textContent = title;
+        document.title = `${title} · Agro 360`;
+    }
     // O idioma é aplicado imediatamente neste dispositivo; a confirmação do servidor é um passo
     // separado. Sucesso só aparece após a resposta do backend; falha exibe aviso persistente com
     // "Tentar novamente" — a preferência local nunca é perdida silenciosamente.
@@ -190,7 +251,7 @@
         try {
             await api("/api/v1/auth/preferences/language", { method: "PUT", body: JSON.stringify({ language: saved }) }, false);
             dismissCultureSaveNotice();
-            toastSuccess("Idioma salvo", "A preferência foi confirmada pelo servidor e será reaplicada nos próximos acessos.");
+            toastSuccess(tr2("lg.saved"), tr2("lg.savedSub"));
         } catch {
             showCultureSaveNotice(saved);
         }
@@ -201,7 +262,7 @@
         item.className = "toast warning";
         item.setAttribute("role", "alert");
         item.dataset.cultureSaveNotice = culture;
-        item.innerHTML = `<span class="toast-icon" aria-hidden="true"></span><div><strong>Idioma ativo apenas neste dispositivo</strong><small>${escapeHtml(culture)} já está aplicado aqui, mas o salvamento da preferência no servidor falhou. Use “Tentar novamente” para persistir.</small><div class="toast-actions"><button type="button" class="toast-retry">Tentar novamente</button></div></div><button type="button" aria-label="Fechar aviso">×</button>`;
+        item.innerHTML = `<span class="toast-icon" aria-hidden="true"></span><div><strong>${escapeHtml(tr2("lg.localOnly"))}</strong><small>${escapeHtml(culture)} ${escapeHtml(tr2("lg.localOnlySub"))}</small><div class="toast-actions"><button type="button" class="toast-retry">${escapeHtml(tr2("lg.retry"))}</button></div></div><button type="button" aria-label="Fechar aviso">×</button>`;
         const close = () => item.remove();
         item.querySelector(".toast-retry").addEventListener("click", () => { close(); saveCulturePreference(item.dataset.cultureSaveNotice); });
         item.querySelector('button[aria-label="Fechar aviso"]').addEventListener("click", close);
@@ -250,6 +311,7 @@
         syncPageToken(session);
         renderUser();
         renderNavigation();
+        loadEffectiveAccess();
     }
 
     // Sincroniza a credencial da página no host Web (cookie HttpOnly protegido).
@@ -297,6 +359,64 @@
             .replaceAll("_", ".");
     }
 
+    // Réplica client-side de Permissions.ModulesForPermission (Agro360.Application): o menu é
+    // apresentação — o servidor revalida módulo × permissão × escopo em cada requisição da API.
+    const MODULE_GROUPS_BY_PERM = [
+        { groups: ["properties"], modules: ["properties"] },
+        { groups: ["agriculture"], modules: ["agriculture"] },
+        { groups: ["inventory"], modules: ["inventory"] },
+        { groups: ["livestock"], modules: ["livestock"] },
+        { groups: ["crm", "commercial", "commercial-saas", "customer-success"], modules: ["commercial"] },
+        { groups: ["finance"], modules: ["finance"] },
+        { groups: ["purchasing"], modules: ["purchasing"] },
+        { groups: ["production"], modules: ["agroindustry"] },
+        { groups: ["fleet", "maintenance"], modules: ["fleet"] },
+        { groups: ["dashboard"], modules: ["reports", "analytics"] },
+        { groups: ["storage"], modules: ["inventory", "warehousing"] },
+        { groups: ["logistics", "regional-logistics", "after-sales"], modules: ["logistics"] },
+        { groups: ["traceability", "ledger", "sales-network"], modules: ["traceability"] },
+        { groups: ["intelligence"], modules: ["reports", "intelligence", "analytics", "ai", "predictive-ai"] },
+        { groups: ["compliance", "esg", "sustainability"], modules: ["environment-esg"] },
+        { groups: ["maps"], modules: ["properties", "analytics"] },
+        { groups: ["cooperative"], modules: ["cooperatives"] },
+        { groups: ["rural-hr", "sst"], modules: ["verticals", "rural-hr"] },
+        { groups: ["documents", "evidences", "dossiers", "certificates"], modules: ["documents"] },
+        { groups: ["mobile", "field-checklists"], modules: ["mobile"] },
+        { groups: ["export", "fiscal"], modules: ["export", "fiscal"] },
+        { groups: ["marketplace", "partners", "api-keys", "integrations"], modules: ["platform", "marketplace"] },
+        { groups: ["deployment", "governance", "lgpd", "security", "work", "support", "portal"], modules: ["platform"] }
+    ];
+    function permissionModules(permission) {
+        const group = normalizePermission(permission).split(".", 1)[0];
+        const hit = MODULE_GROUPS_BY_PERM.find(item => item.groups.includes(group));
+        return hit ? hit.modules : [];
+    }
+    // Módulos efetivamente ativos do tenant (contrato × status × validade), via /api/account/effective-access
+    // (mesma permissão da tela da conta: account.subscription.read). Sem a permissão o fetch dá 403 e o
+    // menu não é estreitado: ausência de informação nunca reduz o que o servidor ainda revalida.
+    async function loadEffectiveAccess() {
+        if (!state.session?.accessToken) {
+            state.effectiveModules = new Set();
+            state.effectiveModulesLoaded = false;
+            state.effectiveModulesUnknown = false;
+            return;
+        }
+        try {
+            const data = await api("/api/account/effective-access", {}, false);
+            if (data && data.globalAdministrator && !state.session.supportSession) {
+                state.effectiveModulesUnknown = true; // SuperAdmin em contexto global: sem tenant ativo o conjunto contratado não filtra
+            } else {
+                state.effectiveModules = new Set(((data && data.contractedModules) || []).filter(m => m.effective).map(m => String(m.code ?? "").toLowerCase()));
+                state.effectiveModulesUnknown = false;
+            }
+        } catch {
+            state.effectiveModulesUnknown = true;
+        } finally {
+            state.effectiveModulesLoaded = true;
+            renderNavigation();
+        }
+    }
+
     function renderNavigation() {
         const permissions = new Set((state.session?.permissions ?? []).map(normalizePermission));
         const roles = state.session?.roles ?? [];
@@ -321,6 +441,14 @@
             } else if (state.session) {
                 // Tenant user (Admin, Operator, etc.)
                 allowed = required.length === 0 || required.some(p => permissions.has(p));
+            }
+
+            // MÓDULO CONTRATADO é dimensão à parte de permissão e plano: se nenhum módulo mapeado ao grupo
+            // das permissões do link estiver efetivamente ativo no tenant, o link some mesmo com permissão.
+            // SuperAdmin em contexto global (sem sessão de suporte) não é filtrado; sem informação, o menu não encolhe.
+            if (allowed && required.length > 0 && !isGlobalAdminLink && !(isSuperAdministrator && !isSupportSession)
+                && state.effectiveModulesLoaded && !state.effectiveModulesUnknown) {
+                allowed = required.some(p => permissionModules(p).some(m => state.effectiveModules.has(m)));
             }
 
             link.hidden = !allowed;
@@ -352,13 +480,16 @@
                     e.preventDefault();
                     agro360Feedback.toast(
                         "warning",
-                        "Contexto de cliente necessário",
-                        "Para operar recursos deste módulo, selecione uma organização e inicie a sessão de suporte assistido em Administração SaaS."
+                        tr2("ns.clientCtx"),
+                        tr2("ns.clientCtxSub")
                     );
                     setTimeout(() => {
                         window.location.assign("/Saas?view=tenants");
                     }, 1200);
                 }
+                // Clicar no destino fecha o drawer mobile e sincroniza o estado acessível do botão.
+                document.body.classList.remove("menu-open");
+                element("menu-button")?.setAttribute("aria-expanded", "false");
             };
         });
     }
@@ -778,10 +909,10 @@
         clearTimeout(state.searchTimer);
         const query = event.target.value.trim();
         if (query.length < 2) {
-            element("search-results").innerHTML = "<p>Digite pelo menos dois caracteres para buscar em toda a operação.</p>";
+            element("search-results").innerHTML = `<p>${escapeHtml(tr2("t.paletteHint"))}</p>`;
             return;
         }
-        element("search-results").innerHTML = '<p><span class="loading-ring"></span> Buscando com seu escopo de acesso...</p>';
+        element("search-results").innerHTML = `<p><span class="loading-ring"></span> ${escapeHtml(tr2("pl.searching"))}</p>`;
         state.searchTimer = window.setTimeout(() => runSearch(query), 260);
     }
 
@@ -790,8 +921,9 @@
             const results = await api(`/api/v1/search?query=${encodeURIComponent(query)}&limit=15`);
             const container = element("search-results");
             container.replaceChildren();
+            state.selectedSearch = -1;
             if (!results.length) {
-                container.innerHTML = "<p>Nenhum resultado autorizado foi encontrado.</p>";
+                container.innerHTML = `<p>${escapeHtml(tr2("pl.noResults"))}</p>`;
                 return;
             }
             results.forEach((item, index) => {
@@ -800,7 +932,7 @@
                 button.className = "search-result";
                 button.dataset.index = index;
                 button.dataset.route = item.route;
-                button.innerHTML = `<span>${escapeHtml(item.entityType.slice(0, 3))}</span><div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.subtitle ?? item.entityType)}</small></div><i>abrir</i>`;
+                button.innerHTML = `<span>${escapeHtml(item.entityType.slice(0, 3))}</span><div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.subtitle ?? item.entityType)}</small></div><i>${escapeHtml(tr2("pl.open"))}</i>`;
                 button.addEventListener("click", () => {
                     closePalette();
                     const route = String(item.route ?? "");
@@ -822,6 +954,21 @@
         if (event.key === "Escape") {
             closePalette();
             document.body.classList.remove("menu-open");
+        }
+        // Navegação de teclado no palette (WCAG 2.1.1): setas movem a seleção visível e Enter abre.
+        // O resultado em foco também responde ao Enter nativo do <button>; as setas evitam duplicar ação.
+        if (!palette.hidden && ["ArrowDown", "ArrowUp", "Enter"].includes(event.key)) {
+            const results = [...element("search-results").querySelectorAll(".search-result")];
+            if (!results.length) return;
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                const step = event.key === "ArrowDown" ? 1 : -1;
+                state.selectedSearch = (state.selectedSearch + step + results.length) % results.length;
+                results.forEach((result, index) => result.classList.toggle("selected", index === state.selectedSearch));
+                results[state.selectedSearch].scrollIntoView({ block: "nearest" });
+            } else if (state.selectedSearch >= 0 && state.selectedSearch < results.length && !event.target.matches(".search-result")) {
+                results[state.selectedSearch].click();
+            }
         }
     }
 
@@ -1094,6 +1241,7 @@
         if (savedTheme) document.documentElement.dataset.theme = savedTheme;
         renderUser();
         renderNavigation();
+        loadEffectiveAccess();
         element("login-form").addEventListener("submit", login);
         element("login-form").addEventListener("input", event => {
             if (event.target.matches("input[required]")) validateLoginForm(event.currentTarget);
@@ -1107,7 +1255,10 @@
             select.value = currentCulture();
             select.addEventListener("change", () => setCulture(select.value));
         });
-        element("menu-button").addEventListener("click", () => document.body.classList.toggle("menu-open"));
+        element("menu-button").addEventListener("click", () => {
+            const open = document.body.classList.toggle("menu-open");
+            element("menu-button").setAttribute("aria-expanded", String(open));
+        });
         element("refresh-dashboard")?.addEventListener("click", loadDashboard);
         document.querySelectorAll("[data-feature]").forEach(button => button.addEventListener("click", featureMessage));
         document.addEventListener("keydown", keydown);
@@ -1119,6 +1270,7 @@
                 window.dispatchEvent(new CustomEvent("agro360:session", { detail: state.session ?? null }));
                 renderUser();
                 renderNavigation();
+                loadEffectiveAccess();
                 if (state.session && element("dashboard-subtitle")) loadDashboard();
             }
         });

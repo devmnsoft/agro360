@@ -12,6 +12,7 @@ public sealed record QuotationRequestCommand(Guid RequisitionId, IReadOnlyList<G
 public sealed record SubmitQuotationCommand(Guid QuotationId, Guid SupplierId, Guid CatalogItemId, decimal UnitPrice, int DeliveryDays, string? Notes, decimal Discount = 0, DateOnly? ProposalValidUntil = null, string? PaymentTerms = null, decimal? Freight = null, decimal? Taxes = null, Guid? QuotationItemId = null);
 public sealed record QuotationDecisionLine(Guid QuotationItemId, Guid QuotationSupplierId);
 public sealed record QuotationDecisionCommand(IReadOnlyList<QuotationDecisionLine> Items, string? Justification);
+public sealed record QuotationCancelCommand(string Reason);
 public sealed record PurchaseOrderLineCommand(Guid CatalogItemId, decimal Quantity, string Unit, decimal UnitPrice, decimal Discount, Guid? RequisitionItemId = null);
 public sealed record PurchaseOrderCommand(Guid SupplierId, Guid? RequisitionId, Guid? QuotationId, Guid? CostCenterId, Guid? PropertyId, string PaymentTerms, DateOnly DeliveryOn, string DeliveryAddress, decimal Freight, decimal Taxes, IReadOnlyList<PurchaseOrderLineCommand> Items);
 public sealed record ReceiptLineCommand(Guid PurchaseOrderItemId, decimal Quantity, string? SupplierLot, DateOnly? ExpiresOn, string? Notes);

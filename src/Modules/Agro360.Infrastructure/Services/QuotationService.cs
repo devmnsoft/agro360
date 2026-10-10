@@ -20,6 +20,7 @@ public interface IQuotationService
     Task<dynamic> DetailAsync(Guid quotationId, CancellationToken ct = default);
     Task<IReadOnlyList<dynamic>> CompareQuotationsAsync(Guid requisitionId, CancellationToken ct = default);
     Task DecideAsync(Guid quotationId, QuotationDecisionCommand command, CancellationToken ct = default);
+    Task CancelQuotationAsync(Guid quotationId, QuotationCancelCommand command, CancellationToken ct = default);
     Task<IReadOnlyList<Guid>> ConvertToOrderAsync(Guid quotationId, bool confirmLowestPrice = false, CancellationToken ct = default);
 }
 
@@ -532,6 +533,23 @@ public sealed class QuotationService(DatabaseExecutor db, ITenantContext tenant,
             await AuditConversionFailureAsync(quotationId, exception, ct);
             throw;
         }
+    }
+
+    public async Task CancelQuotationAsync(Guid quotationId, QuotationCancelCommand command, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(command.Reason) || command.Reason.Trim().Length < 5) throw new DomainException("O cancelamento da cotação exige justificativa com pelo menos 5 caracteres.", "agro360.quotation.cancel_reason_required");
+        await db.InTenantTransactionAsync(async (conn, tx) =>
+        {
+            var row = await conn.QuerySingleOrDefaultAsync<(string Status, bool HasOrders)?>(new CommandDefinition($"""
+                select q.status,(select exists(select 1 from agro360.procurement_purchase_orders o where o.tenant_id=q.tenant_id and o.deleted_at is null and o.quotation_id=q.id)) HasOrders
+                from agro360.procurement_quotations q join agro360.procurement_requisitions r on r.tenant_id=q.tenant_id and r.id=q.requisition_id and r.deleted_at is null
+                where q.tenant_id=@TenantId and q.id=@Id and q.deleted_at is null {OperationalScopePolicy.Sql("r")} for update of q
+                """, ScopeParams(new { Id = quotationId }), tx, cancellationToken: ct)) ?? throw new NotFoundException("Cotação", quotationId);
+            if (!OpenStatuses.Contains(row.Status)) throw new ConflictException("Somente uma cotação aberta pode ser cancelada.", "agro360.quotation.cancel_closed");
+            if (row.HasOrders) throw new ConflictException("A cotação já possui pedidos vinculados; cancele os pedidos antes de cancelar a cotação.", "agro360.quotation.cancel_has_orders");
+            await conn.ExecuteAsync(new CommandDefinition("update agro360.procurement_quotations set status='CANCELLED',decision_reason=@Reason,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", ScopeParams(new { Id = quotationId, Reason = command.Reason.Trim() }), tx, cancellationToken: ct));
+            await Audit(conn, tx, quotationId, "CANCELLED", new { Reason = command.Reason.Trim() }, ct);
+        }, ct);
     }
 
     private async Task AuditConversionFailureAsync(Guid quotationId, Exception exception, CancellationToken ct)
