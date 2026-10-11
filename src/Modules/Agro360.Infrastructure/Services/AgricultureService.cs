@@ -95,15 +95,14 @@ public sealed class AgricultureService(DatabaseExecutor database, ITenantContext
         return database.InTenantTransactionAsync(async (connection, transaction) =>
         {
             using var grid = await connection.QueryMultipleAsync(new CommandDefinition(
-                """
+                $"""
                 select count(*) from agro360.agriculture_seasons
                 where tenant_id = @TenantId and deleted_at is null
                   and (@FarmId is null or farm_id = @FarmId);
 
                 select id, farm_id as FarmId, name, crop, start_date as StartDate,
                        end_date as EndDate,
-                       case status when 1 then 'PLANNED' when 2 then 'ACTIVE'
-                           when 3 then 'HARVESTED' when 4 then 'CLOSED' else 'CANCELLED' end as Status,
+                       {SeasonStatusCodes.SqlCase("status")} as Status,
                        planned_area_ha as PlannedAreaHa,
                        expected_yield_per_ha as ExpectedYieldPerHa,
                        version

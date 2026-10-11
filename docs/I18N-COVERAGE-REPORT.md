@@ -1,6 +1,16 @@
-# Cobertura de textos e idiomas — incrementos 2026-10-09 e 2026-10-10
+# Cobertura de textos e idiomas — incrementos 2026-10-09, 2026-10-10 e 2026-10-11
 
-Inventário dos textos do shell web e da primeira tela operacional de módulo (Compras) e cobertura nos quatro idiomas habilitados: `pt-BR` (fonte/fallback), `en-US`, `es-ES` e `fr-FR`. Este documento complementa `docs/MULTILANGUAGE.md`; o inventário dos demais módulos operacionais segue como backlog.
+Inventário dos textos do shell web, das telas operacionais de Compras e das cinco telas agrícolas (jornada 2026-10-11) e cobertura nos quatro idiomas habilitados: `pt-BR` (fonte/fallback), `en-US`, `es-ES` e `fr-FR`. Este documento complementa `docs/MULTILANGUAGE.md`; o inventário dos demais módulos operacionais segue como backlog.
+
+## Incremento 2026-10-11 — telas agrícolas (`/Agriculture`, `/field`, `/Harvest`, `/Costs`, `/Work`)
+
+- Dicionário **compartilhado** em `src/Hosts/Agro360.Web/wwwroot/js/agro-i18n.js` (`AGRO_I18N`): **809 chaves em cada um dos quatro idiomas**, com **paridade total** verificada por gate estático (mesmo conjunto de chaves nos 4 dicionários, valores não vazios; checker `check_parity.js` reexecutado a cada edição do dicionário).
+- Transformação dos 5 JS de página (`agriculture360.js`, `harvest.js`, `work.js`, `costs.js`, `field.js`): strings PT-BR hardcoded → `tr()` com marcadores `{0}` (nenhuma concatenação de texto traduzível em runtime); numeração/data/dinheiro pelos helpers `agroI18n.number/money/date/dateTime` (**moeda sempre BRL** em qualquer cultura). Todos passaram em `node --check`.
+- Marcações nas 5 telas Razor: `data-i18n-ag` (texto), `data-i18n-ag-ph` (placeholder), `data-i18n-ag-aria` (aria-label); aplicador estático no próprio `agro-i18n.js` + listener do evento `agro360:culture` em cada página (re-render imediato na troca de idioma, incluindo o título do painel ativo).
+- Contrato cultural herdado do shell: culturas suportadas = `["pt-BR","en-US","es-ES","fr-FR"]`; resolução preguiçosa (localStorage `agro360.culture` → fallback `pt-BR`), independente da ordem de carga dos scripts; `agroI18n.headers()` injeta `X-Culture` (e `X-Farm-Id` quando o escopo existe) em todo fetch próprio — `work.js` e `field.js`, que divergiam do `api()` canônico, agora enviam os headers (itens pendentes do mapa front do incremento).
+- Testes de arquitetura atualizados sem perder a invariant: asserções que procuravam literais PT agora validam **chave no cliente + valor pt-BR no dicionário** (`tr("arc.noCompatibleOption")` e `tr("har.zeroBasePct")`).
+- Escolhas estáveis documentadas (ver `docs/LIMITES.md`): códigos de valor do contrato permanecem brutos (`NORMAL`, `ALTA`, `APPROVED`, `LOSS`, …); nomes de arquivo de exportação não se localizam; dinheiro ausente exibe `cs.unavailable` (nunca R$ 0,00); textos livres (motivos/notas) chegam na língua da UI e persistem como enviados.
+- Limite honesto: cobertura nível dicionário/estático + smoke server-side (5 páginas 200, dicionário servido, paridade 809×4); a **confirmação visual autenticada** (360/768/1440 px + zoom nativo 200% × 4 idiomas) depende da confiança única do certificado desktop no túnel do navegador — não declarar as telas como visualmente homologadas sem os screenshots correspondentes em `artifacts/browser-homologacao-<data>/`.
 
 ## Incremento 2026-10-10 — telas operacionais de Compras (`/Procurement`)
 
@@ -40,7 +50,7 @@ Não são chaves do dicionário de shell e permanecem em `pt-BR` quando a cultur
 4. **Parágrafos da ajuda genérica de tela** em `_Layout.cshtml` (bloco `Para que serve / Como trabalhar / Regras e resultado`) — traduzidos apenas `summary` e `small`; o corpo segue `pt-BR`.
 5. **Títulos de página `@ViewData["Title"]`** — definidos em cada página Razor (servidor), fora do dicionário cliente.
 6. **Lacuna conhecida específica**: `Pages/Ecosystem/Index.cshtml` (linha 7) usa chaves sem prefixo `helpTitle`/`help` que não existem no dicionário de shell → mantém `pt-BR` nos demais idiomas até virar chave canônica (ex.: `d.helpTitle`).
-7. **Telas dos módulos**: apenas o crome compartilhado era traduzido; no incremento 2026-10-10 a tela de **Compras** ganhou dicionário completo (511 chaves × 4 idiomas, paridade validada estaticamente). Textos específicos de cada outro módulo (formulários operacionais, diálogos, mensagens inline) seguem em `pt-BR` — item de backlog por módulo.
+7. **Telas dos módulos**: apenas o crome compartilhado era traduzido; no incremento 2026-10-10 a tela de **Compras** ganhou dicionário completo (511 chaves × 4 idiomas) e no incremento 2026-10-11 as cinco telas agrícolas (`/Agriculture`, `/field`, `/Harvest`, `/Costs`, `/Work`) ganharam o dicionário compartilhado `agro-i18n.js` (809 chaves × 4 idiomas), ambos com paridade validada estaticamente. Os demais módulos operacionais (pecuária, logística, financeiro, etc.) seguem em `pt-BR` — item de backlog por módulo.
 
 ## Invariantes confirmados
 

@@ -15,7 +15,9 @@ param(
 #   excecao + decisao -> resolvida) -> previsao financeira OPEN (nunca paga) ->
 #   Central de Trabalho (ocorrencias com deep link; aparecem/desaparecem; escopo de unidade;
 #   gate por permissao) -> isolamento entre tenants (modulo nao contratado = 403; dados separados) ->
-#   escopo proprio nao se expande (ActorCanDelegateScope).
+#   escopo proprio nao se expande (ActorCanDelegateScope) -> cancelamento de pedido
+#   (Bloco A 3.5: concorrencia 1x204+1x409; replay pos-sucesso 409; parcial recebido cancela
+#   preservando recibos/movimentos/estoque; recebimento pos-cancelamento bloqueado).
 #
 # Cluster descartavel + API Release em porta livre; fixtures de banco quando a API nao expoe escrita.
 
@@ -585,7 +587,7 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
     Assert-Step 'Pedido-possui-1-item' (@($orderItems).Count -eq 1) "items=$($orderItems -join ',')"
     $orderItemId = $orderItems[0]
 
-    $stockBefore = Invoke-Psql "select coalesce(sum(quantity),0)::text from agro360.inventory_stock_movements where tenant_id='${scTenantId}' and product_id='${productId}' and movement_type='PURCHASE_RECEIPT';"
+    $stockBefore = Invoke-Psql "select coalesce(sum(quantity),0)::text from agro360.inventory_stock_movements where tenant_id='${scTenantId}' and product_id='${productId}' and movement_type='RECEIPT' and reference_type='PURCHASE_RECEIPT';"
     Assert-Step 'Estoque-inicial-zero' ([decimal]$stockBefore -eq 0) "mov PURCHASE_RECEIPT=$stockBefore"
 
     # Replay: duas chamadas simultaneas com MESMA chave e MESMO conteudo -> 1 recibo, mesmo id.
@@ -641,7 +643,7 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
     Assert-Step 'Central-RECEIPT_DIVERGENCE-aparece' (@(Find-Occurrence $ocRecv 'RECEIPT_DIVERGENCE' $receiptId).Count -eq 1) "link=$(($(Find-Occurrence $ocRecv 'RECEIPT_DIVERGENCE' $receiptId))[0].SafeLink)"
     Assert-Step 'Central-QUALITY-inspecao-pendente' (@(Find-Occurrence $ocRecv 'QUALITY' $receiptId).Count -eq 1) "material bloqueado visivel"
 
-    $stockAfterRecv1 = Invoke-Psql "select coalesce(sum(quantity),0)::text from agro360.inventory_stock_movements where tenant_id='${scTenantId}' and product_id='${productId}' and movement_type='PURCHASE_RECEIPT';"
+    $stockAfterRecv1 = Invoke-Psql "select coalesce(sum(quantity),0)::text from agro360.inventory_stock_movements where tenant_id='${scTenantId}' and product_id='${productId}' and movement_type='RECEIPT' and reference_type='PURCHASE_RECEIPT';"
     Assert-Step 'Nada-liberado-em-estoque-antes-da-qualidade' ([double]$stockAfterRecv1 -eq 0) "mov=$stockAfterRecv1 (quarentena nao vira saldo disponivel)"
 
     # Central PURCHASE_APPROVAL: enquanto o pedido estava aguardando, deveria ter aparecido —
@@ -905,6 +907,73 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
     $finalScopes = Invoke-Psql "select scope_type from agro360.identity_user_unit_scopes where tenant_id='${scTenantId}' and user_id='${operatorUser}';"
     Assert-Step 'Admin-delega-ALL-para-operator' ($adminRestore.Status -eq 204 -and $finalScopes -eq 'ALL') "scope_final=$finalScopes"
 
+    # ============ ETAPA 12: CANCELAMENTO DE PEDIDO (Bloco A 3.5: concorrencia, replay, parcial recebido) ============
+    Write-Host "`n--- ETAPA 12: cancelamento de pedido (concurrencia, replay, parcial recebido) ---" -ForegroundColor Cyan
+
+    # Estado atual do pedido: PARTIALLY_RECEIVED c/ saldo reaberto de 10 L (etapa 7). O cancelamento
+    # precisa comportar isso: historico preservado, nada estornado em silencio, guarda de versao firme.
+    $cancelVer = Invoke-Psql "select version::text from agro360.procurement_purchase_orders where id='${orderId}';"
+
+    # Sem justificativa -> 422 (codigo estavel agro360.procurement_reason_required).
+    $cancelNoReason = Invoke-Api POST "/api/procurement/orders/${orderId}/cancel" @{ Version=[long]$cancelVer; Reason=$null } $opToken
+    Assert-Step 'Cancel-sem-motivo-422' ($cancelNoReason.Status -eq 422) "HTTP $($cancelNoReason.Status)"
+
+    # Versao desatualizada -> 409 (nada cancela 'no ar'; optimistic locking intacto apos as etapas anteriores).
+    $cancelStale = Invoke-Api POST "/api/procurement/orders/${orderId}/cancel" @{ Version=([long]$cancelVer + 3); Reason='Versao desatualizada (E2E)' } $opToken
+    Assert-Step 'Cancel-versao-stale-409' ($cancelStale.Status -eq 409) "HTTP $($cancelStale.Status)"
+
+    # Concorrencia real: duas chamadas simultaneas com a MESMA versao corrente -> lock da linha serializa:
+    # exatamente uma vira CANCELLED (204) e a outra recebe conflito (409). Nunca duas.
+    $cancelJobBlock = {
+        param($p, $oid, $ver, $reason, $t)
+        $json = @{ Version=[long]$ver; Reason=$reason } | ConvertTo-Json -Depth 4 -Compress
+        try {
+            $r = Invoke-WebRequest -Uri "http://127.0.0.1:${p}/api/procurement/orders/${oid}/cancel" -Method POST -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes($json)) -Headers @{ Authorization="Bearer ${t}" } -UseBasicParsing -TimeoutSec 60
+            [PSCustomObject]@{ Status=[int]$r.StatusCode; Raw=$r.Content }
+        }
+        catch {
+            [PSCustomObject]@{ Status=[int]$($_.Exception.Response.StatusCode); Raw=$(if ($_.ErrorDetails) { $_.ErrorDetails.Message } else { $_.Exception.Message }) }
+        }
+    }
+    $jobC1 = Start-Job -ScriptBlock $cancelJobBlock -ArgumentList $apiPort, $orderId, $cancelVer, 'Cancelamento concorrente A (E2E)', $opToken
+    $jobC2 = Start-Job -ScriptBlock $cancelJobBlock -ArgumentList $apiPort, $orderId, $cancelVer, 'Cancelamento concorrente B (E2E)', $opToken
+    Wait-Job $jobC1, $jobC2 -Timeout 600 | Out-Null
+    if (@($jobC1, $jobC2) | Where-Object { $_.State -ne 'Completed' }) { throw 'timeout aguardando cancelamento concorrente (600s)' }
+    $cancelA = $jobC1 | Receive-Job
+    $cancelB = $jobC2 | Receive-Job
+    Remove-Job $jobC1, $jobC2 -Force
+    $cancelBoth = @(@($cancelA.Status, $cancelB.Status) | Sort-Object)
+    Assert-Step 'Cancel-concorrente-1x204-1x409' ($cancelBoth[0] -eq 204 -and $cancelBoth[1] -eq 409) "status=$($cancelBoth -join ',') (uma vitoria, um conflito; sem double cancel)"
+
+    # Replay apos sucesso: mesmo payload reenviado -> 409 (status ja CANCELLED e versao incrementada).
+    $cancelReplay = Invoke-Api POST "/api/procurement/orders/${orderId}/cancel" @{ Version=[long]$cancelVer; Reason='Cancelamento concorrente A (E2E)' } $opToken
+    Assert-Step 'Cancel-replay-pos-sucesso-409' ($cancelReplay.Status -eq 409) "HTTP $($cancelReplay.Status) (reenvio nunca duplica nem re-processa)"
+
+    $cancelState = Invoke-Psql "select status || '|' || coalesce(cancel_reason,'') || '|' || version::text from agro360.procurement_purchase_orders where id='${orderId}';"
+    $cancelParts = $cancelState -split '\|'
+    Assert-Step 'Pedido-CANCELLED-c-motivo-e-versao+1' (($cancelParts[0] -eq 'CANCELLED') -and ($cancelParts[1] -like '*concorrente*') -and ([long]$cancelParts[2] -eq ([long]$cancelVer + 1))) "db=$cancelState"
+    $cancelEvents = Invoke-Psql "select count(*)::text from agro360.procurement_purchase_order_events where purchase_order_id='${orderId}' and event_type='CANCELLED';"
+    Assert-Step 'Cancel-auditado-em-evento' ($cancelEvents -eq '1') "events=$cancelEvents"
+
+    # Historico e estoque preservados: o cancelamento nao estorna recibos nem movimentos (estorno e ato proprio, futuro).
+    $receiptsKept = Invoke-Psql "select count(*)::text from agro360.procurement_receipts where tenant_id='${scTenantId}';"
+    $recvKept = Invoke-Psql "select coalesce(sum(quantity),0)::text from agro360.inventory_stock_movements where tenant_id='${scTenantId}' and product_id='${productId}' and movement_type='RECEIPT' and reference_type='PURCHASE_RECEIPT';"
+    $retKept = Invoke-Psql "select coalesce(sum(quantity),0)::text from agro360.inventory_stock_movements where tenant_id='${scTenantId}' and product_id='${productId}' and movement_type='RETURN_TO_SUPPLIER';"
+    $stockKept = Invoke-Psql "select coalesce(available,0)::text from agro360.inventory_stock_balances where tenant_id='${scTenantId}' and warehouse_id='${warehouseId}' and product_id='${productId}';"
+    Assert-Step 'Cancel-parcial-preserva-recibos-e-estoque' (($receiptsKept -eq '2') -and ([decimal]$recvKept -eq 95) -and ([decimal]$retKept -eq 10) -and ($stockKept -eq '85.000000')) "recibos=$receiptsKept; mov_recebido=$recvKept; mov_devolucao=$retKept; disponivel=$stockKept (sem estorno automatico; ledger normaliza p_type PURCHASE_RECEIPT -> RECEIPT com reference_type preservado)"
+
+    # Recebimento pos-cancelamento: o saldo reaberto nao vira porta aberta -> guard de status bloqueia.
+    $postCancelRecv = Invoke-Api POST '/api/procurement/receipts' @{
+        PurchaseOrderId=$orderId; ReceivedAt=$receivedAt; InvoiceDocument='NF-POST-CANCEL'; OverrideExcess=$false; ExcessJustification=$null
+        Items=@(@{ PurchaseOrderItemId=$orderItemId; Quantity=10; SupplierLot='LOTE-E2E-3'; ExpiresOn=$null; Notes=$null })
+        IdempotencyKey=('e2e-jornada-recv-postcancel-' + (Get-Date).ToString('yyyyMMddHHmmssfff')); WarehouseId=$warehouseId; FinanceAccountId=$financeAccount; FirstDueOn=$receiptFirstDue; Installments=1
+    } $opToken
+    Assert-Step 'Recebimento-pos-cancelamento-bloqueado' ($postCancelRecv.Status -eq 422) "HTTP $($postCancelRecv.Status) (agro360.procurement_order_not_receivable)"
+
+    # Requisicao de origem volta a ter saldo autorizado (pedido cancelado nao consome autorizacao).
+    $reqAfterCancel = Invoke-Psql "select status from agro360.procurement_requisitions where id='${reqId}';"
+    Assert-Step 'Requisicao-reaberta-AFTER-cancelamento' ($reqAfterCancel -eq 'APPROVED') "status=$reqAfterCancel (CONVERTED/PARTIAL -> APPROVED)"
+
     # ============ RESUMO FINAL ============
     Write-Host "`n--- RESUMO DE HOMOLOGACAO ---" -ForegroundColor Cyan
     Write-Host "Todas as etapas da jornada executadas com sucesso." -ForegroundColor Green
@@ -957,6 +1026,10 @@ ETAPA 10 - Tenants:
   27. Usuario sem purchasing.read no Santa: 403 na API + ocorrencias filtradas na Central: PASS
 ETAPA 11 - Escopo:
   28. Auto-expansao FARM B: 403; ALL: 403; mesmo escopo: 204; admin delega ALL de volta: PASS
+ETAPA 12 - Cancelamento de pedido (Bloco A 3.5):
+  29. Sem motivo: 422; versao stale: 409; concorrencia (mesma versao): exatamente 1x204 + 1x409; replay pos-sucesso: 409: PASS
+  30. Pedido CANCELLED c/ motivo persistido + evento auditado + versao+1; parcial recebido preserva recibos(2)/movimentos(95+10)/estoque(85): PASS
+  31. Recebimento pos-cancelamento: 422 (saldo reaberto nao vira porta aberta); requisicao de origem reaberta (APPROVED) p/ nova cotacao: PASS
 "@
     $summary | Set-Content (Join-Path $evidenceDir 'SUMMARY.txt')
     Write-Host $summary

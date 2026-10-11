@@ -13,9 +13,9 @@ public sealed class SeasonTrackingService(DatabaseExecutor database, ITenantCont
         database.InTenantTransactionAsync<SeasonTrackingOverview>(async (c, t) =>
         {
             var cutoff = referenceDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
-            var season = await c.QuerySingleOrDefaultAsync<SeasonRow>(new CommandDefinition("""
+            var season = await c.QuerySingleOrDefaultAsync<SeasonRow>(new CommandDefinition($"""
                 select s.id SeasonId,s.farm_id FarmId,f.name Farm,s.name Season,s.crop Crop,s.start_date StartsOn,
-                 s.end_date EndsOn,case s.status when 1 then 'PLANNED' when 2 then 'ACTIVE' when 3 then 'COMPLETED' when 4 then 'CANCELLED' else 'CLOSED' end Status,
+                 s.end_date EndsOn,{SeasonStatusCodes.SqlCase("s.status")} Status,
                  s.planned_area_ha PlannedPhysicalAreaHa
                 from agro360.agriculture_seasons s join agro360.geo_farms f on f.tenant_id=s.tenant_id and f.id=s.farm_id
                 where s.tenant_id=@TenantId and s.id=@SeasonId and s.deleted_at is null
@@ -107,8 +107,11 @@ public sealed class SeasonTrackingService(DatabaseExecutor database, ITenantCont
         if (command.CoveredAreaHa <= 0 || string.IsNullOrWhiteSpace(command.IdempotencyKey)) throw new DomainException("Cobertura e chave de idempotência são obrigatórias.");
         return database.InTenantTransactionAsync<Guid>(async (c, t) =>
         {
-            var replay = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition("select work_order_id from agro360.agriculture_operation_orders where tenant_id=@TenantId and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
-            if (replay is not null) return replay.Value;
+            // Lock por chave serializa reenvios concorrentes (mesma chave/conteudo -> o segundo replay em vez de violar a unique).
+            await c.ExecuteAsync(new CommandDefinition("select pg_advisory_xact_lock(hashtextextended(@LockKey,0))", new { LockKey = $"{tenant.TenantId:N}:{command.IdempotencyKey}" }, t, cancellationToken: ct));
+            var replay = await c.QuerySingleOrDefaultAsync<(Guid? WorkOrderId, Guid? OperationId, decimal CoveredArea)>(new CommandDefinition("select work_order_id,operation_id,covered_area_ha from agro360.agriculture_operation_orders where tenant_id=@TenantId and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: ct));
+            if (replay.WorkOrderId is not null && (replay.OperationId != operationId || replay.CoveredArea != command.CoveredAreaHa)) throw new ConflictException("A chave de idempotência já foi utilizada com outra operação ou área.", "agriculture.idempotency_conflict");
+            if (replay.WorkOrderId is not null) return replay.WorkOrderId.Value;
             var o = await GetOperation(c, t, operationId, ct);
             var covered = await c.ExecuteScalarAsync<decimal>(new CommandDefinition("select coalesce(sum(covered_area_ha),0) from agro360.agriculture_operation_orders where tenant_id=@TenantId and operation_id=@Id", new { tenant.TenantId, Id = operationId }, t, cancellationToken: ct));
             if (covered + command.CoveredAreaHa > o.PlannedAreaHa) throw new ConflictException("A cobertura das ordens supera a área planejada.", "agriculture.order_coverage_exceeded");

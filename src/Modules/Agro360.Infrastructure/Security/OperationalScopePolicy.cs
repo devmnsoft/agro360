@@ -39,6 +39,24 @@ public static class OperationalScopePolicy
         )
         """;
 
+    /// <summary>Filtro para tabelas/aliases que carregam a fazenda na coluna farm_id (talhões, safras, depósitos).</summary>
+    public static string FarmIdSql(string alias) =>
+        $"""
+        and (@FarmId::uuid is null or {alias}.farm_id=@FarmId)
+        and (
+            exists(select 1 from agro360.identity_user_unit_scopes scope_all where scope_all.tenant_id=@TenantId and scope_all.user_id=@UserId and scope_all.scope_type='ALL')
+            or ({alias}.farm_id is not null and exists(
+                select 1
+                from agro360.geo_farms scope_farm
+                where scope_farm.tenant_id={alias}.tenant_id and scope_farm.id={alias}.farm_id and scope_farm.deleted_at is null
+                  and (
+                      exists(select 1 from agro360.identity_user_unit_scopes scope_direct where scope_direct.tenant_id=@TenantId and scope_direct.user_id=@UserId and scope_direct.scope_type='FARM' and scope_direct.farm_id=scope_farm.id)
+                      or exists(select 1 from agro360.identity_user_unit_scopes scope_org where scope_org.tenant_id=@TenantId and scope_org.user_id=@UserId and scope_org.scope_type='ORGANIZATION' and scope_org.organization_id=scope_farm.organization_id)
+                  )
+            ))
+        )
+        """;
+
     /// <summary>Filtro direto sobre o alias da própria fazenda (geo_farms).</summary>
     public static string FarmSql(string alias) =>
         $"""

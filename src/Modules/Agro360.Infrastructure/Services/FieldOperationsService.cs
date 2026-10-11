@@ -153,6 +153,9 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
         if (kind is "CONSUME" or "LOSS" && m.ConsumedQuantity + m.ReturnedQuantity + m.LostQuantity + command.Quantity > m.DeliveredQuantity) throw new ConflictException("A baixa supera o material entregue à equipe.");
         if (kind == "RETURN" && (command.SourceEventId is null || m.ConsumedQuantity + m.ReturnedQuantity + m.LostQuantity + command.Quantity > m.DeliveredQuantity)) throw new ConflictException("A devolução exige entrega de origem e saldo devolvível.");
         MaterialEventRow? source = null;
+        // source_key canonico do custo = id do evento de material (um lancamento por evento de origem,
+        // unico em uq tenant+source_type+source_key; reenvio idempotente ja retorna antes e nao duplica).
+        var eventId = Guid.CreateVersion7();
         if (kind == "REVERSAL")
         {
             if (command.SourceEventId is null) throw new DomainException("O estorno deve referenciar o consumo original.", "agriculture.reversal_source_required");
@@ -168,7 +171,7 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
                 var farmIdStr = data["propertyId"]?.ToString();
                 if (!string.IsNullOrWhiteSpace(farmIdStr) && Guid.TryParse(farmIdStr, out var farmId))
                 {
-                    await postingService.PostMaterialCostAsync(tenant.TenantId, farmId, m.Id, -command.Quantity, m.UnitCost ?? 0, orderId.ToString(), $"REVERSAL: {m.ProductId}", DateTimeOffset.UtcNow, cancellationToken);
+                    await postingService.PostMaterialCostAsync(tenant.TenantId, farmId, eventId, -command.Quantity, m.UnitCost ?? 0, orderId.ToString(), $"REVERSAL: {m.ProductId}", DateTimeOffset.UtcNow, cancellationToken);
                 }
             }
         }
@@ -233,13 +236,13 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
             var farmIdStr = data["propertyId"]?.ToString();
             if (string.IsNullOrWhiteSpace(farmIdStr)) throw new DomainException("A ordem não possui uma propriedade vinculada.", "agriculture.order_farm_missing");
             var farmId = Guid.Parse(farmIdStr);
-            await postingService.PostMaterialCostAsync(tenant.TenantId, farmId, m.Id, command.Quantity, m.UnitCost ?? 0, orderId.ToString(), $"{kind}: {m.ProductId}", DateTimeOffset.UtcNow, cancellationToken);
+            await postingService.PostMaterialCostAsync(tenant.TenantId, farmId, eventId, command.Quantity, m.UnitCost ?? 0, orderId.ToString(), $"{kind}: {m.ProductId}", DateTimeOffset.UtcNow, cancellationToken);
         }
 
         var column = kind switch { "RESERVE" => "reserved_quantity", "DELIVER" => "delivered_quantity", "CONSUME" => "consumed_quantity", "RETURN" => "returned_quantity", "LOSS" => "lost_quantity", _ => "reserved_quantity" }; var delta = kind == "RELEASE" ? -command.Quantity : command.Quantity;
         if (kind == "REVERSAL") { column = "consumed_quantity"; delta = -command.Quantity; }
         await c.ExecuteAsync(new CommandDefinition($"update agro360.field_work_order_materials set {column}={column}+@Delta,updated_at=now(),updated_by=@UserId,version=version+1,status=case when @Kind='REVERSAL' then 'DELIVERED' when delivered_quantity-consumed_quantity-returned_quantity-lost_quantity-@Delta=0 and delivered_quantity>0 then 'SETTLED' when @Kind='DELIVER' then 'DELIVERED' when @Kind='RESERVE' then 'RESERVED' else status end where tenant_id=@TenantId and id=@Id", new { Delta = delta, tenant.UserId, Kind = kind, tenant.TenantId, Id = materialId }, t, cancellationToken: cancellationToken));
-        await c.ExecuteAsync(new CommandDefinition("insert into agro360.field_material_events(id,tenant_id,work_order_material_id,event_type,quantity,reason,inventory_movement_id,source_event_id,idempotency_key,created_by) values(@Id,@TenantId,@MaterialId,@Kind,@Quantity,@Reason,@Movement,@SourceEventId,@Key,@UserId)", new { Id = Guid.CreateVersion7(), tenant.TenantId, MaterialId = materialId, Kind = kind, command.Quantity, command.Reason, Movement = movement, command.SourceEventId, Key = command.IdempotencyKey, tenant.UserId }, t, cancellationToken: cancellationToken));
+        await c.ExecuteAsync(new CommandDefinition("insert into agro360.field_material_events(id,tenant_id,work_order_material_id,event_type,quantity,reason,inventory_movement_id,source_event_id,idempotency_key,created_by) values(@Id,@TenantId,@MaterialId,@Kind,@Quantity,@Reason,@Movement,@SourceEventId,@Key,@UserId)", new { Id = eventId, tenant.TenantId, MaterialId = materialId, Kind = kind, command.Quantity, command.Reason, Movement = movement, command.SourceEventId, Key = command.IdempotencyKey, tenant.UserId }, t, cancellationToken: cancellationToken));
     }, cancellationToken);
 
     public Task ReviewAsync(Guid orderId, FieldReviewCommand command, CancellationToken cancellationToken) => database.InTenantTransactionAsync(async (c, t) =>

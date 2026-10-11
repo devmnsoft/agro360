@@ -1,0 +1,126 @@
+# Auditoria e matriz da jornada agrícola — incremento 2026-10-11
+
+Documento de trabalho do incremento "jornada agrícola integrada" (planejamento de safra → execução de campo → materiais → custos → colheita → qualidade → rastreabilidade), incluindo as correções do Bloco A e a regressão visual (que incorpora a homologação pendente de Compras).
+
+## Baseline registrado (seção 1 do prompt)
+
+| Item | Valor |
+|---|---|
+| Branch / HEAD | `main` / `05a15ec6d02e6a822ebdf0bd428c8c5830a19ed1` ("novos ajustes", 2026-10-11 07:34:41 -0300) |
+| `git status --porcelain` | limpo (delta do incremento anterior absorvido pelo usuário neste commit) |
+| SDK | .NET `10.0.400` (solução `net10.0`) |
+| PostgreSQL | 18 em WSL/localhost:5432 (`vmmemWSL`) |
+| Migration mais alta | `134_french_language_support.sql` → schema `11.24.0` (reconfirmado) |
+| Evidência E2E Compras | `artifacts/procurement-journey-e2e-4e570923d65a468fb12bb97f1ec0414a/` íntegra; **11/11 etapas PASS**, schema 11.24.0, 2026-10-10 09:46:12 UTC — registro reconfirmado |
+| Banco de homologação | `agro360_homolog` (limpo do full.sql atual, 861 tabelas, 0 pares de health faltantes) |
+| Hosts v6 → **v7** | v6 finalizado 11:29 (PIDs 29340/31408); v7 no ar 11:29 com ambiente idêntico (bat `launch-api7/web7.bat` em Temp/opencode; URLs 7081/8081 + 7080/7083; mesmo pfx SAN; `agro360_homolog`). Pronto c/ curl: 7080=200, 8081/health=Healthy, 7081=https 200 |
+
+## Reconfirmação dos registros anteriores
+
+1. **Jornada Compras 11 etapas verde** — confirmado (SUMMARY + transcript íntegros).
+2. **i18n operacional de Compras nos 4 idiomas** — confirmado: `wwwroot/js/procurement.js` → `PROC_I18N` 511 chaves × 4 idiomas, único módulo operacional totalmente traduzido.
+3. **Homologação visual pendente** — confirmada; entra na regressão visual deste incremento (seção 11).
+4. **`CancelOrderAsync` × coluna `version`** — **registro obsoleto, corrigido**: `version bigint not null default 1` existe nos dois caminhos — migration `100_procurement_requisition_lifecycle.sql` (L3–7) e full.sql (L6860–6864); verificado diretamente em `agro360_homolog` e na dev DB. O diagnóstico antigo leu só o CREATE TABLE (L2477, sem `version`). **Bloco A 3.5 vira validação comportamental** (concorrência/replay/parcial recebido) — o serviço já usa `for update` + `row.Version != x.Version` + guarda de status, coerente com o contrato.
+
+## Síntese dos três mapas de código
+
+### Canônico (ledger/custo/outbox/permissoes/concorrencia/migrações)
+
+- Movimento canônico = função `agro360.inventory_apply_stock_movement(tenant,warehouse,product,quantity[c/sinal],cost,type,reference,lot,expires,user,reason)` (migration 106; full.sql L7345; definição legacy anterior em L1241 superada por `create or replace`): advisory lock `tenant:warehouse:product` + balance `for update`, custo médio móvel, baixa de lote quando `p_lot` informado, bloqueio por contagem aberta (trigger `inventory_stock_movement_count_guard`, hint `count.movement_blocked`), INSERT em `inventory_stock_movements` com `movement_type` mapeado de `p_type` (`ENTRY/PURCHASE_RECEIPT→RECEIPT`, `EXIT/MAINTENANCE/FUEL→CONSUMPTION`, `ADJUST±`, **outros tipos passam crus e batem no CHECK da tabela** — consumir de agricultura deve usar `'EXIT'`). `idempotency_key` preenchido pelo chamador (UNIQUE parcial `(tenant_id,idempotency_key)`).
+- Escritores diretos de saldo existem em ~15 serviços (Harvest, Logistics, MaterialRequest, StockControl, IndustrialProduction, Livestock*, Commercial*, Fleet, Sales) — todos com lock+ledger+chave; `Agriculture360Service.ApplyEffects` é o único sem depósito/ledger/lock.
+- Custo: `cost_entries` (legado operacional) + `cost_management_entries` (canônico, `source_key`, unique `(tenant,source_type,source_key)`, planned/committed/recognized/paid/allocated/reversed `numeric(18,4)`, backfill `'legacy:'||id`). Escrita via `PostingService.PostMaterialCostAsync/PostActivityCostAsync`; `SeasonCostService` tem engine completa Preview→Confirm→Reverse (batches idempotentes, métodos DIRECT/PERCENTAGE/AREA/PRODUCTION/HOURS/EQUAL, `RoundMoney` 4 casas AwayFromZero + restorno na última linha, snapshot jsonb, review de fechamento vs corte).
+- Fechamento com snapshot: modelo `harvest_closing_runs/versions` (cadeia `supersedes_id`, revalidação antes do close, advisory lock `{tenant}:harvest-closing:{season}`).
+- Pós-commit: `OperationalInspectionTrigger.TryStartFromOriginAsync` (intents `quality_inspection_event_intents`, key `EVT:{processCode}:{originId:N}` + hash) ou outbox `EnqueueAsync`→`OutboxWorker` (backoff exponencial, dead-letter).
+- Permissão: policy por código + re-checagem DB (claim, roles, tenant, módulo contratado); farm scope via `X-Farm-ID` validado contra `identity_user_unit_scopes` (403 `forbidden_unit_scope`) + filtros manuais `@FarmScope`; RLS `app.tenant_id` como fronteira. Controllers agrícolas conformes.
+- Dinheiro: `numeric(18,4)` valores / `numeric(20,6)` quantidades, `decimal` nativo, `SeasonCostRules.RoundMoney`. Migrações: runner com checksum SHA256; próxima = `135_*` → `11.25.0`.
+
+### Front (telas agrícolas, contratos, menu, central, gates)
+
+- Telas: `/agriculture` (8 módulos), `/field` (PWA offline), `/Harvest`, `/Costs`, `/Work` (Central), `/livestock`, `/properties`, `/Production`, `/Maps`.
+- **i18n: 0 chaves traduzidas em qualquer JS agrícola** (100% PT-BR hardcoded: campos, estados, ações, `prompt/confirm/alert`, erros, ajuda, `toLocaleString("pt-BR")`).
+- `work.js` e `field.js` usam `fetch` próprio **sem `X-Culture`/`X-Farm-Id`** (divergem do `api()` canônico de `agro360.js`).
+- Menu hardcoded em `_Layout.cshtml` (`data-permissions`) + entitlement narrowing via `/api/account/effective-access`; contexto ativo em localStorage → header `X-Farm-Id`.
+- Central de Trabalho projeta 22 tipos: `APPROVAL, PURCHASE, PURCHASE_APPROVAL, REQ_APPROVAL, QUOTATION, SUPPLIER_RETURN, RECEIPT_DIVERGENCE, INVOICE_MATCH, QUALITY, QUALITY_CASE, SHIPMENT, MAINTENANCE, PAYABLE, COST_PENDING, SEASON_CLOSING, FIELD_WORK, TASK, GENEALOGY_BREAK, SCHEDULE_UNASSIGNED, SCHEDULE_LATE, DELIVERY_FAILED`.
+- Gates estáticos: `node scripts/verify-offline-shell.mjs`, `node --check` por JS, `python tools/check-api-routes.py`.
+
+### Núcleo agrícola (endpoints, máquinas, colheita, dashboard, lookups)
+
+- `Agriculture360Controller` → `api/agriculture/{module}` (GET/POST/PUT) + ações `approve|revise|start|pause|complete|cancel` + endpoints de plano (`overview/plans/operations/dependencies/orders/reschedule`) + endpoints de ordem (detail/resources/work-logs/materials/events/review). **Não existe rota genérica `/transition`** — apenas as seis ações verbais.
+- Tabela polimórfica única `agriculture_records` (jsonb `data`) para os 8 módulos; histórico `agriculture_status_history`.
+- Máquina de estados: **só `work-orders` tem máquina** (parelhas L112 + pré-requisitos de RELEASED + trava de dependência REQUIRED de predecessora não concluída L119–125 + conferência `ReviewAsync` versionada sem issues BLOCKER nem material em custódia). Os outros 7 módulos: sem validação de estado de origem; `CreateAsync` aceita os 12 estados (inclusive terminais); `UpdateAsync` genérico aceita **qualquer estado-alvo** (inclusive terminal) em registro não-terminal, full-replace de `data`, sem predicado de versão.
+- Efeito de estoque (`ApplyEffects` L159): dispara **somente no CreateAsync como COMPLETED** (aplications/field-notes com produto+quantidade); UPDATE cru sem `warehouse_id`/ledger/lock/lote; mensagem cita "produto vencido" sem checar validade; assimetria: `complete` via transição não baixa.
+- Materiais de ordem de campo (`FieldOperationsService.ApplyMaterialEventAsync`): eventos RESERVE/DELIVER/CONSUME/RETURN/LOSS/RELEASE/REVERSAL com contadores encadeados (RESERVE≤planned, DELIVER≤reserved, CONSUME+RETURN+LOSS≤delivered), idempotência com fingerprint de payload, REVERSAL exige igual quantidade e único por consumo (custo negativo), **baixa física via função canônica** (CONSUME/LOSS→EXIT neg; RETURN/REVERSAL→ENTRY pos; `p_lot=null`), trava de quarentena `procurement_receipt_quarantine` no CONSUME (incidente `REJECTION_AT_USE`), custo por `PostingService`.
+- Colheita (`HarvestService`): planos idempotentes + coerência de fazenda + área≤talhão + unidade=base_unit; registros **sem teto cumulativo** de área/qtde vs plano (multi-pass ilimitado); recebimentos parciais limitados ao saldo do registro; bruto≥tara aceito **com igualdade (líquido 0)**; líquido **nunca reconciliado** com `received_quantity`; inspeção disparada **direto após commit, sem outbox** — crash entre commit e trigger ⇒ replay cai no short-circuit `Replay` (L93) e **não dispara de novo** ⇒ recebidamente preso em `AWAITING_INSPECTION`; intents presos (`PENDING/PENDING_MODEL`) nunca re-acionados automaticamente; `InspectAsync` all-or-nothing (aceita 100% ou 0, sem parcial); `AllocateAsync` escreve saldo+movement à mão (**sem `inventory_stock_lots`**, custo médio não recalculado); closing versionado com revalidação; genealogia `operational_genealogy_links` com checagem de ciclo app-side.
+- Dashboard genérico (`DashboardAsync` L148): `PlantedArea`=soma de área **planejada** de safras ativas; `PlannedCost`=soma de `estimatedCost` **todos status**; `ActualCost`=**estimado** das linhas COMPLETED; `CostPerHectare`=esse numerador ÷ área de **todos os registros**; `ExpectedYield`=soma de **todas** as safras; **`ActualYield`=0 constante**. Sem filtro de fazenda (tenant-wide). Dashboard de colheita (`HarvestService` L194–209) usa tabelas reais + guarda de unidade (`harvest.incompatible_dashboard_units`).
+- `LookupService`: 16 fontes, **todas tenant-only** (ignoram `X-Farm-ID`); expõem legados `purchasing_suppliers`/`purchasing_purchase_orders`.
+- Erros: 3 famílias misturadas — códigos gerados de labels PT com acento (`agriculture.talhão_required`), domínios estáveis (`harvest.*`, `inspection.*`, `closing.*`) e outliers prefixados (`agro360.agriculture_transition_invalid`, `agro360.agriculture_stock_unavailable`…).
+- Rastreabilidade: `traceability_nodes/edges` escritos por `AgricultureService` (plantio/colheita) + Commercial/Livestock; `operational_genealogy_links` (095/102, imutáveis, ciclo app-side em Harvest); `public_trace_publications` (096) em `PublicTraceabilityService`.
+- `purchasing_*` (legado) e `procurement_*` (moderno) coexistem sem bridge; consumidores legados: `OperationsService`, `LookupService`, `DocumentService`.
+- Migrations agrícolas: 075/077/078/085/086/087/092/093/095/096/101/102/106; várias tabelas-base existem **só no full.sql** (instalador canônico é o full.sql — migrations assumem seu baseline).
+- Testes: unit `GenealogyRulesTests`, `PublicTraceabilityRulesTests`, `OperationalInspectionTriggerTests`; architecture (form tests c/ idempotência de estorno e integridade de execução); integration `ProcurementConversionJourneyTests`. **Sem teste direto de `ApplyEffects`, tare/parciais de `ReceiveAsync` ou upsert de `AllocateAsync`.**
+
+### Flags suspeitos consolidados (evidência → mudança)
+
+| # | Flag | Evidência | Mudança |
+|---|---|---|---|
+| A | Consumo desconta todos os depósitos do produto (sem `warehouse_id`) | `Agriculture360Service` L159 | A1 |
+| B | Assimétrico: só create-as-COMPLETED baixa; edição/transição p/ COMPLETED não baixa; msg cita validade sem checar | L79/L159 vs L100–146 | A1/A2 |
+| C | Sem máquina de estados em 7 dos 8 módulos | L110–127 | A2 |
+| D | CreateAsync aceita estados terminais (APPROVED/COMPLETED/CANCELLED/CLOSED) | L151–156 | A2 |
+| D2 | UpdateAsync genérico chega a estado terminal por edição (alvo livre) | L92 | A2 |
+| E | Indicadores com constantes/fontes erradas; `ActualYield=0` | L148 | A4 |
+| F | Colheita sem teto cumulativo; líquido×quantidade não reconciliado; bruto==tara aceito | `HarvestService` L66–139 | A6 |
+| G | Inspeção pós-commit fire-and-forget; replay não re-dispara; intents presos não re-acionados | `HarvestService` L92–136; trigger L179–192 | A6 |
+| H | `AllocateAsync` sem lotes, custo médio não recalculado (3 caminhos distintos de escrita) | L181–187 | A6 |
+| I | 16 lookups sem escopo de fazenda; `ValidateReferences` não cruza com contexto selecionado; `FieldIds` do plano não validados (só `FieldId`) | L13–32, L158 | A3 |
+| J | Suprecedores/pedidos duplicados `purchasing_*`×`procurement_*` sem bridge | mapa §10 | manter (comprovar consumidores); bridge em próxima expansão |
+| K | Status numérico de safra com 3 leituras diferentes (3→HARVESTED vs COMPLETED vs CLOSED) | `Season.cs`, `SeasonTrackingService` L18, `AgricultureService` L105 | normalizar num mapeador único (A3) |
+| L | Códigos de erro derivados de labels PT (acentuados) misturados a domínios estáveis | `Agriculture360Rules` | padronizar mapa label→código estável (A2, sem quebra: manter atuais como alias quando possível) |
+| M | Dupla definição da função canônica no full.sql (L1241 vs L7345); merge `data\|\|` mantém chaves obsoletas | full.sql; L91 | registrar como limite; remover legado se seguro (não bloqueia) |
+
+## Matriz por jornada (estado real → evidência → lacuna → dependência → alteração → aceite)
+
+| # | Jornada | Estado real | Lacuna → alteração | Aceite |
+|---|---|---|---|---|
+| M1 | Consumo de material em aplicação/caderno | UPDATE cru, sem depósito/ledger/lock/lote; dispara só em create-as-COMPLETED | **A1**: exigir `warehouseId`; chamar `inventory_apply_stock_movement('EXIT')` com `reference_id=registro`, `idempotency_key='agri:{recordId}'` + fingerprint (mesma chave mesmo conteúdo=replay equivalente; diferente=409 `agriculture.material_effect_conflict`); efeito único compartilhado create×transição; erro honesto (`insufficient stock` vs vencido); front: seletor de depósito (lookup filtrado pela fazenda) | A |
+| M2 | Cancelamento de pedido (Compras) | Coerente com schema (`version` existe nos 2 caminhos + dev DB) | **A5**: ETAPA 12 no E2E — cancelamento concorrente (2× mesma versão → 1× 204 + 1× 409), replay pós-sucesso → conflito de estado, pedido `PARTIALLY_RECEIVED` cancelável mantendo recebimentos/movimentos | K |
+| M3 | Estados e efeitos de negócio | Só work-orders tem máquina; criação/edição atingem terminais | **A2**: create bloqueia terminais (APPROVED/COMPLETED/CANCELLED/CLOSED) — applications/field-notes recebidos já COMPLETED viram create+complete atômico (compatibilidade); UpdateAsync não altera estado (remove `@Status` do SET, ignora `command.Status`); machine genérico mínimo: terminais irreversíveis, `COMPLETED` só de estados ativos, `APPROVED` de {OPEN,PLANNED,REVISION}, `REVISION` de APPROVED, `CLOSED` de {COMPLETED,APPROVED}, cancel de não-terminal com motivo; version guard uniforme; conferência de ordem mantém gate dedicado | B |
+| M4 | Contexto e lookups | Lookups tenant-only; referências não cruzam com `X-Farm-Id`; `FieldIds` não validados | **A3**: narrowing por `@FarmScope` nas fontes com dimensão de fazenda (fields, production-areas, crop-seasons, warehouses, storage-lots; `properties` permanece lista de unidades autorizadas do usuário); `ValidateReferences` + listas + dashboard com cruzamento fazenda; validar **todos** `FieldIds` do plano ⊂ propriedade/fazenda; mapeador único de status numérico de safra | C |
+| M5 | Indicadores agrícolas | Estimado apresentado como realizado; `ActualYield=0`; denominadores mistos | **A4**: separar planejado×realizado×não-calculável (null ≠ 0); `ActualCost` de fonte real reconhecida; `ActualYield` de colheitas reais (null se nenhuma); custo/ha com denominador de área efetiva e período; tudo respeitando `@FarmScope` | J |
+| M6 | Planejamento executável | `SeasonTrackingService` + trava de dependência em release de ordem | Verifier detalhado do serviço (ciclos em dependências, reprogramação→sucessoras, geração de ordens idempotente) antes de mudar; aceitar: 2 ops dependentes, liberação fora de ordem negada, reprogramação com impacto, geração sem duplicar | D |
+| M7 | Execução de campo e materiais | Engine de eventos completa (contadores, quarentena, estorno imutável, baixa canônica) | Documentar etapa de baixa física (CONSUME/LOSS/RETURN); revisar correções de apontamento confirmado (histórico); `p_lot=null` — lote quando produto exige (A1/A6) | E |
+| M8 | Custo com origem | Engines completas; risco de dupla apropriação compra×consumo e de `source_key` por material em campo | Auditor de escritas: confirmar `source_key` estável por evento (ler `PostingService`), reconciliar operação vs materiais/apontamentos, tarifa ausente→pendência, estorno referencia apropriação original | F |
+| M9 | Colheita/recebimento/qualidade | Fluxo completo com parciais e closing versionado | **A6**: líquido obrigatório >0 com peso; divergência líquido×quantidade exige motivo (422 `harvest.net_weight_mismatch`); teto cumulativo de área multi-pass = área do talhão; replay re-dispara inspeção quando recebidamente ainda `AWAITING_INSPECTION`; re-ação periódico de intents pendentes (via worker existente); `AllocateAsync` passa a criar lotes (função canônica) | G,H |
+| M10 | Genealogia/rastreabilidade pública | Tabelas + publicação opaca + ciclo app-side | Verifier: lote derivado de 2 origens → destinação → snapshot público sem vazamento; garantir lotes após A6 | I |
+| M11 | Central de Trabalho | 22 tipos projetados com permissão por tipo | Auditor por tipo: causa/próxima ação/URL/revalidação/atualização pós-resolução (testes ao vivo) | J |
+| M12 | i18n telas agrícolas | 0 chaves traduzidas; work/field sem headers de cultura/fazenda | **A7**: dicionários 4 idiomas nos JS agrícolas (padrão `PROC_I18N` + evento culture), paridade verificável; `work.js`/`field.js` passam a enviar `X-Culture`/`X-Farm-Id` | L |
+| M13 | Regressão visual Compras | API verde; visual nunca executada; **hosts AMARRADOS** | Executar `HOMOLOG-RUNBOOK.md` em `agro360_homolog` (4 idiomas × 360/768/1440 + zoom 200%, screenshots, console/network, contagens §9) | L |
+
+## Plano de implementação (ordem por dependência)
+
+1. **A1** — `Agriculture360Service.ApplyEffects` → comando canônico (M1): contrato ganha campo de depósito (`AgricultureCommand` — confirmar nome exato em `Agriculture360Contracts.cs`); front adiciona seletor; E2E de reenvio com 2 depósitos.
+2. **A2** — Máquinas de estados create/update/transition + códigos estáveis (M3).
+3. **A3** — Escopo de fazenda em lookups/listas/dashboards/referências + `FieldIds` + mapeador de safra (M4).
+4. **A4** — Reescrita das métricas do dashboard genérico (M5).
+5. **A5** — ETAPA 12 de cancelamento no E2E de Compras (M2).
+6. **A6** — Colheita: peso/parciais/tetos/recuperação de inspeção/lotamento (M9).
+7. Auditorias leves: M6 (deep-read de `SeasonTrackingService`), M7, M8 (`PostingService.source_key`), M10, M11.
+8. **A7** — i18n dos módulos agrícolas (M12) + headers nos fetch próprios.
+9. **M13** — Regressão visual completa (Compras + telas agrícolas) nos hosts v6.
+10. Docs finais: checkpoint (aprovado/falhou/bloqueado/não executado), rastreabilidade, i18n report, prompt de continuidade, `LIMITES.md`.
+
+Meta: **zero novas migrations** se nenhum A exigir DDL (função, índices e tabelas já existem; monitorar — qualquer nova migration sai como `135_*` → `11.25.0` com append no full.sql).
+
+## Log de execução — sessão 2 (build + hosts v7 + gates + E2E + browser) — 2026-10-11
+
+1. **Build e hosts v7** — hosts v6 finalizados (PIDs 29340/31408); build Release da solução completa GREEN incluindo M6 (`SeasonTrackingService.GenerateOrderAsync`: advisory lock + replay `agriculture.idempotency_conflict`) e M8 (`source_key` estável em `FieldOperationsService`/`PostingService`). Um erro de compilação do fix M6 foi sanado na hora: tupla non-nullable do replay → elementos nullable `(Guid? WorkOrderId, Guid? OperationId, decimal CoveredArea)` (sem linha, o Dapper retorna default). Bats `launch-api7.bat`/`launch-web7.bat` replicam o ambiente v6 byte a byte (exceto nome de log). Prontidão confirmada por curl: `https://192.168.0.10:7080`=200, `http://…:8081/health`=Healthy, `https://…:7081/health`=200.
+2. **Gates estáticos** — `node scripts/verify-offline-shell.mjs` PASS; `python tools/check-api-routes.py` OK (946 operações únicas); unit tests **390/390 pass** executando a dll diretamente (o wrapper `dotnet test` falha neste ambiente com exit 5/"Zero testes" por quirk de descoberta MTP — pré-existente, documentar em LIMITES); architecture tests **186/186 pass** após atualizar 2 asserções que procuravam literais PT movidos para o dicionário i18n:
+   - `AgricultureFormTests.FieldOrderTransitionsProtectConcurrentChangesAndServerTimestamps` → agora asserciona `tr("arc.noCompatibleOption")` no cliente **e** o valor pt-BR no dicionário `agro-i18n.js`.
+   - `CanonicalSchemaTests.HarvestClosingIsImmutableTenantScopedAndActionable` → agora asserciona `tr("har.zeroBasePct")` no cliente **e** o valor pt-BR no dicionário.
+3. **E2E Compras (12 etapas)** — cluster PG18 descartável clonado do template durável (schema 11.24.0; zero migrations novas).
+   - **Run 1 (11:44–11:53)**: etapas 1–11 100% PASS (SoD de aprovação/devolução, idempotência de conversão/recebimento/decisão de qualidade, quarentena→estoque só do aceito, match documental c/ exceção+SoD, previsão financeira OPEN, isolamento de tenant, delegação de escopo). Etapa 12: 6/7 PASS; **1 assert falhou** — `Cancel-parcial-preserva-recibos-e-estoque` leu `mov_recebido=0` (esperado 95). Raiz: a função canônica (migration 106) **normaliza** `p_type` `PURCHASE_RECEIPT`→`movement_type='RECEIPT'` e preserva o tipo bruto em `reference_type`; o filtro do script usava `movement_type='PURCHASE_RECEIPT'` (nunca existiria — os asserts anteriores desse filtro esperavam 0, por isso nunca falharam). Correção no script (3 filtros → `movement_type='RECEIPT' AND reference_type='PURCHASE_RECEIPT'`) + detalhe do assert documenta a normalização. Demais métricas da etapa batiam (recibos=2, devolução=10, disponível=85).
+   - **Run 2 (12:04)**: falha transiente de ambiente — API do E2E parou de aceitar TCP ~7 s após o "Application started", sem exceção logada (nenhuma entrada relevante no Event Log de Aplicação).
+   - **Run 3 (12:13 UTC)**: **12/12 etapas PASS** — "PROCUREMENT JOURNEY E2E COMPLETO COM SUCESSO". Etapa 12 íntegra: sem motivo 422, versão stale 409, concorrência mesma versão = exatamente 1×204+1×409, replay pós-sucesso 409, `CANCELLED` c/ motivo + evento + versão+1, pedido parcialmente recebido preserva recibos=2 / mov_recebido=95 / mov_devolução=10 / disponível=85 (sem estorno automático), recebimento pós-cancelamento 422, requisição reaberta para `APPROVED`. Evidência: `artifacts/procurement-journey-e2e-bc06fb363bde45678c2fb5cf4f30dc02`.
+4. **Smoke server-side das 5 telas (não autenticado)** — `/Agriculture`, `/Work`, `/Harvest`, `/field`, `/Costs` respondem 200 com o shell público (len idêntico, por design offline-shell); `/js/agro-i18n.js` servido (196.730 bytes; guard `module.exports={AGRO_I18N}` presente). Os marcadores `data-i18n-ag*` só renderizam autenticado → verificação final no browser.
+5. **Browser** — túnel do desktop rejeita o self-signed (`ERR_CERT_COMMON_NAME_INVALID`). Certificado validado como correto (SAN `localhost`+`192.168.0.10`, thumbprint `C05DA1CAA96A04FDF9EB850D2281AB150531747F`, expira 2028). Pedido feito ao usuário para confiar no certificado no desktop; importação feita por ele — porém caiu nas lojas `CA`/`My`, e autoassinado só é confiado a partir de `Root` (em aberto nesta sessão).
+6. **Raiz do bloqueio do browser encontrada e corrigida (TLS)** — os hosts v6→v8 serviam o **certificado dev padrão do .NET** (CN=localhost, thumbprint `31D899C4…`) em vez do nosso pfx: a variável `ASPNETCORE_Kestrel__Certificate__FilePath` (usada nos bats desde v6) mapeia para `Kestrel:Certificate:FilePath`, propriedade que **não existe** em `KestrelServerOptions` — e nem existe `Kestrel:CertificateFilePath` consumível por binding neste host (testado com caminho inexistente: sem efeito). Com o binding sem cert, o fallback automático dev-cert do .NET 8+ assumia, e o nome não casava com o IP de acesso. Fix aplicado: `Program.cs` de Web e Api ganhou bloco explícito que, quando `Kestrel:CertificateFilePath` está na configuração, carrega o PKCS#12 via `X509CertificateLoader.LoadPkcs12FromFile` e aplica com `options.ConfigureHttpsDefaults(https => https.ServerCertificate = …)` (sem config, comportamento padrão intacto — zero efeito no E2E, que sobe a API sem essa variável). Bats atualizados para `ASPNETCORE_Kestrel__CertificateFilePath`/`CertificatePassword` (formata plana, chega à configuração como `Kestrel:CertificateFilePath`). Hosts **v9** no ar: thumbprint `C05DA1CA…` + SAN `DNS:localhost, DNS:192.168.0.10` verificados via handshake TLS nos dois ports (7080 web / 7081 api); health 200 nos três endpoints; erro do túnel evoluiu de `COMMON_NAME_INVALID` para `AUTHORITY_INVALID` (só falta o trust na loja Root). Solução completa Release 0/0; architecture 187/187 revalidado após o change.

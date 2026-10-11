@@ -1,3 +1,4 @@
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.RateLimiting;
 using Agro360.Api.Health;
@@ -12,6 +13,16 @@ using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// TLS: quando configurado (appsettings ou env ASPNETCORE_Kestrel__Certificate*), usa o certificado
+// informado em todos os endpoints https. Sem configuração, Kestrel mantém o comportamento padrão.
+var tlsCertificatePath = builder.Configuration["Kestrel:CertificateFilePath"];
+if (!string.IsNullOrWhiteSpace(tlsCertificatePath))
+{
+    var tlsCertificatePassword = builder.Configuration["Kestrel:CertificatePassword"] ?? "";
+    var tlsCertificate = X509CertificateLoader.LoadPkcs12FromFile(tlsCertificatePath, tlsCertificatePassword);
+    builder.WebHost.ConfigureKestrel(options => options.ConfigureHttpsDefaults(https => https.ServerCertificate = tlsCertificate));
+}
 
 builder.Host.UseSerilog((context, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)

@@ -115,7 +115,9 @@ public sealed class AgricultureFormTests
         Assert.Contains("let payload={version}", client);
         Assert.Contains("farm_id=@PropertyId", agriculture);
         Assert.Contains("w.farm_id=(o.data->>'propertyId')::uuid", fieldOperations);
-        Assert.Contains("Nenhuma opção compatível com a propriedade selecionada.", client);
+        var dictionary = File.ReadAllText(Path.Combine(root, "src/Hosts/Agro360.Web/wwwroot/js/agro-i18n.js"));
+        Assert.Contains("tr(\"arc.noCompatibleOption\")", client);
+        Assert.Contains("\"Nenhuma opção compatível com a propriedade selecionada.\"", dictionary);
     }
 
     [Fact]

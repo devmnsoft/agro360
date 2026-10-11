@@ -69,9 +69,39 @@ public sealed class CanonicalSchemaTests
         Assert.Contains("conteúdo persistido foi omitido do log", service);
         Assert.Contains("private static List<SeasonClosingIssueDto> BuildIssues", service);
         Assert.DoesNotContain("new JsonSerializerOptions{PropertyNameCaseInsensitive=true}", service);
-        Assert.Contains("percentual não calculável com base zero", client);
+        var dictionary = File.ReadAllText(Path.Combine(Root(), "src/Hosts/Agro360.Web/wwwroot/js/agro-i18n.js"));
+        Assert.Contains("tr(\"har.zeroBasePct\")", client);
+        Assert.Contains("percentual não calculável com base zero", dictionary);
         Assert.Contains("Consultar dados", File.ReadAllText(Path.Combine(Root(), "src/Hosts/Agro360.Web/Pages/Harvest/Index.cshtml")));
         Assert.Contains("if(/^[=+\\-@]/.test(x))", client);
+    }
+
+    [Fact]
+    public void SeasonStatusHasSingleCanonicalMapper()
+    {
+        var root = Root();
+        var domain = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Domain/Agriculture/Season.cs"));
+        var mapper = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Services/SeasonStatusCodes.cs"));
+        var agriculture = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Services/AgricultureService.cs"));
+        var tracking = File.ReadAllText(Path.Combine(root, "src/Modules/Agro360.Infrastructure/Services/SeasonTrackingService.cs"));
+
+        // O enum de domínio é a fonte única (valores 1..5 casam com o CHECK de agriculture_seasons.status).
+        Assert.Contains("Planned = 1", domain);
+        Assert.Contains("Cancelled = 5", domain);
+        Assert.Contains("SeasonStatus", mapper);
+        Assert.Contains("ToCode", mapper);
+        Assert.Contains("SqlCase", mapper);
+        // Ambos os serviços consomem o mesmo mapeador; nenhum outro CASE duplicado pode existir em src.
+        Assert.Contains("SeasonStatusCodes.SqlCase(\"status\")", agriculture);
+        Assert.Contains("SeasonStatusCodes.SqlCase(\"s.status\")", tracking);
+        foreach (var file in Directory.GetFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories))
+        {
+            if (Path.GetFileName(file).Equals("SeasonStatusCodes.cs", StringComparison.OrdinalIgnoreCase)) continue;
+            var text = File.ReadAllText(file);
+            Assert.DoesNotContain("then 'PLANNED' when 2 then 'ACTIVE'", text, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("when 3 then 'HARVESTED'", text, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("when 3 then 'COMPLETED'", text, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     [Fact]

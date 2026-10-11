@@ -8,6 +8,7 @@ using Agro360.Multitenancy;
 using Agro360.SharedKernel;
 using Dapper;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace Agro360.Infrastructure.Services;
 
@@ -67,10 +68,15 @@ public sealed class HarvestService(
     {
         var key = Required(command.IdempotencyKey, nameof(command.IdempotencyKey)); var hash = Hash(command); var replay = await Replay(db, tx, "harvest_records", key, hash, "HARVEST", cancellationToken); if (replay is not null) return replay;
         var qty = Guard.Positive(command.HarvestedQuantity, nameof(command.HarvestedQuantity)); var unit = Required(command.Unit, nameof(command.Unit), 16).ToLowerInvariant();
-        var plan = await db.QuerySingleOrDefaultAsync<PlanRow>(new CommandDefinition("select estimated_quantity Quantity,unit,status,planned_area_ha Area from agro360.harvest_plans where tenant_id=@TenantId and id=@PlanId for update", new { tenant.TenantId, command.PlanId }, tx, cancellationToken: cancellationToken)) ?? throw new NotFoundException("Planejamento de colheita", command.PlanId);
+        var plan = await db.QuerySingleOrDefaultAsync<PlanRow>(new CommandDefinition("""
+            select p.estimated_quantity Quantity,p.unit Unit,p.status Status,p.planned_area_ha Area,
+             coalesce((select sum(x.harvested_area_ha) from agro360.harvest_records x where x.tenant_id=p.tenant_id and x.plan_id=p.id and x.status<>'CANCELLED'),0) AreaUsed
+            from agro360.harvest_plans p where p.tenant_id=@TenantId and p.id=@PlanId for update of p;
+            """, new { tenant.TenantId, PlanId = command.PlanId }, tx, cancellationToken: cancellationToken)) ?? throw new NotFoundException("Planejamento de colheita", command.PlanId);
         if (plan.Status == "CANCELLED") throw new ConflictException("O planejamento foi cancelado.", "harvest.plan_cancelled");
         if (!string.Equals(unit, plan.Unit, StringComparison.OrdinalIgnoreCase)) throw new DomainException("A unidade difere do planejamento.", "harvest.unit_mismatch");
         if (command.HarvestedAreaHa.HasValue && (command.HarvestedAreaHa.Value <= 0 || command.HarvestedAreaHa.Value > plan.Area)) throw new DomainException("A área efetivamente colhida deve ser positiva e não exceder o talhão planejado.", "harvest.invalid_area");
+        if (command.HarvestedAreaHa.HasValue && plan.AreaUsed + command.HarvestedAreaHa.Value > plan.Area) throw new ConflictException("As passagens de colheita somadas excedem a área planejada do talhão.", "harvest.area_exceeds_field");
         var id = Guid.CreateVersion7(); var reference = Required(command.CommercialReference, nameof(command.CommercialReference), 100);
         await db.ExecuteAsync(new CommandDefinition("""
           insert into agro360.harvest_records(id,tenant_id,plan_id,operational_at,harvested_quantity,unit,harvested_area_ha,commercial_reference,notes,idempotency_key,request_hash,created_by)
@@ -85,12 +91,27 @@ public sealed class HarvestService(
     {
         Guid? createdReceiptId = null;
         Guid? receivedProductId = null;
+        Guid? createdWarehouseId = null;
         var result = await database.InTenantTransactionAsync(async (db, tx) =>
         {
             var key = Required(command.IdempotencyKey, nameof(command.IdempotencyKey));
             var hash = Hash(command);
             var replay = await Replay(db, tx, "production_receipts", key, hash, "RECEIPT", cancellationToken);
-            if (replay is not null) return replay;
+            if (replay is not null)
+            {
+                // Recuperação: crash entre o commit e o despacho deixa o recebimento aguardando inspeção.
+                // O re-disparo é idempotente (intent por origem + request_hash), então o replay reabre o ciclo.
+                var pending = await db.QuerySingleOrDefaultAsync<ReplayReceipt>(new CommandDefinition(
+                    "select quality_status Status,product_id ProductId,warehouse_id WarehouseId from agro360.production_receipts where tenant_id=@TenantId and idempotency_key=@Key",
+                    new { tenant.TenantId, Key = key }, tx, cancellationToken: cancellationToken));
+                if (pending?.Status == "AWAITING_INSPECTION")
+                {
+                    createdReceiptId = replay.Id;
+                    receivedProductId = pending.ProductId;
+                    createdWarehouseId = pending.WarehouseId;
+                }
+                return replay;
+            }
             var qty = Guard.Positive(command.ReceivedQuantity, nameof(command.ReceivedQuantity));
             var unit = Required(command.Unit, nameof(command.Unit), 16).ToLowerInvariant();
             var source = await db.QuerySingleOrDefaultAsync<ReceiptSource>(new CommandDefinition("""
@@ -107,8 +128,12 @@ public sealed class HarvestService(
             if (command.GrossWeight.HasValue || command.TareWeight.HasValue)
             {
                 if (unit is not ("kg" or "t" or "g" or "arroba")) throw new DomainException("Tara só é aceita para unidade de massa.", "harvest.tare_incompatible");
-                if (!command.GrossWeight.HasValue || !command.TareWeight.HasValue || command.GrossWeight.Value < command.TareWeight.Value) throw new DomainException("O peso bruto deve ser maior ou igual à tara.", "harvest.invalid_weight");
+                if (!command.GrossWeight.HasValue || !command.TareWeight.HasValue || command.GrossWeight.Value <= command.TareWeight.Value) throw new DomainException("O peso bruto deve ser maior que a tara (peso líquido positivo).", "harvest.invalid_weight");
                 net = command.GrossWeight.Value - command.TareWeight.Value;
+                // Regra documentada: para unidade de massa, a quantidade recebida deve igualar o peso líquido na mesma
+                // unidade; divergência exige motivo explícito (persistido em divergence_reason como evidência do tratamento).
+                if (Math.Abs(net.Value - qty) > 0.000001m && string.IsNullOrWhiteSpace(command.DivergenceReason))
+                    throw new DomainException("O peso líquido diverge da quantidade recebida; informe o motivo da divergência.", "harvest.net_weight_mismatch");
             }
             var id = Guid.CreateVersion7();
             var remaining = source.Quantity - source.Received - qty;
@@ -131,7 +156,7 @@ public sealed class HarvestService(
                 OriginType: "production_receipts",
                 OriginId: createdReceiptId.Value,
                 ProductId: receivedProductId,
-                UnitId: command.WarehouseId,
+                UnitId: createdWarehouseId ?? command.WarehouseId,
                 Notes: $"Recebimento de colheita lote {command.LotNumber}"), cancellationToken);
         }
 
@@ -178,13 +203,24 @@ public sealed class HarvestService(
         if (qty > receipt.Quantity - receipt.Allocated) throw new ConflictException("A destinação excede o saldo do recebimento.", "harvest.allocation_exceeds_balance");
         if (destination == "AVAILABLE" && (receipt.Accepted <= 0 || qty > receipt.Accepted - receipt.AvailableAllocated)) throw new ConflictException("Somente o saldo efetivamente aprovado pode entrar no estoque disponível.", "harvest.quality_blocks_stock");
         if (!AllowedAllocationDestinations.Contains(destination, StringComparer.Ordinal)) throw new DomainException("Destinação inválida.", "harvest.invalid_destination");
-        Guid? movement = null; if (destination == "AVAILABLE") { movement = Guid.CreateVersion7(); var balance = await db.QuerySingleOrDefaultAsync<BalanceRow>(new CommandDefinition("select id,available,average_cost AverageCost,version from agro360.inventory_stock_balances where tenant_id=@TenantId and warehouse_id=@WarehouseId and product_id=@ProductId for update", new { tenant.TenantId, receipt.WarehouseId, receipt.ProductId }, tx, cancellationToken: cancellationToken)); var after = (balance?.Available ?? 0) + qty; var version = (balance?.Version ?? 0) + 1; await db.ExecuteAsync(new CommandDefinition("""
-          insert into agro360.inventory_stock_balances(id,tenant_id,warehouse_id,product_id,unit,available,reserved,minimum,average_cost,version)
-          values(@BalanceId,@TenantId,@WarehouseId,@ProductId,@Unit,@After,0,0,0,@Version)
-          on conflict(tenant_id,warehouse_id,product_id) do update set available=@After,updated_at=now(),version=@Version;
-          insert into agro360.inventory_stock_movements(id,tenant_id,warehouse_id,product_id,movement_type,quantity,unit,lot_number,reference_type,reference_id,notes,idempotency_key,balance_after,average_cost_after,balance_version,occurred_at,created_by)
-          values(@MovementId,@TenantId,@WarehouseId,@ProductId,'PRODUCTION',@Quantity,@Unit,@Lot,'HARVEST_RECEIPT',@ReceiptId,@Reason,@MovementKey,@After,@AverageCost,@Version,now(),@UserId);
-          """, new { BalanceId = balance?.Id ?? Guid.CreateVersion7(), tenant.TenantId, receipt.WarehouseId, receipt.ProductId, receipt.Unit, After = after, Version = version, MovementId = movement, Quantity = qty, Lot = receipt.Reference, ReceiptId = command.ReceiptId, Reason = reason, MovementKey = $"harvest:{key}", AverageCost = balance?.AverageCost ?? 0, UserId = tenant.UserId }, tx, cancellationToken: cancellationToken)); }
+        Guid? movement = null;
+        if (destination == "AVAILABLE")
+        {
+            // Entrada canônica via inventory_apply_stock_movement: saldo + movimento + lote (upsert) + custo médio + trava
+            // de contagem física. Custo informado = custo médio atual, mantendo a média estável na entrada de produção.
+            var averageCost = await db.ExecuteScalarAsync<decimal?>(new CommandDefinition("select average_cost from agro360.inventory_stock_balances where tenant_id=@TenantId and warehouse_id=@WarehouseId and product_id=@ProductId", new { tenant.TenantId, receipt.WarehouseId, receipt.ProductId }, tx, cancellationToken: cancellationToken));
+            try
+            {
+                movement = await db.ExecuteScalarAsync<Guid>(new CommandDefinition(
+                    "select agro360.inventory_apply_stock_movement(@TenantId,@WarehouseId,@ProductId,@Quantity,coalesce(@AverageCost,0),'PRODUCTION',@ReceiptId,@Lot,null,@UserId,@Reason)",
+                    new { tenant.TenantId, receipt.WarehouseId, receipt.ProductId, Quantity = qty, AverageCost = averageCost, ReceiptId = command.ReceiptId, Lot = receipt.Reference, UserId = tenant.UserId, Reason = reason }, tx, cancellationToken: cancellationToken));
+                await db.ExecuteAsync(new CommandDefinition("update agro360.inventory_stock_movements set idempotency_key=@Key where tenant_id=@TenantId and id=@Movement", new { tenant.TenantId, Key = $"harvest:{key}", Movement = movement }, tx, cancellationToken: cancellationToken));
+            }
+            catch (PostgresException ex) when (ex.MessageText == "physical count blocks movements in this scope")
+            {
+                throw new ConflictException("Uma contagem física em andamento bloqueia a entrada em estoque neste depósito.", "count.movement_blocked");
+            }
+        }
         var id = Guid.CreateVersion7(); var remaining = receipt.Quantity - receipt.Allocated - qty;
         await db.ExecuteAsync(new CommandDefinition("insert into agro360.harvest_material_allocations(id,tenant_id,receipt_id,quantity,destination,reason,stock_movement_id,idempotency_key,request_hash,created_by) values(@Id,@TenantId,@ReceiptId,@Quantity,@Destination,@Reason,@Movement,@Key,@Hash,@UserId); update agro360.production_receipts set quality_status=case when @Remaining=0 then 'ALLOCATED' else 'PARTIALLY_ALLOCATED' end,updated_at=now(),updated_by=@UserId,version=version+1 where tenant_id=@TenantId and id=@ReceiptId;", new { Id = id, tenant.TenantId, ReceiptId = command.ReceiptId, Quantity = qty, Destination = destination, Reason = reason, Movement = movement, Key = key, Hash = hash, UserId = tenant.UserId, Remaining = remaining }, tx, cancellationToken: cancellationToken));
         await Audit(db, tx, "allocate", "HarvestMaterialAllocation", id, cancellationToken);
@@ -467,7 +503,7 @@ public sealed class HarvestService(
         public DateTime OperationalAt { get; set; }
         public decimal Received { get; set; }
     }
-    private sealed record PlanReferences(Guid FarmId, short SeasonStatus, Guid FieldFarmId, decimal FieldArea, string ProductUnit, Guid WarehouseFarmId); private sealed record PlanRow(decimal Quantity, string Unit, string Status, decimal Area); private sealed record ReceiptRow(decimal Quantity, string Unit, string Status, Guid ProductId, string Reference); private sealed record SpecRow(int Version, Guid ProductId, string Status); private sealed record ParameterRow(Guid Id, bool Required, bool EvidenceRequired, decimal? Minimum, decimal? Maximum, string Name); private sealed record AllocationSource(decimal Quantity, decimal Accepted, string Unit, string Status, Guid ProductId, Guid WarehouseId, string Reference, decimal Allocated, decimal AvailableAllocated); private sealed record BalanceRow(Guid Id, decimal Available, decimal AverageCost, long Version); private sealed record DashboardRow(decimal Planned, decimal Harvested, decimal Received, decimal AwaitingQuality, decimal Approved, decimal Loss, decimal Costs, decimal Area, string? Unit, int UnitCount); private sealed record TraceRow(Guid ReceiptId, string LotNumber, string QualityStatus, Guid FarmId, Guid SeasonId, Guid FieldId, Guid HarvestRecordId, decimal ReceivedQuantity, decimal AllocatedQuantity, string Unit);
+    private sealed record PlanReferences(Guid FarmId, short SeasonStatus, Guid FieldFarmId, decimal FieldArea, string ProductUnit, Guid WarehouseFarmId); private sealed record PlanRow(decimal Quantity, string Unit, string Status, decimal Area, decimal AreaUsed); private sealed record ReplayReceipt(string Status, Guid ProductId, Guid WarehouseId); private sealed record ReceiptRow(decimal Quantity, string Unit, string Status, Guid ProductId, string Reference); private sealed record SpecRow(int Version, Guid ProductId, string Status); private sealed record ParameterRow(Guid Id, bool Required, bool EvidenceRequired, decimal? Minimum, decimal? Maximum, string Name); private sealed record AllocationSource(decimal Quantity, decimal Accepted, string Unit, string Status, Guid ProductId, Guid WarehouseId, string Reference, decimal Allocated, decimal AvailableAllocated); private sealed record BalanceRow(Guid Id, decimal Available, decimal AverageCost, long Version); private sealed record DashboardRow(decimal Planned, decimal Harvested, decimal Received, decimal AwaitingQuality, decimal Approved, decimal Loss, decimal Costs, decimal Area, string? Unit, int UnitCount); private sealed record TraceRow(Guid ReceiptId, string LotNumber, string QualityStatus, Guid FarmId, Guid SeasonId, Guid FieldId, Guid HarvestRecordId, decimal ReceivedQuantity, decimal AllocatedQuantity, string Unit);
     private sealed class ReplayRow
     {
         public Guid Id { get; set; }

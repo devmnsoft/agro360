@@ -41,14 +41,20 @@ public sealed record AgricultureCommand(
     string? Unit = null,
     string? PauseReason = null,
     string? ReopenReason = null,
-    long? Version = null);
+    long? Version = null,
+    Guid? WarehouseId = null,
+    string? InventoryLot = null);
 
+// Cada indicador distingue planejado x realizado x não calculável: valor nulo significa "sem dados compatíveis" (nunca zero).
 public sealed record AgricultureDashboard(
-    long ActiveSeasons, decimal PlantedArea, long PlannedActivities, long OverdueActivities,
-    long CompletedThisMonth, decimal PlannedCost, decimal ActualCost, decimal CostPerHectare,
-    long OpenOccurrences, long CriticalOccurrences, decimal PlannedInputs, decimal ActualInputs,
-    long Applications, long Irrigations, decimal ExpectedYield, decimal ActualYield,
+    long ActiveSeasons, decimal PlannedAreaHa, long PlannedActivities, long OverdueActivities,
+    long CompletedThisMonth, decimal? PlannedCost, decimal? RecognizedCost, decimal? CostPerHectare,
+    long OpenOccurrences, long CriticalOccurrences, IReadOnlyCollection<AgricultureInputUnit> InputsByUnit,
+    long Applications, long Irrigations, decimal? ExpectedProduction, decimal? ActualProduction,
     IReadOnlyCollection<string> Alerts);
+
+// Total físico por unidade base do produto: unidades diferentes nunca são somadas entre si.
+public sealed record AgricultureInputUnit(string Unit, decimal Planned, decimal Consumed);
 
 public interface ILookupService
 {
