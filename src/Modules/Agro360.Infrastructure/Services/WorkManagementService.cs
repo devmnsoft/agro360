@@ -121,7 +121,7 @@ public sealed class WorkManagementService(DatabaseExecutor database, ITenantCont
           from agro360.sales_delivery_schedules sch join agro360.tenancy_tenants t on t.id=sch.tenant_id left join agro360.identity_users u on u.tenant_id=sch.tenant_id and u.id=sch.responsible_id
           where sch.tenant_id=@TenantId and sch.planned_date<current_date and sch.status in ('PLANNED','PREPARING') and exists(select 1 from user_permissions where code in('commercial.read','commercial.write'))
           union all
-          select 'DELIVERY_FAILED:'||d.id,d.id,'DELIVERY_FAILED','Entrega frustrada: '||coalesce(d.reason,'Recusa de entrega'),'LOGISTICS',t.name,null,u.name,d.occurred_at,'OPERATIONAL','Data da tentativa de entrega','HIGH','Tentativa de entrega registrou recusa total ou parcial e exige ação logística.','Tratar ocorrência','/Logistics?tab=occurrences',d.created_at
+          select 'DELIVERY_FAILED:'||d.id,d.id,'DELIVERY_FAILED','Entrega frustrada: '||coalesce(d.reason,'Recusa de entrega'),'LOGISTICS',t.name,null,u.name,d.occurred_at,'OPERATIONAL','Data da tentativa de entrega','HIGH','Tentativa de entrega registrou recusa total ou parcial e exige ação logística.','Tratar ocorrência','/Logistics?tab=occurrences',d.recorded_at
           from agro360.fulfillment_delivery_attempts d join agro360.tenancy_tenants t on t.id=d.tenant_id left join agro360.identity_users u on u.tenant_id=d.tenant_id and u.id=d.responsible_id
           where d.tenant_id=@TenantId and exists(select 1 from agro360.fulfillment_delivery_attempt_items ai where ai.tenant_id=d.tenant_id and ai.attempt_id=d.id and ai.refused_quantity>0) and exists(select 1 from user_permissions where code in('logistics.read','logistics.fulfillment.read'))
         ), visible as (

@@ -25,6 +25,30 @@ Validação backend continua sendo a fonte da verdade; a interface oferece resum
 - **Cliente compartilhado** (`agro360.js`): resolvedor `agro360Culture()`, cabeçalho `X-Culture` em toda chamada da API, fábricas `Intl` (moeda BRL, números, tempo relativo) recriadas por idioma, seletor no topo (`_Layout`) e evento `agro360:culture` para os módulos re-renderizarem. Módulos delegam formatação ao idioma ativo (Começa por `procurement.js`; demais módulos seguem o mesmo padrão).
 - **Invariantes**: idioma nunca altera permissões, plano, moeda contratual (BRL), tributação, UoM ou estado de negócio. Códigos persistidos (status, permissões, eventos) e contratos de API não são traduzidos — apenas rótulos de apresentação. Mensagens de erro mantêm `problem.Extensions["code"]` estável; o texto localizado nunca é chave de integração.
 
+## 2026-10-10 — camada de módulo: telas operacionais de Compras em 4 idiomas
+
+- **Dicionário de módulo** (`wwwroot/js/procurement.js`, `PROC_I18N`): 511 chaves em cada um dos quatro idiomas habilitados (`pt-BR` fonte/fallback + `en-US`, `es-ES`, `fr-FR`), paridade total verificada pelo gate estático do incremento. Strings parametrizadas somente por `tr()` com `{0}` — nenhuma concatenação de texto traduzível em runtime.
+- **Re-render por cultura**: o módulo consome o evento `agro360:culture` do shell e reaplica o dicionário ativo; formatação de números/moeda continua delegada às fábricas `Intl` do `agro360.js` (sempre `currency:"BRL"`).
+- **Rótulos do critério de comparação**: os dois valores decisivos da comparação de cotações (menor total da mercadoria × total da proposta escolhida) são exibidos lado a lado nos quatro idiomas, junto com a exigência de justificativa (≥3 caracteres) quando a escolha supera o menor.
+- **Limitação honesta**: cobertura de módulo validada em nível de dicionário/estático + API E2E; a confirmação visual autenticada da matriz (360/768/1440 px + zoom nativo 200% × 4 idiomas) pendia no fecho desta seção por degradação do ambiente dev — detalhamento e evidências em `docs/EXECUTION-CHECKPOINT.md` (incremento 2026-10-10). Demais módulos mantêm o padrão: adotar dicionário próprio com as mesmas regras.
+
+### Glossário canônico do módulo Compras (4 idiomas)
+
+Termos-chave com os valores **exatos** dos dicionários `PROC_I18N` de `wwwroot/js/procurement.js` (nenhum valor deste glossário é tradução livre: o texto exibido sempre vem do dicionário ativo).
+
+| Termo | pt-BR | en-US | es-ES | fr-FR |
+|---|---|---|---|---|
+| Cotação | Cotações | Quotations | Cotizaciones | Devis |
+| Menor proposta (tag da comparação) | MENOR PROPOSTA | LOWEST PROPOSAL | MENOR PROPUESTA | PLUS BASSE PROPOSITION |
+| Menor total da mercadoria | Menor total da mercadoria (unitário × quantidade − desconto): | Lowest goods total (unit × quantity − discount): | Menor total de la mercancía (unitario × cantidad − descuento): | Plus bas total de la marchandise (unitaire × quantité − remise) : |
+| Custo completo (informativo) | Custo completo | Full cost | Costo completo | Coût complet |
+| Conferência de cobranças | Conferência e divergências | Matching & exceptions | Conciliación y divergencias | Vérification et divergences |
+| Divergência | Divergências | Divergences | Divergencias | Divergences |
+| Devolução ao fornecedor | Devoluções ao fornecedor | Supplier returns | Devoluciones al proveedor | Retours fournisseur |
+| Crédito aberto | crédito aberto não compensa títulos nem efetua pagamento. | open credit does not offset titles nor makes payments. | el crédito abierto no compensa títulos ni efectúa pagos. | le crédit ouvert ne compense pas les titres ni n'effectue de paiement. |
+| Segregação de funções (SoD) | Segregação de funções (não permitir conferir e decidir na mesma pessoa) | Separation of duties (do not allow the same person to match and decide) | Segregación de funciones (no permitir conciliar y decidir la misma persona) | Ségrégation des tâches (ne pas permettre de vérifier et décider sur la même personne) |
+| Confirmação de menor preço (contrato 409) | Confirmar recomendação de menor preço | Confirm lowest-price recommendation | Confirmar recomendación de menor precio | Confirmer la recommandation au prix le plus bas |
+
 ## 2026-10-09 — fr-FR habilitado pelo catálogo canônico (migration 134, schema 11.24.0)
 
 - **Catálogo é a fonte da verdade**: `platform_languages` ganhou a linha `fr-FR` (`Français (France)`, `active=true`). A cadeia de resolução (middleware, login/refresh/validação, `ResolveLanguageAsync`, `ChangeCulturePreferenceAsync`, `SaasGovernanceRules.ResolveCulture`) continua 100% catálogo-driven — nenhum código lista culturas; desativar uma cultura no banco basta para retirá-la do fluxo.

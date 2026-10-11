@@ -5,19 +5,23 @@ namespace Agro360.Application.Contracts;
 public sealed record WorkLookup(Guid Id, string Name);
 public sealed record TaskCommand(string Title, string Description, Guid ResponsibleId, string Priority, DateTimeOffset DueAt, string Module, string? EntityType, Guid? EntityId);
 public sealed record TaskTransition(string Status, string? Reason);
-public sealed record OperationalTaskRow(Guid Id, string Title, string Description, string ResponsibleName, string Priority, string Status, DateTimeOffset DueAt, string Module, string? EntityType, Guid? EntityId, DateTimeOffset CreatedAt);
-public sealed record TaskEventRow(string EventType, string? Notes, string ActorName, DateTimeOffset CreatedAt);
-public sealed record AlertRow(Guid Id, string Title, string Description, string Severity, string Status, string Module, string OriginType, Guid? OriginId, DateTimeOffset CreatedAt, DateTimeOffset? ResolvedAt);
+public sealed record OperationalTaskRow(Guid Id, string Title, string Description, string ResponsibleName, string Priority, string Status, DateTime DueAt, string Module, string? EntityType, Guid? EntityId, DateTime CreatedAt);
+public sealed record TaskEventRow(string EventType, string? Notes, string ActorName, DateTime CreatedAt);
+public sealed record AlertRow(Guid Id, string Title, string Description, string Severity, string Status, string Module, string OriginType, Guid? OriginId, DateTime CreatedAt, DateTime? ResolvedAt);
 public sealed record RuleCommand(string Name, string Description, string Module, string Type, string ConditionJson, string Severity, string Action, bool Active);
 public sealed record RuleRow(Guid Id, string Name, string Description, string Module, string Type, string Severity, string Action, bool Active, DateTimeOffset? LastExecutedAt);
 public sealed record WorkflowCommand(string Name, string Module, string EntityType, Guid EntityId, Guid ApproverId, bool SegregationRequired);
 public sealed record WorkflowRow(Guid Id, string Name, string Module, string EntityType, Guid EntityId, string Status, string RequesterName, string ApproverName, DateTimeOffset OpenedAt, DateTimeOffset? DecidedAt);
 public sealed record WorkflowDecisionCommand(string Decision, string? Comment);
 public sealed record NotificationRow(Guid Id, string Type, string Module, string Severity, string Title, string Message, string? SafeLink, DateTimeOffset CreatedAt, DateTimeOffset? ReadAt);
-public sealed record CalendarRow(Guid Id, string Type, string Title, DateTimeOffset StartsAt, DateTimeOffset? EndsAt, string Module, string? Priority, string? SafeLink);
+public sealed record CalendarRow(Guid Id, string Type, string Title, DateTime StartsAt, DateTime? EndsAt, string Module, string? Priority, string? SafeLink);
 public sealed record WorkDashboard(long OpenTasks, long OverdueTasks, long CriticalTasks, long CriticalAlerts, long PendingApprovals, long UnreadNotifications, long CriticalStocks, int HealthScore);
-public sealed record OutboxRow(Guid Id, string Channel, string Status, int Attempts, string? LastError, DateTimeOffset CreatedAt, DateTimeOffset? ProcessedAt);
-public sealed record OperationOccurrenceRow(string Key, Guid OriginId, string OriginType, string Title, string Module, string OrganizationName, string? UnitName, Guid? ResponsibleId, string? ResponsibleName, DateTimeOffset? DueAt, string DueKind, string? DueSource, string Priority, string Reason, string ActionLabel, string SafeLink, string OriginStatus, string InteractionStatus, bool ViewedByMe, long AssignmentVersion, DateTimeOffset UpdatedAt);
+public sealed record OutboxRow(Guid Id, string Channel, string Status, int Attempts, string? LastError, DateTime CreatedAt, DateTime? ProcessedAt);
+// As colunas de data das linhas de leitura do modulo (OperationalTaskRow, TaskEventRow, AlertRow,
+// CalendarRow, OutboxRow e OperationOccurrenceRow) sao DateTime/DateTime? (nao DateTimeOffset):
+// Dapper 2.0.0 exige, na selecao de construtor posicional, o tipo CLR exato que o reader retorna e o
+// Npgsql mapeia timestamptz para DateTime. O JSON continua identico (UTC).
+public sealed record OperationOccurrenceRow(string Key, Guid OriginId, string OriginType, string Title, string Module, string OrganizationName, string? UnitName, Guid? ResponsibleId, string? ResponsibleName, DateTime? DueAt, string DueKind, string? DueSource, string Priority, string Reason, string ActionLabel, string SafeLink, string OriginStatus, string InteractionStatus, bool ViewedByMe, long AssignmentVersion, DateTime UpdatedAt);
 public sealed record OperationOccurrenceQuery(string? Search, string? Module, string? Priority, string? InteractionStatus, string? Scope, Guid? ResponsibleId, string? OriginStatus, DateTimeOffset? StartDate, DateTimeOffset? EndDate, bool Overdue = false, bool Unassigned = false, int Page = 1, int PageSize = 25);
 public sealed record EligibleOccurrenceUser(Guid Id, string Name, string FunctionalIdentification);
 public sealed record OccurrenceAssignmentCommand(Guid? ResponsibleId, string? Reason, long ExpectedVersion);

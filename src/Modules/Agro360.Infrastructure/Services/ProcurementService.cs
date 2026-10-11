@@ -131,7 +131,7 @@ public sealed class ProcurementService(
                 return existing.Id;
             }
 
-            var order = await c.QuerySingleOrDefaultAsync<ReceiptOrderRow>(new CommandDefinition($"select o.id,o.total,o.cost_center_id CostCenterId,s.legal_name SupplierName from agro360.procurement_purchase_orders o join agro360.procurement_suppliers s on s.tenant_id=o.tenant_id and s.id=o.supplier_id where o.tenant_id=@TenantId and o.id=@OrderId and o.status in('APPROVED','SENT','PARTIALLY_RECEIVED') and o.deleted_at is null {OperationalScopeSql("o")} for update of o", ScopeParams(new { OrderId = x.PurchaseOrderId }), t, cancellationToken: ct)) ?? throw new DomainException("Pedido não está apto ao recebimento.", "agro360.procurement_order_not_receivable");
+            var order = await c.QuerySingleOrDefaultAsync<ReceiptOrderRow>(new CommandDefinition($"select o.id,o.total,o.cost_center_id CostCenterId,o.property_id PropertyId,s.legal_name SupplierName from agro360.procurement_purchase_orders o join agro360.procurement_suppliers s on s.tenant_id=o.tenant_id and s.id=o.supplier_id where o.tenant_id=@TenantId and o.id=@OrderId and o.status in('APPROVED','SENT','PARTIALLY_RECEIVED') and o.deleted_at is null {OperationalScopeSql("o")} for update of o", ScopeParams(new { OrderId = x.PurchaseOrderId }), t, cancellationToken: ct)) ?? throw new DomainException("Pedido não está apto ao recebimento.", "agro360.procurement_order_not_receivable");
             var financeAccountValid = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.finance_chart_of_accounts where tenant_id=@TenantId and id=@AccountId and active and type in('EXPENSE','COST','LIABILITY'))", new { tenant.TenantId, AccountId = x.FinanceAccountId }, t, cancellationToken: ct));
             if (!financeAccountValid) throw new DomainException("Conta financeira inexistente ou incompatível.", "agro360.procurement_finance_account_invalid");
 
@@ -165,25 +165,6 @@ public sealed class ProcurementService(
             var number = await Number(c, t, "RCV", ct);
             await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_receipts(id,tenant_id,number,purchase_order_id,received_at,responsible_id,invoice_document,status,excess_justification,stock_integration_status,finance_integration_status,idempotency_key,request_fingerprint,warehouse_id,created_by,updated_by) values(@Id,@TenantId,@Number,@OrderId,@ReceivedAt,@UserId,@Invoice,'PENDING',@Reason,'PENDING','PENDING',@IdempotencyKey,@RequestFingerprint,@WarehouseId,@UserId,@UserId)", new { Id = id, tenant.TenantId, Number = number, OrderId = x.PurchaseOrderId, x.ReceivedAt, tenant.UserId, Invoice = x.InvoiceDocument, Reason = x.ExcessJustification, IdempotencyKey = idempotencyKey, RequestFingerprint = requestFingerprint, x.WarehouseId }, t, cancellationToken: ct));
 
-            // Recognize costs upon material receipt
-            foreach (var item in x.Items)
-            {
-                var row = rows[item.PurchaseOrderItemId];
-                if (row.ItemType != "SERVICE")
-                {
-                    await postingService.PostMaterialCostAsync(
-                        tenant.TenantId,
-                        order.CostCenterId ?? Guid.Empty, // Use cost center as farm proxy or adjust based on domain
-                        row.RelatedProductId!.Value,
-                        item.Quantity,
-                        row.UnitPrice,
-                        $"RCV-{number}",
-                        $"Receipt of {row.Name}",
-                        x.ReceivedAt,
-                        ct);
-                }
-            }
-
             foreach (var item in x.Items)
             {
                 var row = rows[item.PurchaseOrderItemId];
@@ -192,6 +173,25 @@ public sealed class ProcurementService(
                 var requiresQuality = row.RequiresInspection || expired;
                 var qualityStatus = requiresQuality ? "PENDING" : "NOT_REQUIRED";
                 await c.ExecuteAsync(new CommandDefinition("insert into agro360.procurement_receipt_items(id,tenant_id,receipt_id,purchase_order_item_id,quantity,supplier_lot,expires_on,quality_status,notes,created_by,updated_by) values(@Id,@TenantId,@ReceiptId,@PurchaseOrderItemId,@Quantity,@SupplierLot,@ExpiresOn,@QualityStatus,@Notes,@UserId,@UserId); update agro360.procurement_purchase_order_items set received_quantity=received_quantity+@Quantity,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@PurchaseOrderItemId", new { Id = receiptItemId, tenant.TenantId, ReceiptId = id, item.PurchaseOrderItemId, item.Quantity, item.SupplierLot, item.ExpiresOn, QualityStatus = qualityStatus, item.Notes, tenant.UserId }, t, cancellationToken: ct));
+                if (row.ItemType != "SERVICE" && order.PropertyId is not null)
+                {
+                    // Reconhecimento de custo na unidade operacional do pedido: farm_id de
+                    // cost_management_entries tem FK para a fazenda (o proxy antigo,
+                    // cost_center_id ?? Guid.Empty, violava a FK). source_key = id da linha do
+                    // recebimento (mesma identidade por-linha que o campo usa com work-order
+                    // materials): o uso anterior do product_id duplicava na segunda remessa
+                    // do mesmo item (uq tenant+source_type+source_key).
+                    await postingService.PostMaterialCostAsync(
+                        tenant.TenantId,
+                        order.PropertyId.Value,
+                        receiptItemId,
+                        item.Quantity,
+                        row.UnitPrice,
+                        $"RCV-{number}",
+                        $"Receipt of {row.Name}",
+                        x.ReceivedAt,
+                        ct);
+                }
                 if (row.ItemType != "SERVICE" && !requiresQuality)
                 {
                     var movementId = await c.ExecuteScalarAsync<Guid>(new CommandDefinition("select agro360.inventory_apply_stock_movement(@TenantId,@WarehouseId,@ProductId,@Quantity,@UnitCost,'PURCHASE_RECEIPT',@ReferenceId,@Lot,@ExpiresOn,@UserId,@Reason)", new { tenant.TenantId, x.WarehouseId, ProductId = row.RelatedProductId, item.Quantity, UnitCost = row.UnitPrice, ReferenceId = receiptItemId, Lot = item.SupplierLot, item.ExpiresOn, tenant.UserId, Reason = $"Recebimento {number}" }, t, cancellationToken: ct));
@@ -268,7 +268,15 @@ public sealed class ProcurementService(
         }
         var decided = row.Released + row.Rejected + x.AcceptedQuantity + x.RejectedQuantity;
         var status = decided == row.Quantity ? (row.Rejected + x.RejectedQuantity > 0 ? "DECIDED_WITH_REJECTION" : "RELEASED") : "PENDING";
-        await c.ExecuteAsync(new CommandDefinition("update agro360.procurement_receipt_quarantine set released_quantity=released_quantity+@Accepted,rejected_quantity=rejected_quantity+@Rejected,status=@Status,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and receipt_item_id=@ItemId; update agro360.procurement_receipt_items set quality_status=@QualityStatus,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@ItemId", new { tenant.TenantId, ItemId = receiptItemId, Accepted = x.AcceptedQuantity, Rejected = x.RejectedQuantity, Status = status, QualityStatus = status == "PENDING" ? "PENDING" : result, tenant.UserId }, t, cancellationToken: ct));
+        // receipt_items.quality_status é varchar(20): o resultado 'CONDITIONALLY_APPROVED' (22) não cabe.
+        // O resultado exato da decisão permanece em procurement_receipt_quality_decisions.result (varchar(30)).
+        var itemQualityStatus = status switch
+        {
+            "PENDING" => "PENDING",
+            "RELEASED" => "RELEASED",
+            _ => row.Released + x.AcceptedQuantity == 0 ? "REJECTED" : "PARTIALLY_REJECTED"
+        };
+        await c.ExecuteAsync(new CommandDefinition("update agro360.procurement_receipt_quarantine set released_quantity=released_quantity+@Accepted,rejected_quantity=rejected_quantity+@Rejected,status=@Status,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and receipt_item_id=@ItemId; update agro360.procurement_receipt_items set quality_status=@QualityStatus,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@ItemId", new { tenant.TenantId, ItemId = receiptItemId, Accepted = x.AcceptedQuantity, Rejected = x.RejectedQuantity, Status = status, QualityStatus = itemQualityStatus, tenant.UserId }, t, cancellationToken: ct));
         await c.ExecuteAsync(new CommandDefinition("update agro360.procurement_receipts r set status=case when exists(select 1 from agro360.procurement_receipt_quarantine q join agro360.procurement_receipt_items i on i.tenant_id=q.tenant_id and i.id=q.receipt_item_id where i.receipt_id=r.id and q.status='PENDING') then 'DIVERGENT' when exists(select 1 from agro360.procurement_receipt_quarantine q join agro360.procurement_receipt_items i on i.tenant_id=q.tenant_id and i.id=q.receipt_item_id where i.receipt_id=r.id and q.rejected_quantity>0) then 'DIVERGENT' else 'RECEIVED' end,stock_integration_status=case when exists(select 1 from agro360.procurement_receipt_quarantine q join agro360.procurement_receipt_items i on i.tenant_id=q.tenant_id and i.id=q.receipt_item_id where i.receipt_id=r.id and q.status='PENDING') then 'PENDING' else 'COMPLETED' end,updated_at=now(),updated_by=@UserId where r.tenant_id=@TenantId and r.id=@ReceiptId", new { tenant.TenantId, row.ReceiptId, tenant.UserId }, t, cancellationToken: ct));
         await Audit(c, t, "RECEIPT_ITEM", receiptItemId, "QUALITY_DECIDED", new { decisionId, x.AcceptedQuantity, x.RejectedQuantity, Result = result }, ct);
         return decisionId;
@@ -590,7 +598,7 @@ public sealed class ProcurementService(
     private sealed class ExistingReceipt { public Guid Id { get; init; } public string? RequestFingerprint { get; init; } }
     private sealed class RequisitionRow { public string Status { get; init; } = string.Empty; public long Version { get; init; } public Guid RequesterId { get; init; } }
     private sealed class OrderCancelRow { public string Status { get; init; } = string.Empty; public long Version { get; init; } public Guid? RequisitionId { get; init; } }
-    private sealed class ReceiptOrderRow { public decimal Total { get; init; } public Guid? CostCenterId { get; init; } public string SupplierName { get; init; } = string.Empty; }
+    private sealed class ReceiptOrderRow { public decimal Total { get; init; } public Guid? CostCenterId { get; init; } public Guid? PropertyId { get; init; } public string SupplierName { get; init; } = string.Empty; }
     private sealed class ReceiptItemRow { public Guid Id { get; init; } public decimal Quantity { get; init; } public decimal ReceivedQuantity { get; init; } public decimal UnitPrice { get; init; } public string Unit { get; init; } = string.Empty; public string? ProductBaseUnit { get; init; } public string Name { get; init; } = string.Empty; public bool RequiresLot { get; init; } public bool RequiresExpiry { get; init; } public bool RequiresInspection { get; init; } public string ItemType { get; init; } = string.Empty; public Guid? RelatedProductId { get; init; } }
     private sealed class QualityRow { public decimal Quantity { get; init; } public decimal Released { get; init; } public decimal Rejected { get; init; } public Guid WarehouseId { get; init; } public Guid ProductId { get; init; } public string Unit { get; init; } = string.Empty; public string? Lot { get; init; } public DateOnly? ExpiresOn { get; init; } public decimal UnitCost { get; init; } public Guid ReceiptId { get; init; } }
     private sealed class MatchOrderRow { public Guid SupplierId { get; init; } public decimal Total { get; init; } public DateOnly DeliveryOn { get; init; } public string Status { get; init; } = string.Empty; }

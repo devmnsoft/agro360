@@ -5,6 +5,11 @@ equivalente. Substitui prompts soltos do tipo “continue a sprint”. Não subs
 o plano mestre; especializa a próxima execução a partir de `main` em
 2026-09-17 (HEAD `8da8e287`, PR #140 mesclado).
 
+> **Atualização (2026-10-10):** o prompt de continuidade vigente das execuções
+> atuais é `PROMPT-PROXIMA-EXECUCAO.md` na raiz do repositório (incremento
+> 2026-10-10 — jornada completa de Compras + i18n operacional + estabilidade).
+> Este documento preserva o refinamento histórico de 2026-09-17 sem alterações.
+
 ---
 
 Você trabalha exclusivamente no repositório https://github.com/devmnsoft/agro360

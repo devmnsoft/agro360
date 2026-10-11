@@ -288,7 +288,7 @@ public sealed class QuotationService(DatabaseExecutor db, ITenantContext tenant,
 
             var items = (await conn.QueryAsync(new CommandDefinition(
                 """
-                select qi.id,qi.catalog_item_id,qi.requisition_item_id,qi.quantity,qi.unit,c.name catalog_name,c.code catalog_code,
+                select qi.id,qi.catalog_item_id,qi.requisition_item_id,qi.quantity,qi.unit,c.name catalog_name,c.internal_code catalog_code,
                        (select coalesce(min(r.total),0) from agro360.procurement_quotation_responses r
                          where r.tenant_id=qi.tenant_id and r.quotation_item_id=qi.id and r.available and r.deleted_at is null) lowest_total,
                        (select count(distinct r.quotation_supplier_id) from agro360.procurement_quotation_responses r
@@ -468,6 +468,7 @@ public sealed class QuotationService(DatabaseExecutor db, ITenantContext tenant,
                 {
                     Id = Guid.CreateVersion7(),
                     tenant.TenantId,
+                    tenant.UserId,
                     QuotationId = quotationId,
                     row.QuotationItemId,
                     row.QuotationSupplierId,
@@ -526,7 +527,7 @@ public sealed class QuotationService(DatabaseExecutor db, ITenantContext tenant,
                 return created;
             }, ct);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException && exception is not DomainException { Code: "agro360.quotation.confirmation_required" })
+        catch (Exception exception) when (exception is not OperationCanceledException && exception is not ConflictException { Code: "agro360.quotation.confirmation_required" })
         {
             // A falha é auditada fora da transação (que já sofreu rollback), apenas com código
             // higienizado — nunca com mensagem que possa expor dados de negócio ou SQL.
@@ -662,7 +663,7 @@ public sealed class QuotationService(DatabaseExecutor db, ITenantContext tenant,
         // conversor a operação para aqui, antes de qualquer gravação. Confirmada, a recomendação
         // vira decisão auditável atribuída ao usuário que confirmou.
         if (autoDecisions.Count > 0 && !confirmLowestPrice)
-            throw new DomainException("Há itens sem decisão explícita; a conversão aplicaria a recomendação automática de menor preço. Confirme a conversão para registrar essa decisão.", "agro360.quotation.confirmation_required");
+            throw new ConflictException("Há itens sem decisão explícita; a conversão aplicaria a recomendação automática de menor preço. Confirme a conversão para registrar essa decisão.", "agro360.quotation.confirmation_required");
 
         // Persiste as decisões confirmadas sobre a recomendação para que o histórico fique completo e auditável.
         if (autoDecisions.Count > 0)

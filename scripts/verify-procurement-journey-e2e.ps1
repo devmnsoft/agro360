@@ -73,8 +73,8 @@ function Invoke-Psql([string]$Sql, [string]$Db = $dbName) {
     $combined = ''
     if (Test-Path $outF) { $combined += (Get-Content $outF -Raw -ErrorAction SilentlyContinue) }
     if ((Test-Path $errF) -and (Get-Item $errF).Length -gt 0) { $combined += "`n" + (Get-Content $errF -Raw -ErrorAction SilentlyContinue) }
+    if ($code -ne 0) { throw "psql failed (exit code $code): $combined | SQL em $tempFile" }
     Remove-Item $tempFile, $outF, $errF -Force -ErrorAction SilentlyContinue
-    if ($code -ne 0) { throw "psql failed (exit code $code): $combined" }
     return $combined.Trim()
 }
 
@@ -106,7 +106,7 @@ function Invoke-Api([string]$Method, [string]$Path, $Body = $null, [string]$Toke
         $content = $resp.Content
         $contentType = "$($resp.Headers['Content-Type'])"
         $result = $null
-        if ($contentType -like '*json*' -and $content -and $content.Length -gt 2) {
+        if ($contentType -like '*json*' -and $content -and $content.Length -gt 1) {
             try { $result = $content | ConvertFrom-Json } catch { $result = $content }
         }
         return @{ Status = [int]$resp.StatusCode; Body = $result; Raw = $content }
@@ -165,14 +165,14 @@ try {
             $startedDatabase = $true
             $ddlTpl = Join-Path $evidenceDir 'create-template-db.sql'
             Set-Content $ddlTpl "create database ${templateDb};" -Encoding ASCII
-            $cdProc = Start-Process -FilePath $psql -ArgumentList @('-p',"$pgPort","-U","postgres","-h","127.0.0.1","-d","postgres","-X","-v","ON_ERROR_STOP=1","-f",$ddlTpl) -NoNewWindow -PassThru -Wait
+            $cdProc = Start-Process -FilePath $psql -ArgumentList @('-p',"$pgPort","-U","postgres","-h","127.0.0.1","-d","postgres","-X","-v","ON_ERROR_STOP=1","-f",$ddlTpl) -NoNewWindow -PassThru -Wait -RedirectStandardOutput (Join-Path $evidenceDir 'create-template-db.out.txt') -RedirectStandardError (Join-Path $evidenceDir 'create-template-db.err.txt')
             if ($cdProc.ExitCode -ne 0) { throw "create database do template falhou (exit $($cdProc.ExitCode))" }
             $prelude = Join-Path $evidenceDir 'prelude.sql'
             Set-Content -Path $prelude -Value 'SET synchronous_commit=off; SET statement_timeout=2700000;' -Encoding ASCII
             Write-Host '[build] carga completa do SQL em andamento (progresso: template-load-out/err.log na evidencia)...'
             $loadProc = Start-Process -FilePath $psql -ArgumentList @('-p',"$pgPort","-U","postgres","-h","127.0.0.1","-d",$templateDb,'-X','-v','ON_ERROR_STOP=1','--set=client_min_messages=warning','-f',$prelude,'-f',$fullSqlPath) -NoNewWindow -PassThru -Wait -RedirectStandardOutput (Join-Path $evidenceDir 'template-load-out.log') -RedirectStandardError (Join-Path $evidenceDir 'template-load-err.log')
             if ($loadProc.ExitCode -ne 0) { throw "carga do SQL completo falhou (exit $($loadProc.ExitCode)); detalhes em template-load-err.log" }
-            Set-Content -Path $templateMarker -Value ("ok {0:N}" -f (Get-Date))
+            Set-Content -Path $templateMarker -Value ("ok {0:s}" -f (Get-Date))
             Write-Host ("[build] template pronto em " + ((Get-Date) - $t0).TotalSeconds.ToString('0.#') + "s") -ForegroundColor Green
             $needsStart = $false
         } catch {
@@ -191,7 +191,7 @@ try {
 
     # Pidfile obsoleto (cluster anterior que morreu sem limpeza) nao impede o start.
     $pidFile = Join-Path $templateDir 'postmaster.pid'
-    if (Test-Path $pidFile -and $needsStart) {
+    if ((Test-Path $pidFile) -and $needsStart) {
         $stalePid = ((Get-Content $pidFile) | Select-Object -First 1).Trim()
         $staleProc = $null
         try { $staleProc = Get-Process -Id ([int]$stalePid) -ErrorAction Stop } catch {}
@@ -219,7 +219,7 @@ try {
 
     $ddlRun = Join-Path $evidenceDir 'create-run-db.sql'
     Set-Content $ddlRun "create database ${dbName} template ${templateDb};" -Encoding ASCII
-    $crProc = Start-Process -FilePath $psql -ArgumentList @('-p',"$pgPort","-U","postgres","-h","127.0.0.1","-d","postgres","-X","-v","ON_ERROR_STOP=1","-f",$ddlRun) -NoNewWindow -PassThru -Wait
+    $crProc = Start-Process -FilePath $psql -ArgumentList @('-p',"$pgPort","-U","postgres","-h","127.0.0.1","-d","postgres","-X","-v","ON_ERROR_STOP=1","-f",$ddlRun) -NoNewWindow -PassThru -Wait -RedirectStandardOutput (Join-Path $evidenceDir 'create-run-db.out.txt') -RedirectStandardError (Join-Path $evidenceDir 'create-run-db.err.txt')
     if ($crProc.ExitCode -ne 0) { throw "create database a partir do template falhou (exit $($crProc.ExitCode))" }
     Write-Host "PostgreSQL pronto na porta $pgPort (db=${dbName} clonado do template)" -ForegroundColor Cyan
 
@@ -318,7 +318,7 @@ insert into agro360.identity_user_unit_scopes(id,tenant_id,user_id,scope_type) v
     # ---- Fixtures operacionais (escrita sem API dedicada vai direto ao banco descartavel) ----
     $productId = Invoke-Psql @"
 insert into agro360.inventory_products(id,tenant_id,sku,name,category,base_unit,requires_lot,is_perishable,controlled_product,created_by)
-select '${((New-Guid))}','${scTenantId}','E2E-JORNADA-DIESEL','Diesel S10 (jornada E2E)','INSumos','l',true,false,false,'${adminUser}'
+select '$(New-Guid)','${scTenantId}','E2E-JORNADA-DIESEL','Diesel S10 (jornada E2E)','INSumos','l',true,false,false,'${adminUser}'
 where not exists(select 1 from agro360.inventory_products where tenant_id='${scTenantId}' and sku='E2E-JORNADA-DIESEL');
 select id::text from agro360.inventory_products where tenant_id='${scTenantId}' and sku='E2E-JORNADA-DIESEL';
 "@
@@ -326,7 +326,7 @@ select id::text from agro360.inventory_products where tenant_id='${scTenantId}' 
 
     $warehouseId = Invoke-Psql @"
 insert into agro360.inventory_warehouses(id,tenant_id,farm_id,code,name,type,created_by)
-select '${((New-Guid))}','${scTenantId}','${farmA}','DEP-E2E-JORNADA','Deposito Jornada E2E','FUEL','${adminUser}'
+select '$(New-Guid)','${scTenantId}','${farmA}','DEP-E2E-JORNADA','Deposito Jornada E2E','FUEL','${adminUser}'
 where not exists(select 1 from agro360.inventory_warehouses where tenant_id='${scTenantId}' and code='DEP-E2E-JORNADA');
 select id::text from agro360.inventory_warehouses where tenant_id='${scTenantId}' and code='DEP-E2E-JORNADA';
 "@
@@ -334,7 +334,7 @@ select id::text from agro360.inventory_warehouses where tenant_id='${scTenantId}
 
     $financeAccount = Invoke-Psql @"
 insert into agro360.finance_chart_of_accounts(id,tenant_id,code,name,type,nature,active,created_by)
-select '${((New-Guid))}','${scTenantId}','E2E-FIN-JORNADA','Conta E2E previsao da jornada','EXPENSE','DEBIT',true,'${adminUser}'
+select '$(New-Guid)','${scTenantId}','E2E-FIN-JORNADA','Conta E2E previsao da jornada','EXPENSE','DEBIT',true,'${adminUser}'
 where not exists(select 1 from agro360.finance_chart_of_accounts where tenant_id='${scTenantId}' and code='E2E-FIN-JORNADA');
 select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTenantId}' and code='E2E-FIN-JORNADA';
 "@
@@ -343,6 +343,10 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
     $neededOn = (Get-Date).AddDays(30).ToString('yyyy-MM-dd')
     $firstDueOn = (Get-Date).AddDays(-1).ToString('yyyy-MM-dd')
     $receivedAt = (Get-Date).AddHours(-12).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+    # Vencimento do recibo: 1 dia apos a data local do recebimento. A regra compara FirstDueOn
+    # com a data UTC de received_at; como o host esta a oeste de UTC (BRT), o date local +1d
+    # e sempre >= ao date UTC, independentemente da hora do dia em que o E2E roda.
+    $receiptFirstDue = ((Get-Date).AddHours(-12)).Date.AddDays(1).ToString('yyyy-MM-dd')
 
     $supplierA = Invoke-Api POST '/api/procurement/suppliers' @{
         LegalName='Fornecedor Alfa Combustiveis Ltda'; TradeName='Alfa E2E'; TaxDocument=$null; StateRegistration=$null; Type='MATERIAL'
@@ -476,7 +480,7 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
     # Decisao acima do menor COM justificativa audita.
     $decideOk = Invoke-Api POST "/api/procurement/quotations/${quotId}/decide" @{ Items=@(@{ QuotationItemId=$quotItemId; QuotationSupplierId=$alphaRow.id }); Justification='Alfa homologado com laudo tecnico vigente e prazo compativel (E2E)' } $adminToken
     Assert-Step 'Decisao-acima-do-menor-com-justificativa' ($decideOk.Status -eq 204) "HTTP $($decideOk.Status)"
-    $decisionRows = Invoke-Psql "select count(*)::text || ':' || coalesce(justification,'') from agro360.procurement_quotation_decisions where quotation_id='${quotId}' and deleted_at is null;"
+    $decisionRows = Invoke-Psql "select count(*)::text || ':' || coalesce(max(justification),'') from agro360.procurement_quotation_decisions where quotation_id='${quotId}' and deleted_at is null;"
     Assert-Step 'Decisao-persistida-c-justificativa' ($decisionRows -match '^1:Alfa homologado') "db=$($decisionRows.Substring(0,[Math]::Min(60,$decisionRows.Length)))"
 
     # ============ ETAPA 3: CONVERSAO EM PEDIDO (confirmacao, concorrência, idempotencia) ============
@@ -501,7 +505,7 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
 
     $plainConvert = Invoke-Api POST "/api/procurement/quotations/${plainQuotId}/convert" $null $adminToken
     $plainOrders = Invoke-Psql "select count(*)::text from agro360.procurement_purchase_orders where quotation_id='${plainQuotId}';"
-    Assert-Step 'Conversao-sem-confirmacao-exige-explicitude' ($plainConvert.Status -eq 400 -and $plainOrders -eq '0') "HTTP $($plainConvert.Status); pedidos_criados=$plainOrders (sem auto-selecao silenciosa)"
+    Assert-Step 'Conversao-sem-confirmacao-exige-explicitude' ($plainConvert.Status -eq 409 -and $plainOrders -eq '0') "HTTP $($plainConvert.Status); pedidos_criados=$plainOrders (sem auto-selecao silenciosa)"
 
     # Conversao concorrente (2 chamadas simultaneas) + replay sequencial: sempre um unico pedido.
     $convJobBlock = {
@@ -563,7 +567,7 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
     # Apos cancelar a aberta, a requisicao segue aproveitando saldo: nova cotacao ok.
     $newQuot = Invoke-Api POST '/api/procurement/quotations' @{ RequisitionId=$plainReqId; SupplierIds=@($supplierAId,$supplierBId); DueDate=$dueDate } $opToken
     Assert-Step 'Nova-cotacao-pos-cancelamento-ok' ($newQuot.Status -eq 201) "HTTP $($newQuot.Status) id=$($newQuot.Body.id)"
-    Invoke-Api POST "/api/procurement/quotations/${$newQuot.Body.id}/cancel" @{ Reason='Limpeza do exercicio (E2E)' } $adminToken | Out-Null
+    Invoke-Api POST "/api/procurement/quotations/$($newQuot.Body.id)/cancel" @{ Reason='Limpeza do exercicio (E2E)' } $adminToken | Out-Null
 
     # ============ ETAPA 5: APROVACAO DO PEDIDO ============
     Write-Host "`n--- ETAPA 5: aprovacao do pedido ---" -ForegroundColor Cyan
@@ -589,7 +593,7 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
     $receiptBody1 = @{
         PurchaseOrderId=$orderId; ReceivedAt=$receivedAt; InvoiceDocument='NF-1001'; OverrideExcess=$false; ExcessJustification=$null
         Items=@(@{ PurchaseOrderItemId=$orderItemId; Quantity=60; SupplierLot='LOTE-E2E-1'; ExpiresOn=$null; Notes=$null })
-        IdempotencyKey=$idempKey1; WarehouseId=$warehouseId; FinanceAccountId=$financeAccount; FirstDueOn=$firstDueOn; Installments=1
+        IdempotencyKey=$idempKey1; WarehouseId=$warehouseId; FinanceAccountId=$financeAccount; FirstDueOn=$receiptFirstDue; Installments=1
     }
     $recvJobBlock = {
         param($p, $t, $b)
@@ -619,7 +623,7 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
     $dupKeyOther = Invoke-Api POST '/api/procurement/receipts' @{
         PurchaseOrderId=$orderId; ReceivedAt=$receivedAt; InvoiceDocument='NF-1001'; OverrideExcess=$false; ExcessJustification=$null
         Items=@(@{ PurchaseOrderItemId=$orderItemId; Quantity=61; SupplierLot='LOTE-E2E-1'; ExpiresOn=$null; Notes=$null })
-        IdempotencyKey=$idempKey1; WarehouseId=$warehouseId; FinanceAccountId=$financeAccount; FirstDueOn=$firstDueOn; Installments=1
+        IdempotencyKey=$idempKey1; WarehouseId=$warehouseId; FinanceAccountId=$financeAccount; FirstDueOn=$receiptFirstDue; Installments=1
     } $opToken
     $receiptTotalAfterDup = Invoke-Psql "select count(*)::text from agro360.procurement_receipts where tenant_id='${scTenantId}';"
     Assert-Step 'Mesma-chave-outro-conteudo-409' ($dupKeyOther.Status -eq 409 -and $receiptTotalAfterDup -eq '1') "HTTP $($dupKeyOther.Status); total_recibos=$receiptTotalAfterDup"
@@ -649,7 +653,7 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
     $receiptItem1 = Invoke-Psql "select id::text from agro360.procurement_receipt_items where receipt_id='${receiptId}' limit 1;"
     $qualityKey1 = 'qual-1-' + (Get-Date).ToString('yyyyMMddHHmmssfff')
     $qualityBody1 = @{
-        AcceptedQuantity=55; RejectedQuantity=5; Result='APPROVED_WITH_REJECTION'; Reason='Laudo tecnico aprovado com 5 l de avaria (E2E)'; EvidenceReference='LAUDO-E2E-001'; IdempotencyKey=$qualityKey1
+        AcceptedQuantity=55; RejectedQuantity=5; Result='CONDITIONALLY_APPROVED'; Reason='Laudo tecnico aprovado com 5 l de avaria (E2E)'; EvidenceReference='LAUDO-E2E-001'; IdempotencyKey=$qualityKey1
     }
     $qualityOpTry = Invoke-Api POST "/api/procurement/receipt-items/${receiptItem1}/quality-decisions" @{
         AcceptedQuantity=55; RejectedQuantity=5; Result='APPROVED_WITH_REJECTION'; Reason='Tentativa sem permissao (E2E)'; EvidenceReference='LAUDO-1'; IdempotencyKey=('qual-op-' + (Get-Date).ToString('yyyyMMddHHmmssfff'))
@@ -672,7 +676,7 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
     $receipt2 = Invoke-Api POST '/api/procurement/receipts' @{
         PurchaseOrderId=$orderId; ReceivedAt=$receivedAt; InvoiceDocument='NF-1002'; OverrideExcess=$false; ExcessJustification=$null
         Items=@(@{ PurchaseOrderItemId=$orderItemId; Quantity=40; SupplierLot='LOTE-E2E-2'; ExpiresOn=$null; Notes=$null })
-        IdempotencyKey=$idempKey2; WarehouseId=$warehouseId; FinanceAccountId=$financeAccount; FirstDueOn=$firstDueOn; Installments=1
+        IdempotencyKey=$idempKey2; WarehouseId=$warehouseId; FinanceAccountId=$financeAccount; FirstDueOn=$receiptFirstDue; Installments=1
     } $opToken
     Assert-Step 'Segunda-parcial-40L-201' ($receipt2.Status -eq 201) "HTTP $($receipt2.Status) id=$($receipt2.Body.id)"
     $receipt2Id = $receipt2.Body.id
@@ -684,7 +688,7 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
     Assert-Step 'Qualidade-remessa-2-aceita-40' ($quality2.Status -eq 201) "HTTP $($quality2.Status)"
 
     $pending = Invoke-Api GET "/api/procurement/orders/${orderId}/pending-items" $null $opToken
-    Assert-Step 'Saldo-do-pedido-esgotado' ($pending.Status -eq 200 -and @($pending.Body).Count -eq 0) "pendentes=$(if ($null -ne $pending.Body) { @($pending.Body).Count } else { '?' })"
+    Assert-Step 'Saldo-do-pedido-esgotado' ($pending.Status -eq 200 -and "$($pending.Raw)".Trim() -eq '[]') "pendentes=$($pending.Raw) (lista vazia = pedido integralmente recebido)"
     $stockTotal = Invoke-Psql "select coalesce(available,0)::text from agro360.inventory_stock_balances where tenant_id='${scTenantId}' and warehouse_id='${warehouseId}' and product_id='${productId}';"
     Assert-Step 'Estoque-total-95-L' ($stockTotal -eq '95.000000') "available=$stockTotal (55+40)"
     $orderFinalStatus = Invoke-Psql "select status from agro360.procurement_purchase_orders where id='${orderId}';"
@@ -733,7 +737,7 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
 
     $retMovement = Invoke-Psql "select coalesce(sum(quantity),0)::text from agro360.inventory_stock_movements where tenant_id='${scTenantId}' and product_id='${productId}' and movement_type='RETURN_TO_SUPPLIER';"
     $stockAfterRet = Invoke-Psql "select coalesce(available,0)::text from agro360.inventory_stock_balances where tenant_id='${scTenantId}' and warehouse_id='${warehouseId}' and product_id='${productId}';"
-    Assert-Step 'Devolucao-baixa-estoque-10L' (($retMovement -replace '[.0]*$','') -eq '-10' -and $stockAfterRet -eq '85.000000') "mov=$retMovement; available=$stockAfterRet (95-10)"
+    Assert-Step 'Devolucao-baixa-estoque-10L' ([decimal]$retMovement -eq 10 -and $stockAfterRet -eq '85.000000') "mov=$retMovement (ledger guarda quantidade absoluta; direcao no movement_type); available=$stockAfterRet (95-10)"
 
     $credit = Invoke-Psql "select amount::text || ':' || status from agro360.procurement_supplier_credits where supplier_return_id='${returnId}';"
     Assert-Step 'Credito-OPEN-25' ($credit -like '25*:OPEN') "credito=$credit (10 L x 2.50; nada compensado automaticamente)"
@@ -779,7 +783,7 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
         Items=@(@{ PurchaseOrderItemId=$orderItemId; ReceiptItemId=$receiptItem1; Description='Diesel S10 (Jornada E2E)'; Quantity=55; Unit='l'; UnitPrice=2.50; Discount=0 })
     } $opToken
     Assert-Step 'Conferencia-exata-201' ($matchExact.Status -eq 201) "HTTP $($matchExact.Status)"
-    $matchExactStatus = Invoke-Psql "select status from agro360.procurement_invoice_matches where id='${$matchExact.Body.id}';"
+    $matchExactStatus = Invoke-Psql "select status from agro360.procurement_invoice_matches where id='$($matchExact.Body.id)';"
     Assert-Step 'Exata-MATCHED-zero-diferenca' ($matchExactStatus -eq 'MATCHED') "status=$matchExactStatus (tolerancias zeradas: diferenca zero)"
 
     # Conferencia FORA da tolerancia (linha 2: 30 L cobrados a 3.00 contra 2.50): PRICE + TOTAL.
@@ -800,11 +804,11 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
     # Cobranca acima do saldo aceito-disponivel -> 409.
     $overbill = Invoke-Api POST '/api/procurement/invoice-matches' @{
         PurchaseOrderId=$orderId; DocumentNumber='DOC-OVER-003'; DocumentSeries=$null; IssuedOn=$firstDueOn; Currency='BRL'
-        GoodsTotal=50.00; Discount=0; Freight=0; AdditionalAmount=0; Total=50.00
+        GoodsTotal=93.00; Discount=0; Freight=0; AdditionalAmount=0; Total=93.00
         IdempotencyKey=('e2e-jornada-match-over-' + (Get-Date).ToString('yyyyMMddHHmmssfff'))
         Items=@(@{ PurchaseOrderItemId=$orderItemId; ReceiptItemId=$receiptItem2; Description='Diesel S10 (Jornada E2E)'; Quantity=31; Unit='l'; UnitPrice=3.00; Discount=0 })
     } $opToken
-    Assert-Step 'Cobranca-acima-do-saldo-409' ($overbill.Status -eq 409) "HTTP $($overbill.Status) (saldo disponivel=30)"
+    Assert-Step 'Cobranca-acima-do-saldo-409' ($overbill.Status -eq 409) "HTTP $($overbill.Status) (40 aceitos - 30 ja faturados = 10 disponiveis; 31 > 10)"
 
     # Central: INVOICE_MATCH aparece (PENDING_EXCEPTION) e some apos decidir todas as excecoes.
     $ocMatch = Get-OperationCenter $adminToken 'match'
@@ -824,14 +828,14 @@ select id::text from agro360.finance_chart_of_accounts where tenant_id='${scTena
     Assert-Step 'Tolerancia-atualizada-versionada' ($tolPut.Status -eq 200 -and $tolAfter -eq "10.0000:$($tolVersion + 1)") "db=$tolAfter (snapshot antigo segue valendo para a conferencia)"
 
     # SoD: autor da conferencia nao aprova a propria excecao (SeparationOfDuties=true no snapshot).
-    $divSod = Invoke-Api POST "/api/procurement/match-divergences/${divIds[0]}/decision" @{ Decision='APPROVED_EXCEPTION'; Justification='Tentativa SoD (E2E)'; EvidenceReference=$null } $opToken
-    $divSodStatus = Invoke-Psql "select status from agro360.procurement_match_divergences where id='${divIds[0]}';"
+    $divSod = Invoke-Api POST "/api/procurement/match-divergences/$($divIds[0])/decision" @{ Decision='APPROVED_EXCEPTION'; Justification='Tentativa SoD (E2E)'; EvidenceReference=$null } $opToken
+    $divSodStatus = Invoke-Psql "select status from agro360.procurement_match_divergences where id='$($divIds[0])';"
     Assert-Step 'SoD-autor-nao-aprova-excecao' ($divSod.Status -ge 400 -and $divSodStatus -eq 'OPEN') "HTTP $($divSod.Status); status=$divSodStatus"
 
     # Admin resolve as duas excecoes -> MATCHED + desapare da central.
-    $d1 = Invoke-Api POST "/api/procurement/match-divergences/${divIds[0]}/decision" @{ Decision='APPROVED_EXCEPTION'; Justification='Reajuste tarifario autorizado no contrato (E2E)'; EvidenceReference='CONTRATO-E2E' } $adminToken
-    $d2 = Invoke-Api POST "/api/procurement/match-divergences/${divIds[1]}/decision" @{ Decision='APPROVED_EXCEPTION'; Justification='Diferencial de total decorrente do reajuste (E2E)'; EvidenceReference='CONTRATO-E2E' } $adminToken
-    $divAll = Invoke-Psql "select count(*)::text filter(where status='OPEN') || '/' || count(*)::text from agro360.procurement_match_divergences where invoice_match_id='${matchDivId}';"
+    $d1 = Invoke-Api POST "/api/procurement/match-divergences/$($divIds[0])/decision" @{ Decision='APPROVED_EXCEPTION'; Justification='Reajuste tarifario autorizado no contrato (E2E)'; EvidenceReference='CONTRATO-E2E' } $adminToken
+    $d2 = Invoke-Api POST "/api/procurement/match-divergences/$($divIds[1])/decision" @{ Decision='APPROVED_EXCEPTION'; Justification='Diferencial de total decorrente do reajuste (E2E)'; EvidenceReference='CONTRATO-E2E' } $adminToken
+    $divAll = Invoke-Psql "select (count(*) filter(where status='OPEN'))::text || '/' || (count(*))::text from agro360.procurement_match_divergences where invoice_match_id='${matchDivId}';"
     $matchDivFinal = Invoke-Psql "select status from agro360.procurement_invoice_matches where id='${matchDivId}';"
     Assert-Step 'Excecoes-resolvidas-pelo-admin' ($d1.Status -eq 204 -and $d2.Status -eq 204 -and $divAll -eq '0/2') "HTTP $($d1.Status),$($d2.Status); open/total=$divAll"
     Assert-Step 'Conferencia-vira-MATCHED' ($matchDivFinal -eq 'MATCHED') "status=$matchDivFinal"
@@ -967,7 +971,8 @@ finally {
             if ("$pgPort" -ne '') {
                 $dropSql = Join-Path $evidenceDir 'drop-run-db.sql'
                 Set-Content $dropSql "drop database if exists ${dbName};" -Encoding ASCII
-                Start-Process -FilePath $psql -ArgumentList @('-p',"$pgPort","-U","postgres","-h","127.0.0.1","-d","postgres","-X","-f",$dropSql) -NoNewWindow -Wait | Out-Null
+                # Redirecao obrigatoria: sem ela o -Wait fica pendurado no handle do console herdo pelo postmaster.
+                Start-Process -FilePath $psql -ArgumentList @('-p',"$pgPort","-U","postgres","-h","127.0.0.1","-d","postgres","-X","-f",$dropSql) -NoNewWindow -Wait -RedirectStandardOutput (Join-Path $evidenceDir 'drop-run-db.out.txt') -RedirectStandardError (Join-Path $evidenceDir 'drop-run-db.err.txt') | Out-Null
             }
             & $pg_ctl -D $dataDir -m fast stop | Out-Null
         }

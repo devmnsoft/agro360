@@ -1,3 +1,86 @@
+## Incremento integrado: jornada completa de Compras, i18n das telas operacionais e correções de estabilidade — 2026-10-10
+
+Branch `main`. Baseline reconfirmado no início da execução: `ff6028e`. Durante a rodada o usuário criou o commit `bce9dca` ("novos auste") absorvendo parte do trabalho do incremento (frontend de Compras — `procurement.js`/`agro360.js`/`_Layout`/CSS/páginas —, versão inicial do `scripts/verify-procurement-journey-e2e.ps1` e parte das mudanças em `QuotationService`/`WorkManagementService`/contratos). Ao fim da rodada a árvore permanece com alterações locais **não-commitadas** por esta execução (delta posterior ao `bce9dca`): `scripts/verify-procurement-journey-e2e.ps1`, `src/Modules/Agro360.Infrastructure/Services/ProcurementService.cs`, `QuotationService.cs`, `src/Modules/Agro360.Application/Contracts/WorkManagementContracts.cs`, `WorkManagementService.cs` e a atualização dos docs (`EXECUTION-CHECKPOINT.md`, `TRACEABILITY-MATRIX-v0.2.0.md`, `I18N-COVERAGE-REPORT.md`, `PROMPT-PROXIMA-EXECUCAO.md`). Sem push, merge ou publicação. Migrações: **zero novas** neste incremento — `134_french_language_support.sql` (schema `11.24.0`) segue a última.
+
+### Aprovado — jornada de Compras ponta a ponta (E2E autenticado, cluster descartável)
+
+`scripts/verify-procurement-journey-e2e.ps1` executado em PostgreSQL 18 descartável (`agro360_procjourney_cc1f7caee07b`, schema `11.24.0`): **11/11 etapas PASS**, execução 2026-10-10 09:46:12 UTC, linha final "PROCUREMENT JOURNEY E2E COMPLETO COM SUCESSO". Evidência: `artifacts/procurement-journey-e2e-4e570923d65a468fb12bb97f1ec0414a` (SUMMARY.txt + log). Itens-chave verificados empiricamente na execução:
+
+- Fluxo completo: requisição → aprovação → cotação → comparação → decisão (com justificativa acima do menor) → pedido → aprovação → recebimento parcial → qualidade (misto) → estoque → previsão financeira → conferência documental → devolução ao fornecedor com crédito reconhecido após aprovação (25.00 OPEN).
+- SoD: mesmo autor/decisor com `SeparationOfDuties` no snapshot → 422 `procurement.match.decision_invalid`; decisão de exceção aprovada por admin (204) mantém status `OPEN` até resolução; divergências 0/2 → conferência conclui para `MATCHED` e o item `INVOICE_MATCH` desaparece da Central de Trabalho.
+- Versão de propostas: reapresentação invalida anteriores (`available=false`); comparação/decisão/conversão leem apenas disponíveis; decisão fotografa `selected_total`/`lowest_total`; conversão sem `confirmLowestPrice` → 409 `agro360.quotation.confirmation_required` (contrato idêntico consumido pelo front).
+- Previsão financeira: **uma vez por pedido** (guard por `procurement_order_financial_links`), dividida por parcelas — exatamente 1 título 250.00 OPEN com `source_id=orderId`; não acumula por recebimento.
+- Idempotência de custo por linha de recibo (`source_key = id do item do recibo`, UNIQUE tenant-scoped) verificada sem duplicação em reenvios/concorrência.
+- ETAPA 10: isolamento entre tenants (login valeverde: Santa vê 0 registros do outro tenant; dashboard `active_suppliers=2` intacto) e módulo `SUSPENDED` → 403 enquanto inventário responde 200 e `semcompras` → 403.
+- ETAPA 11: escopo de unidade — FARM-B → 403 direto por API com IDs manipulados; delegação `ALL` exige admin ou possuidor de `ALL`; mesmo escopo → 204; admin delega `ALL` → escopo final `ALL`.
+
+### Corrigido — nove defeitos de código pré-existente (cada um comprovado pelo E2E verde)
+
+1. `WorkManagementService.cs` — CTE de ocorrências lia `d.created_at`; coluna canônica é `d.recorded_at`.
+2. `OperationOccurrenceRow` — `DateTimeOffset`→`DateTime`: Dapper 2.0.0 escolhe construtor **posicional** exigindo tipo CLR exato (timestamptz→`DateTime`); caminho POCO é tolerante, mas falha mesmo com 0 linhas.
+3. `QuotationService.DetailAsync` — `c.code` → `c.internal_code as catalog_code` (coluna inexistente → 42703/500).
+4. `QuotationService.DecideAsync` — `ExecuteAsync(sql, IEnumerable<object>)` multi-row liga **somente** propriedades presentes no objeto-linha: necessário `tenant.UserId` em cada objeto para `@UserId`×3.
+5. `QuotationService.ConvertPlanAsync` — `confirmation_required` agora `ConflictException` (409; era DomainException 422) + filtro do catch de auditoria por código de erro.
+6. `ProcurementService.ReceiveAsync` — lançamento de custo usava `CostCenterId ?? Guid.Empty` como FK `farm_id` → 409 traduzido pelo `DatabaseExecutor`; agora apropria pelo `order.PropertyId` e pulam itens SERVICE/sem propriedade.
+7. `ProcurementService.DecideQualityAsync` — `receipt_items.quality_status` é varchar(20): decisão com rejeição mapeia para `REJECTED` (aceitos==0) ou `PARTIALLY_REJECTED`; resultado exato em `procurement_receipt_quality_decisions.result`.
+8. Idempotência do reconhecimento de custo movida para dentro do loop de itens do recibo com `source_key` por linha (UNIQUE `tenant_id,source_type,source_key`).
+9. `WorkManagementContracts.cs` — todas as seis linhas de leitura Work em `DateTime` (consistência da regra 2).
+
+### Decidido — critério "menor proposta" (regra preservada, significado esclarecido)
+
+- Mantida a regra do menor **total da mercadoria por item**: `round(qty × unit_price, 2)` − desconto, 2 casas com `MidpointRounding.AwayFromZero`. Frete/impostos seguem **informativos** na comparação (exibidos, não decisivos).
+- Quando a proposta escolhida supera o menor total, justificativa com ≥ 3 caracteres é obrigatória e persistida com a decisão.
+- A UI de comparação exibe lado a lado os dois valores (menor total da mercadoria × total da escolhida) nos quatro idiomas (`procurement.js`).
+- Mudança para "menor custo completo" (mercadoria + frete + impostos) foi **registrada como proposta, não aplicada** como política — decisão de produto para incremento futuro.
+- Zero e valor ausente continuam distintos na comparação (ausente não participa do ranking).
+
+### Aprovado — gates estáticos
+
+Build Release 0 erros/0 avisos; UnitTests 390/390; ArchitectureTests 186/186; format OK; rotas 946 OK; shell offline PASS; `node --check` dos JS alterados; paridade i18n: shell 103 chaves × 3 dicionários (pt-BR por markup) e módulo Compras **511 chaves × 4 idiomas** com strings parametrizadas por `tr()`/`{0}`. Testes unitários neste host via `dotnet run --project tests\Agro360.UnitTests -c Release --no-build` (`dotnet test` sai 5).
+
+### Migrado — dev DB do usuário (9.8.0 → 11.24.0), incremental e com backup
+
+A dev DB (Docker `sigov-postgres`, `postgres/postgres` @ localhost:5432, banco `postgres`, schema `agro360`) estava em `9.8.0` (migration 098). Antes da homologação visual foram aplicadas, em ordem e transacionalmente, as migrações pendentes **099–134** (36 arquivos; nenhuma havia sido aplicada antes — aplicação pura, sem replay). Backup integral prévio: `C:\Users\NCELL-DEV-020\AppData\Local\Temp\opencode\devdb-backup-pre-migrate.sql`. Confirmação final: linhas de versão completas (`10.*`=10, `11.*`=25, incluindo `10.3.0` da migration 103 e `11.24.0` da 134) e `platform_languages` com 4 ativas (en-US, es-ES, fr-FR, pt-BR). Tenants/usuários pré-existentes intactos. Nenhum dado do usuário foi modificado além do efeito aditivo das migrações canônicas.
+
+### Em andamento / bloqueado — homologação visual autenticada no navegador
+
+Ferramenta de navegador real **disponível nesta sessão** (tabs/snapshot/fill/screenshot/console/network). Matriz planejada (procedimento completo em `docs/BROWSER-HOMOLOGATION-COMPRAS-2026-10-10.md`): 4 idiomas × 360/768/1440 px + zoom nativo 200%, jornada SoD pela UI (operador cria, admin aprova), screenshots preenchidos/erros/comparação/confirmações/estado persistido em `artifacts/browser-homologacao-<data>/`, console+rede limpos. **Bloqueio: degradação da máquina dev a partir de ~11:00** (diagnóstico cronológico):
+
+- Hosts .NET repetidamente congelados com CPU 0:00:00 por 10+ min (apphost) ou morrendos em ~4 min RC=1 (`dotnet exec` — padrão de `taskkill /F` externo); teste discriminante: **cópia do binário em `Temp` e lançamento por tarefa agendada também nascem congelados** → não é diretório/arquivo/job do harness.
+- Controle de carga: `dotnet --version` levou **8 min 04 s** no primeiro boot pós-degradação (depois 63 s); `pwsh -NoProfile -Command "Write-Output PWSH-OK"` levou **20 min 07 s**.
+- Causa provável: **memória física esgotada** (~540 MB livres de 16 GB; commit 58.8/68.4 GB; principais consumidores Docker Desktop 2.3 GB, vmmemWSL 1.2 GB, instâncias Chrome ~2.3 GB, Antigravity IDE) — paginação extrema deixa processos .NET (maior page-in) engasgados em CPU ≈ 0.
+- Contexto de sistema: WER processou dump de **BSOD 0x139 (CRITICAL_PROCESS_DIED)** às 11:08; `Resource-Exhaustion-Detector` registrou esgotamento de memória virtual às 08:19 e 09:48 (topo `MBAMService.exe`); DCOM 10010 recorrente a cada 2 min; Visual Studio fechado por hang; `testhost.exe` net8.0 do próprio usuário falhou às 11:15. Defender **limpo** (zero eventos operacionais na janela).
+- Shell foreground do harness intermitente (até `cmd /c echo` pendurava); **canal background funcional** — toda a condução foi feita por jobs background com saída em arquivos (`Temp\opencode\STATUS*.txt` etc.).
+
+Medidas aplicadas: hosts relançados pelos bats `launch-api4.bat`/`launch-web4.bat` (API `https://localhost:7081;http://localhost:8081` + Jwt/connstrings de dev; Web `https://localhost:7080`) em jobs de longa duração, logs em `Temp\opencode\hosts\api4.out.log`/`web4.out.log`, poller de portas a cada 2 min (`READY5.txt`); credenciais dev decodificadas do seed (admin `admin@santaclara.agro360.local`/`Agro360Cliente!!`; operador `operador.santaclara@agro360.local`/`Agro360Operador!`; slug `santa-clara`) para login imediato quando o ambiente estabilizar. **Não se declara o SaaS nem Compras homologados visualmente** enquanto a matriz de screenshots não existir.
+
+### Resultados (aprovado / falhou / bloqueado / não executado)
+
+| Item | Resultado |
+|---|---|
+| Jornada Compras E2E (11 etapas, API autenticada, cluster descartável) | **Aprovado** |
+| Nove defeitos de código corrigidos | **Aprovado** (comprovados pelo E2E verde) |
+| Critério "menor proposta" esclarecido e preservado; mudança alternativa registrada | **Aprovado** |
+| Gates estáticos (build/unidades/arquitetura/formato/rotas/offline/i18n parity) | **Aprovado** |
+| Upgrade incremental da dev DB 9.8.0 → 11.24.0 com backup | **Aprovado** |
+| Homologação visual autenticada (matriz 4 idiomas × 3 viewports + zoom 200%) | **Bloqueado por ambiente** (hosts em subida lenta sob RAM esgotada; diagnóstico completo acima) |
+| Jornada Agro (plano → safrar → colheita → venda) | **Não executado** (depende de Compras estável, incl. visual) |
+| Campo / Pecuária | **Não executado** (backlog explícito) |
+
+### Carry-over e próximo incremento
+
+1. **Homologação visual** concluída assim que o ambiente dev recuperar desempenho (reinício da máquina recomendado; senão, liberar RAM fechando apps extras) — mesma matriz e artefatos descritos acima.
+2. `ProcurementService.CancelOrderAsync` seleciona/incrementa coluna `version` **inexistente** no DDL de `procurement_purchase_orders` (falharia com 42703→500 em cancelamento real de pedido). Fora da jornada contratada deste incremento e sem nova migração permitida: **Option A** documentada — remover `version` do select/update, manter o guard de status, ignorar `x.Version`, e registrar lock otimista opcional para a migration 135+.
+3. Jornada Agro só inicia após Compras estabilizada (API + visual).
+4. Manter invariantes: idioma nunca altera moeda (BRL)/tributação/UoM/permissões/estado persistido; autorização server-side; decimal money; idempotência e concorrência; auditoria preservada.
+
+### Notas de operação e armadilhas documentadas nesta rodada
+
+- PowerShell 5.1: `${a.b}`, `${a[i]}` e `${$x.Prop}` interpolam como **literais** (use `$(...)`); varredura final `\$\{[^}]*[.\[]|\$\{\$` zerada no script. PG: `::text` liga mais forte que `FILTER` no fim da linha → `(count(*) filter(...))::text` (correção na linha 838 do script).
+- Postgres reporta apenas o **primeiro** erro por query — auditar todos os ramos contra o DDL após editar SQL; `DatabaseExecutor` traduz violações de FK para 409 genérico (a constraint real fica na linha `[ERR] Falha PostgreSQL` precedente); coluna desconhecida 42703 vira 500.
+- `taskkill /F` dá exit code 1 ao processo morto — interpretar RC=1 isoladamente sem data/hora de saída leva a diagnósticos falsos.
+- Ambiente dev: sem `wmic` (usar `tasklist /V` / CSV); `docker ps` pendura (Desktop degradado) mas o container `sigov-postgres` responde direto em 5432 (suficiente para o app); porta 8080 ocupada por `sigov-web` (Web Agro360 em 7080); hosts usam apphost `Agro360.*.exe` (imunes a `taskkill /IM dotnet.exe`).
+
 ## Incremento integrado: francês (fr-FR), i18n do shell e isolamento de fazenda em Compras — 2026-10-09
 
 Branch `main`. HEAD de baseline reconfirmado antes das alterações: `307ed62`. A árvore continha alterações locais pré-existentes (Estoque/Work/IA/SaaS/SQL/Compras das rodadas anteriores); todas preservadas. Sem commit, push, merge ou publicação. Processos do usuário `Agro360.Api.exe`/`Agro360.Web.exe` (PID 19568/32268) parados para o build e **reiniciados ao final desta rodada** (ver abaixo).

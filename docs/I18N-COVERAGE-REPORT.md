@@ -1,6 +1,14 @@
-# Cobertura de textos e idiomas — incremento 2026-10-09
+# Cobertura de textos e idiomas — incrementos 2026-10-09 e 2026-10-10
 
-Inventário dos textos do shell web e cobertura nos quatro idiomas habilitados: `pt-BR` (fonte/fallback), `en-US`, `es-ES` e `fr-FR`. Este documento complementa `docs/MULTILANGUAGE.md`; não substitui o inventário de textos dos módulos operacionais.
+Inventário dos textos do shell web e da primeira tela operacional de módulo (Compras) e cobertura nos quatro idiomas habilitados: `pt-BR` (fonte/fallback), `en-US`, `es-ES` e `fr-FR`. Este documento complementa `docs/MULTILANGUAGE.md`; o inventário dos demais módulos operacionais segue como backlog.
+
+## Incremento 2026-10-10 — telas operacionais de Compras (`/Procurement`)
+
+- Dicionário de módulo em `src/Hosts/Agro360.Web/wwwroot/js/procurement.js` (`PROC_I18N`): **511 chaves em cada um dos quatro idiomas** (`pt-BR` como fonte + `en-US`, `es-ES`, `fr-FR`), com **paridade total** verificada pelo gate estático do incremento (mesmo conjunto de chaves nos quatro dicionários, valores não vazios).
+- Strings parametrizadas exclusivamente por `tr()` com marcadores `{0}` (nenhuma concatenação de texto traduzível em runtime); rótulos da **comparação de cotações** exibem lado a lado os dois valores do critério ("menor total da mercadoria" e total informado) nos quatro idiomas.
+- Marcações `data-i18n*` nas telas de Compras (formulários, diálogos, estados) e CSS dedicado responsivo (`procurement.css`).
+- Consequência para a lista "Excluído deste inventário": o item 7 ("telas dos módulos") fica **parcialmente coberto** — Compras opera com dicionário completo em nível estático; as demais telas de módulo continuam em `pt-BR` quando a cultura ativa é outra.
+- Limite honesto: a cobertura de Compras é **nível de dicionário/estático + API E2E**; a confirmação visual autenticada da matriz (360/768/1440 px + zoom nativo 200% × 4 idiomas) estava em andamento no fecho desta seção e depende do ambiente dev recuperar desempenho — não declarar o módulo como visualmente homologado sem os screenshots correspondentes em `artifacts/browser-homologacao-<data>/`.
 
 ## Camada de tradução
 
@@ -32,7 +40,7 @@ Não são chaves do dicionário de shell e permanecem em `pt-BR` quando a cultur
 4. **Parágrafos da ajuda genérica de tela** em `_Layout.cshtml` (bloco `Para que serve / Como trabalhar / Regras e resultado`) — traduzidos apenas `summary` e `small`; o corpo segue `pt-BR`.
 5. **Títulos de página `@ViewData["Title"]`** — definidos em cada página Razor (servidor), fora do dicionário cliente.
 6. **Lacuna conhecida específica**: `Pages/Ecosystem/Index.cshtml` (linha 7) usa chaves sem prefixo `helpTitle`/`help` que não existem no dicionário de shell → mantém `pt-BR` nos demais idiomas até virar chave canônica (ex.: `d.helpTitle`).
-7. **Telas dos módulos**: apenas o crome compartilhado foi traduzido; textos específicos de cada módulo (formulários operacionais, diálogos, mensagens inline) seguem em `pt-BR` — item de backlog por módulo.
+7. **Telas dos módulos**: apenas o crome compartilhado era traduzido; no incremento 2026-10-10 a tela de **Compras** ganhou dicionário completo (511 chaves × 4 idiomas, paridade validada estaticamente). Textos específicos de cada outro módulo (formulários operacionais, diálogos, mensagens inline) seguem em `pt-BR` — item de backlog por módulo.
 
 ## Invariantes confirmados
 
