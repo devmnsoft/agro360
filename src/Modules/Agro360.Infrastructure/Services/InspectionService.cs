@@ -2258,11 +2258,26 @@ public sealed class InspectionService(DatabaseExecutor db, ITenantContext tenant
         public bool? Conforming { get; init; }
     }
 
-    private sealed record ScheduleDueRow(
-        Guid Id, string Name, Guid ModelId, string ProcessCode, string ScheduleType, int? IntervalDays,
-        bool AllowCatchUp, DateTimeOffset? NextRunAt, Guid? ResponsibleId, Guid? UnitId, Guid? ProductId,
-        string? ProductCategory, Guid? CreatedBy, DateOnly? EndsOn, Guid VersionId, int VersionNumber,
-        bool ResponsibleActive);
+    private sealed class ScheduleDueRow
+    {
+        public Guid Id { get; init; }
+        public string Name { get; init; } = string.Empty;
+        public Guid ModelId { get; init; }
+        public string ProcessCode { get; init; } = string.Empty;
+        public string ScheduleType { get; init; } = string.Empty;
+        public int? IntervalDays { get; init; }
+        public bool AllowCatchUp { get; init; }
+        public DateTimeOffset? NextRunAt { get; init; }
+        public Guid? ResponsibleId { get; init; }
+        public Guid? UnitId { get; init; }
+        public Guid? ProductId { get; init; }
+        public string? ProductCategory { get; init; }
+        public Guid? CreatedBy { get; init; }
+        public DateOnly? EndsOn { get; init; }
+        public Guid VersionId { get; init; }
+        public int VersionNumber { get; init; }
+        public bool ResponsibleActive { get; init; }
+    }
 
     private sealed record CompareSide(
         string StableKey, string CriterionType, string Name, string? Outcome, string? ValueSummary);

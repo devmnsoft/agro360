@@ -236,13 +236,26 @@ public sealed class Agriculture360Service(DatabaseExecutor database, ITenantCont
         if (!new[] { "OPEN", "PLANNED", "AWAITING_RESOURCES", "RELEASED", "IN_PROGRESS", "PAUSED", "AWAITING_REVIEW", "COMPLETED", "CANCELLED", "APPROVED", "REVISION", "CLOSED" }.Contains(value)) throw new DomainException("Status inválido.", "agro360.agriculture_status_invalid");
         return value;
     }
-    private sealed record DashboardCore(
-        long ActiveSeasons, decimal PlannedAreaHa, long PlannedActivities, long OverdueActivities, long CompletedThisMonth,
-        decimal? PlannedCost, decimal? RecognizedCost, decimal ExecutedAreaHa, decimal? ExpectedProduction, decimal? ActualProduction,
-        long OpenOccurrences, long CriticalOccurrences, long Applications, long Irrigations);
+    private sealed class DashboardCore
+    {
+        public long ActiveSeasons { get; init; }
+        public decimal PlannedAreaHa { get; init; }
+        public long PlannedActivities { get; init; }
+        public long OverdueActivities { get; init; }
+        public long CompletedThisMonth { get; init; }
+        public decimal? PlannedCost { get; init; }
+        public decimal? RecognizedCost { get; init; }
+        public decimal ExecutedAreaHa { get; init; }
+        public decimal? ExpectedProduction { get; init; }
+        public decimal? ActualProduction { get; init; }
+        public long OpenOccurrences { get; init; }
+        public long CriticalOccurrences { get; init; }
+        public long Applications { get; init; }
+        public long Irrigations { get; init; }
+    }
     private static void EnsureModule(string module) { if (!Modules.Contains(module, StringComparer.OrdinalIgnoreCase)) throw new NotFoundException("Módulo agrícola", Guid.Empty); }
     // Escopo de unidade sobre registros polimórficos: o contexto X-Farm-Id restringe e o unit scope do usuário limita.
-    private const string RecordScope = """
+    private const string RecordScope = " " + """
         and (
             exists(select 1 from agro360.identity_user_unit_scopes sc where sc.tenant_id=tenant_id and sc.user_id=@UserId and sc.scope_type='ALL')
             or exists(select 1 from agro360.geo_farms gf where gf.tenant_id=tenant_id and gf.id=nullif(data->>'propertyId','')::uuid and gf.deleted_at is null
@@ -295,5 +308,12 @@ public sealed class Agriculture360Service(DatabaseExecutor database, ITenantCont
     private static string DataText(object v) => v is JsonElement el ? (el.ValueKind == JsonValueKind.String ? el.GetString() ?? "" : el.GetRawText()) : Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture) ?? "";
     private static AgricultureRecord Map(RecordRow x) => new(x.Id, x.Module, x.Status, x.CreatedAt, JsonSerializer.Deserialize<Dictionary<string, object?>>(x.Data, JsonOptions) ?? []);
     private static Dictionary<string, object?> ToData(AgricultureCommand x) => JsonSerializer.Deserialize<Dictionary<string, object?>>(JsonSerializer.Serialize(x, JsonOptions), JsonOptions) ?? [];
-    private sealed record RecordRow(Guid Id, string Module, string Status, DateTimeOffset CreatedAt, string Data);
+    private sealed class RecordRow
+    {
+        public Guid Id { get; init; }
+        public string Module { get; init; } = default!;
+        public string Status { get; init; } = default!;
+        public DateTimeOffset CreatedAt { get; init; }
+        public string Data { get; init; } = default!;
+    }
 }

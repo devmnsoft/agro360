@@ -17,17 +17,20 @@ alter table agro360.quality_inspection_event_intents
   add column if not exists lease_expires_at timestamptz,
   add column if not exists dead_lettered_at timestamptz;
 
--- Solta o CHECK antigo somente quando ele restringe os 5 status originais (idempotente e
--- independente do nome automático gerado pelo PostgreSQL na criação original — migration 093).
+-- Substitui o CHECK original da coluna `status` (migração 093, 5 status iniciais) pelo CHECK de
+-- 7 status (acrescenta RESOLVED e DEAD_LETTERED). O CHECK original é anônimo; solta-o reconhecendo
+-- a coluna na definição. Obs.: pg_get_constraintdef normaliza `status in (...)` para
+-- `= ANY (ARRAY[...])`, de modo que o match usa o parênteses da coluna `%(status)%` (não o texto
+-- literal `in`). O filtro `not dead_lettered` preserva o novo CHECK de 7 status (idempotente).
 do $$
 declare c record;
 begin
   for c in select conname from pg_constraint
            where conrelid = 'agro360.quality_inspection_event_intents'::regclass and contype = 'c'
-             and pg_get_constraintdef(oid) like '%status in%''PENDING'''
-             and pg_get_constraintdef(oid) not like '%DEAD_LETTERED%'
-  loop execute format('alter table agro360.quality_inspection_event_intents drop constraint %I', c.conname);
-  end loop;
+             and pg_get_constraintdef(oid) ilike '%(status)%'
+             and pg_get_constraintdef(oid) not ilike '%dead_lettered%'
+   loop execute format('alter table agro360.quality_inspection_event_intents drop constraint %I', c.conname);
+   end loop;
   if not exists (select 1 from pg_constraint
                  where conrelid = 'agro360.quality_inspection_event_intents'::regclass
                    and conname = 'ck_quality_inspection_event_intents_status') then

@@ -54,7 +54,12 @@ public sealed record AgricultureDashboard(
     IReadOnlyCollection<string> Alerts);
 
 // Total físico por unidade base do produto: unidades diferentes nunca são somadas entre si.
-public sealed record AgricultureInputUnit(string Unit, decimal Planned, decimal Consumed);
+public sealed class AgricultureInputUnit
+{
+    public string Unit { get; init; } = default!;
+    public decimal Planned { get; init; }
+    public decimal Consumed { get; init; }
+}
 
 public interface ILookupService
 {

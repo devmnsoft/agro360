@@ -280,7 +280,7 @@ public sealed class HarvestService(
     {
         var row = await db.QuerySingleOrDefaultAsync<ClosingVersionRow>(new CommandDefinition("select id,season_id SeasonId,version,state,cutoff_date CutoffDate,generated_at GeneratedAt,responsible_id ResponsibleId,supersedes_id SupersedesId,reason,notes,indicators::text Indicators,issues::text Issues from agro360.harvest_closing_versions where tenant_id=@TenantId and id=@Id for update", new { tenant.TenantId, Id = closingId }, tx, cancellationToken: cancellationToken)) ?? throw new NotFoundException("Fechamento gerencial", closingId); if (row.Version != command.Version) throw new ConflictException("A versão foi alterada; atualize a página.", "closing.concurrent_change"); if (row.State == "BLOCKED" || DeserializeIssues(row.Issues).Any(x => x.Severity == "BLOCKER")) throw new ConflictException("Corrija os bloqueios na operação de origem e gere nova conferência.", "closing.blocked"); if (row.State == "CLOSED") return MapVersion(row);
         var scope = await ClosingScope(db, tx, row.SeasonId, row.CutoffDate, cancellationToken); var currentIndicators = await ClosingIndicators(db, tx, row.SeasonId, row.CutoffDate, scope.Unit, cancellationToken); var currentIssues = BuildIssues(currentIndicators); if (currentIssues.Any(x => x.Severity == "BLOCKER")) throw new ConflictException("Novos bloqueios foram encontrados; corrija a origem e gere uma nova versão.", "closing.blocked"); if (!SnapshotMatches(DeserializeIndicators(row.Indicators), currentIndicators)) throw new ConflictException("Os dados considerados mudaram desde a geração. Execute a conferência e gere uma nova versão.", "closing.stale_snapshot");
-        await db.ExecuteAsync(new CommandDefinition("update agro360.harvest_closing_versions set state='CLOSED',closed_at=now(),closed_by=@UserId,notes=coalesce(@Notes,notes),row_version=row_version+1 where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = closingId, UserId = tenant.UserId, command.Notes }, tx, cancellationToken: cancellationToken)); await Audit(db, tx, "close", "HarvestManagementClosing", closingId, cancellationToken); return MapVersion(row with { State = "CLOSED", Notes = command.Notes ?? row.Notes });
+        await db.ExecuteAsync(new CommandDefinition("update agro360.harvest_closing_versions set state='CLOSED',closed_at=now(),closed_by=@UserId,notes=coalesce(@Notes,notes),row_version=row_version+1 where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = closingId, UserId = tenant.UserId, command.Notes }, tx, cancellationToken: cancellationToken)); await Audit(db, tx, "close", "HarvestManagementClosing", closingId, cancellationToken); return MapVersion(new ClosingVersionRow { Id = row.Id, SeasonId = row.SeasonId, Version = row.Version, State = "CLOSED", CutoffDate = row.CutoffDate, GeneratedAt = row.GeneratedAt, ResponsibleId = row.ResponsibleId, SupersedesId = row.SupersedesId, Reason = row.Reason, Notes = command.Notes ?? row.Notes, Indicators = row.Indicators, Issues = row.Issues });
     }, cancellationToken);
 
     public Task<SeasonClosingVersionDto> ReopenAsync(Guid closingId, ReopenSeasonClosingCommand command, CancellationToken cancellationToken) => database.InTenantTransactionAsync<SeasonClosingVersionDto>(async (db, tx) =>
@@ -336,8 +336,9 @@ public sealed class HarvestService(
         """, new { tenant.TenantId, SeasonId = seasonId, Cutoff = cutoff }, tx, cancellationToken: ct));
 
         var stockLots = (await db.QueryAsync<StockLotClosingRow>(new CommandDefinition("""
-            select coalesce(l.quantity, 0) Quantity, lower(l.unit) Unit
+            select coalesce(l.quantity, 0) Quantity, lower(coalesce(nullif(p.base_unit,''),'un')) Unit
             from agro360.inventory_stock_lots l
+            left join agro360.inventory_products p on p.tenant_id = l.tenant_id and p.id = l.product_id
             where l.tenant_id = @TenantId
               and l.lot_number in (
                 select distinct q.lot_number
@@ -490,10 +491,42 @@ public sealed class HarvestService(
     private async Task<HarvestOperationDto?> Replay(System.Data.IDbConnection db, System.Data.IDbTransaction tx, string table, string key, string hash, string kind, CancellationToken ct) { var row = await db.QuerySingleOrDefaultAsync<ReplayRow>(new CommandDefinition($"select id,request_hash Hash,created_at At from agro360.{table} where tenant_id=@TenantId and idempotency_key=@Key", new { tenant.TenantId, Key = key }, tx, cancellationToken: ct)); if (row is null) return null; if (row.Hash != hash) throw new ConflictException("A chave idempotente já foi usada com outro conteúdo.", "harvest.idempotency_conflict"); return new HarvestOperationDto(row.Id, kind, "REPLAYED", 0, "-", 0, row.At, key, 1); }
     private Task<int> Audit(System.Data.IDbConnection db, System.Data.IDbTransaction tx, string action, string entity, Guid id, CancellationToken ct) => db.ExecuteAsync(new CommandDefinition("insert into agro360.audit_logs(id,tenant_id,user_id,action,entity_type,entity_id,occurred_at) values(@AuditId,@TenantId,@UserId,@Action,@Entity,@Id,now())", new { AuditId = Guid.CreateVersion7(), tenant.TenantId, UserId = tenant.UserId, Action = action, Entity = entity, Id = id }, tx, cancellationToken: ct));
     private sealed record ClosingScopeRow(Guid SeasonId, Guid FarmId, string Season, string Farm, string Crop, DateOnly StartsOn, DateOnly EndsOn, string Unit);
-    private sealed record ClosingTotals(decimal RegisteredArea, decimal HarvestedArea, decimal Harvested, decimal Received, decimal AwaitingQuality, decimal Approved, decimal Allocated, decimal MadeAvailable, decimal InProcessing, decimal Loss, decimal Costs, int UnitCount);
+    private sealed class ClosingTotals
+    {
+        public decimal RegisteredArea { get; init; }
+        public decimal HarvestedArea { get; init; }
+        public decimal Harvested { get; init; }
+        public decimal Received { get; init; }
+        public decimal AwaitingQuality { get; init; }
+        public decimal Approved { get; init; }
+        public decimal Allocated { get; init; }
+        public decimal MadeAvailable { get; init; }
+        public decimal InProcessing { get; init; }
+        public decimal Loss { get; init; }
+        public decimal Costs { get; init; }
+        public int UnitCount { get; init; }
+    }
     private sealed record ClosingRunRow(Guid Id, DateTimeOffset GeneratedAt, string CriteriaVersion, string Issues);
-    private sealed record ClosingVersionRow(Guid Id, Guid SeasonId, int Version, string State, DateOnly CutoffDate, DateTimeOffset GeneratedAt, Guid ResponsibleId, Guid? SupersedesId, string? Reason, string? Notes, string Indicators, string Issues);
-    private sealed record PreviousClosing(Guid Id, int Version);
+    private sealed class ClosingVersionRow
+    {
+        public Guid Id { get; init; }
+        public Guid SeasonId { get; init; }
+        public int Version { get; init; }
+        public string State { get; init; } = default!;
+        public DateOnly CutoffDate { get; init; }
+        public DateTimeOffset GeneratedAt { get; init; }
+        public Guid ResponsibleId { get; init; }
+        public Guid? SupersedesId { get; init; }
+        public string? Reason { get; init; }
+        public string? Notes { get; init; }
+        public string Indicators { get; init; } = default!;
+        public string Issues { get; init; } = default!;
+    }
+    private sealed class PreviousClosing
+    {
+        public Guid Id { get; init; }
+        public int Version { get; init; }
+    }
     private sealed class ReceiptSource
     {
         public decimal Quantity { get; set; }

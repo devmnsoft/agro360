@@ -5,15 +5,17 @@ using Npgsql;
 
 namespace Agro360.Worker;
 
-public sealed record OutboxEnvelope(
-    Guid Id,
-    Guid TenantId,
-    string EventType,
-    Guid AggregateId,
-    string Payload,
-    DateTimeOffset OccurredAt,
-    int Attempts,
-    string? CorrelationId);
+public sealed class OutboxEnvelope
+{
+    public Guid Id { get; init; }
+    public Guid TenantId { get; init; }
+    public string EventType { get; init; } = string.Empty;
+    public Guid AggregateId { get; init; }
+    public string Payload { get; init; } = string.Empty;
+    public DateTimeOffset OccurredAt { get; init; }
+    public int Attempts { get; init; }
+    public string? CorrelationId { get; init; }
+}
 
 public sealed class OutboxOptions
 {

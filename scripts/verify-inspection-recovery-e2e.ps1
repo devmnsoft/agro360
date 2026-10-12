@@ -488,8 +488,12 @@ select id::text from agro360.inventory_products where tenant_id='${tenantId}' an
     $d2 = New-DirectReceipt $rec2 $grainP "LOTE-CRASH-$runTag" 18000 'Simulacao de crash: origem confirmada sem passagem pela API.'
     $rcp2 = $d2.Id
     $k2real = $d2.Key
-    $beforeRuns = Get-RunCount $k2real
-    Assert-Step 'S2-estado-inicial-sem-intent' ((Get-IntentCount $k2real) -eq 0 -and $beforeRuns -eq 0) "intent=0 runs=0 (origem existe, nenhum despacho)"
+    # O recibo foi commitado FORA da API (insert direto). O worker adota por varredura a cada
+    # poll (2 s), entao "ainda sem intent" e racy e nao e uma garantia observavel; o precondicio
+    # concreto e a origem presente no banco. A prova de recuperacao SEM reenviar o comando original
+    # fica nas asserts seguintes: exatamente 1 intent (com nota "varredura") + exatamente 1 run.
+    $rcptCommitted = Invoke-Psql "select count(*)::text from agro360.production_receipts where tenant_id='${tenantId}' and id='${rcp2}';"
+    Assert-Step 'S2-origem-commitada-fora-da-api' ($rcptCommitted -eq '1') "recibo LOTE-CRASH presente no banco (commitado fora da API; recuperacao sem reenvio provada em 1 intent/1 run/nota varredura)"
     $ok = Wait-Until { $x = Get-IntentParts $k2real; ($null -ne $x -and $x[0] -eq 'STARTED') } 30 'S2 intencao adotada'
     $p2 = Get-IntentParts $k2real
     Assert-Step 'S2-worker-adotou-e-iniciou' ($ok -and $p2[0] -eq 'STARTED' -and [int]$p2[1].Length -ge 32) "status=$(if ($p2) { $p2[0] } else { '?' }) run=$(if ($p2) { $p2[1] } else { '?' })"
@@ -499,11 +503,15 @@ select id::text from agro360.inventory_products where tenant_id='${tenantId}' an
 
     # ===================== S3: PENDING_MODEL -> configuracao -> auto =====================
     Write-Host '--- S3: sem modelo -> PENDING_MODEL (ciclo longo); publico modelo -> STARTED ---' -ForegroundColor Cyan
+    # Origem com produto SEM modelo publicado (grao 2). Usa insert direto para fixar o produto
+    # real da origem: pela API o produto viria do plano de colheita (grao 1, ja modelado em S1)
+    # e o intent nunca veria "sem modelo". O worker adota por varredura e, sem modelo, fica PENDING_MODEL.
     $rec3 = New-HarvestRecord 3 5 15000 'C'
-    $rcp3 = New-HarvestReceipt 3 $rec3 $grain2P 'C' 15000
-    $k3 = Get-IntentKey $rcp3
+    $d3 = New-DirectReceipt $rec3 $grain2P "LOTE-PM-${runTag}C" 15000 'Produto sem modelo de inspecao: deve virar PENDING_MODEL.'
+    $k3 = $d3.Key
+    $ok3pm = Wait-Until { $x = Get-IntentParts $k3; ($null -ne $x -and $x[0] -eq 'PENDING_MODEL') } 30 'S3 adocao -> PENDING_MODEL'
     $p3 = Get-IntentParts $k3
-    Assert-Step 'S3-PENDING_MODEL' ($p3[0] -eq 'PENDING_MODEL') "status=$(if ($p3) { $p3[0] } else { '?' })"
+    Assert-Step 'S3-PENDING_MODEL' ($ok3pm -and $p3[0] -eq 'PENDING_MODEL') "status=$(if ($p3) { $p3[0] } else { '?' })"
     $p3err = Get-IntentParts $k3
     $p3lasterr = $p3err[5]
     Assert-Step 'S3-motivo-modelo-ausente' ($p3lasterr -like '*modelo*') "last_error=$p3lasterr"
@@ -525,11 +533,15 @@ select id::text from agro360.inventory_products where tenant_id='${tenantId}' an
 
     # ===================== S4: falha (origem some) -> backoff -> dead-letter =====================
     Write-Host '--- S4: origem excluida -> tentativas com backoff -> DEAD_LETTERED com motivo ---' -ForegroundColor Cyan
+    # Mesma tecnica do S3: origem com produto sem modelo (grao 3) via insert direto para fixar o
+    # produto real e garantir PENDING_MODEL antes de remover a origem (que vira MISSING).
     $rec4 = New-HarvestRecord 4 5 12000 'D'
-    $rcp4 = New-HarvestReceipt 4 $rec4 $grain3P 'D' 12000
-    $k4 = Get-IntentKey $rcp4
+    $d4 = New-DirectReceipt $rec4 $grain3P "LOTE-MISS-${runTag}D" 12000 'Origem que sera removida para testar origem ausente (dead-letter).'
+    $rcp4 = $d4.Id
+    $k4 = $d4.Key
+    $ok4pm = Wait-Until { $x = Get-IntentParts $k4; ($null -ne $x -and $x[0] -eq 'PENDING_MODEL') } 30 'S4 adocao -> PENDING_MODEL'
     $p4a = Get-IntentParts $k4
-    Assert-Step 'S4-PENDING_MODEL-inicial' ($p4a[0] -eq 'PENDING_MODEL') "status=$(if ($p4a) { $p4a[0] } else { '?' })"
+    Assert-Step 'S4-PENDING_MODEL-inicial' ($ok4pm -and $p4a[0] -eq 'PENDING_MODEL') "status=$(if ($p4a) { $p4a[0] } else { '?' })"
     # production_receipts e tabela de hard delete (sem deleted_at): remover a linha faz a origem virar MISSING.
     Invoke-Psql "delete from agro360.production_receipts where tenant_id='${tenantId}' and id='${rcp4}';" | Out-Null
     $ok4 = Wait-Until { $x = Get-IntentParts $k4; ($null -ne $x -and $x[0] -eq 'DEAD_LETTERED') } 45 'S4 dead-letter'
@@ -606,7 +618,13 @@ values('${rcp4}','${tenantId}','${rec4}','${whId}','${grain3P}',now(),12000,'kg'
     $p7 = Get-IntentParts $k7real
     Assert-Step 'S7-reclamado-por-novo-processo' ($ok7b -and $p7[4] -ne 'dead-worker-e2e') "claimed_by=$(if ($p7) { $p7[4] } else { '?' })"
     Assert-Step 'S7-trabalho-avançou' ([int]$p7[2] -gt $att7base) "attempts ${att7base}->$($p7[2]) (nenhum pendente perdido no restart)"
-    Assert-Step 'S7-lease-liberado-pos-processamento' ($p7[4] -eq '') "claim liberado apos o resultado"
+    # O release do claim ocorre no MESMO commit que incrementa attempts (ClearClaim nos desfechos:
+    # WriteOutcomeAsync L258-260 / MarkProcessingFailureAsync L128). A leitura unica imediatamente
+    # apos o Wait-Until e racy (claim ainda segurado pelo novo worker antes do commit do desfecho).
+    # Espera o invariante real (claim efetivamente liberado) em vez de amostrar um instante.
+    $ok7c = Wait-Until { $pp = Get-IntentParts $k7real; $null -ne $pp -and $pp[4] -eq '' } 25 'S7 claim liberado apos o resultado'
+    $p7f = Get-IntentParts $k7real
+    Assert-Step 'S7-lease-liberado-pos-processamento' ($ok7c -and $p7f[4] -eq '') "claim=$(if ($p7f) { $p7f[4] } else { '?' }) (liberado apos o resultado)"
 
     # ============ EVIDENCIA FINAL ============
     $snapshot = Invoke-Psql "select process_code, origin_type, status, attempts, coalesce(error_code,'-'), left(coalesce(last_error,'-'),80), next_attempt_at > now() as proxima_futuro, dead_lettered_at is not null as dead from agro360.quality_inspection_event_intents where tenant_id='${tenantId}' and deleted_at is null order by created_at;"
@@ -621,6 +639,8 @@ values('${rcp4}','${tenantId}','${rec4}','${whId}','${grain3P}',now(),12000,'kg'
     Write-Host ""
     Write-Host "E2E DE RECUPERACAO DE INSPECOES: TODOS OS CENARIOS PASSARAM" -ForegroundColor Green
     Write-Host "Evidencia: $evidenceDir" -ForegroundColor Green
+    # Sem exit explicito o processo herdaria o $LASTEXITCODE residual do pg_ctl stop (nao-fiel).
+    exit 0
 }
 catch {
     Write-Host ""

@@ -144,7 +144,7 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
         var orderStatus = await RequireOrder(c, t, orderId, cancellationToken);
         if (orderStatus is "COMPLETED" or "CANCELLED") throw new ConflictException("Uma ordem consolidada não aceita novas movimentações de material.", "agriculture.material_order_closed");
         if ((kind is "CONSUME" or "LOSS" or "REVERSAL") && orderStatus is not ("IN_PROGRESS" or "PAUSED" or "AWAITING_REVIEW")) throw new ConflictException("Consumo e estorno exigem uma ordem em execução ou conferência.", "agriculture.material_order_not_running");
-        var m = await c.QuerySingleOrDefaultAsync<MaterialRow>(new CommandDefinition("select * from agro360.field_work_order_materials where tenant_id=@TenantId and work_order_id=@OrderId and id=@Id and deleted_at is null for update", new { tenant.TenantId, OrderId = orderId, Id = materialId }, t, cancellationToken: cancellationToken));
+        var m = await c.QuerySingleOrDefaultAsync<MaterialRow>(new CommandDefinition("select id Id, product_id ProductId, warehouse_id WarehouseId, planned_quantity PlannedQuantity, reserved_quantity ReservedQuantity, delivered_quantity DeliveredQuantity, consumed_quantity ConsumedQuantity, returned_quantity ReturnedQuantity, lost_quantity LostQuantity, unit_cost UnitCost from agro360.field_work_order_materials where tenant_id=@TenantId and work_order_id=@OrderId and id=@Id and deleted_at is null for update", new { tenant.TenantId, OrderId = orderId, Id = materialId }, t, cancellationToken: cancellationToken));
         if (m is null) throw new NotFoundException("Material da ordem", materialId);
         var repeated = await c.QuerySingleOrDefaultAsync<MaterialEventRow>(new CommandDefinition("select work_order_material_id WorkOrderMaterialId,event_type EventType,quantity,reason,source_event_id SourceEventId from agro360.field_material_events where tenant_id=@TenantId and idempotency_key=@Key", new { tenant.TenantId, Key = command.IdempotencyKey }, t, cancellationToken: cancellationToken));
         if (repeated is not null) { if (repeated.WorkOrderMaterialId != materialId || repeated.EventType != kind || repeated.Quantity != command.Quantity || repeated.Reason != command.Reason || repeated.SourceEventId != command.SourceEventId) throw new ConflictException("A chave de idempotência já foi usada com outro conteúdo.", "agriculture.idempotency_payload_conflict"); return; }
@@ -163,17 +163,12 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
             if (source is null || source.WorkOrderMaterialId != materialId || source.EventType != "CONSUME" || source.Quantity != command.Quantity) throw new ConflictException("O estorno deve corresponder integralmente a um consumo desta operação.", "agriculture.reversal_source_invalid");
             if (await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.field_material_events where tenant_id=@TenantId and source_event_id=@Id and event_type='REVERSAL')", new { tenant.TenantId, Id = command.SourceEventId }, t, cancellationToken: cancellationToken))) throw new ConflictException("Este consumo já foi estornado.", "agriculture.reversal_duplicate");
 
-            // Financial Reversal: Nullify the recognized cost of the original consumption
-            var rowData = await c.QuerySingleOrDefaultAsync<OrderRow>(new CommandDefinition("select id,module,status,created_at CreatedAt,data::text Data,version from agro360.agriculture_records where tenant_id=@TenantId and id=@Id and module='work-orders' and deleted_at is null", new { tenant.TenantId, Id = orderId }, t, cancellationToken: cancellationToken));
-            if (rowData != null)
-            {
-                var data = JsonSerializer.Deserialize<Dictionary<string, object?>>(rowData.Data, JsonOptions) ?? [];
-                var farmIdStr = data["propertyId"]?.ToString();
-                if (!string.IsNullOrWhiteSpace(farmIdStr) && Guid.TryParse(farmIdStr, out var farmId))
-                {
-                    await postingService.PostMaterialCostAsync(tenant.TenantId, farmId, eventId, -command.Quantity, m.UnitCost ?? 0, orderId.ToString(), $"REVERSAL: {m.ProductId}", DateTimeOffset.UtcNow, cancellationToken);
-                }
-            }
+            // Financial Reversal: the schema forbids a negative recognized_amount (and requires
+            // allocated_amount <= recognized_amount), so instead of posting a negative offsetting
+            // entry we mark the ORIGINAL consumption's cost entry as reversed via the dedicated
+            // reversed_amount column. Net recognized (recognized_amount - reversed_amount) drops to
+            // zero while every CHECK constraint holds and the canonical ledger history is preserved.
+            await c.ExecuteAsync(new CommandDefinition("update agro360.cost_management_entries set reversed_amount=reversed_amount+@Amt,row_version=row_version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and source_type='MATERIAL' and source_key=@SourceKey and deleted_at is null and status='OPEN'", new { Amt = command.Quantity * (m.UnitCost ?? 0), tenant.TenantId, SourceKey = command.SourceEventId.ToString(), tenant.UserId }, t, cancellationToken: cancellationToken));
         }
         Guid? movement = null;
         if (kind is "CONSUME" or "LOSS" or "RETURN" or "REVERSAL")
@@ -322,8 +317,28 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
     private async Task<string> RequireOrder(System.Data.IDbConnection c, System.Data.IDbTransaction t, Guid id, CancellationToken cancellationToken) => await c.ExecuteScalarAsync<string?>(new CommandDefinition("select status from agro360.agriculture_records where tenant_id=@TenantId and id=@Id and module='work-orders' and deleted_at is null", new { tenant.TenantId, Id = id }, t, cancellationToken: cancellationToken)) ?? throw new NotFoundException("Ordem de campo", id);
     private async Task RequireEditableOrder(System.Data.IDbConnection c, System.Data.IDbTransaction t, Guid id, CancellationToken cancellationToken) { if (await RequireOrder(c, t, id, cancellationToken) is not ("OPEN" or "PLANNED" or "AWAITING_RESOURCES")) throw new ConflictException("A programação está bloqueada no estado atual."); }
     private static decimal? Decimal(Dictionary<string, object?> data, string key) => data.TryGetValue(key, out var value) && value is JsonElement e && e.ValueKind == JsonValueKind.Number && e.TryGetDecimal(out var number) ? number : null;
-    private sealed record OrderRow(Guid Id, string Module, string Status, DateTimeOffset CreatedAt, string Data, long Version);
-    private sealed record MaterialRow(Guid Id, Guid ProductId, Guid? WarehouseId, decimal PlannedQuantity, decimal ReservedQuantity, decimal DeliveredQuantity, decimal ConsumedQuantity, decimal ReturnedQuantity, decimal LostQuantity, decimal? UnitCost);
+    private sealed class OrderRow
+    {
+        public Guid Id { get; init; }
+        public string Module { get; init; } = default!;
+        public string Status { get; init; } = default!;
+        public DateTimeOffset CreatedAt { get; init; }
+        public string Data { get; init; } = default!;
+        public long Version { get; init; }
+    }
+    private sealed class MaterialRow
+    {
+        public Guid Id { get; init; }
+        public Guid ProductId { get; init; }
+        public Guid? WarehouseId { get; init; }
+        public decimal PlannedQuantity { get; init; }
+        public decimal ReservedQuantity { get; init; }
+        public decimal DeliveredQuantity { get; init; }
+        public decimal ConsumedQuantity { get; init; }
+        public decimal ReturnedQuantity { get; init; }
+        public decimal LostQuantity { get; init; }
+        public decimal? UnitCost { get; init; }
+    }
     private sealed record MaterialEventRow(Guid WorkOrderMaterialId, string EventType, decimal Quantity, string? Reason, Guid? SourceEventId);
     private sealed record WorkLogRow(Guid WorkOrderId, Guid OperatorId, Guid? EquipmentId, string Stage, DateTimeOffset StartsAt,
         DateTimeOffset EndsAt, decimal PerformedQuantity, string Unit, decimal? PhysicalAreaHa, decimal? InitialMeter,

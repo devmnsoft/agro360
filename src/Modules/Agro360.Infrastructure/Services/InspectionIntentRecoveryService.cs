@@ -161,12 +161,12 @@ public sealed class InspectionIntentRecoveryService(
         ["production_receipts"] = """
             select q.id OriginId, q.product_id ProductId, null::uuid LotId, q.warehouse_id UnitId, q.created_by ActorId
             from agro360.production_receipts q
-            where q.tenant_id = @TenantId and q.deleted_at is null
+            where q.tenant_id = @TenantId
               and q.quality_status = 'AWAITING_INSPECTION'
               and q.received_at >= now() - (@WindowDays || ' days')::interval
               and not exists (select 1 from agro360.quality_inspection_event_intents i
                                where i.tenant_id = q.tenant_id and i.deleted_at is null
-                                 and i.idempotency_key = 'EVT:HARVEST_RECEIPT:' || upper(replace(q.id::text, '-', '')))
+                                 and i.idempotency_key = 'EVT:HARVEST_RECEIPT:' || replace(q.id::text, '-', ''))
             limit 200
             """,
         ["procurement_receipts"] = """
@@ -185,7 +185,7 @@ public sealed class InspectionIntentRecoveryService(
               and r.received_at >= now() - (@WindowDays || ' days')::interval
               and not exists (select 1 from agro360.quality_inspection_event_intents i
                                where i.tenant_id = r.tenant_id and i.deleted_at is null
-                                 and i.idempotency_key = 'EVT:PURCHASE_RECEIPT:' || upper(replace(r.id::text, '-', '')))
+                                 and i.idempotency_key = 'EVT:PURCHASE_RECEIPT:' || replace(r.id::text, '-', ''))
             limit 200
             """,
         ["production_batches"] = """
@@ -196,7 +196,7 @@ public sealed class InspectionIntentRecoveryService(
               and b.manufactured_at >= now() - (@WindowDays || ' days')::interval
               and not exists (select 1 from agro360.quality_inspection_event_intents i
                                where i.tenant_id = b.tenant_id and i.deleted_at is null
-                                 and i.idempotency_key = 'EVT:PRODUCTION:' || upper(replace(b.id::text, '-', '')))
+                                 and i.idempotency_key = 'EVT:PRODUCTION:' || replace(b.id::text, '-', ''))
             limit 200
             """,
         ["fulfillment_return_receipts"] = """
@@ -206,7 +206,7 @@ public sealed class InspectionIntentRecoveryService(
               and x.received_at >= now() - (@WindowDays || ' days')::interval
               and not exists (select 1 from agro360.quality_inspection_event_intents i
                                where i.tenant_id = x.tenant_id and i.deleted_at is null
-                                 and i.idempotency_key = 'EVT:RETURN:' || upper(replace(x.id::text, '-', '')))
+                                 and i.idempotency_key = 'EVT:RETURN:' || replace(x.id::text, '-', ''))
             limit 200
             """
     };

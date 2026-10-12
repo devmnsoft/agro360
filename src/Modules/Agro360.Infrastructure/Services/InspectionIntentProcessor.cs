@@ -115,6 +115,7 @@ public sealed partial class InspectionIntentProcessor(
                 LastError: $"Origem ({row.OriginType}) não encontrada no momento da recuperação.",
                 AttemptsAdd: 1,
                 BackoffSql: true,
+                ClearClaim: true,
                 DeadLetter: row.Attempts + 1 >= options.Value.MaximumAttempts), ct);
             return Result(row, row.Attempts + 1 >= options.Value.MaximumAttempts ? "DEAD_LETTERED" : "PENDING", null,
                 "Origem não encontrada; tentativas registradas.");
