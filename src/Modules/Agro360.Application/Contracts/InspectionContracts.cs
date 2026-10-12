@@ -443,7 +443,16 @@ public sealed record InspectionEventIntentListItem(
     string? RunNumber,
     string? Notes,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    int Attempts = 0,
+    string? LastError = null,
+    string? ErrorCode = null,
+    DateTimeOffset? NextAttemptAt = null);
+
+/// <summary>Re-disparo manual de intent (requer compliance.approve; audita em audit_logs).</summary>
+public sealed record InspectionEventIntentRedispatchCommand(
+    [MaxLength(500)] string? Reason = null,
+    Guid? ActorId = null);
 
 public interface IOperationalInspectionTrigger
 {
@@ -456,4 +465,51 @@ public interface IOperationalInspectionTrigger
         string? status,
         int? limit,
         CancellationToken ct);
+
+    /// <summary>
+    /// Re-dispara um intent em estado recuperável (PENDING, PENDING_MODEL, AMBIGUOUS ou DEAD_LETTERED),
+    /// zera a contagem de falhas e tenta o processamento imediatamente. Opcionalmente troca o ator.
+    /// </summary>
+    Task<OperationalInspectionEventResult> RedispatchEventIntentAsync(
+        Guid intentId,
+        InspectionEventIntentRedispatchCommand command,
+        CancellationToken ct);
+}
+
+// --- Recuperação automática de intents (worker) ---
+
+public sealed record InspectionIntentWorkItem(
+    Guid TenantId,
+    Guid IntentId,
+    Guid? ActorId,
+    string Status,
+    int Attempts);
+
+public sealed record InspectionIntentCycleResult(
+    int OriginsAdopted,
+    int IntentsClaimed,
+    int Started);
+
+public interface IInspectionIntentRecoveryService
+{
+    /// <summary>
+    /// Adota origens confirmadas que não têm intent (processo caiu entre o commit da origem e a
+    /// criação do intent). Janela configurável; idempotente pela chave EVT única por origem.
+    /// </summary>
+    Task<int> AdoptMissingOriginIntentsForTenantAsync(Guid tenantId, CancellationToken ct);
+
+    /// <summary>
+    /// Claima intents vencidos (PENDING/PENDING_MODEL com next_attempt_at <= agora e lease livre)
+    /// usando FOR UPDATE SKIP LOCKED e instala um lease para processamento concorrente seguro.
+    /// </summary>
+    Task<IReadOnlyList<InspectionIntentWorkItem>> ClaimDueIntentsForTenantAsync(
+        Guid tenantId,
+        int batchSize,
+        CancellationToken ct);
+
+    /// <summary>Registra falha de processamento (attempts+1, backoff e dead-letter ao atingir o limite).</summary>
+    Task MarkProcessingFailureAsync(Guid tenantId, Guid intentId, Exception failure, CancellationToken ct);
+
+    /// <summary>Marca intent sem operador como SKIPPED_NO_ACTOR (terminal honesto, sem loop).</summary>
+    Task MarkSkippedNoActorAsync(Guid tenantId, Guid intentId, CancellationToken ct);
 }

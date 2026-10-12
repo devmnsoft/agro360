@@ -71,6 +71,9 @@ public static class DependencyInjection
         services.AddScoped<IComplianceService, ComplianceService>();
         services.AddScoped<IInspectionService, InspectionService>();
         services.AddScoped<IOperationalInspectionTrigger, OperationalInspectionTrigger>();
+        services.AddScoped<IInspectionIntentProcessor, InspectionIntentProcessor>();
+        services.AddScoped<IInspectionIntentRecoveryService, InspectionIntentRecoveryService>();
+        services.Configure<InspectionIntentsOptions>(configuration.GetSection(InspectionIntentsOptions.SectionName));
         services.AddScoped<IEsgService, EsgService>();
         services.AddScoped<ISustainabilityService, SustainabilityService>();
         services.AddScoped<IIntegrationService, IntegrationService>();

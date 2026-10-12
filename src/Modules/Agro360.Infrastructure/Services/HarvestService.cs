@@ -555,10 +555,10 @@ public sealed class HarvestService(
 
             var intents = receiptIds.Length == 0 ? [] : (await db.QueryAsync<QualityIntentGenealogyRow>(new CommandDefinition("""
                 select i.id IntentId, i.origin_id ReceiptId, i.status IntentStatus, i.error_code ErrorCode, i.created_at CreatedAt,
-                       ins.id InspectionId, ins.status InspectionStatus, ins.result InspectionResult, ins.inspected_at InspectedAt
+                       ins.id InspectionId, ins.status InspectionStatus, ins.overall_result InspectionResult, ins.inspected_at InspectedAt
                 from agro360.quality_inspection_event_intents i
                 left join agro360.quality_inspections ins on ins.tenant_id = i.tenant_id and ins.production_receipt_id = i.origin_id and ins.deleted_at is null
-                where i.tenant_id = @TenantId and i.process = 'HARVEST_RECEIPT' and i.origin_id = any(@ReceiptIds)
+                where i.tenant_id = @TenantId and i.process_code = 'HARVEST_RECEIPT' and i.origin_id = any(@ReceiptIds)
                 order by i.created_at
                 """, new { tenant.TenantId, ReceiptIds = receiptIds }, tx, cancellationToken: cancellationToken))).ToArray();
 
@@ -572,7 +572,7 @@ public sealed class HarvestService(
 
             var stockLots = lotNumbers.Length == 0 ? [] : (await db.QueryAsync<StockLotGenealogyRow>(new CommandDefinition("""
                 select l.id LotId, l.lot_number LotNumber, l.warehouse_id WarehouseId, l.product_id ProductId,
-                       l.quantity Quantity, l.quality_status QualityStatus, l.unit Unit, w.name WarehouseName, pr.name ProductName
+                       l.quantity Quantity, l.quality_status QualityStatus, pr.base_unit Unit, w.name WarehouseName, pr.name ProductName
                 from agro360.inventory_stock_lots l
                 join agro360.inventory_warehouses w on w.tenant_id = l.tenant_id and w.id = l.warehouse_id
                 join agro360.inventory_products pr on pr.tenant_id = l.tenant_id and pr.id = l.product_id
@@ -584,7 +584,7 @@ public sealed class HarvestService(
             var industrialReservations = receiptIds.Length == 0 ? [] : (await db.QueryAsync<IndustrialGenealogyRow>(new CommandDefinition("""
                 select pmr.id ReservationId, pmr.receipt_id ReceiptId, pmr.order_id OrderId, pmr.quantity ReservedQuantity,
                        pmr.consumed_quantity ConsumedQuantity, pmr.unit Unit, pmr.status Status,
-                       po.order_number OrderNumber,
+                       po.number OrderNumber,
                        pb.id BatchId, pb.batch_number BatchNumber, pb.quantity BatchQuantity, pb.unit BatchUnit, pb.quality_status BatchQualityStatus
                 from agro360.production_material_reservations pmr
                 join agro360.production_orders po on po.tenant_id = pmr.tenant_id and po.id = pmr.order_id
@@ -883,7 +883,7 @@ public sealed class HarvestService(
 
             var stockLot = await db.QuerySingleOrDefaultAsync<StockLotGenealogyRow>(new CommandDefinition("""
                 select l.id LotId, l.lot_number LotNumber, l.warehouse_id WarehouseId, l.product_id ProductId,
-                       l.quantity Quantity, l.quality_status QualityStatus, l.unit Unit, w.name WarehouseName, pr.name ProductName
+                       l.quantity Quantity, l.quality_status QualityStatus, pr.base_unit Unit, w.name WarehouseName, pr.name ProductName
                 from agro360.inventory_stock_lots l
                 join agro360.inventory_warehouses w on w.tenant_id = l.tenant_id and w.id = l.warehouse_id
                 join agro360.inventory_products pr on pr.tenant_id = l.tenant_id and pr.id = l.product_id
@@ -892,7 +892,7 @@ public sealed class HarvestService(
 
             var batch = await db.QuerySingleOrDefaultAsync<IndustrialGenealogyRow>(new CommandDefinition("""
                 select pb.id BatchId, pb.batch_number BatchNumber, pb.quantity BatchQuantity, pb.unit BatchUnit,
-                       pb.quality_status BatchQualityStatus, po.order_number OrderNumber, po.id OrderId,
+                       pb.quality_status BatchQualityStatus, po.number OrderNumber, po.id OrderId,
                        pp.name ProductName,
                        exists(select 1 from agro360.production_batch_traceability pbt
                               where pbt.tenant_id = pb.tenant_id and pbt.batch_id = pb.id

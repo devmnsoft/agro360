@@ -323,6 +323,9 @@ public sealed class ProcurementConversionJourneyTests
 
         public Task<IReadOnlyList<InspectionEventIntentListItem>> ListEventIntentsAsync(string? process, string? status, int? limit, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<InspectionEventIntentListItem>>([]);
+
+        public Task<OperationalInspectionEventResult> RedispatchEventIntentAsync(Guid intentId, InspectionEventIntentRedispatchCommand command, CancellationToken ct)
+            => Task.FromResult(new OperationalInspectionEventResult(intentId, string.Empty, string.Empty, Guid.Empty, "NOT_REQUIRED", null, "re-disparo não é exercido nesta jornada"));
     }
 
     private sealed class NoopPostingService : IPostingService

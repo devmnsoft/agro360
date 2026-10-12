@@ -19,6 +19,14 @@ public sealed class InspectionController(
         CancellationToken ct) =>
         trigger.ListEventIntentsAsync(process, status, limit, ct);
 
+    /// <summary>Re-disparo manual auditado: zera falhas e processa imediatamente. Estado recuperável + compliance.approve.</summary>
+    [HttpPost("event-intents/{id:guid}/redispatch"), Authorize(Policy = Permissions.ComplianceApprove)]
+    public Task<OperationalInspectionEventResult> RedispatchEventIntent(
+        Guid id,
+        [FromBody] InspectionEventIntentRedispatchCommand? command,
+        CancellationToken ct) =>
+        trigger.RedispatchEventIntentAsync(id, command ?? new InspectionEventIntentRedispatchCommand(), ct);
+
     [HttpGet("models")]
     public Task<IReadOnlyList<InspectionModelListItem>> ListModels(string? process, string? status, CancellationToken ct) =>
         service.ListModelsAsync(process, status, ct);

@@ -54,6 +54,16 @@ public sealed partial class DatabaseExecutor(
             return await action(connection, transaction).ConfigureAwait(false);
         }, cancellationToken);
 
+    public Task InTenantTransactionAsync(
+        Guid tenantId,
+        Func<NpgsqlConnection, NpgsqlTransaction, Task> action,
+        CancellationToken cancellationToken) =>
+        InTenantTransactionAsync(tenantId, async (connection, transaction) =>
+        {
+            await action(connection, transaction).ConfigureAwait(false);
+            return true;
+        }, cancellationToken);
+
     public Task<T> InSystemTransactionAsync<T>(
         Func<NpgsqlConnection, NpgsqlTransaction, Task<T>> action,
         CancellationToken cancellationToken) =>
