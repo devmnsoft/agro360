@@ -447,7 +447,9 @@ public sealed record InspectionEventIntentListItem(
     int Attempts = 0,
     string? LastError = null,
     string? ErrorCode = null,
-    DateTimeOffset? NextAttemptAt = null);
+    DateTimeOffset? NextAttemptAt = null,
+    string Situation = "WAITING",
+    bool CanRedispatch = false);
 
 /// <summary>Re-disparo manual de intent (requer compliance.approve; audita em audit_logs).</summary>
 public sealed record InspectionEventIntentRedispatchCommand(

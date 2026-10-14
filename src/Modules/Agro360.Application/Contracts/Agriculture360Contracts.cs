@@ -51,7 +51,8 @@ public sealed record AgricultureDashboard(
     long CompletedThisMonth, decimal? PlannedCost, decimal? RecognizedCost, decimal? CostPerHectare,
     long OpenOccurrences, long CriticalOccurrences, IReadOnlyCollection<AgricultureInputUnit> InputsByUnit,
     long Applications, long Irrigations, decimal? ExpectedProduction, decimal? ActualProduction,
-    IReadOnlyCollection<string> Alerts);
+    IReadOnlyCollection<string> Alerts,
+    decimal? RecognizedNetCost = null);
 
 // Total físico por unidade base do produto: unidades diferentes nunca são somadas entre si.
 public sealed class AgricultureInputUnit

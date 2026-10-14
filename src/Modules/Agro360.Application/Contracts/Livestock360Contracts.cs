@@ -9,7 +9,35 @@ public sealed record PaddockMovementCommand(Guid? AnimalId, Guid? HerdId, Guid? 
 public sealed record AnimalStatusCommand(DateOnly OccurredOn, string? Reason);
 public sealed record AnimalTransferCommand(Guid FarmId, Guid? PaddockId, DateOnly OccurredOn, string? Notes);
 public sealed record HandlingEventCommand(Guid? AnimalId, Guid? HerdId, string Type, DateOnly OccurredOn, string Responsible, string? Notes, decimal? WeightKg, decimal? BodyScore, Guid? PaddockId, decimal EstimatedCost, Guid? WarehouseId, Guid? ProductId, decimal? ProductQuantity, string? Unit);
-public sealed record HealthEventCommand(Guid? AnimalId, Guid? HerdId, string Type, DateOnly AppliedOn, decimal Dose, string Unit, Guid? WarehouseId, Guid? ProductId, int WithdrawalDays, DateOnly? NextApplication, string? Technician, string? Diagnosis, string? Notes);
+public sealed record HealthEventCommand(
+    Guid? AnimalId,
+    Guid? HerdId,
+    string Type,
+    DateOnly AppliedOn,
+    decimal Dose,
+    string Unit,
+    Guid? WarehouseId,
+    Guid? ProductId,
+    int WithdrawalDays,
+    DateOnly? NextApplication,
+    string? Technician,
+    string? Diagnosis,
+    string? Notes,
+    // P4 (opcionais — payload antigo continua valido): protocolo versionado referenciado na
+    // execucao (carência do catálogo prevalece + deriva restrição) e chave de idempotência
+    // formal (mesmo contrato das movimentações/pesagens).
+    Guid? ProtocolId = null,
+    string? IdempotencyKey = null);
+public sealed record HealthProtocolCommand(
+    string Name,
+    string Source,
+    string VersionLabel,
+    DateOnly ValidFrom,
+    DateOnly? ValidUntil,
+    string Purpose,
+    int WithdrawalDays,
+    bool Active = true,
+    string? Notes = null);
 public sealed record ReproductionEventCommand(Guid FemaleId, string Type, DateOnly OccurredOn, Guid? SireId, string? GeneticLot, bool? Positive, bool CreateCalf, string? CalfTag, string? Notes);
 public sealed record NutritionItemCommand(Guid ProductId, decimal QuantityPerDay, string Unit, decimal UnitCost);
 public sealed record NutritionPlanCommand(Guid FarmId, Guid? HerdId, string Name, DateOnly StartsOn, DateOnly? EndsOn, IReadOnlyList<NutritionItemCommand> Items);
@@ -56,6 +84,8 @@ public interface ILivestock360Service
     Task<IReadOnlyList<dynamic>> ListEventsAsync(string kind, CancellationToken ct); Task<Guid> AddHandlingAsync(HandlingEventCommand command, CancellationToken ct); Task<Guid> AddHealthAsync(HealthEventCommand command, CancellationToken ct); Task<Guid> AddReproductionAsync(ReproductionEventCommand command, CancellationToken ct);
     Task<IReadOnlyList<dynamic>> ListNutritionPlansAsync(CancellationToken ct); Task<Guid> AddNutritionPlanAsync(NutritionPlanCommand command, CancellationToken ct); Task<IReadOnlyList<dynamic>> ListFeedingsAsync(CancellationToken ct); Task<Guid> AddFeedingAsync(FeedingCommand command, CancellationToken ct);
     Task<IReadOnlyList<dynamic>> ListMilkAsync(CancellationToken ct); Task<Guid> AddMilkAsync(MilkProductionCommand command, CancellationToken ct); Task<IReadOnlyList<dynamic>> WeightGainAsync(CancellationToken ct); Task<LivestockDashboardDto> DashboardAsync(CancellationToken ct);
+    // P4: agenda de sanidade sobre o ledger de eventos (next_application) — vencidos/hoje/próximos.
+    Task<IReadOnlyList<dynamic>> AgendaAsync(Guid? farmId, DateOnly? from, DateOnly? until, bool overdueOnly, CancellationToken ct);
 }
 
 public sealed record LivestockCatalogCommand(string Code, string Name, string? SpeciesCode, string? Sex, bool Active = true);
@@ -69,6 +99,7 @@ public sealed record ReconcileHerdCommand(
     long? ExpectedVersion = null,
     string? IdempotencyKey = null);
 public sealed record ChangeTagCommand(string NewTag, DateOnly ChangedOn, string? Reason);
+public sealed record ChangeRfidCommand(string NewRfid, DateOnly ChangedOn, string? Reason);
 public sealed record InactivateAnimalCommand(DateOnly OccurredOn, string Reason);
 public sealed record HerdMovementCommand(
     Guid? AnimalId,
@@ -118,7 +149,8 @@ public sealed record WeighingCommand(
     Guid? ResponsibleId,
     string? Notes,
     string? ReviewJustification,
-    string? IdempotencyKey);
+    string? IdempotencyKey,
+    string? MeasurementPrecision);
 public sealed record WeighingCorrectionCommand(decimal WeightKg, string Unit, decimal? ConversionFactor, string Justification, Guid? ResponsibleId);
 public sealed record RestrictionReleaseCommand(DateOnly ReleasedOn, string Authority, string Criteria);
 public sealed record FeedingReturnCommand(decimal ReturnedQuantity, decimal LostQuantity, bool Reusable, string? Notes);
@@ -140,6 +172,11 @@ public interface ILivestockHerdService
     Task<PagedResult<LookupItem>> LookupsAsync(string resource, string? search, int page, int pageSize, CancellationToken ct);
     Task<IReadOnlyList<dynamic>> ListCatalogAsync(string kind, CancellationToken ct);
     Task<Guid> SaveCatalogAsync(string kind, Guid? id, LivestockCatalogCommand command, CancellationToken ct);
+    // P4: CRUD dedicado de protocolos de sanidade (versao unica por nome+version_label;
+    // desativacao audita; o upsert generico de catalogo para 'protocols' aponta para aqui).
+    Task<IReadOnlyList<dynamic>> ListProtocolsAsync(bool? activeOnly, CancellationToken ct);
+    Task<Guid> SaveProtocolAsync(HealthProtocolCommand command, CancellationToken ct);
+    Task DeactivateProtocolAsync(Guid id, CancellationToken ct);
     Task<IReadOnlyList<dynamic>> ListFacilitiesAsync(Guid? farmId, CancellationToken ct);
     Task<Guid> SaveFacilityAsync(Guid? id, FacilityCommand command, CancellationToken ct);
     Task<IReadOnlyList<dynamic>> ListHandlingLotsAsync(Guid? farmId, CancellationToken ct);
@@ -147,6 +184,7 @@ public interface ILivestockHerdService
     Task ReconcileHerdAsync(ReconcileHerdCommand command, CancellationToken ct);
     Task<dynamic?> AnimalDetailAsync(Guid id, CancellationToken ct);
     Task ChangeTagAsync(Guid id, ChangeTagCommand command, CancellationToken ct);
+    Task ChangeRfidAsync(Guid id, ChangeRfidCommand command, CancellationToken ct);
     Task InactivateAsync(Guid id, InactivateAnimalCommand command, CancellationToken ct);
     Task SoftDeleteAsync(Guid id, string reason, CancellationToken ct);
     Task RestoreAsync(Guid id, string reason, CancellationToken ct);

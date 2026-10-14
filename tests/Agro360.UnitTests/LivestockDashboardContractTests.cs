@@ -82,6 +82,18 @@ public sealed class LivestockDashboardContractTests
         Assert.StartsWith("'", csv, StringComparison.Ordinal);
     }
 
+    // P3: indicador de ganho diário exige intervalo positivo — intervalo zero ou negativo
+    // não produz número (vazio != zero), em vez de divisão por zero ou ganho inventado.
+    [Fact]
+    public void LivestockRulesComputeAverageDailyGainOnlyForPositiveInterval()
+    {
+        Assert.Equal(0.5m, LivestockRules.AverageDailyGain(300m, new DateOnly(2026, 10, 1), 305m, new DateOnly(2026, 10, 11)));
+        var zero = Assert.Throws<DomainException>(() => LivestockRules.AverageDailyGain(300m, new DateOnly(2026, 10, 1), 305m, new DateOnly(2026, 10, 1)));
+        Assert.Equal("livestock.weight_period_invalid", zero.Code);
+        var retroactive = Assert.Throws<DomainException>(() => LivestockRules.AverageDailyGain(300m, new DateOnly(2026, 10, 5), 305m, new DateOnly(2026, 10, 1)));
+        Assert.Equal("livestock.weight_period_invalid", retroactive.Code);
+    }
+
     [Fact]
     public void IndividualizationConservesPopulationAndRejectsDuplicateSelection()
     {
@@ -106,5 +118,30 @@ public sealed class LivestockDashboardContractTests
         FleetRules.EnsureCsvSafe(ref fuel);
         Assert.StartsWith("'", fuel, StringComparison.Ordinal);
         Assert.True(typeof(IFleetOperationsService).IsAssignableFrom(typeof(FleetOperationsService)));
+    }
+
+    [Fact]
+    public void MovementRulesValidateClosedKindSetAndCatalogReasonDirection()
+    {
+        LivestockRules.EnsureMovementKind("TRANSFER", herdSubject: false);
+        LivestockRules.EnsureMovementKind("LOCATION_CHANGE", herdSubject: false);
+        LivestockRules.EnsureMovementKind("ENTRY", herdSubject: true);
+        LivestockRules.EnsureMovementKind("ADJUST", herdSubject: true);
+
+        var unknownAnimal = Assert.Throws<DomainException>(() => LivestockRules.EnsureMovementKind("REVERSAL", herdSubject: false));
+        Assert.Equal("livestock.movement_kind_invalid", unknownAnimal.Code);
+        var unknownHerd = Assert.Throws<DomainException>(() => LivestockRules.EnsureMovementKind("TELEPORT", herdSubject: true));
+        Assert.Equal("livestock.movement_kind_invalid", unknownHerd.Code);
+        var lotOnHerd = Assert.Throws<DomainException>(() => LivestockRules.EnsureMovementKind("LOT_CHANGE", herdSubject: true));
+        Assert.Equal("livestock.movement_kind_invalid", lotOnHerd.Code);
+        var reconcile = Assert.Throws<DomainException>(() => LivestockRules.EnsureMovementKind("RECONCILE", herdSubject: true));
+        Assert.Equal("livestock.movement_kind_invalid", reconcile.Code);
+
+        LivestockRules.EnsureReasonDirection("TRANSFER", "INTERNAL_TRANSFER", "TRANSFER");
+        LivestockRules.EnsureReasonDirection("LOCATION_CHANGE", "DEATH", "EXIT");
+
+        var mismatch = Assert.Throws<DomainException>(() => LivestockRules.EnsureReasonDirection("ENTRY", "DEATH", "EXIT"));
+        Assert.Equal("livestock.reason_direction_mismatch", mismatch.Code);
+        Assert.Contains("DEATH", mismatch.Message, StringComparison.Ordinal);
     }
 }

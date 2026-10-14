@@ -55,10 +55,15 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
                      @Origin, @OriginType, @OriginNotes, @Notes, @PaddockId, @FacilityId,
                      now(), @CreatedBy, 1);
 
-                insert into agro360.livestock_animal_identifiers
-                    (id, tenant_id, animal_id, kind, value, assigned_on, created_by)
+                insert into agro360.livestock_identifier_history
+                    (id, tenant_id, animal_id, identifier_type, identifier, valid_from, valid_until, change_reason, created_at, created_by)
                 values
-                    (@IdentId, @TenantId, @Id, 'TAG', @Tag, @BirthDate, @CreatedBy);
+                    (@IdentId, @TenantId, @Id, 'EAR_TAG', @Tag, @BirthDate, null, 'REGISTRATION', now(), @CreatedBy);
+
+                insert into agro360.livestock_identifier_history
+                    (id, tenant_id, animal_id, identifier_type, identifier, valid_from, valid_until, change_reason, created_at, created_by)
+                select gen_random_uuid(), @TenantId, @Id, 'RFID', @Rfid, @BirthDate, null, 'REGISTRATION', now(), @CreatedBy
+                where @Rfid is not null and trim(@Rfid) <> '';
 
                 insert into agro360.livestock_animal_events
                     (id, tenant_id, animal_id, event_type, occurred_on, data, created_at, created_by)
@@ -421,7 +426,7 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
                 select a.id, a.farm_id as FarmId, a.tag, a.rfid, a.species, a.breed, a.sex,
                        a.birth_date as BirthDate,
                        case a.status when 1 then 'ACTIVE' when 2 then 'QUARANTINE'
-                           when 3 then 'SOLD' when 4 then 'DEAD' when 6 then 'RESERVED' else 'SLAUGHTERED' end as Status,
+                           when 3 then 'SOLD' when 4 then 'DEAD' when 6 then 'RESERVED' else 'DISCARDED' end as Status,
                        a.current_weight_kg as CurrentWeightKg, a.last_weight_date as LastWeightDate,
                        a.withdrawal_until as WithdrawalUntil, a.version,
                        a.created_at as CreatedAt, cu.name as CreatedByName,
@@ -446,7 +451,11 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
             var total = await grid.ReadSingleAsync<long>().ConfigureAwait(false);
-            var items = (await grid.ReadAsync<AnimalDto>().ConfigureAwait(false)).ToArray();
+            // Mapeia pela linha POCO + ToDto() (mesmo padrao do detalhe logo abaixo): o registro
+            // AnimalDto tem ctor primario de 29 parametros com 12 opcionais e a materializacao
+            // direta por Dapper falhava em tempo de execucao ("no matching constructor").
+            var rows = (await grid.ReadAsync<AnimalDetailRow>().ConfigureAwait(false)).ToArray();
+            var items = rows.Select(r => r.ToDto()).ToArray();
             return new PagedResult<AnimalDto>(items, page, pageSize, total);
         }, cancellationToken);
     }
@@ -458,7 +467,7 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
                 """
                 select id, farm_id as FarmId, tag, rfid, species, breed, sex, birth_date as BirthDate,
                        case status when 1 then 'ACTIVE' when 2 then 'QUARANTINE' when 3 then 'SOLD'
-                           when 4 then 'DEAD' when 5 then 'SLAUGHTERED' else 'OBSERVATION' end as Status,
+                           when 4 then 'DEAD' when 5 then 'DISCARDED' when 6 then 'RESERVED' else 'UNKNOWN' end as Status,
                        current_weight_kg as CurrentWeightKg, last_weight_date as LastWeightDate,
                        withdrawal_until as WithdrawalUntil, version, category,
                        birth_date_estimated as BirthDateEstimated, origin, notes
@@ -685,7 +694,12 @@ public sealed class LivestockService(DatabaseExecutor database, ITenantContext t
         public bool BirthDateEstimated { get; init; }
         public string? Origin { get; init; }
         public string? Notes { get; init; }
-        public AnimalDto ToDto() => new(Id, FarmId, Tag, Rfid, Species, Breed, Sex, BirthDate, Status, CurrentWeightKg, LastWeightDate, WithdrawalUntil, Version);
+        public DateTimeOffset? CreatedAt { get; init; }
+        public string? CreatedByName { get; init; }
+        public DateTimeOffset? UpdatedAt { get; init; }
+        public string? UpdatedByName { get; init; }
+        public AnimalDto ToDto() => new(Id, FarmId, Tag, Rfid, Species, Breed, Sex, BirthDate, Status, CurrentWeightKg, LastWeightDate, WithdrawalUntil, Version,
+            CreatedAt: CreatedAt, CreatedByName: CreatedByName, UpdatedAt: UpdatedAt, UpdatedByName: UpdatedByName);
     }
 
     private sealed class BalanceRow

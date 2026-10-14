@@ -1,3 +1,262 @@
+## Incremento 2026-10-14 (Pecuária P4) — sanidade: protocolos dedicados + restrição derivada na execução + idempotência formal — **APROVADO (gates + regressões) · E2E próprio BLOCKED-environment no H7-pre**
+
+Branch `main`. Baseline: `79b59c9`. Delta desta fatia sobre o incremento anterior (tudo ainda **não commitado**, sem push/merge/publicação): `database/migrations/143_livestock_health_protocols.sql` + `database/agro360-postgres-full.sql` (143 embutida como bloco final, com 2 protocolos demo OPERATIONAL/MILK), `LivestockRules.cs` (`EffectiveRestrictionStatus` puro — EXPIRED derivado em toda leitura sem tocar no status gravado), `Livestock360Contracts.cs`, `LivestockHerdService.cs` (CRUD dedicado de protocolo: propósitos fechados incl. DEMO, janela/carência/tetos, 409 `livestock.protocol_version_conflict`), `Livestock360Service.cs` (`AddHealthAsync`: execução⇒restrição na mesma transação, carência do protocolo prevalece sobre o payload, 409 `restriction_overlap`, DEMO/zero-dias ⇒ sem restrição, replay idempotente pela chave normalizada), `Livestock360Controller.cs` (4 rotas `/api/livestock/protocols*`), `wwwroot/js/livestock.js` (aba Sanidade, sujeitos apenas-animal) + `agro-i18n.js` (4 idiomas), testes de contrato e `scripts/verify-livestock-p4-e2e.ps1` (harness novo H1–H10) + `scripts/verify-agro-journey-e2e.ps1` (gate de setup {11.25.0, 137–143}=8), além de docs (LIMITES §K itens 68–77, TRACEABILITY §P4, este checkpoint, matriz da jornada §P4, prompt próximo).
+
+Portas (programa §3):
+- Gates estáticos: `GATES_DONE build=0 arch=0 unit=0` (Arch 195/0 · Unit 412/0, `rebuild-gates.ps1`).
+- E2E próprio: `verify-livestock-p4-e2e.ps1` **BLOCKED-environment no H7-pre** — nas 2 execuções finais sob gate de janela saudável (3 leituras consecutivas de RAM ≥700 MB + probe do homolog <3 s) **H0→H6 passaram integralmente** e o pré-check de visibilidade repetiu a assinatura exata das 5 execuções prévias; H7–H10 ficaram bloqueados por esse pré-check. Última execução: `artifacts/livestock-p4-e2e-74a1f621c7164104b723586c12303357`; 1ª gateada: `artifacts/livestock-p4-e2e-38d601a9b20f4ecb8e0fd54b79c85bf6`.
+- Regressões: jornada A–J **132/0/0** (`agro-journey-e2e-91a22a67583f40ce846bc5af277298c4`, `-RebuildTemplate` → `pg-agro-template` em 143; gate {11.25.0, 137–143}=8); Compras **12/12** (`procurement-journey-e2e-1fc2a423b45e41469cdf5d18114a054d`); inspeção S1–S7 **todos PASS** (`inspection-recovery-e2e-8a7c5625679545d490aacc1bb2445c14`).
+- Gate visual (4 idiomas × 3 tamanhos): **BLOCKED** (certificado TP — item 41; registrado, nunca pulado; acumula com P1, P2 e P3).
+
+Notas de execução desta sessão (diagnóstico honesto do E2E P4 — nada esconder): a primeira execução falhou só no CASE booleano do PG18 (mesma discovery do P2; normalizado no harness). Nas execuções seguintes, **7 falhas idênticas no H7-pre** (pré-check de visibilidade adicionado ao harness; 5 em 2026-10-13 + 2 em 2026-10-14, estas últimas já sob gate de janela saudável): três sessões psql curtas (~9 s) retornavam `cnt_tenant=0` **e** `cnt_pk=0` (PK pura, sem filtro de tenant) para o animal C (`…152`), com contexto exato resolvido no mesmo psql (`current_database|inet_server_port` confere) — e o dump completo logo depois mostrava a linha presente (`deleted_at NULL`, status 1, fazenda Retiro). Nas duas execuções gateadas, **H0→H6 passaram integralmente** com latências normais e postgres.log limpo (mig 143 idempotente, EXPIRED derivado no KPI/lista/banco, CRUD do protocolo com todas as validações 422/409, execução⇒restrição na mesma transação com carência do catálogo prevalecendo, replay idempotente, overlap 409, 409 sem gravação) antes do H7-pre repetir a assinatura exata. Hipóteses de produto refutadas com prova: corrupção de literal (bytes hex perfeitos, tlen/alen=36); db/porta errada (ctx exato); filtro de tenant (PK pura também 0); índice obsoleto (EXPLAIN = Seq Scan em tabela de 4 linhas; sonda silenciosa pré/pós-REINDEX em clone e template = 1 em todos os pontos). O experimento de amostragem viva (`pg_stat_activity` 20×1 s sob repro fiel do cenário) nunca completou a janela de amostragem (os clusters de sonda morriam antes) e foi substituído pela própria reexecução integral sob gate, por ser a prova definitiva do contrato. Evidência ambiental consolidada em 2 dias: RAM livre oscilando 0–4,5 GB; OOM killer do Windows (`0xC0000142`) matando workers do PG e processos PowerShell repetidamente (inclusive um backend ocioso às 04:59 de 2026-10-14); crash noturno de ~10 h do cluster do homolog; processos PowerShell travando 30 min–2 h entre statements mesmo com ≥1,7 GB livres. Incidentes de ferramenta resolvidos na mesma sessão: (1) limpador noturno apagava subdiretórios **vazios** do data dir do template em `%TEMP%` (boot FATAL "could not open directory") — dados movidos para fora do TEMP (`AppData\Local\pg-journey-template`) com junction no caminho antigo + restauração dos diretórios padrão via diff com `initdb` novo (só infraestrutura de teste; zero mudança de produto); (2) teto GC do host da API no harness 900 MB → 700 MB + workstation GC (`gcServer=0`) para caber na RAM da máquina. Escape-hatch cumprido: cota de 2 reexecuções integrais em janela saudável esgotada com assinatura exata ⇒ H7–H10 ficam registrados **BLOCKED-environment** (nunca pulados em silêncio); patch de REINDEX rejeitado (teoria do índice refutada) e o harness mantém o pré-check single-session de 3 tentativas com `h7-pre-debug.txt` no caminho de falha.
+
+Antes dele, em 2026-10-13: **Pecuária P3 (pesagens/desempenho**, mig 142) — ver a seção seguinte.
+
+## Incremento 2026-10-13 (Pecuária P3) — pesagens/desempenho: trilha de evidência, idempotência formal e desempenho determinístico — **APROVADO (E2E)**
+
+Branch `main`. Baseline: `79b59c9`. Delta desta fatia sobre o incremento anterior (tudo ainda **não commitado**, sem push/merge/publicação): `database/migrations/142_livestock_weighing_precision.sql` + `database/agro360-postgres-full.sql` (142 embutida como bloco final), `Livestock360Contracts.cs` (`MeasurementPrecision` + campos de evidência nos comandos), `LivestockHerdService.cs` (`RecordWeighingAsync`: chave normalizada + pré-check pela coluna + sujeitos coletivos 404 + responsável via `EnsureResponsibleAsync` + tetos de evidência locais `OptEvidence` + conversão explícita + `previous_weight_kg` consultado antes do insert; `CorrectWeighingAsync`: responsável validado, evidência copiada, original marcada; `ListWeighingsAsync`: projeção expandida — tag/equipamento/responsável/lote/justificativa/previous/correctedFrom/precisão/conversão; `PerformanceAsync`: tie-break `weighed_at, id` e ganho NULL em intervalo zero), `LivestockDashboardContractTests.cs` (Fact novo fixando o comportamento `DateOnly` do `LivestockRules.AverageDailyGain`), `wwwroot/js/livestock.js` (form de pesagem: equipamento/precisão/responsável), `scripts/verify-livestock-p3-e2e.ps1` (harness novo W0–W11) + `scripts/verify-agro-journey-e2e.ps1` (gate de setup {11.25.0, 137–142}=7 + upgrade idempotente incluindo a 142), além de docs (LIMITES §J itens 52–67, TRACEABILITY §P3, JOURNEY-MATRIX fecho §P3).
+
+Portas (programa §3) — todas verdes nesta data:
+- Gates estáticos: `GATES_DONE build=0 arch=0 unit=0` (Arch 187/0 · Unit 392/0, `rebuild-gates.ps1`).
+- E2E próprio: `verify-livestock-p3-e2e.ps1` **74 PASS / 0 FAIL / 0 BLOCKED** (W0 migration/baseline; W1–W2 trilha de evidência; W3 replay; W4 intervalo zero; W5 vazio≠zero; W6 weight_limits/review; W7 coletivas + validações; W8 correção auditada; W9 coexistência com o legado; W10 acesso tenant/unidade/permissão; W11 reconciliação api==db) — `artifacts/livestock-p3-e2e-6c12c9fb08824f618c2a2b16335bdd45`.
+- Regressões: jornada A–J **132/0/0** (`agro-journey-e2e-146cc0ba740e4195aaaff5561a5a7513`, com `-RebuildTemplate` → `pg-agro-template` reconstruído em 142); Compras **12/12** (`procurement-journey-e2e-e97166b4fd14425db341b4ed6ba97c2d`); inspeção S1–S7 **todos PASS** (`inspection-recovery-e2e-1e4f930ee40845c58bd8f24aca0fd975` — a execução de 02:36 UTC caiu só em S7 por OOM ambiental; reexecução com harness inalterado passou).
+- Gate visual (4 idiomas × 3 tamanhos): **BLOCKED** (certificado TP — item 41; registrado, nunca pulado; acumula com P1 e P2).
+
+Notas de execução desta sessão (causas raiz de harness/ambiente, não de produto): o E2E do P3 exigiu correções de harness antes do verde — (a) `.ps1` sem BOM lido como cp1252 quebra em literais não-ASCII (resolvido: BOM); (b) `'literal' + $var` em GET liga o `+` ao Body (usar interpolação); (c) `-split` inline sobre saída de comando não separa (duas instruções); (d) `${cLot.Body.id}` interpola vazio neste PowerShell 5.1 (usar `$($expr)`); (e) expectativa de contagem final esquecia a linha coletiva do seed (coletivas finais = 3, não 2); (f) invariante de chaves agrupava os NULLs do seed como "duplicadas" — o unique parcial ignora NULLs por construção, a query foi alinhada. Inspeção S1–S7: a execução de 02:36 UTC falhou **só em S7** por OOM ambiental — o worker de recuperação (processo fora da API) foi morto junto do host (log `worker1.out.log` termina a 02:35:35, logo após as adocões de S2/S5 provarem o caminho vivo; a adocão inicial do S7 esperou 30s sem processo para adotá-la); S1–S6 verdes no mesmo build. Reexecução (harness inalterado) passou integralmente: `inspection-recovery-e2e-1e4f930ee40845c58bd8f24aca0fd975`.
+
+Antes dele, em 2026-10-13: **Pecuária P2 (movimentações: idempotência formal + motivo validado**, mig 141); em 2026-10-12: **P1 (ledger canônico de identificadores**, mig 140), **Bloco B (§7–§8 comercialização do lote da safra**, mig 139) e **resultado líquido confiável + Central de Trabalho agrícola + interface de recuperação + governança de papéis** (migs 137/138).
+
+## Incremento 2026-10-13 (Pecuária P2) — entradas/saídas/movimentações: idempotência formal + motivo validado no catálogo — **APROVADO (E2E)**
+
+Branch `main`. Baseline: `79b59c9`. Delta desta fatia sobre o incremento anterior (tudo ainda **não commitado**, sem push/merge/publicação): `database/migrations/141_livestock_animal_movement_idempotency.sql` + `database/agro360-postgres-full.sql` (141 embutida como bloco final), `LivestockRules.cs` (`EnsureMovementKind`/`EnsureReasonDirection`), `LivestockHerdService.cs` (`RegisterMovementAsync` reescrita: conjunto fechado de kind, normalização da chave, pré-check pela coluna `idempotency_key` em vez de `notes`, helpers novos `EnsureReasonCatalogAsync`/`EnsureResponsibleAsync`, chave persistida em `MoveAnimalAsync`/`MoveHerdAsync`; correção 42P08 nos 5 sítios de listagem com sentinels `DateOnly.MinValue/MaxValue`), `LivestockDashboardContractTests.cs` (Fact novo das regras), `scripts/verify-livestock-p2-e2e.ps1` (harness novo M1–M6) + `scripts/verify-agro-journey-e2e.ps1` (gate de setup fixado a {11.25.0, 137–141}=6 + reexecução idempotente da 141 no bloco de upgrade), além de docs (LIMITES §I, TRACEABILITY seção P2, este checkpoint, matriz da jornada §P2, prompt próximo).
+
+### Aprovado — E2E do P2 (jornada entradas/saídas/movimentações): **68 PASS / 0 FAIL / 0 BLOCKED**
+
+Execução em cluster PG18 descartável com template `full.sql` incl. 141 (rebuilt): `artifacts/livestock-p2-e2e-4b60a16e571546bcb5005e04f15cea27`. Em resumo:
+
+- M1: migration 141 idempotente (coluna + unique parcial presentes; reexecução não duplica versão/dados; linha legada do seed intacta com key NULL — sem backfill inventado).
+- M2: jornada individual — registro D/E; TRANSFER interna c/ chave → 201 + movimento c/ chave + animal na nova propriedade + evento TRANSFER; replay mesma chave → mesmo id, sem duplicar trilha; **chave diferente com notas iguais não deduplica** (prova do mecanismo novo); evento retroativo → 409 `retroactive_conflict`; LOCATION_CHANGE move o piquete; EXIT+DEATH → status 4 no banco lido `DEAD` na API.
+- M3: bateria de validações — kind fora do conjunto 422 `movement_kind_invalid`; motivo fora do catálogo 422 `reason_unknown`; direção incompatível 422 `reason_direction_mismatch`; motivo inativo 422 `reason_inactive` (desativa/reativa via psql); SALE sem reserva 409 `sale_requires_reservation`; responsável inexistente 404; sujeito misto/ausente 422.
+- M4: grupo QUANTITY (saldo inicial 40 asserted) — TRANSFER 5 c/ chave → 35 + grupo muda de propriedade + replay mesmo id sem segundo débito; EXIT 1 → 34; saída acima do saldo 409 `negative_balance`; LOT_CHANGE em grupo 422; ENTRY+DEATH em grupo 422.
+- M5: acesso — anônimo 401; leitor (apenas `livestock.read` + escopo FARM sede + módulo contratado) lê 200 e vê a linha do seed no escopo; header `X-Farm-ID` com unidade fora do escopo → 403 `forbidden_unit_scope`; escrita do leitor → 403 sem mutar estado.
+- M6: reconciliação api==db (posição final do animal × trilha × GET 360), invariante uma-linha-por-chave nas duas tabelas (0 duplicatas), lista de movimentos expõe a jornada do animal, snapshot final + dashboard 200.
+
+### Histórico de execuções (honesto — nada esconder)
+
+- Run 1 (com `-RebuildTemplate`): falhou na asserção **do próprio harness** em M2 — o registro do animal já escreve um evento `ENTRY` (fluxo do P1), então D tinha 2 eventos (ENTRY+TRANSFER) e a asserção esperava 1. Invariante corrigida para contar eventos `TRANSFER` (o replay não duplica evento de movimentação). Zero mudança de produto.
+- Run 2: falhou em M3 — psql respondeu `true` para `boolean::text`: **descoberta de ambiente** — o Postgres 18 imprime boolean como `true`/`false` (antes `t`/`f`). Reproduzido isoladamente no cluster template (`pg_typeof` = boolean, cast retornando `true`); harness normalizou com `CASE` explícito.
+- Run 3: falhou em M5 — leitor GET `/api/livestock/movements` → **500 (defeito latente de produto)**: `Npgsql 42P08 could not determine data type of parameter $4` — `ListMovementsAsync` vinculava `@From`/`@To` como `DateOnly?` nulos sem tipo; qualquer chamada sem datas (incl. a aba de movimentações da SPA) 500. Mesmo padrão latente em mais 3 métodos (weighings/performance/cost summary). Corrigido na causa raiz com sentinels Min/MaxValue (5 sítios); gates revisados verdes.
+- Run 4: falhou em M5 — expectativa de 403 via **query** `farmId` fora do escopo: auditoria do `TenantContextMiddleware` confirmou que o contrato de escopo de unidade opera pelo **header `X-Farm-ID`**; a query é filtro de listagem (comportamento de plataforma preexistente — LIMITES #48). Asserção realinhada ao mecanismo garantido.
+- Run 5: **APROVADO** 68/0/0 — evidência acima; nenhuma recuperação OOM da API necessária nesta execução (teto de heap ativo).
+
+### Aprovado — regression gates e regressões
+
+- Gates: `GATES_DONE build=0 arch=0 unit=0` (architecture 187/187 · unit 391/391 — o unit sobiu para 391 com o novo Fact `MovementRulesValidateClosedKindSetAndCatalogReasonDirection`).
+- Jornada A–J: **132/0/0 APROVADO** (`artifacts/agro-journey-e2e-c440b7b761014793ad1da0456a3d237a`) — executada com `-RebuildTemplate` (template `pg-agro-template` rebuildido com a 141); gate de setup agora valida {11.25.0, 137.0.0 … 141.0.0} = 6 versões + idempotência real das migrations incluindo a 141.
+- Compras: **12/12 etapas PASS** (`artifacts/procurement-journey-e2e-edb3b9d5f9864ff08ff0dccbb582b8ed`).
+- Recuperação de inspeções S1–S7: **tudo PASS** (`artifacts/inspection-recovery-e2e-659ffc526779449494537da3381fb504`) — **auto-recuperação OOM da API usada 1× ao vivo** (conn-refused em `POST /api/v1/agriculture/seasons` → restart na mesma porta, pedido repetido 1×, segue 100% PASS).
+
+### Aprovado — migration 141 e upgrade documentado
+
+- `141_livestock_animal_movement_idempotency`: aditiva (1 coluna + unique parcial; **sem backfill** — `notes` nunca guardava chave e a linha legada continua com key NULL); embutida no `full.sql` (bloco final, após o commit da 140); templates `pg-agro-template` (journey) e `pg-journey-template` (P2/Compras/inspeção) rebuildidos com ela.
+- **Upgrade `agro360_homolog`: 136 → 137 → 138 → 139 → 140 → 141** (homolog @ 11.25.0/135; pré-validação read-only da 141 em 2026-10-13: tabela presente pela mig 068 com **1 linha** existente → key NULL pós-migration (zero colisão por construção do unique parcial), coluna/índice alvo ausentes, linha de versão `141.0.0` ausente, tabela irmã `livestock_herd_movements` já com o padrão; `11.25.0` presente confirmando o estado-base). Aplicação efetiva pendente.
+
+### Limites documentados (ver `docs/LIMITES.md` §I, itens 42–51)
+
+Idempotência por coluna sem backfill (legacy NULL) · replay por chave apenas (sem fingerprint de conteúdo) · select de motivos hardcoded na SPA (API-first; seletor dinâmico backlog) · etapas saída/trânsito/recebimento são P9 (TRANSFER atômico) · REVERSAL/RECONCILE só sistema · motivo validado no catálogo + bug latente `coalesce(@Sex,'ENTRY')` no CRUD de catálogo anotado · `farmId` query é filtro (escopo via header `X-Farm-ID`) · defeitos corrigidos (42P08×5; discovery boolean PG18) · upgrade homolog 136→…→141 · visual BLOCKED registrado.
+
+### Bloqueado / pendente
+
+- **Homologação visual do browser (gate visual do P2, 4 idiomas × 3 tamanhos)**: segue bloqueado pelo certificado (`Confiar-cert-agro360.bat`, thumbprint `C05DA1CA…`); registrado como BLOCKED por programa §3 — nunca pulado (acumula com o gate do P1).
+- **Pecuária P3 (pesagens/desempenho)**: próxima jornada; auditoria do estado vigente antes de começar.
+
+## Incremento 2026-10-12 (Pecuária P1) — rebanho + identificação: ledger canônico de identificadores — **APROVADO (E2E)**
+
+Branch `main`. Baseline: `79b59c9`. Delta desta fatia sobre o incremento anterior (tudo ainda **não commitado**, sem push/merge/publicação): `database/migrations/140_livestock_identifier_history_backfill.sql` + `database/agro360-postgres-full.sql` (140 embutida), `LivestockIdentifierLedger.cs` (writer canônico novo), `LivestockService.cs` (registro → ledger; listagem mapeada via linha POCO + `ToDto()`), `LivestockHerdService.cs` (`ChangeTagAsync` com motivo obrigatório; `ChangeRfidAsync` nova; lock row +`rfid`; detail `identifiers` → histórico; CASE de status unificado), `Livestock360Service.cs` (`UpdateAnimalAsync` motivo fixo `EDIT_CADASTRAL`; CASE unificado), `Animal.cs` (enum `Slaughtered→Discarded`), `Livestock360Contracts.cs` (`ChangeRfidCommand`), `Livestock360Controller.cs` (rota `POST api/livestock/animals/{id}/rfid`), `agro-i18n.js` (14 chaves × 4 idiomas) + `livestock.js` (mapa de status 4 idiomas, pill, tabela de identificadores no detalhe), `scripts/verify-livestock-p1-e2e.ps1` (harness novo L1–L9) + `scripts/verify-agro-journey-e2e.ps1` (gate de setup fixado a 140 + idempotência da 140 no bloco de upgrade), mais docs (LIMITES §H, TRACEABILITY seção P1, este checkpoint, prompt próximo).
+
+### Aprovado — E2E do P1 (jornada rebanho + identificação): **68 PASS / 0 FAIL / 0 BLOCKED**
+
+Execução em cluster PG18 descartável com template `full.sql` incl. 140 (rebuilt): `artifacts/livestock-p1-e2e-8e7549bcc87b4d8eaddbd8b861cdbf3b`. Em resumo:
+
+- L1: backfill 140 idempotente (reexecução 8→8 linhas; ≤ 1 linha aberta por animal×tipo; seeds c/ EAR_TAG + INTERNAL vigentes, motivo `REGISTRATION`).
+- L2: detail expõe o histórico canônico (mesmos aliases legados → compat UI) + nascimento conhecido×estimado explícito.
+- L3: anônimo 401; leitor dedicado (apenas `livestock.read` + módulo contratado + escopo FARM) lê 200 / escreve 403 (registro e troca de brinco).
+- L4: registro abre EAR_TAG (+RFID quando presente) **no ledger, não na auxiliar legada** (aux rows = 0 para os animais E2E); tag duplicada case-insensitive → 409 `livestock.tag_not_unique`.
+- L5/L6: trocas dedicadas de brinco e de RFID (rota nova) — 204, encerra a linha anterior e abre a nova na transação, evento com anterior→atual+motivo, replay estável (1 linha aberta), 422 `Reason.required`, 409 por conflito.
+- L7: PUT cadastral alimenta o ledger c/ `EDIT_CADASTRAL`, valida unicidade amigável e permite remover o RFID (linha fechada, sem substituto).
+- L8: descarte (handling `DISCARD` → status 5 no banco) lido como `DISCARDED` e reserva (status 6) como `RESERVED` **nas quatro superfícies** (lista v1, detalhe v1, GET 360, detail 360) = 8/8.
+- L9: reconciliação api==db (tag/rfid vs ledger vigente vs detail), snapshot final do ledger, dashboard 200.
+
+### Histórico de execuções (honesto — nada esconder)
+
+- Primeira execução (com `-RebuildTemplate`): falhou em L3 — leitor 403 **`forbidden_unit_scope`**: o middleware exige ≥ 1 linha em `identity_user_unit_scopes`; o seed concede `'ALL'` apenas aos usuários existentes, e o leitor é criado em runtime → fixture ganhou escopo **FARM** na fazenda de teste (auto-seleção de escopo único exercitada de brabo).
+- Run 3 (log `p1-e2e-run3`): falhou em L3 — `AnimalDto` não materializava na listagem ("no matching constructor"): **defeito latente pré-existente** (endpoint nunca havia passado por E2E); corrigido na causa raiz alinhando ao padrão do detalhe (linha POCO + `ToDto()`); o by-name (`createdAt`/`createdByName`/…) passou a constar também na listagem.
+- Run 4: falhou numa query **do próprio harness** (precedência do Postgres: `->>` e `||` têm precedência igual e associam à esquerda — `a->>'x' || b->>'y'` vira `(a->>'x' || b)->>'y'`); corrigido com parênteses por extração. Zero mudança de produto entre as execuções; cada falha foi isolada antes de qualquer estado além dos fixtures.
+- Run 5: **APROVADO** 68/0/0 — evidência acima; nenhuma recuperação OOM da API foi necessária (teto de heap do GC ativo desde o run 2).
+
+### Aprovado — regression gates e regressões
+
+- Gates: `GATES_DONE build=0 arch=0 unit=0` (architecture 187/187 · unit 390/390) após todas as edições do P1.
+- Jornada A–J: **132/0/0 APROVADO** sobre template fixado a 140 (`artifacts/agro-journey-e2e-0f99060fc6f445b59abce8af609add5f`) — gate de setup agora valida {11.25.0, 137–140} + idempotência das migrations incluindo a 140. Nota honesta: o processo terminou com exit-code 1 **após** o banner APROVADO (zona de teardown sob ~0 MB de RAM livre; padrão conhecido da máquina) — a evidência canônica é `result.txt` (132/0/0) + as 132 linhas PASS no transcript.
+- Compras: **12/12 etapas PASS** (`artifacts/procurement-journey-e2e-4a875726daff4e7c9a806597004b0f96`).
+- Recuperação de inspeções S1–S7: **tudo PASS** (`artifacts/inspection-recovery-e2e-c3add84e30174d00bfcf422d270a40b0`) — adoção de origem commitada fora da API, PENDING_MODEL c/ backoff, dead-letter c/ motivo + re-disparo auditado, concorrência 1 intent/1 run e failover de lease, sem regressão sobre template já fixado a 140.
+
+### Aprovado — migration 140 e upgrade documentado
+
+- `140_livestock_identifier_history_backfill`: **zero DDL**; INSERT `ON CONFLICT DO NOTHING` contra o próprio unique parcial do ledger; embutida no `full.sql`; templates `pg-journey-template` (P1/Compras/inspeção) e `pg-agro-template` (journey) rebuildidos com ela.
+- **Upgrade `agro360_homolog`: 136 → 137 → 138 → 139 → 140** (homolog hoje @ 11.25.0/135; pré-validação read-only 2026-10-12: ledger existente com 0 linhas, índice parcial presente, 4 animais-fonte → backfill esperado 8 linhas, zero colisão). Aplicação efetiva pendente. Nota de versão descoberta na validação: migs ≤ 135 registram versões de **release** (mig 135 = linha `11.25.0`); migs 136+ usam número de arquivo — por isso `max(version)` léxico em `platform_schema_versions` é enganoso (`9.8.0`).
+
+### Limites documentados (ver `docs/LIMITES.md` §H, itens 36–41)
+
+SISBOV fora do ledger (tipos travados INTERNAL/EAR_TAG/RFID) · auxiliar legada frozen para escrita · PUT usa motivo fixo `EDIT_CADASTRAL` · troca dedicada sem motivo → 422 · `livestock.js` pt-BR exceto seções tocadas · dois defeitos corrigidos na causa raiz (materialização do list + rótulos de status) · visual BLOCKED registrada.
+
+### Bloqueado / pendente
+
+- **Homologação visual do browser (gate visual do P1, 4 idiomas × 3 tamanhos)**: segue bloqueado pelo certificado (`Confiar-cert-agro360.bat`, thumbprint `C05DA1CA…`); registrado como BLOCKED por programa §3 — nunca pulado.
+- **Pecuária P2 (entradas/saídas/movimentações)**: próxima jornada; auditoria do estado vigente antes de começar.
+
+### Notas de operação novas nesta rodada
+
+- Com ~0–1 MB de RAM livres, até **clusters Postgres temporários** morrem de `0xC0000142` (OOM) no meio de debug — rodar E2Es/debug **sequencialmente** e em background; kill de `VBCSCompiler` libera ~400 MB pontualmente.
+- O novo harness herdou auto-recuperação OOM + teto de heap; nos runs 2–5 nenhuma queda da API foi necessária.
+- `identity_user_unit_scopes` (middleware, não JWT): todo usuário de teste criado em runtime precisa de ≥ 1 escopo (`ALL`/`ORGANIZATION`/`FARM`), senão 403 `forbidden_unit_scope` **antes** da política de permissão.
+
+### Resultados (aprovado / falhou / bloqueado / não-executado)
+
+| Item | Resultado |
+|---|---|
+| P1 ledger canônico de identificadores (registro/troca dedicada/PUT) | **Aprovado (E2E L4–L7)** |
+| Migration 140 (backfill idempotente, zero DDL) + full.sql | **Aprovado** (instalação limpa + reexecução no cluster descartável) |
+| Status canônico DISCARDED/RESERVED nas 4 superfícies | **Aprovado (E2E L8, 8/8)** |
+| E2E do P1 completo (L1–L9) | **Aprovado** 68/0/0 |
+| Gates estáticos (build/arch/unit) | **Aprovado** (0/0/0 · 187 · 390) |
+| Regressões A–J / Compras | **Aprovadas** (132/0/0 · 12/12) |
+| Regressão inspeção S1–S7 | **Aprovada** (todos os cenários PASS; `inspection-recovery-e2e-c3add84e30174d00bfcf422d270a40b0`) |
+| Homologação visual (certificado) | **Bloqueado** (ação única do usuário) |
+| Upgrade homolog 136→…→140 | **Não executado** (documentado e pré-validado read-only) |
+
+---
+
+## Incremento 2026-10-12 (Bloco B) — §7–§8 comercialização do lote da safra → venda + resultado comercial — **APROVADO (E2E cenário J)**
+
+Branch `main`. Baseline: `79b59c9`. Delta desta fatia sobre o incremento anterior (tudo ainda **não commitado**, sem push/merge/publicação): `database/migrations/139_fulfillment_acceptance_receivable_link.sql` + `database/agro360-postgres-full.sql`, `LogisticsService.cs` (emissão de recebível no aceite formal), `HarvestService.cs` (`GrossRevenue` + indicadores `commercial-revenue-gross`/`commercial-revenue-returns`/`commercial-margin`), `IntegratedEvolutionIntegrityTests.cs` (evolução do guard financeiro), `scripts/verify-agro-journey-e2e.ps1` (cenário J + gates de setup 137/138/**139** + auto-recuperação OOM da API) e `scripts/verify-procurement-journey-e2e.ps1` / `verify-inspection-recovery-e2e.ps1` (mesma auto-recuperação), mais docs (matriz da jornada seção Bloco B, LIMITES seção G, TRACEABILITY seção Bloco B, este checkpoint, prompt próximo).
+
+### Aprovado — jornada A–J: **132 PASS / 0 FAIL / 0 BLOCKED**
+
+Execução aprovada (run 7) em cluster PG18 descartável com template `full.sql` incl. 139: `artifacts/agro-journey-e2e-ca8b7b6ee7f64d69bcf73694fcae8cc4`. Cenário J (comercial) em resumo:
+
+- Política de preço: sem tabela ativa → 422 `price_policy_missing`; desconto > `maximum_discount` → 422 `discount_exceeded`; pedido 30.000 un @ 1,10 = 33.000,00.
+- Estados do pedido (lei de domínio existente — máquina `OrderTransitions`, sem mudança): criação operacional 422; `DRAFT → UNDER_REVIEW`; operador sem `commercial.*` aprovar → 403; admin → `APPROVED`.
+- Reserva: invariante real `available − reserved = 0` (débito físico do `available` só no dispatch); replay concorrente 1|1; chave repetida c/ outro conteúdo → 409.
+- Dispatch: movimento SALE único no lote (1|20.000); replay idempotente; versão stale → 409.
+- Aceite × faturamento: tentativa `FAILED` **sem** faturamento; aceite parcial 18.000/20.000 → receivable **19.800,00** `OPEN` com `fulfillment_attempt_id` + remessa `RETURN_PENDING` (recusado 2.000); replay não duplica; finance 200 c/ `finance.read` / 403 sem.
+- Resultado comercial: composição 30.000 | 20.000 | `FULFILLMENT`; indicadores bruto/reconhecida/returns/margem = **19.800,00 / 19.800,00 / 0 / 19.800,00 − apropriados(0)**, reconciliados **api==db** (psql direto); settle manual 204 `RECEIVED`|saldo 0 **sem alterar** receita reconhecida.
+
+### Histórico de execuções (honesto — nada esconder)
+
+- Runs 2, 4 e 5: API morta **silenciosamente pelo OOM killer do SO** (RAM ~1 GB livre contended c/ WSL+Chrome+IDEs; sem WER/evento CLR; `api.err.log` vazio) → execuções abortadas em cascade; diagnóstico completo registrado na época.
+- Run 6: auto-recuperação nova (restart na mesma porta só em *connection refused*, máx. 3×, retry exato de 1 vez) absorveu uma morte **no meio do cenário J** sem cascade.
+- Run 7: **APROVADO** 132/0/0 — evidência acima.
+- Pós-aprovação, correção **cosmética** única no harness (apenas o texto do detalhe de uma asserção): neste build do PS 5.1, `${arr[i]}` e `${obj.prop}` dentro de string dupla interpolam como **vazio** (provado empiricamente: `BRACE_STYLE=[db(net|bruto)=| api=]` vs `SUBEXPR_STYLE=[...19800.0000 api=19800]`). A condição da asserção usa expressões diretas (`[decimal]$dbRevParts[0]`), não interpolação → o PASS de `J:resultado-reconciliado-com-db` **não é vazio** (e o assert anterior já fixava `iNet.value`=19.800 pela sintaxe funcional `$()`). Corrigido para `$($…)` e validado pelo parser; zero mudança de lógica.
+
+### Aprovado — regression gates e regressões
+
+- Gates: `GATES_DONE build=0 arch=0 unit=0` (architecture 187/187 · unit 390/390), com o teste `JourneyWritersNeverWriteFinancialOrFiscalTables` evoluído (aceite DEVE escrever `finance_receivables.fulfillment_attempt_id`; dispatch/comercial NÃO podem tocar finance/fiscal/billing).
+- Compras **12/12** (`artifacts/procurement-journey-e2e-e9ccde19f270413a931e4b6869bd10c5`, 2026-10-12 12:34 UTC, schema 11.24.0). Nota: a 1ª tentativa desta rodada morreu de OOM entre o probe TCP e o primeiro HTTP — mesmo padrão do journey; correção = auto-recuperação portada para os dois harnesses de regressão (mesma regra). A 2ª tentativa passou sem nem usá-la.
+- Recuperação de inspeções **S1–S7 todos passam** (`artifacts/inspection-recovery-e2e-d9062554213249c9a4a73857f47bcd36`) — e **usou a nova auto-recuperação ao vivo** 1× (`[api-down] conexao recusada em POST /api/v1/agriculture/seasons; reinicio 1`), confirmando o mecanismo fora do harness do journey.
+
+### Aprovado — migration 139 e upgrade documentado
+
+- `139_fulfillment_acceptance_receivable_link`: aditiva, transacional, idempotente; coluna nula por padrão (histórico intocado); FK composta por tenant; unique parcial ≤ 1 recebível/tentativa. Installation limpa + upgrade validados no cluster do E2E (gates de setup {11.25.0, 137.0.0, 138.0.0, 139.0.0}).
+- **Upgrade `agro360_homolog`: 136 → 137 → 138 → 139** (homolog hoje @ 11.25.0/135; precondições limpas validadas read-only). Aplicação efetiva pendente.
+
+### Limites documentados (ver `docs/LIMITES.md` §G, itens 29–36)
+
+OPEN nunca auto-liquidado · retornos consomem só a pool recusada · margem sobre alocações CONFIRMED (custo reconhecido sem alocação fica fora) · quirk pré-existente do corte de receita (pendência → UNAVAILABLE global, null ≠ 0) · faturamento em `unit_price` sem rateio do desconto da linha · dedup cross-path do triplo modelo pendente (formaliza em P9) · upgrade 136→…→139 não aplicado · auto-recuperação OOM dos E2Es.
+
+### Bloqueado / pendente
+
+- **Homologação visual do browser**: continua bloqueada pelo certificado (`Confiar-cert-agro360.bat`, thumbprint `C05DA1CA…`); browser somente via `https://192.168.0.10:7080`.
+- **§9 lotes repetidos/safras recorrentes**: não executado (próximo após Pecuária P1–P10, se mantida a fila).
+- **Pecuária P1–P10 / Governo360 G1–G10**: nada executado.
+
+### Notas de operação novas nesta rodada
+
+- OOM killer mata o host .NET da API **sem rastro** (nem WER, nem evento CLR, log abrupto/vazio) quando RAM livre ~1 GB; Postgres sobrevive; tokens JWT stateless ⇒ restart na mesma porta é seguro; só re-tentar quando a conexão foi **recusada** (pedido certamente não processado). Implementado nos 3 harnesses E2E.
+- PS 5.1: `${arr[i]}` / `${obj.prop}` interpolam **vazio** neste host (nome literal entre chaves) — usar `$($expr)`; asserções nunca podem depender de string interpolation para o valor testado.
+- `inventory_stock_movements.unit` tem FK p/ `platform_units.code` **case-sensitive**: enviar `'kg'` (maiúsculo falha) — já corrigido nas duas cmds de fulfillment do harness.
+
+### Resultados (aprovado / falhou / bloqueado / não-executado)
+
+| Item | Resultado |
+|---|---|
+| Bloco B §7–§8 (venda + recebível por aceite + resultado comercial) | **Aprovado (E2E J)** |
+| Jornada completa A–J | **Aprovado** 132/0/0 |
+| Migration 139 + full.sql + gates de setup | **Aprovado** (instalação limpa + upgrade em cluster descartável) |
+| Teste de arquitetura evoluído + gates estáticos | **Aprovado** (build=0 arch=0 unit=0) |
+| Regressões Compras / inspeção | **Aprovadas** (12/12 · S1–S7) |
+| Homologação visual (certificado) | **Bloqueado** (ação única do usuário) |
+| Upgrade homolog 136→…→139 | **Não executado** (documentado e pré-validado) |
+| §9 · Pecuária P1–P10 · Governo360 G1–G10 | **Não executado** (fila) |
+
+### Próxima jornada
+
+**Pecuária P1 (rebanho/identificação)** por `docs/PECUARIA-PROGRAMA-P1-P10.md` (auditoria de entrada concluída; re-auditada o estado vigente antes de executar; portas por sprint + regressões A–J/Compras/inspeção preservadas). Depois P2→P10; depois Governo360 G1→G10.
+
+---
+
+## Incremento 2026-10-12 — resultado líquido confiável da safra, Central de Trabalho agrícola, interface de recuperação, governança de papéis × contratação + roadmap Pecuária P1–P10
+
+Branch `main`. Baseline desta execução: `79b59c9` ("novos itens"). A árvore possui o **delta não-commitado** desta entrega (sem push/merge/publicação): `SeasonCostService.cs` (netting bruto×estornado×líquido em detalhe/lista/overview/CSV/fechamento + parâmetros tipados), `FieldOperationsService.cs` (estorno parcial cumulativo + upsert REVERSAL + guards), `Agriculture360Contracts.cs`/`InspectionContracts.cs`, `Agriculture360Service.cs` (dashboard `recognizedNetCost`), `CycleVerificationService.cs`/`IntelligenceService.cs` (rollups líquidos), `WorkManagementService.cs` (ramos `CUSTODY_PENDING`/`RESOURCE_UNASSIGNED`/`INSPECTION_PENDING`/COST_PENDING líquido + `PermissionsFor`), `OperationalInspectionTrigger.cs` (situação/canRedispatch/motivo obrigatório/ator autenticado), `SaasService.cs` (validação de contrato no `SaveRoleAsync` + mensagens distintas suspenso×não-contratado), migrations **137/138** + `full.sql`, `scripts/verify-agro-journey-e2e.ps1` (cenários G/H/I + gates de setup 137/138 + teto GC da API) e docs (matriz da jornada, LIMITES, checkpoints, rastreabilidade, `docs/PECUARIA-PROGRAMA-P1-P10.md`, prompt próximo).
+
+### Aprovado — jornada agrícola ampliada (cenários A–I): **103 PASS / 0 FAIL / 0 BLOCKED**
+
+`scripts/verify-agro-journey-e2e.ps1` em cluster PG18 descartável (template full.sql com 137+138; gates de setup verificam presença das versões {11.25.0, 137.0.0, 138.0.0} + idempotência real das duas migrations). Execução 2026-10-12, evidência `artifacts/agro-journey-e2e-b28d889875594792b694c610ecf5b21a`.
+
+- **G — custo líquido (§3)**: consumo 100 u @ R$ 12,50 → bruto 1250; estorno parcial 40 → rev=500|net=750 no banco; replay sem duplicar (revisão única); estorno de 61 rejeitado 409 `agriculture.reversal_exceeds_remaining` ("restam 60.000000"); detalhe/overview/CSV expõem bruto×estornado×líquido **reconciliados api==db** (overview 3000|5542|750); CSV 200 com colunas líquidas; fechamento pendente-líquido 750 == db; dashboard bruto 8542 / líquido 5542 == db; estorno total (60) → 1250|0 e **COST_PENDING sai da central**; estorno após zero rejeitado 409 `agriculture.reversal_duplicate`.
+- **H — central de trabalho agrícola (§4)**: material entregue sem baixa → ocorrência `CUSTODY_PENDING` com título/causa/próxima ação e deep link; vale não vê ocorrências de santa-clara; operador escopo farmA → farmB 403 / farmA 200; atribuição gera evento único (`view`/assignment; reenvio não duplica); atribuição ≠ aprovação (ordem PLANNED); ordem sem responsável → `RESOURCE_UNASSIGNED`; designar responsável tira da central.
+- **H3 — recuperação de inspeções na central (§5)**: dead-letter aparece com prioridade HIGH e causa ("exige re-disparo manual com justificativa"); operador sem `compliance.*` → 403 na lista de intents; re-disparo sem motivo → 422 `inspection.redispatch_reason_required`; com motivo → 200 (origem já resolvida → `RESOLVED` sem nova ação) + auditoria `INSPECTION_INTENT_REDISPATCH` com ator + sem duplicar intent; lista expõe `situation`/`canRedispatch` com api==db; central reflete estado final.
+- **I — governança de papéis × contratação (§6)**: papel com permissão de módulo não contratado → 403 "módulo não contratado: cooperative.read"; módulo contratado → 201; suspensão de `agriculture` → 403 **"módulo suspenso: agriculture"** (mensagem distinta) + perfis preservados + acesso efetivo negado no runtime; reativação libera gravação (201) e acesso (200).
+
+### Corrigido — defeitos encontrados pela execução desta fatia (todos na causa raiz, cobertos pelo E2E verde)
+
+1. `SeasonCostService.Params`: expansão POCO do Dapper enviava NULLs sem tipo → Postgres 42P08 (`could not determine data type of parameter`) nos predicados `@P is null` (list/overview/export.csv respondiam 500) → parâmetros com `DbType` explícito.
+2. Estorno parcial #2 colidia no índice parcial `ux_field_material_single_reversal` (unique por consumo) com `persistence.unique_violation` → upsert acumulativo na linha canônica do REVERSAL.
+3. `SaasService.SaveRoleAsync` classificava suspenso × não-contratado comparando código de permissão contra conjunto de módulos → agora resolve os módulos de cada permissão via `Permissions.ModulesForPermission`.
+4. Harness: operador do fixture sem `work.read` (concessão via `identity_role_permissions` + **re-login**, pois o JWT embute as permissões); aspas erradas em `jsonb_set(...,'to_jsonb('...'::text)')`; força de dead-letter zerava `next_attempt_at` (coluna NOT NULL; o processor nunca a nula).
+
+### Aprovado — migrations 137 + 138 e upgrade documentado da homolog
+
+- `137_cost_reversal_net_integrity.sql` (integridade líquida do estorno + comentários da constraint) e `138_receipt_item_work_order_material_fk.sql` (FK da coluna criada na 136); `full.sql` atualizado; idempotência validada em banco já atualizado (gate de setup do E2E). Instalação limpa e upgrade validados no cluster descartável.
+- **Upgrade `agro360_homolog`: 136 → 137 → 138** (pré-validação read-only 2026-10-12: homolog @ 11.25.0/135; precondições limpas). Aplicação efetiva pendente.
+
+### Aprovado — regressões preservadas
+
+Compras **12/12** (`artifacts/procurement-journey-e2e-668e9b3ef3234891992eb5e74c79072b`, 2026-10-12 08:28 UTC, schema 11.24.0); recuperação de inspeções **S1–S7 todos passam** (`artifacts/inspection-recovery-e2e-683b5aba64304d9a87938d76a40cbff5`); gates `GATES_DONE build=0 arch=0 unit=0` (architecture 187/187 · unit 390/390).
+
+### Planejado — programa Pecuária P1–P10 (auditoria de entrada concluída, nada executado)
+
+`docs/PECUARIA-PROGRAMA-P1-P10.md`: inventário exaustivo do módulo existente (38 tabelas `agro360.livestock_*` com chaves/constraints, 3 serviços `LivestockService`/`LivestockHerdService`/`Livestock360Service`, ~60 rotas, SPA `/livestock`, seeds santa-clara, testes, integrações cross-cutting) + status por domínio (P1/P2/P3 núcleo implementado; P4–P6 parcial; P7 só esqueleto; P8–P10 parcial) + lacunas por sprint vs as regras do programa + perguntas abertas a verificar em runtime. Ordem: P1→P10, cada sprint audita o estado vigente primeiro, reaproveita estruturas, implementa apenas lacunas; portas por sprint incl. regressões (Bloco A A–I, Compras, inspeção). Início após esta fatia + Bloco B.
+
+### Planejado — módulo Governo360 G1–G10 (adicionado à fila em 2026-10-12, após Pecuária P1–P10)
+
+Solicitação de 2026-10-12: módulo de **gestão pública do desenvolvimento rural** (órgãos estaduais/municipais/consórcios/parceiras; configurável, sem fixar secretaria específica). Jornada central: território → diagnóstico → programa → público elegível → solicitação → análise → atendimento/apoio → acompanhamento → resultado, preservando a separação entre dados institucionais e privados dos produtores. Programa completo em `docs/GOVERNO360-PROGRAMA-G1-G10.md`: invariantes institucionais (sem segundo cadastro, declarado×verificado×estimado×oficial, sem certificação oficial fictícia, versionamento de critérios/formulários/decisões), menu institucional (17 áreas), escopo dos sprints **G1 fundação/acesso → G2 territórios/famílias/produtores → G3 programas/levantamentos versionados → G4 solicitações/elegibilidade/seleção → G5 atendimentos/visitas/capacitações → G6 benefícios/equipamentos → G7 agricultura/pecuária institucionais → G8 pesca/aquicultura → G9 comercialização/sustentabilidade/parcerias → G10 portais/indicadores/homologação integrada**, regras transversais por sprint (mesmas portas da Pecuária) e aceite §20 (duas instituições, família multi-produtor sem dupla contagem, participação em dois programas, formulário versionado+diligência, decisão com evidências, atendimento/benefício sem duplicação, compartilhamento+revogação, negação fora de território/programa, indicadores reconciliados api==db, públicos agregados × pessoais protegidos). Nada executado ainda; G1 inicia com auditoria de estado vigente (QG1–QG8).
+
+### Bloqueado / pendente
+
+- **Homologação visual do browser**: continuar bloqueada pelo certificado (`Confiar-cert-agro360.bat`, thumbprint `C05DA1CAA96A04FDF9EB850D2281AB150531747F`); browser somente via `https://192.168.0.10:7080`. As portas visuais por sprint de Pecuária herdam o bloqueio (registrar BLOCKED, não silenciar).
+- **§7–§8 Bloco B** (lote disponível → venda + resultado comercial): executado e aprovado na fatia seguinte, registrada no topo deste arquivo (cenário J, 132/0/0). **§9** (lotes repetidos/safras recorrentes): não executado nesta fatia.
+
+### Notas de operação documentadas nesta rodada
+
+- RAM ~0,5 GB livre: o harness define `DOTNET_GCHeapHardLimit=1400000000` + `DOTNET_GCConserveMemory=9` antes de subir a API (sem isso a API morria no meio do cenário B em OS OOM). Rodar E2Es sequencialmente.
+- psql contra `agro360_homolog` (PG18 local :5432, `postgres/123456`): sempre `-w` + `PGPASSWORD`, senão o prompt de senha hanga ~120 s.
+- PowerShell 5.1: qualquer trecho com aspas aninhadas/`$_` vai para `.ps1` temporário executado com `-File` — `powershell -Command "..."` corrói `$_` e aspas internas.
+- O JWT embute permissões no login: concessão de permissão via banco exige **re-login** para valer.
+- `quality_inspection_event_intents.next_attempt_at` é NOT NULL e o processor nunca a nula (mantém último agendamento/backoff; claim só pega `PENDING`/`PENDING_MODEL`).
+
+---
+
 ## Incremento integrado: jornada completa de Compras, i18n das telas operacionais e correções de estabilidade — 2026-10-10
 
 Branch `main`. Baseline reconfirmado no início da execução: `ff6028e`. Durante a rodada o usuário criou o commit `bce9dca` ("novos auste") absorvendo parte do trabalho do incremento (frontend de Compras — `procurement.js`/`agro360.js`/`_Layout`/CSS/páginas —, versão inicial do `scripts/verify-procurement-journey-e2e.ps1` e parte das mudanças em `QuotationService`/`WorkManagementService`/contratos). Ao fim da rodada a árvore permanece com alterações locais **não-commitadas** por esta execução (delta posterior ao `bce9dca`): `scripts/verify-procurement-journey-e2e.ps1`, `src/Modules/Agro360.Infrastructure/Services/ProcurementService.cs`, `QuotationService.cs`, `src/Modules/Agro360.Application/Contracts/WorkManagementContracts.cs`, `WorkManagementService.cs` e a atualização dos docs (`EXECUTION-CHECKPOINT.md`, `TRACEABILITY-MATRIX-v0.2.0.md`, `I18N-COVERAGE-REPORT.md`, `PROMPT-PROXIMA-EXECUCAO.md`). Sem push, merge ou publicação. Migrações: **zero novas** neste incremento — `134_french_language_support.sql` (schema `11.24.0`) segue a última.

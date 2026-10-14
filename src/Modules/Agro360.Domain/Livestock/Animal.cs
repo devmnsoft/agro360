@@ -8,7 +8,9 @@ public enum AnimalStatus
     Quarantine = 2,
     Sold = 3,
     Dead = 4,
-    Slaughtered = 5,
+    // P1 (2026-10-12): canônico = DESCARTE (saída do rebanho por motivo justificado; abate é uma
+    // espécie de descarte). O valor 5 nunca mudou; antes o rótulo de leitura divergia (SLAUGHTERED).
+    Discarded = 5,
     Reserved = 6
 }
 

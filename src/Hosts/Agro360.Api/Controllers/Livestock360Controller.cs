@@ -50,6 +50,19 @@ public sealed class Livestock360Controller(ILivestock360Service service, ILivest
     [HttpPost("api/livestock/catalog/{kind}"), Authorize(Policy = Permissions.LivestockWrite)]
     public async Task<IActionResult> Catalog(string kind, LivestockCatalogCommand x, CancellationToken ct) { var id = await herd.SaveCatalogAsync(kind, null, x, ct); return Created($"/api/livestock/catalog/{kind}/{id}", new { id }); }
 
+    // P4: CRUD dedicado de protocolos de sanidade (versao por nome+version_label; desativacao auditada).
+    [HttpGet("api/livestock/protocols"), Authorize(Policy = Permissions.LivestockRead)]
+    public Task<IReadOnlyList<dynamic>> Protocols(bool? activeOnly = null, CancellationToken ct = default) => herd.ListProtocolsAsync(activeOnly, ct);
+    [HttpPost("api/livestock/protocols"), Authorize(Policy = Permissions.LivestockWrite)]
+    public async Task<IActionResult> Protocol(HealthProtocolCommand x, CancellationToken ct) { var id = await herd.SaveProtocolAsync(x, ct); return Created($"/api/livestock/protocols/{id}", new { id }); }
+    [HttpPost("api/livestock/protocols/{id:guid}/deactivate"), Authorize(Policy = Permissions.LivestockWrite)]
+    public async Task<IActionResult> ProtocolDeactivate(Guid id, CancellationToken ct) { await herd.DeactivateProtocolAsync(id, ct); return NoContent(); }
+
+    // P4: agenda de sanidade (vencidos/hoje/proximos sobre next_application do ledger de eventos).
+    [HttpGet("api/livestock/agenda"), Authorize(Policy = Permissions.LivestockRead)]
+    public Task<IReadOnlyList<dynamic>> Agenda(Guid? farmId, DateOnly? from, DateOnly? to, bool overdueOnly = false, CancellationToken ct = default) =>
+        service.AgendaAsync(farmId, from, to, overdueOnly, ct);
+
     [HttpGet("api/livestock/facilities"), Authorize(Policy = Permissions.LivestockRead)]
     public Task<IReadOnlyList<dynamic>> Facilities(Guid? farmId, CancellationToken ct) => herd.ListFacilitiesAsync(farmId, ct);
     [HttpPost("api/livestock/facilities"), Authorize(Policy = Permissions.LivestockWrite)]
@@ -68,6 +81,8 @@ public sealed class Livestock360Controller(ILivestock360Service service, ILivest
     public async Task<IActionResult> AnimalDetail(Guid id, CancellationToken ct) => await herd.AnimalDetailAsync(id, ct) is { } detail ? Ok(detail) : NotFound();
     [HttpPost("api/livestock/animals/{id:guid}/tag"), Authorize(Policy = Permissions.LivestockWrite)]
     public async Task<IActionResult> ChangeTag(Guid id, ChangeTagCommand x, CancellationToken ct) { await herd.ChangeTagAsync(id, x, ct); return NoContent(); }
+    [HttpPost("api/livestock/animals/{id:guid}/rfid"), Authorize(Policy = Permissions.LivestockWrite)]
+    public async Task<IActionResult> ChangeRfid(Guid id, ChangeRfidCommand x, CancellationToken ct) { await herd.ChangeRfidAsync(id, x, ct); return NoContent(); }
     [HttpPost("api/livestock/animals/{id:guid}/inactivate"), Authorize(Policy = Permissions.LivestockWrite)]
     public async Task<IActionResult> Inactivate(Guid id, InactivateAnimalCommand x, CancellationToken ct) { await herd.InactivateAsync(id, x, ct); return NoContent(); }
     [HttpPost("api/livestock/animals/{id:guid}/archive"), Authorize(Policy = Permissions.LivestockWrite)]

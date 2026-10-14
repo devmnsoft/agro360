@@ -4294,6 +4294,21 @@ update agro360.livestock_handling_orders
 set work_task_id = '30000000-0000-4000-8000-000000000195'
 where id = '30000000-0000-4000-8000-000000000190';
 
+-- Pecuaria P4: protocolos de sanidade demonstrativos (catalogo passa a ter consumidor
+-- funcional: a execucao de aplicacao referencia o protocolo versionado e deriva a restricao).
+insert into agro360.livestock_health_protocols (
+    id, tenant_id, name, source, version_label, valid_from, valid_until, purpose, withdrawal_days, notes, demo_only, active, created_by)
+values
+    ('30000000-0000-4000-8000-000000000250', '30000000-0000-0000-0000-000000000001',
+     'Vacina BQ (Brucelose) - demonstrativo', 'Ficha tecnica demonstrativa', '2026.1', '2026-01-01', null,
+     'OPERATIONAL', 21, 'Protocolo de demonstracao: carência operacional de 21 dias.', true, true,
+     '30000000-0000-0000-0000-000000000003'),
+    ('30000000-0000-4000-8000-000000000251', '30000000-0000-0000-0000-000000000001',
+     'Antibiotico intramamario - demonstrativo', 'Bula demonstrativa', '2026.1', '2026-01-01', '2026-12-31',
+     'MILK', 7, 'Protocolo de demonstracao: carência do leite de 7 dias.', true, true,
+     '30000000-0000-0000-0000-000000000003')
+on conflict (id) do nothing;
+
 insert into agro360.livestock_restrictions (
     id, tenant_id, animal_id, purpose, reason, started_on, expected_until, status, demo_only, created_by)
 values (
@@ -5250,7 +5265,7 @@ create table if not exists agro360.cost_management_entries(
  created_at timestamptz not null default now(),created_by uuid not null,updated_at timestamptz,updated_by uuid,deleted_at timestamptz,deleted_by uuid,
  unique(tenant_id,id),unique(tenant_id,source_type,source_key),foreign key(tenant_id,farm_id) references agro360.geo_farms(tenant_id,id),
  check(planned_amount>=0 and committed_amount>=0 and recognized_amount>=0 and paid_amount>=0 and allocated_amount>=0 and reversed_amount>=0),
- check(allocated_amount<=recognized_amount),check(currency='BRL'),check(status in('OPEN','VOID'))
+ check(allocated_amount<=recognized_amount),constraint cost_management_entries_reversed_le_recognized_check check(reversed_amount<=recognized_amount),check(currency='BRL'),check(status in('OPEN','VOID'))
 );
 create index if not exists ix_cost_management_filter on agro360.cost_management_entries(tenant_id,farm_id,competence_date desc,status) where deleted_at is null;
 create index if not exists ix_cost_management_pending on agro360.cost_management_entries(tenant_id,competence_date desc) where deleted_at is null and status='OPEN';
@@ -5657,6 +5672,7 @@ create table if not exists agro360.field_work_order_materials (
  check(status in('PLANNED','RESERVED','DELIVERED','SETTLED','SHORTAGE'))
 );
 create index if not exists ix_field_material_order on agro360.field_work_order_materials(tenant_id,work_order_id) where deleted_at is null;
+alter table agro360.procurement_receipt_items add constraint procurement_receipt_items_work_order_material_fk foreign key(tenant_id,work_order_material_id) references agro360.field_work_order_materials(tenant_id,id);
 
 create table if not exists agro360.field_material_events (
  id uuid primary key, tenant_id uuid not null references agro360.tenancy_tenants(id), work_order_material_id uuid not null,
@@ -9582,5 +9598,140 @@ create index if not exists ix_quality_inspection_event_intents_dead_letter
 insert into agro360.platform_schema_versions(version, description, installed_at)
 values('11.25.0', 'Recuperação automática de intents de inspeção: tentativas/backoff, claim/lease, dead-letter com motivo, varredura de origens pendentes e re-disparo manual auditado', now())
 on conflict(version) do update set description = excluded.description;
+
+insert into agro360.platform_schema_versions(version,description,installed_at)
+values('137.0.0','Custo liquido: invariante de estorno no livro canonico de custos',now())
+on conflict(version) do nothing;
+
+insert into agro360.platform_schema_versions(version,description,installed_at)
+values('138.0.0','Integridade: FK composta item de recebimento -> material da ordem (mesmo tenant)',now())
+on conflict(version) do nothing;
+
+-- Migration 139 (embutida): Bloco B — recebivel financeiro idempotente por aceite formal.
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+                 where table_schema = 'agro360' and table_name = 'finance_receivables' and column_name = 'fulfillment_attempt_id') then
+    alter table agro360.finance_receivables add column fulfillment_attempt_id uuid;
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists(select 1 from pg_constraint where conname = 'finance_receivables_fulfillment_attempt_fk') then
+    alter table agro360.finance_receivables
+      add constraint finance_receivables_fulfillment_attempt_fk
+      foreign key (tenant_id, fulfillment_attempt_id)
+      references agro360.fulfillment_delivery_attempts (tenant_id, id);
+  end if;
+end $$;
+
+create unique index if not exists ux_finance_receivables_fulfillment_attempt
+  on agro360.finance_receivables (tenant_id, fulfillment_attempt_id)
+  where fulfillment_attempt_id is not null;
+
+insert into agro360.platform_schema_versions(version,description,installed_at)
+values('139.0.0','Bloco B: recebivel financeiro idempotente por aceite formal (finance_receivables.fulfillment_attempt_id)',now())
+on conflict(version) do nothing;
+
+-- Migration 140 (embutida): Pecuaria P1 - backfill do historico canonico de identificadores.
+do $$
+begin
+  if not exists (select 1 from information_schema.tables
+                 where table_schema = 'agro360' and table_name = 'livestock_identifier_history') then
+    raise exception 'livestock_identifier_history ausente; aplique antes a migration 068_integrated_livestock_foundation';
+  end if;
+end $$;
+
+insert into agro360.livestock_identifier_history (id, tenant_id, animal_id, identifier_type, identifier, valid_from, valid_until, change_reason, created_at, created_by)
+select gen_random_uuid(), a.tenant_id, a.id, 'EAR_TAG', a.tag, a.created_at, null, 'REGISTRATION', now(), a.created_by
+from agro360.livestock_animals a
+on conflict (tenant_id, identifier_type, lower(identifier)) where valid_until is null do nothing;
+
+insert into agro360.livestock_identifier_history (id, tenant_id, animal_id, identifier_type, identifier, valid_from, valid_until, change_reason, created_at, created_by)
+select gen_random_uuid(), a.tenant_id, a.id, 'RFID', a.rfid, a.created_at, null, 'REGISTRATION', now(), a.created_by
+from agro360.livestock_animals a
+where a.rfid is not null and trim(a.rfid) <> ''
+on conflict (tenant_id, identifier_type, lower(identifier)) where valid_until is null do nothing;
+
+insert into agro360.livestock_identifier_history (id, tenant_id, animal_id, identifier_type, identifier, valid_from, valid_until, change_reason, created_at, created_by)
+select gen_random_uuid(), a.tenant_id, a.id, 'INTERNAL', a.internal_identifier, a.created_at, null, 'REGISTRATION', now(), a.created_by
+from agro360.livestock_animals a
+where a.internal_identifier is not null and trim(a.internal_identifier) <> ''
+on conflict (tenant_id, identifier_type, lower(identifier)) where valid_until is null do nothing;
+
+insert into agro360.platform_schema_versions(version, description, installed_at)
+values('140.0.0', 'Pecuaria P1: backfill do historico canonico de identificadores (livestock_identifier_history)', now())
+on conflict(version) do nothing;
+
+commit;
+
+-- Migration 141 (embutida): Pecuaria P2 - idempotencia formal da movimentacao individual de animal.
+begin;
+
+do $$
+begin
+  if not exists (select 1 from information_schema.tables
+                 where table_schema = 'agro360' and table_name = 'livestock_animal_movements') then
+    raise exception 'livestock_animal_movements ausente; aplique antes a migration 068_livestock_herd_operations';
+  end if;
+end $$;
+
+alter table agro360.livestock_animal_movements
+    add column if not exists idempotency_key varchar(160);
+
+create unique index if not exists ux_livestock_animal_movements_idempotency
+    on agro360.livestock_animal_movements (tenant_id, idempotency_key)
+    where idempotency_key is not null;
+
+insert into agro360.platform_schema_versions(version, description, installed_at)
+values('141.0.0', 'Pecuaria P2: idempotencia formal da movimentacao individual de animal (coluna + unique parcial)', now())
+on conflict(version) do nothing;
+
+commit;
+
+-- Migration 142 (embutida): Pecuaria P3 - evidencia de precisao da mediacao em pesagens.
+begin;
+
+do $$
+begin
+  if not exists (select 1 from information_schema.tables
+                 where table_schema = 'agro360' and table_name = 'livestock_weighings') then
+    raise exception 'livestock_weighings ausente; aplique antes a migration 068_livestock_herd_operations';
+  end if;
+end $$;
+
+alter table agro360.livestock_weighings
+    add column if not exists measurement_precision varchar(20);
+
+insert into agro360.platform_schema_versions(version, description, installed_at)
+values('142.0.0', 'Pecuaria P3: evidencia de precisao da mediacao em pesagens (livestock_weighings.measurement_precision)', now())
+on conflict(version) do nothing;
+
+commit;
+
+-- Migration 143 (embutida): Pecuaria P4 - protocolo sanidade ligado a execucao + idempotencia de aplicacao.
+begin;
+
+do $$
+begin
+  if not exists (select 1 from information_schema.tables
+                 where table_schema = 'agro360' and table_name = 'livestock_health_events') then
+    raise exception 'livestock_health_events ausente; aplique antes a migration 068_livestock_herd_operations';
+  end if;
+end $$;
+
+alter table agro360.livestock_health_events
+    add column if not exists protocol_id uuid,
+    add column if not exists protocol_version_label varchar(40),
+    add column if not exists idempotency_key varchar(160);
+
+create unique index if not exists ux_livestock_health_events_idempotency
+    on agro360.livestock_health_events (tenant_id, idempotency_key)
+    where idempotency_key is not null;
+
+insert into agro360.platform_schema_versions(version, description, installed_at)
+values('143.0.0', 'Pecuaria P4: aplicacao de sanidade ligada a protocolo versionado + idempotencia formal (livestock_health_events)', now())
+on conflict(version) do nothing;
 
 commit;

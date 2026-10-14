@@ -56,7 +56,7 @@ public sealed class IntelligenceService : IIntelligenceService
         select
           coalesce((select sum(original_amount-balance) from agro360.finance_receivables where tenant_id=@TenantId and issued_on between @From and @To),0) revenue,
           coalesce((select sum(original_amount-balance) from agro360.finance_payables where tenant_id=@TenantId and issued_on between @From and @To),0) expense,
-          coalesce((select sum(recognized_amount) from agro360.cost_management_entries where tenant_id=@TenantId and competence_date between @From and @To and (@FarmId is null or farm_id=@FarmId)),0) cost,
+          coalesce((select sum(recognized_amount-reversed_amount) from agro360.cost_management_entries where tenant_id=@TenantId and competence_date between @From and @To and (@FarmId is null or farm_id=@FarmId)),0) cost,
           coalesce((select sum(ce.allocated_amount) from agro360.cost_management_entries ce where ce.tenant_id=@TenantId and ce.competence_date between @From and @To and (@FarmId is null or ce.farm_id=@FarmId)),0) allocated_cost,
           coalesce((select sum(planned_amount) from agro360.cost_management_entries where tenant_id=@TenantId and competence_date between @From and @To and (@FarmId is null or farm_id=@FarmId)),0) planned_cost,
           (select count(*) from agro360.livestock_animals a where a.tenant_id=@TenantId and a.deleted_at is null and a.status=1 and (@FarmId is null or a.farm_id=@FarmId)) animals,
@@ -487,9 +487,9 @@ public sealed class IntelligenceService : IIntelligenceService
             var data = JsonSerializer.Deserialize<Dictionary<string, object?>>(order.Data, JsonOptions) ?? [];
             decimal plannedCost = ToDecimal(data.GetValueOrDefault("estimatedCost"));
 
-            // Actual cost: sum of all recognized costs for this order
+            // Actual cost: NET recognized for this order (recognized_amount - reversed_amount; migration 137).
             decimal actualCost = await c.ExecuteScalarAsync<decimal>(new CommandDefinition("""
-                select coalesce(sum(recognized_amount), 0)
+                select coalesce(sum(recognized_amount-reversed_amount), 0)
                 from agro360.cost_management_entries
                 where tenant_id=@TenantId and source_key=@OrderId
                 """, new { _tenant.TenantId, OrderId = orderId.ToString() }, t, cancellationToken: ct));

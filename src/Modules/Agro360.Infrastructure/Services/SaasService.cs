@@ -906,6 +906,42 @@ public sealed partial class SaasService(DatabaseExecutor db, ITenantContext tena
         if (existingPermissions != requestedPermissions.Length)
             throw InvalidReferences(nameof(RoleCommand.Permissions), "Uma ou mais permissões não existem.");
 
+        // Governança (item 6): o perfil não pode conceder recurso funcional acima do contratado.
+        // Mesma fonte canônica do gate efetivo em runtime: EntitlementQueries.ModuleCodeSelect
+        // (entitlements contratados + marketplace ativo - bloqueios) e Permissions.ModulesForPermission.
+        // account.* é isento; platform.admin já foi rejeitado acima. Perfis existentes NÃO são
+        // destruídos: apenas a gravação de nova concessão fora do contrato é negada (o acesso
+        // efetivo continua condicionado ao contrato pelo gate de runtime).
+        var contractedModules = (await c.QueryAsync<string>($"""
+            {EntitlementQueries.ModuleCodeSelect}
+            """, new { tenant.TenantId }, t)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var uncontractedPermissions = requestedPermissions
+            .Where(permission => !permission.StartsWith("account.", StringComparison.OrdinalIgnoreCase))
+            .Where(permission => !Permissions.ModulesForPermission(permission).Any(module => contractedModules.Contains(module)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (uncontractedPermissions.Length > 0)
+        {
+            var suspendedModules = (await c.QueryAsync<string>(
+                """
+                select lower(bc.code) from agro360.platform_tenant_module_entitlements be
+                join agro360.platform_module_catalog bc on bc.id=be.module_id
+                where be.tenant_id=@TenantId and be.status in ('BLOCKED','SUSPENDED','DELINQUENT','INACTIVE')
+                union
+                select lower(bm.code) from agro360.platform_tenant_modules btm
+                join agro360.platform_marketplace_modules bm on bm.id=btm.module_id
+                where btm.tenant_id=@TenantId and btm.status in ('BLOCKED','SUSPENDED','DELINQUENT','INACTIVE')
+                """, new { tenant.TenantId }, t)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var details = string.Join("; ", uncontractedPermissions
+                .Select(permission =>
+                {
+                    var modules = Permissions.ModulesForPermission(permission).ToArray();
+                    var suspended = modules.Where(m => suspendedModules.Contains(m)).ToArray();
+                    return suspended.Length > 0 ? $"módulo suspenso: {string.Join(", ", suspended)}" : $"módulo não contratado: {permission}";
+                }));
+            throw new ForbiddenException($"O perfil concede recurso acima do contratado ({details}). Reative o contrato do módulo ou remova a permissão do perfil.");
+        }
+
         var key = id ?? Guid.CreateVersion7();
         if (id is not null)
         {

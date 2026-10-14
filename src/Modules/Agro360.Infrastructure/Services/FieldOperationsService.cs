@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Agro360.Application.Contracts;
 using Agro360.Infrastructure.Persistence;
@@ -160,15 +161,30 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
         {
             if (command.SourceEventId is null) throw new DomainException("O estorno deve referenciar o consumo original.", "agriculture.reversal_source_required");
             source = await c.QuerySingleOrDefaultAsync<MaterialEventRow>(new CommandDefinition("select work_order_material_id WorkOrderMaterialId,event_type EventType,quantity,reason,source_event_id SourceEventId from agro360.field_material_events where tenant_id=@TenantId and id=@Id for update", new { tenant.TenantId, Id = command.SourceEventId }, t, cancellationToken: cancellationToken));
-            if (source is null || source.WorkOrderMaterialId != materialId || source.EventType != "CONSUME" || source.Quantity != command.Quantity) throw new ConflictException("O estorno deve corresponder integralmente a um consumo desta operação.", "agriculture.reversal_source_invalid");
-            if (await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.field_material_events where tenant_id=@TenantId and source_event_id=@Id and event_type='REVERSAL')", new { tenant.TenantId, Id = command.SourceEventId }, t, cancellationToken: cancellationToken))) throw new ConflictException("Este consumo já foi estornado.", "agriculture.reversal_duplicate");
+            if (source is null || source.WorkOrderMaterialId != materialId || source.EventType != "CONSUME") throw new ConflictException("O estorno deve referenciar um consumo desta operação.", "agriculture.reversal_source_invalid");
+            // Estorno total ou PARCIAL: a soma dos estornos do mesmo consumo nao pode exceder o consumido.
+            var alreadyReversed = await c.ExecuteScalarAsync<decimal>(new CommandDefinition("select coalesce(sum(quantity),0) from agro360.field_material_events where tenant_id=@TenantId and source_event_id=@Id and event_type='REVERSAL'", new { tenant.TenantId, Id = command.SourceEventId }, t, cancellationToken: cancellationToken));
+            var remainingToReverse = source.Quantity - alreadyReversed;
+            if (command.Quantity > remainingToReverse)
+                throw new ConflictException(
+                    remainingToReverse <= 0 ? "Este consumo já foi integralmente estornado." : $"O estorno excede o saldo não estornado do consumo (restam {remainingToReverse.ToString(CultureInfo.InvariantCulture)}).",
+                    remainingToReverse <= 0 ? "agriculture.reversal_duplicate" : "agriculture.reversal_exceeds_remaining");
 
             // Financial Reversal: the schema forbids a negative recognized_amount (and requires
             // allocated_amount <= recognized_amount), so instead of posting a negative offsetting
             // entry we mark the ORIGINAL consumption's cost entry as reversed via the dedicated
             // reversed_amount column. Net recognized (recognized_amount - reversed_amount) drops to
             // zero while every CHECK constraint holds and the canonical ledger history is preserved.
-            await c.ExecuteAsync(new CommandDefinition("update agro360.cost_management_entries set reversed_amount=reversed_amount+@Amt,row_version=row_version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and source_type='MATERIAL' and source_key=@SourceKey and deleted_at is null and status='OPEN'", new { Amt = command.Quantity * (m.UnitCost ?? 0), tenant.TenantId, SourceKey = command.SourceEventId.ToString(), tenant.UserId }, t, cancellationToken: cancellationToken));
+            // Migration 137 garante reversed_amount <= recognized_amount; o WHERE abaixo e a guarda
+            // atomica contra estorno que exceda o valor reconhecido elegivel (sem valor negativo fabricado).
+            var costAffected = await c.ExecuteAsync(new CommandDefinition("update agro360.cost_management_entries set reversed_amount=reversed_amount+@Amt,row_version=row_version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and source_type='MATERIAL' and source_key=@SourceKey and deleted_at is null and status='OPEN' and reversed_amount+@Amt<=recognized_amount", new { Amt = command.Quantity * (m.UnitCost ?? 0), tenant.TenantId, SourceKey = command.SourceEventId.ToString(), tenant.UserId }, t, cancellationToken: cancellationToken));
+            if (costAffected == 0)
+            {
+                var costExists = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.cost_management_entries where tenant_id=@TenantId and source_type='MATERIAL' and source_key=@Key)", new { tenant.TenantId, Key = command.SourceEventId.ToString() }, t, cancellationToken: cancellationToken));
+                throw costExists
+                    ? new DomainException("O estorno excede o custo reconhecido do lançamento de origem; revise os valores.", "agriculture.reversal_exceeds_recognized")
+                    : new ConflictException("Não há lançamento de custo reconhecido para este consumo; nada foi estornado.", "agriculture.reversal_cost_not_found");
+            }
         }
         Guid? movement = null;
         if (kind is "CONSUME" or "LOSS" or "RETURN" or "REVERSAL")
@@ -237,7 +253,15 @@ public sealed class FieldOperationsService(DatabaseExecutor database, ITenantCon
         var column = kind switch { "RESERVE" => "reserved_quantity", "DELIVER" => "delivered_quantity", "CONSUME" => "consumed_quantity", "RETURN" => "returned_quantity", "LOSS" => "lost_quantity", _ => "reserved_quantity" }; var delta = kind == "RELEASE" ? -command.Quantity : command.Quantity;
         if (kind == "REVERSAL") { column = "consumed_quantity"; delta = -command.Quantity; }
         await c.ExecuteAsync(new CommandDefinition($"update agro360.field_work_order_materials set {column}={column}+@Delta,updated_at=now(),updated_by=@UserId,version=version+1,status=case when @Kind='REVERSAL' then 'DELIVERED' when delivered_quantity-consumed_quantity-returned_quantity-lost_quantity-@Delta=0 and delivered_quantity>0 then 'SETTLED' when @Kind='DELIVER' then 'DELIVERED' when @Kind='RESERVE' then 'RESERVED' else status end where tenant_id=@TenantId and id=@Id", new { Delta = delta, tenant.UserId, Kind = kind, tenant.TenantId, Id = materialId }, t, cancellationToken: cancellationToken));
-        await c.ExecuteAsync(new CommandDefinition("insert into agro360.field_material_events(id,tenant_id,work_order_material_id,event_type,quantity,reason,inventory_movement_id,source_event_id,idempotency_key,created_by) values(@Id,@TenantId,@MaterialId,@Kind,@Quantity,@Reason,@Movement,@SourceEventId,@Key,@UserId)", new { Id = eventId, tenant.TenantId, MaterialId = materialId, Kind = kind, command.Quantity, command.Reason, Movement = movement, command.SourceEventId, Key = command.IdempotencyKey, tenant.UserId }, t, cancellationToken: cancellationToken));
+        // Estorno: a constraint ux_field_material_single_reversal permite UM unico evento REVERSAL
+        // por consumo de origem. Estornos parciais sucessivos acumulam na mesma linha (total
+        // estornado); cada acao individual permanece auditavel (chave de idempotencia por acao e
+        // trilha de auditoria). Replay da mesma chave+conteudo ja retornou antes (guarda de
+        // idempotencia acima), entao a acumulacao nao duplica.
+        var insertEventSql = kind == "REVERSAL"
+            ? "insert into agro360.field_material_events(id,tenant_id,work_order_material_id,event_type,quantity,reason,inventory_movement_id,source_event_id,idempotency_key,created_by) values(@Id,@TenantId,@MaterialId,@Kind,@Quantity,@Reason,@Movement,@SourceEventId,@Key,@UserId) on conflict (tenant_id,source_event_id) where event_type='REVERSAL' do update set quantity=field_material_events.quantity+excluded.quantity,reason=excluded.reason,inventory_movement_id=excluded.inventory_movement_id,idempotency_key=excluded.idempotency_key"
+            : "insert into agro360.field_material_events(id,tenant_id,work_order_material_id,event_type,quantity,reason,inventory_movement_id,source_event_id,idempotency_key,created_by) values(@Id,@TenantId,@MaterialId,@Kind,@Quantity,@Reason,@Movement,@SourceEventId,@Key,@UserId)";
+        await c.ExecuteAsync(new CommandDefinition(insertEventSql, new { Id = eventId, tenant.TenantId, MaterialId = materialId, Kind = kind, command.Quantity, command.Reason, Movement = movement, command.SourceEventId, Key = command.IdempotencyKey, tenant.UserId }, t, cancellationToken: cancellationToken));
     }, cancellationToken);
 
     public Task ReviewAsync(Guid orderId, FieldReviewCommand command, CancellationToken cancellationToken) => database.InTenantTransactionAsync(async (c, t) =>

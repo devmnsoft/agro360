@@ -18,6 +18,7 @@
         handling: ["Ordens de manejo com população planejada congelada.", "Animais elegíveis, tipo, data, responsável.", "Rascunho → programado → liberado → em execução → concluído. Massa parcial mostra resultado por item.", "Cria tarefa operacional e apontamentos. Cancelar não apaga consumo já feito.", "Repita somente os itens que falharam."],
         weighings: ["Pesagem individual ou coletiva.", "Animal ou grupo, peso positivo e unidade.", "Coletiva não inventa peso por cabeça. Fora do limite pede justificativa.", "Atualiza o peso atual só na pesagem individual.", "Correção preserva o valor anterior e o responsável."],
         feeding: ["Plano não movimenta estoque; fornecimento consome o lote aprovado.", "Plano, depósito, produto e cabeças.", "Informe fornecido, devolvido e perdido. Devolução imprópria não volta ao uso livre.", "Gera consumo único no estoque e custo rastreável.", "Registre a devolução nesta aba, sem baixar de novo."],
+        health: ["Agenda de sanidade: aplicações com follow-up futuro ou já vencido.", "Animal existente e protocolo ativo dentro da janela de validade; aplicação em grupo/coletivo pelo endpoint da API.", "Registre a aplicação com protocolo (a carência do catálogo do protocolo prevalece) ou sem protocolo. Liberação de restrição exige autoridade e critério.", "Aplicação com protocolo e carência cria a restrição operacional na mesma gravação e atualiza a carência do animal; o follow-up entra na agenda.", "Desativar protocolo preserva as execuções já ligadas; restrição vencida em data deixa de bloquear sem apagar histórico."],
         restrictions: ["Restrições operacionais e carências cadastradas.", "Evento sanitário ou restrição demonstrativa identificada.", "Alertas mostram origem, impedimento e providência. Permissão administrativa não as encerra sozinha.", "Bloqueia venda, manejo ou leite conforme a finalidade.", "Liberação exige critério e autoridade previstos."],
         commercial: ["Reserva, saída física e obrigação financeira são etapas distintas.", "Animal elegível, sem restrição incompatível.", "Reservar não vende; vender não quita. Revalidação ocorre na saída.", "Muda situação para reservado ou vendido e pode gerar recebível existente.", "Cancelar libera só a reserva vigente."],
         costs: ["Custos por animal, grupo e natureza (realizado, compromisso, estimativa).", "Lançamentos de aquisição, ração, manejo e materiais.", "Consulte a origem. Transferência interna não cria receita.", "Não duplica compra com consumo já apropriado.", "Ausência de peso não gera divisão por zero."],
@@ -64,10 +65,21 @@
         document.getElementById("tab-help").innerHTML = texts.map((text, index) => `<p><strong>${labels[index]}:</strong> ${text}</p>`).join("");
     }
     function farmId() { return document.getElementById("farm-filter").value || null; }
+    // P1 (2026-10-12): rótulo canônico de situação em PT/EN/ES/FR (agro-i18n, chaves liv.status.*).
+    // Código desconhecido mantém a exibição bruta anterior — idioma só muda apresentação.
+    function statusText(value) {
+        if (!value) return "—";
+        const t = window.agroI18n?.t;
+        if (typeof t === "function") {
+            const translated = t(`liv.status.${value}`);
+            if (translated && translated !== `liv.status.${value}`) return translated;
+        }
+        return value;
+    }
     function statusPill(value) {
-        const danger = /SOLD|DEAD|BLOCKED|CANCELLED/.test(value || "");
+        const danger = /SOLD|DEAD|DISCARDED|BLOCKED|CANCELLED/.test(value || "");
         const warn = /RESERVED|ACTIVE_RESTRICTION|REVIEW/.test(value || "");
-        return `<span class="status-pill${danger ? " danger" : warn ? " warn" : ""}">${escapeHtml(value ?? "—")}</span>`;
+        return `<span class="status-pill${danger ? " danger" : warn ? " warn" : ""}">${escapeHtml(statusText(value))}</span>`;
     }
     function table(headers, rows, empty) {
         if (!rows?.length) return `<p class="empty-state">${empty}</p>`;
@@ -161,8 +173,8 @@
             }
             if (tab === "weighings") {
                 const rows = await request("/api/livestock/weighings");
-                content.innerHTML = table(["Quando", "Escopo", "Peso", "Unidade", "Origem", "Revisão"],
-                    (rows ?? []).map(item => `<tr><td>${escapeHtml(item.weighedAt || item.weighed_at)}</td><td>${escapeHtml(item.scope)}</td><td>${item.weightKg ?? item.weight_kg}</td><td>${escapeHtml(item.unit)}</td><td>${escapeHtml(item.source)}</td><td>${item.reviewRequired || item.review_required ? "Sim" : "Não"}</td></tr>`),
+                content.innerHTML = table(["Animal", "Quando", "Escopo", "Peso", "Unidade", "Equipamento", "Origem", "Revisão"],
+                    (rows ?? []).map(item => `<tr><td>${escapeHtml(item.animalTag || "Coletivo")}</td><td>${escapeHtml(item.weighedAt || item.weighed_at)}</td><td>${escapeHtml(item.scope)}</td><td>${item.weightKg ?? item.weight_kg}</td><td>${escapeHtml(item.unit)}</td><td>${escapeHtml(item.equipment || "—")}</td><td>${escapeHtml(item.source)}</td><td>${item.reviewRequired || item.review_required ? "Sim" : "Não"}</td></tr>`),
                     "Nenhuma pesagem registrada.");
                 return;
             }
@@ -173,10 +185,40 @@
                     <h3>Fornecimentos</h3>${table(["Data", "Cabeças", "Fornecido", "Devolvido", "Consumo", "Custo"], (feedings ?? []).map(item => `<tr><td>${escapeHtml(item.supplied_on || item.suppliedOn)}</td><td>${item.head_count ?? item.headCount}</td><td>${item.supplied_quantity ?? item.suppliedQuantity ?? "—"}</td><td>${item.returned_quantity ?? item.returnedQuantity ?? 0}</td><td>${item.consumed_quantity ?? item.consumedQuantity ?? "—"}</td><td>${item.total_cost ?? item.totalCost}</td></tr>`), "Nenhum fornecimento.")}`;
                 return;
             }
+            if (tab === "health") {
+                const [agenda, events, protocols] = await Promise.all([
+                    request("/api/livestock/agenda"),
+                    request("/api/livestock/health-events"),
+                    request("/api/livestock/protocols")
+                ]);
+                const tr = key => window.agroI18n?.t?.(key) === key ? null : (window.agroI18n?.t?.(key) || null);
+                const stateLabel = s => s === "OVERDUE" ? (tr("liv.health.stateOverdue") || "Vencida") : s === "DUE_TODAY" ? (tr("liv.health.stateDueToday") || "Hoje") : (tr("liv.health.stateUpcoming") || "Próxima");
+                const protocolName = id => (protocols ?? []).find(p => p.id === id);
+                content.innerHTML = `
+                    <h3>${tr("liv.health.agendaTitle") || "Agenda de sanidade (follow-up registrado)"}</h3>
+                    ${table([tr("liv.health.hDue") || "Vencimento", tr("liv.health.hState") || "Estado", tr("liv.health.hSubject") || "Sujeito", tr("liv.health.hEvent") || "Tipo", tr("liv.health.hProtocol") || "Protocolo"],
+                        (agenda ?? []).map(item => `<tr><td>${escapeHtml(String(item.dueDate || "").slice(0, 10))}</td><td class="${item.state === "OVERDUE" ? "danger" : ""}">${escapeHtml(stateLabel(item.state))}</td><td>${escapeHtml(item.animalTag || item.herdName || "—")}</td><td>${escapeHtml(item.eventType)}</td><td>${escapeHtml((item.protocolName || "—") + (item.protocolVersion ? " v" + item.protocolVersion : ""))}</td></tr>`),
+                        tr("liv.health.emptyAgenda") || "Nenhum follow-up registrado na agenda.")}
+                    <h3>${tr("liv.health.applicationsTitle") || "Aplicações registradas"}</h3>
+                    ${table(["Data", "Tipo", "Sujeito", "Dose", "Carência até", "Próxima aplicação", "Protocolo"],
+                        (events ?? []).map(item => {
+                            const proto = protocolName(item.protocol_id);
+                            return `<tr><td>${escapeHtml(String(item.occurred_on || "").slice(0, 10))}</td><td>${escapeHtml(item.event_type)}</td><td>${escapeHtml(String(item.animal_id || "").slice(0, 8) + (item.animal_id ? "… (animal)" : (item.herd_id ? "… (grupo)" : "—"))}</td><td>${item.dose ?? "—"} ${escapeHtml(item.unit || "")}</td><td>${escapeHtml(String(item.withdrawal_until || "").slice(0, 10) || "—")}</td><td>${escapeHtml(String(item.next_application || "").slice(0, 10) || "—")}</td><td>${escapeHtml(proto ? `${proto.name} v${proto.version_label}` : (item.protocol_version_label || "—"))}</td></tr>`;
+                        }), tr("liv.health.emptyApplications") || "Nenhuma aplicação registrada.")}
+                    <h3>${tr("liv.health.protocolsTitle") || "Protocolos de sanidade"}</h3>
+                    ${canWrite() ? '<button type="button" data-new-protocol>Novo protocolo</button>' : ""}
+                    ${table(["Nome", "Versão", "Fonte", "Finalidade", "Carência", "Vigência", "Estado", "Ações"],
+                        (protocols ?? []).map(item => `<tr><td>${escapeHtml(item.name)}${item.demo_only ? " (demonstrativo)" : ""}</td><td>${escapeHtml(item.version_label)}</td><td>${escapeHtml(item.source)}</td><td>${escapeHtml(item.purpose)}</td><td>${item.withdrawal_days} d</td><td>${escapeHtml(String(item.valid_from || ""))} → ${escapeHtml(String(item.valid_until || "") || "aberta")}</td><td>${statusPill(item.effectiveState === "INACTIVE" ? "INACTIVE" : "ACTIVE")}</td><td>${canWrite() && item.active ? `<button type="button" data-deactivate-protocol="${item.id}" data-name="${escapeHtml(item.name)}">Desativar</button>` : ""}</td></tr>`),
+                        tr("liv.health.emptyProtocols") || "Nenhum protocolo cadastrado.")}`;
+                return;
+            }
             if (tab === "restrictions") {
                 const rows = await request("/api/livestock/restrictions?onlyActive=false");
-                content.innerHTML = table(["Animal", "Finalidade", "Motivo", "Início", "Previsão", "Situação"],
-                    (rows ?? []).map(item => `<tr><td>${escapeHtml(item.tag || "Grupo")}</td><td>${escapeHtml(item.purpose)}</td><td>${escapeHtml(item.reason)}${item.demoOnly || item.demo_only ? " (demonstrativo)" : ""}</td><td>${escapeHtml(item.startedOn || item.started_on)}</td><td>${escapeHtml(item.expectedUntil || item.expected_until || "—")}</td><td>${statusPill(item.status)}</td></tr>`),
+                content.innerHTML = table(["Animal", "Finalidade", "Motivo", "Início", "Previsão", "Situação", "Ações"],
+                    (rows ?? []).map(item => {
+                        const effective = item.effectiveStatus || item.effective_status || item.status;
+                        return `<tr><td>${escapeHtml(item.tag || "Grupo")}</td><td>${escapeHtml(item.purpose)}</td><td>${escapeHtml(item.reason)}${item.demoOnly || item.demo_only ? " (demonstrativo)" : ""}</td><td>${escapeHtml(item.startedOn || item.started_on)}</td><td>${escapeHtml(item.expectedUntil || item.expected_until || "—")}</td><td>${statusPill(effective)}</td><td>${canWrite() && effective === "ACTIVE" ? `<button type="button" data-release-restriction="${item.id}" data-name="${escapeHtml(item.tag || "grupo")}">Liberar</button>` : ""}</td></tr>`;
+                    }),
                     "Nenhuma restrição cadastrada.");
                 return;
             }
@@ -251,7 +293,7 @@
         });
     }
 
-    document.getElementById("primary-action").addEventListener("click", () => {
+    document.getElementById("primary-action").addEventListener("click", async () => {
         const farmField = `<label>Propriedade<input class="lookup" data-lookup="properties" data-target="farmId" required minlength="2" placeholder="Busque pelo nome" /><input type="hidden" name="farmId" /></label>`;
         const animalField = `<label>Animal<input class="lookup" data-lookup="animals" data-target="animalId" required minlength="2" placeholder="Brinco" /><input type="hidden" name="animalId" /></label>`;
         if (tab === "animals") {
@@ -302,6 +344,9 @@
                 <label>Unidade<select name="unit"><option value="kg">kg</option><option value="arroba">arroba</option></select></label>
                 <label>Fator de conversão<input name="conversionFactor" type="number" min="0" step="0.0001" data-help="Obrigatório se a unidade não for kg. Arroba = 15 kg." /></label>
                 <label>Data e hora<input name="weighedAt" type="datetime-local" required /></label>
+                <label>Equipamento<input name="equipment" maxlength="80" /></label>
+                <label>Precisão da medição<input name="measurementPrecision" maxlength="20" data-help="Ex.: 0,1 kg" /></label>
+                <label>Responsável<input class="lookup" data-lookup="people" data-target="responsibleId" /><input type="hidden" name="responsibleId" /></label>
                 <label class="wide">Observações / justificativa de limite<textarea name="notes"></textarea></label>`, "weighing");
             return;
         }
@@ -310,6 +355,24 @@
                 <label>Data da reserva<input name="reservedOn" type="date" required /></label>
                 <label>Comprador<input name="buyerName" maxlength="160" /></label>
                 <label class="wide">Observações<textarea name="notes">Reserva não representa venda concluída nem pagamento recebido.</textarea></label>`, "reserve");
+            return;
+        }
+        if (tab === "health") {
+            let protocols = [];
+            try { protocols = await request("/api/livestock/protocols"); } catch (error) { notify(error.message, true); return; }
+            const protoOptions = ['<option value="">— sem protocolo (carência do formulário) —</option>']
+                .concat((protocols ?? []).map(p => `<option value="${p.id}" ${p.active ? "" : "disabled"}>${escapeHtml(p.name)} (${escapeHtml(p.version_label)})${p.active ? "" : " — desativado"}</option>`)).join("");
+            openDialog("Registrar aplicação de sanidade", `${animalField}
+                <label>Protocolo (opcional)<select name="protocolId">${protoOptions}</select></label>
+                <label>Tipo<select name="type" required><option value="VACCINATION">Vacinação</option><option value="DEWORMING">Desverminação</option><option value="TREATMENT">Tratamento</option><option value="SURGERY">Cirurgia</option><option value="OTHER">Outro</option></select></label>
+                <label>Data da aplicação<input name="appliedOn" type="date" required /></label>
+                <label>Dose<input name="dose" type="number" min="0.0001" step="0.0001" required /></label>
+                <label>Unidade<input name="unit" maxlength="16" value="ml" required /></label>
+                <label>Carência (dias)<input name="withdrawalDays" type="number" min="0" step="1" value="0" data-help="Com protocolo, a carência do catálogo do protocolo prevalece." /></label>
+                <label>Próxima aplicação (follow-up)<input name="nextApplication" type="date" /></label>
+                <label>Técnico responsável<input name="technician" maxlength="120" /></label>
+                <label class="wide">Diagnóstico<textarea name="diagnosis"></textarea></label>
+                <label class="wide">Observações<textarea name="notes" maxlength="2000"></textarea></label>`, "application");
             return;
         }
         notify("Esta aba não cria registro por este botão. Use a operação específica listada.", true);
@@ -347,11 +410,25 @@
                 await request("/api/livestock/weighings", { method: "POST", body: JSON.stringify({
                     scope: raw.scope, farmId: raw.farmId, animalId: raw.scope === "INDIVIDUAL" ? raw.animalId : null,
                     weight: Number(raw.weight), unit: raw.unit, conversionFactor: raw.conversionFactor ? Number(raw.conversionFactor) : (raw.unit === "arroba" ? 15 : null),
-                    weighedAt: new Date(raw.weighedAt).toISOString(), source: "MANUAL", notes: raw.notes || null, reviewJustification: raw.notes || null
+                    weighedAt: new Date(raw.weighedAt).toISOString(), source: "MANUAL", notes: raw.notes || null, reviewJustification: raw.notes || null,
+                    equipment: raw.equipment || null, measurementPrecision: raw.measurementPrecision || null, responsibleId: raw.responsibleId || null
                 }) });
             } else if (currentAction === "reserve") {
                 await request("/api/livestock/commercial/reservations", { method: "POST", body: JSON.stringify({
                     farmId: raw.farmId, animalId: raw.animalId, quantity: 1, reservedOn: raw.reservedOn, buyerName: raw.buyerName || null, notes: raw.notes || null
+                }) });
+            } else if (currentAction === "application") {
+                await request("/api/livestock/health-events", { method: "POST", body: JSON.stringify({
+                    animalId: raw.animalId || null, herdId: null, type: raw.type, appliedOn: raw.appliedOn,
+                    dose: Number(raw.dose), unit: raw.unit || "ml", withdrawalDays: Number(raw.withdrawalDays || 0),
+                    nextApplication: raw.nextApplication || null, technician: raw.technician || null,
+                    diagnosis: raw.diagnosis || null, notes: raw.notes || null, protocolId: raw.protocolId || null
+                }) });
+            } else if (currentAction === "protocol") {
+                await request("/api/livestock/protocols", { method: "POST", body: JSON.stringify({
+                    name: raw.name, source: raw.source, versionLabel: raw.versionLabel, validFrom: raw.validFrom,
+                    validUntil: raw.validUntil || null, purpose: raw.purpose, withdrawalDays: Number(raw.withdrawalDays || 0),
+                    active: raw.active !== "false", notes: raw.notes || null
                 }) });
             }
             dialog.close();
@@ -371,10 +448,16 @@
             try {
                 const detail = await request(`/api/livestock/animals/${animal.dataset.openAnimal}/detail`);
                 const a = detail.animal;
+                const tr = (key, fallback) => window.agroI18n?.t?.(key) === key ? fallback : (window.agroI18n?.t?.(key) || fallback);
                 const auditRows = (detail.audit ?? []).map(item => `<tr><td>${escapeHtml(item.occurredAt)}</td><td>${escapeHtml(item.action)}</td><td>${escapeHtml(item.actorName || "—")}</td></tr>`).join("") || `<tr><td colspan="3">Sem eventos de auditoria.</td></tr>`;
+                const identifierRows = (detail.identifiers ?? []).map(item => `<tr><td>${escapeHtml(item.kind)}</td><td>${escapeHtml(item.value)}</td><td>${escapeHtml(String(item.assignedOn ?? "—").slice(0, 10))}</td><td>${item.retiredOn ? escapeHtml(String(item.retiredOn).slice(0, 10)) : tr("liv.identifiersActive", "vigente")}</td><td>${escapeHtml(item.reason || "—")}</td></tr>`).join("") || `<tr><td colspan="5">${tr("liv.noIdentifiers", "Sem identificadores registrados.")}</td></tr>`;
                 content.innerHTML = `<article class="preview-box"><h3>${escapeHtml(a.tag)}</h3>
-                    <p>Situação ${a.deletedAt ? statusPill("EXCLUIDO") : statusPill(a.status)}. Origem ${escapeHtml(a.originType || "não informada")}. Nascimento ${a.birthDateEstimated ? "estimado" : "conhecido"} em ${escapeHtml(a.birthDate)}.</p>
+                    <p>Situação ${a.deletedAt ? statusPill("EXCLUIDO") : statusPill(a.status)}. Origem ${escapeHtml(a.originType || "não informada")}. Nascimento ${a.birthDateEstimated ? tr("liv.birthEstimated", "estimado") : tr("liv.birthKnown", "conhecido")} em ${escapeHtml(a.birthDate)}.</p>
                     <p>Propriedade ${escapeHtml(a.farmName)}. Grupo ${escapeHtml(a.herdName || "—")} (${escapeHtml(a.herdControlMode || "—")}).</p>
+                    <section class="history-box">
+                        <h4>${tr("liv.identifiers", "Identificadores (histórico)")}</h4>
+                        <div class="table-wrap"><table><thead><tr><th>Tipo</th><th>Valor</th><th>Vigente desde</th><th>Encerrado em</th><th>Motivo</th></tr></thead><tbody>${identifierRows}</tbody></table></div>
+                    </section>
                     <section class="history-box">
                         <h4>Histórico do registro</h4>
                         <p>Criado por ${escapeHtml(a.createdByName || "legado/desconhecido")} em ${a.createdAt ? new Date(a.createdAt).toLocaleString("pt-BR") : "—"}.</p>
@@ -420,6 +503,47 @@
                 notify("Registro restaurado.");
                 await render();
             } catch (error) { notify(error.message, true); }
+            return;
+        }
+        const release = event.target.closest("[data-release-restriction]");
+        if (release) {
+            const authority = window.prompt(`Liberar a restrição de "${release.dataset.name}"?\nInforme a autoridade que autoriza (ex.: médico veterinário):`);
+            if (!authority || authority.trim().length < 3) { notify("Liberação cancelada: autoridade obrigatória.", true); return; }
+            const criteria = window.prompt("Critério objetivo que sustenta a liberação (ex.: exame laboratorial negativo):");
+            if (!criteria || criteria.trim().length < 3) { notify("Liberação cancelada: critério obrigatório.", true); return; }
+            try {
+                await request(`/api/livestock/restrictions/${release.dataset.releaseRestriction}/release`, {
+                    method: "POST",
+                    body: JSON.stringify({ releasedOn: new Date().toISOString().slice(0, 10), authority: authority.trim(), criteria: criteria.trim() })
+                });
+                notify("Restrição liberada.");
+                await render();
+            } catch (error) { notify(error.message, true); }
+            return;
+        }
+        const deactivate = event.target.closest("[data-deactivate-protocol]");
+        if (deactivate) {
+            const ok = window.confirm(`Desativar o protocolo "${deactivate.dataset.name}"?\nAs execuções já ligadas são preservadas; ele sai das novas aplicações.`);
+            if (!ok) { notify("Desativação cancelada.", true); return; }
+            try {
+                await request(`/api/livestock/protocols/${deactivate.dataset.deactivateProtocol}/deactivate`, { method: "POST" });
+                notify("Protocolo desativado.");
+                await render();
+            } catch (error) { notify(error.message, true); }
+            return;
+        }
+        const newProtocol = event.target.closest("[data-new-protocol]");
+        if (newProtocol) {
+            openDialog("Novo protocolo de sanidade", `
+                <label>Nome<input name="name" required maxlength="160" /></label>
+                <label>Fonte (ficha técnica / bula)<input name="source" required maxlength="240" /></label>
+                <label>Versão<input name="versionLabel" required maxlength="40" placeholder="Ex.: 2026.1" /></label>
+                <label>Vigente desde<input name="validFrom" type="date" required /></label>
+                <label>Vigente até (vazio = aberto)<input name="validUntil" type="date" /></label>
+                <label>Finalidade<select name="purpose" required><option value="OPERATIONAL">Operacional</option><option value="MILK">Leite</option><option value="SALE">Venda</option><option value="SLAUGHTER">Abate</option><option value="DEMO">Demonstrativo (não gera restrição)</option></select></label>
+                <label>Carência (dias)<input name="withdrawalDays" type="number" min="0" step="1" value="0" /></label>
+                <label>Situação inicial<select name="active"><option value="true">Ativo</option><option value="false">Inativo</option></select></label>
+                <label class="wide">Observações<textarea name="notes" maxlength="2000"></textarea></label>`, "protocol");
             return;
         }
         const preview = event.target.closest("[data-preview]");

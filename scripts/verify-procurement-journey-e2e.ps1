@@ -48,6 +48,8 @@ $templateDb = 'journey_template'
 $templateMarker = Join-Path $templateDir 'template-ready.txt'
 $fullSqlPath = Join-Path $root 'database/agro360-postgres-full.sql'
 $apiPort = 0
+$apiHostProc = $null   # processo atual do host (substituido em cada recuperacao OOM)
+$apiRestartCount = 0   # teto: 3 recuperacoes por execucao
 
 $env:PGCONNECT_TIMEOUT = '20'
 
@@ -93,6 +95,44 @@ function Invoke-PsqlFile([string]$FilePath, [string]$Db = $dbName) {
     return $combined.Trim()
 }
 
+function Test-ApiTcp([int]$Rounds) {
+    for ($i = 0; $i -lt $Rounds; $i++) {
+        try { $tcp = [Net.Sockets.TcpClient]::new(); $tcp.Connect('127.0.0.1', $apiPort); $tcp.Close(); return $true } catch {}
+        Start-Sleep -Milliseconds 500
+    }
+    return $false
+}
+
+function Start-ApiHostProcess([string]$LogTag) {
+    $p = Start-Process dotnet -ArgumentList "`"$apiExe`"" -WorkingDirectory (Split-Path $apiExe) -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $evidenceDir ("api-${LogTag}.out.log")) -RedirectStandardError (Join-Path $evidenceDir ("api-${LogTag}.err.log"))
+    $processes.Add($p) | Out-Null
+    return $p
+}
+
+# A maquina sofre picos de pressao de RAM de outras apps; o OOM killer do SO ja matou o
+# host da API silenciosamente nesta execucao (porta tcp abriu no probe; POST /login caiu com
+# "Impossivel conectar-se ao servidor remoto"). Recuperacao: se o pedido nunca chegou
+# (conexao RECUSADA), reinicia o host na mesma porta e repete o pedido exatamente UMA vez.
+# O Postgres sobrevive a queda; tokens JWT sao stateless -> nada mais precisa re-logar.
+function Restart-ApiHost([string]$Why) {
+    if ($script:apiRestartCount -ge 3) { throw "A API caiu (${Why}) e nao voltou apos 3 reinicios; veja os logs api-*.log na pasta de evidencia." }
+    $script:apiRestartCount++
+    Write-Host ("[api-down] " + $Why + "; reiniciando host da API (reinicio $($script:apiRestartCount)) e repetindo o pedido...") -ForegroundColor Yellow
+    $old = $script:apiHostProc
+    if ($null -ne $old -and -not $old.HasExited) { try { Stop-Process -Id $old.Id -Force } catch {} }
+    $script:apiHostProc = Start-ApiHostProcess ("r$($script:apiRestartCount)")
+    if (-not (Test-ApiTcp 60)) { throw "A API nao escutou apos o reinicio (${Why})" }
+    Start-Sleep -Seconds 2
+}
+
+function Is-ConnRefused([System.Management.Automation.ErrorRecord]$Err) {
+    $msg = "$($Err.Exception.Message)"
+    if ($msg -match 'conectar-se ao servidor remoto|Connection refused|No connection could be made') { return $true }
+    $inner = $Err.Exception.InnerException
+    while ($inner) { if ($inner -is [Net.Sockets.SocketException]) { return $true }; $inner = $inner.InnerException }
+    return $false
+}
+
 function Invoke-Api([string]$Method, [string]$Path, $Body = $null, [string]$Token = '', [hashtable]$ExtraHeaders = @{}) {
     $url = "http://127.0.0.1:${apiPort}${Path}"
     $headers = @{ 'Content-Type' = 'application/json' }
@@ -103,29 +143,38 @@ function Invoke-Api([string]$Method, [string]$Path, $Body = $null, [string]$Toke
         $json = $Body | ConvertTo-Json -Depth 8 -Compress
         $params['Body'] = [Text.Encoding]::UTF8.GetBytes($json)
     }
-    try {
-        $resp = Invoke-WebRequest @params
-        $content = $resp.Content
-        $contentType = "$($resp.Headers['Content-Type'])"
-        $result = $null
-        if ($contentType -like '*json*' -and $content -and $content.Length -gt 1) {
-            try { $result = $content | ConvertFrom-Json } catch { $result = $content }
+    $triedRestart = $false
+    while ($true) {
+        try {
+            $resp = Invoke-WebRequest @params
+            $content = $resp.Content
+            $contentType = "$($resp.Headers['Content-Type'])"
+            $result = $null
+            if ($contentType -like '*json*' -and $content -and $content.Length -gt 1) {
+                try { $result = $content | ConvertFrom-Json } catch { $result = $content }
+            }
+            return @{ Status = [int]$resp.StatusCode; Body = $result; Raw = $content }
+        } catch {
+            $resp = $_.Exception.Response
+            if ($null -ne $resp) {
+                if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+                    $content = $_.ErrorDetails.Message
+                } elseif ($resp.PSObject.Methods.Name -contains 'GetResponseStream') {
+                    $stream = $resp.GetResponseStream()
+                    $reader = [IO.StreamReader]::new($stream)
+                    $content = $reader.ReadToEnd()
+                } else {
+                    $content = ''
+                }
+                $result = if ($content -and $content.Length -gt 2) { try { $content | ConvertFrom-Json } catch { $content } } else { $null }
+                return @{ Status = [int]$resp.StatusCode; Body = $result; Raw = $content }
+            }
+            # sem resposta HTTP = transporte. So em conexao recusada (host morto) o pedido
+            # certamente nao foi processado -> segura para reiniciar + repetir UMA vez.
+            if ($triedRestart -or -not (Is-ConnRefused $_)) { throw "HTTP ${Method} ${Path}: $($_.Exception.Message)" }
+            Restart-ApiHost ("conexao recusada em ${Method} ${Path}")
+            $triedRestart = $true
         }
-        return @{ Status = [int]$resp.StatusCode; Body = $result; Raw = $content }
-    } catch {
-        $resp = $_.Exception.Response
-        if ($null -eq $resp) { throw "HTTP ${Method} ${Path}: $($_.Exception.Message)" }
-        if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
-            $content = $_.ErrorDetails.Message
-        } elseif ($resp -and $resp.PSObject.Methods.Name -contains 'GetResponseStream') {
-            $stream = $resp.GetResponseStream()
-            $reader = [IO.StreamReader]::new($stream)
-            $content = $reader.ReadToEnd()
-        } else {
-            $content = ''
-        }
-        $result = if ($content -and $content.Length -gt 2) { try { $content | ConvertFrom-Json } catch { $content } } else { $null }
-        return @{ Status = [int]$resp.StatusCode; Body = $result; Raw = $content }
     }
 }
 
@@ -241,6 +290,7 @@ try {
     $env:Jwt__SigningKey = 'e2e-test-signing-key-32bytes-minimum!'
     $apiProc = Start-Process dotnet -ArgumentList "`"$apiExe`"" -WorkingDirectory (Split-Path $apiExe) -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $evidenceDir 'api.out.log') -RedirectStandardError (Join-Path $evidenceDir 'api.err.log')
     $processes.Add($apiProc)
+    $apiHostProc = $apiProc
     $ready = $false
     for ($i = 0; $i -lt 40; $i++) {
         Start-Sleep -Milliseconds 500
@@ -252,6 +302,11 @@ try {
             break
         } catch { }
         if ($apiProc.HasExited) { break }
+    }
+    if (-not $ready -and $apiProc.HasExited) {
+        # Morte antes do ready (OOM durante o start): recupera em vez de falhar a execucao.
+        Restart-ApiHost 'processo inicial terminou durante o start'
+        $ready = Test-ApiTcp 60
     }
     if (-not $ready) {
         $errLog = Join-Path $evidenceDir 'api.err.log'

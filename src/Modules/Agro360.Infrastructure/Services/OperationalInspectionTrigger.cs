@@ -187,7 +187,9 @@ public sealed class OperationalInspectionTrigger(
                 r.Attempts,
                 r.LastError,
                 r.ErrorCode,
-                new DateTimeOffset(DateTime.SpecifyKind(r.NextAttemptAt, DateTimeKind.Utc))
+                new DateTimeOffset(DateTime.SpecifyKind(r.NextAttemptAt, DateTimeKind.Utc)),
+                DescribeSituation(r.Status, r.LastError, r.Attempts),
+                r.Status is "PENDING" or "PENDING_MODEL" or "AMBIGUOUS" or "DEAD_LETTERED"
             )).ToArray();
         }, ct);
 
@@ -212,6 +214,11 @@ public sealed class OperationalInspectionTrigger(
                     $"O intent no estado {row.Status} não admite re-disparo manual.",
                     "inspection.intent_not_redispatchable");
 
+            // Re-disparo exige justificativa (auditoria). O ator efetivo vem da identidade autenticada;
+            // delegar a outro ator só é válido com ActorId explícito (usuário ativo do tenant, validado acima).
+            if (string.IsNullOrWhiteSpace(command.Reason))
+                throw new DomainException("Informe o motivo do re-disparo; ele fica registrado na auditoria.", "inspection.redispatch_reason_required");
+
             if (command.ActorId.HasValue)
             {
                 var active = await c.ExecuteScalarAsync<bool>(new CommandDefinition("""
@@ -229,7 +236,7 @@ public sealed class OperationalInspectionTrigger(
                     attempts = 0, last_error = null, error_code = null, dead_lettered_at = null,
                     next_attempt_at = now(),
                     claimed_at = null, claimed_by = null, lease_expires_at = null,
-                    actor_id = coalesce(@ActorId, actor_id),
+                    actor_id = coalesce(@ActorId, @UserId, actor_id),
                     notes = case when @Reason is null then notes else 'Re-disparo manual: ' || @Reason end,
                     updated_at = now(), updated_by = @UserId, row_version = row_version + 1
                 where tenant_id = @TenantId and id = @Id
@@ -244,7 +251,7 @@ public sealed class OperationalInspectionTrigger(
 
             await c.WriteAuditAsync(t, tenant, "INSPECTION_INTENT_REDISPATCH", "quality_inspection_event_intent", intentId,
                 new { row.Status, row.Attempts, ActorBefore = row.ActorId },
-                new { Reason = command.Reason, ActorAfter = command.ActorId ?? row.ActorId }, ct);
+                new { Reason = command.Reason.Trim(), ActorAfter = command.ActorId ?? (tenant.UserId == Guid.Empty ? row.ActorId : tenant.UserId) }, ct);
 
             return row;
         }, ct);
@@ -255,6 +262,22 @@ public sealed class OperationalInspectionTrigger(
 
     private static string? NullIfEmpty(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>Situação derivada para orientação operacional: distingue falta de modelo (configuração a publicar),
+    /// falha transitória (o worker de recuperação retoma com backoff) e falha permanente (exige re-disparo manual
+    /// com justificativa). Não substitui o estado canônico; apenas orienta o operador na interface.</summary>
+    private static string DescribeSituation(string status, string? lastError, int attempts) => status switch
+    {
+        "PENDING_MODEL" => "MODEL_MISSING",
+        "DEAD_LETTERED" => "PERMANENT",
+        "AMBIGUOUS" => "AMBIGUOUS",
+        "STARTED" => "PROCESSING",
+        "RESOLVED" => "RESOLVED",
+        "SKIPPED_NO_ACTOR" => "NO_ACTOR",
+        "PENDING" when (lastError != null || attempts > 0) => "TRANSIENT",
+        "PENDING" => "WAITING",
+        _ => "UNKNOWN"
+    };
 
     private sealed class EventIntentListRow
     {

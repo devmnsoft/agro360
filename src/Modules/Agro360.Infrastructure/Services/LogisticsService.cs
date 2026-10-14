@@ -468,6 +468,23 @@ public sealed class LogisticsService(
                         new { tenant.TenantId, Item = item.ShipmentItemId, Accepted = item.AcceptedQuantity }, t, cancellationToken: ct));
                 }
             }
+            // Bloco B (2026-10-12): o aceite formal emite o recebivel financeiro da venda — simetria de
+            // Compras (titulo OPEN no evento fisico, nunca liquidado automaticamente). Base de preco =
+            // quantidade aceita x unit_price registrado no item comercial, a MESMA base da receita
+            // reconhecida na safra (HarvestService), entao faturamento e reconhecimento nao divergem.
+            // Replay da tentativa ja retorna antes (chave+hash); o unique parcial da migration 139 protege o restante.
+            var acceptedAmount = await c.ExecuteScalarAsync<decimal>(new CommandDefinition("""select coalesce(sum(dai.accepted_quantity * oi.unit_price), 0) from agro360.fulfillment_delivery_attempt_items dai join agro360.fulfillment_shipment_items si on si.tenant_id=dai.tenant_id and si.id=dai.shipment_item_id join agro360.sales_order_items oi on oi.tenant_id=si.tenant_id and oi.id=si.order_item_id where dai.tenant_id=@TenantId and dai.attempt_id=@Attempt""", new { tenant.TenantId, Attempt = attempt }, t, cancellationToken: ct));
+            if (acceptedAmount > 0m)
+            {
+                var billing = await c.QuerySingleAsync<(string ShipmentNumber, string CustomerName, DateOnly? ExpectedDelivery, Guid? RevenueAccountId)>(new CommandDefinition("""select s.number ShipmentNumber, c.name CustomerName, (select o.expected_delivery from agro360.fulfillment_shipment_items si join agro360.sales_order_items oi on oi.tenant_id=si.tenant_id and oi.id=si.order_item_id join agro360.sales_orders o on o.tenant_id=oi.tenant_id and o.id=oi.order_id where si.tenant_id=@TenantId and si.shipment_id=@Id and o.expected_delivery is not null limit 1) ExpectedDelivery, (select acc.id from agro360.finance_chart_of_accounts acc where acc.tenant_id=@TenantId and acc.type='REVENUE' and acc.active order by acc.display_order limit 1) RevenueAccountId from agro360.fulfillment_shipments s join agro360.crm_customers c on c.tenant_id=s.tenant_id and c.id=s.customer_id where s.tenant_id=@TenantId and s.id=@Id""", new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
+                if (billing.RevenueAccountId is null || billing.RevenueAccountId == Guid.Empty) throw new DomainException("Nenhuma conta contábil de receita ativa cadastrada para registrar o recebível da venda.", "sales.receivable_account_missing");
+                var amount = decimal.Round(acceptedAmount, 2, MidpointRounding.AwayFromZero);
+                var issuedOn = DateOnly.FromDateTime(DateTime.UtcNow);
+                var dueOn = billing.ExpectedDelivery is { } ed && ed > issuedOn ? ed : issuedOn;
+                var receivableId = Guid.NewGuid();
+                await c.ExecuteAsync(new CommandDefinition("""insert into agro360.finance_receivables(id,tenant_id,customer_name,document,original_amount,discount,interest,fine,final_amount,balance,issued_on,due_on,account_id,source_id,fulfillment_attempt_id,status,created_by) values(@Rid,@TenantId,@CustomerName,@Document,@Amount,0,0,0,@Amount,@Amount,current_date,@DueOn,@AccountId,@Attempt,@Attempt,'OPEN',@UserId)""", new { Rid = receivableId, tenant.TenantId, CustomerName = billing.CustomerName, Document = $"EXPEDIÇÃO {billing.ShipmentNumber}", Amount = amount, DueOn = dueOn, AccountId = billing.RevenueAccountId.Value, Attempt = attempt, tenant.UserId }, t, cancellationToken: ct));
+                await Audit(c, t, "sales.receivable_emitted", receivableId, new { amount, attempt = attempt, shipment = id }, ct);
+            }
             await c.ExecuteAsync(new CommandDefinition("update agro360.fulfillment_shipments s set status=case when not exists(select 1 from agro360.fulfillment_shipment_items i where i.tenant_id=s.tenant_id and i.shipment_id=s.id and i.accepted_quantity+i.returned_quantity+i.lost_quantity<i.checked_quantity) then 'RECONCILED' when @AttemptStatus='FAILED' and s.status in ('DISPATCHED','IN_DELIVERY') then 'IN_DELIVERY' when exists(select 1 from agro360.fulfillment_shipment_items i where i.tenant_id=s.tenant_id and i.shipment_id=s.id and i.refused_quantity>0) then 'RETURN_PENDING' else 'PARTIAL' end,version=version+1,updated_at=now(),updated_by=@UserId where tenant_id=@TenantId and id=@Id", new { tenant.TenantId, Id = id, AttemptStatus = command.Status.Trim().ToUpperInvariant(), tenant.UserId }, t, cancellationToken: ct));
 
             var attemptScheduleId = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition(

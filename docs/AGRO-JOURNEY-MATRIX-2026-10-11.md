@@ -251,3 +251,223 @@ Suspensão de módulo por tenant comprovada na regressão de Compras (etapa 10):
 **Próxima fatia**: (1) homologação **visual do browser** — única ação manual pendente (confiar o certificado `C05DA1CA…` na loja `Root` via `Confiar-cert-agro360.bat`) e preencher a matriz 4 idiomas × 360/768/1440 px + zoom 200%; (2) **Central de Trabalho do núcleo agrícola** (tipos FIELD_BLOCKED / RESOURCE_UNASSIGNED / CUSTODY_PENDING / INSPECTION_PENDING / COST_PENDING); (3) **governança SaaS** (contrato de módulo no `SaveRoleAsync` + UI de estado suspenso).
 
 > Escopo deste incremento: prova comportamental do **núcleo agrícola** + recuperação de inspeções + preservação do Compras. **Não declara o Agro360 inteiro homologado.**
+
+---
+
+## Incremento de 2026-10-12 (baseline `main @ 79b59c9`) — resultado líquido confiável, Central de Trabalho agrícola, interface de recuperação, governança de papéis + roadmap Pecuária P1–P10
+
+Prompt COMPLEMENT integrado à entrega: roadmap de **Pecuária em 10 sprints (P1–P10)** registrado como programa com auditoria de entrada concluída — `docs/PECUARIA-PROGRAMA-P1-P10.md` (inventário exaustivo do módulo existente antes de qualquer mudança: 38 tabelas `agro360.livestock_*`, 3 serviços, ~60 rotas, seeds, testes, integrações; status e lacunas por domínio; regras transversais e portas por sprint; ordem de execução P1→P10). Os sprints executam somente após concluir esta fatia e o Bloco B.
+
+### §3 Bloco A — Resultado líquido confiável da safra — APROVADO (E2E cenário G)
+- Auditoria de todos os leitores de `cost_management_entries` seguida de netting canônico: **líquido = reconhecido − estornado** (sem saldo paralelo); memória de cálculo explícita na resposta (`definition`).
+- Estorno parcial + total sem exceder o elegível: guarda cumulativa em quantidade (409 `agriculture.reversal_exceeds_remaining` com o saldo restante na mensagem) e guard atômico em valor no lançamento; estorno após líquido zero → 409 `agriculture.reversal_duplicate`.
+- Eventos REVERSAL: um registro canônico por consumo (índice parcial `ux_field_material_single_reversal`); estornos parciais sucessivos **acumulam via upsert** (replay não duplica; cada ação permanece auditada por chave + auditoria).
+- Exposição bruto/estornado/líquido em: detalhe, lista, overview, CSV (`ReconhecidoBruto;Estornado;ReconhecidoLiquido;Apropriado;PendenteLiquido`), fechamento (`pending_net`) e dashboard (`recognizedCost` bruto + `recognizedNetCost`).
+- Provas da execução (api==db): parcial 40 → rev=500|net=750; replay sem duplicar; 61 rejeitado ("restam 60.000000"); overview api==db (3000|5542|750); dashboard gross=8542|net=5542 == db; closing pendente-líquido 750; estorno total → 1250|0 e COST_PENDING sai da central; estorno posterior rejeitado `reversal_duplicate`.
+
+### §4 Central de Trabalho agrícola — APROVADO (E2E cenário H)
+- Ocorrências projetadas de fontes reais: `CUSTODY_PENDING` (material entregue sem baixa de consumo/devolução/perda), `RESOURCE_UNASSIGNED` (ordem sem responsável), `INSPECTION_PENDING` (inclui dead-letter) e `COST_PENDING` (líquido pendente > apropriado) — cada uma com origem, causa, unidade, prazo, impacto e próxima ação; deep link `/Work`.
+- Permissão/escopo antes da projeção: sem `work.read` → 403; operador escopo farmA → farmB 403 / farmA 200 (**X-Farm-Id não alarga autorização**); outro tenant invisível (vale não vê ocorrências de santa-clara).
+- `view`/assignment geram eventos únicos (reenvio não duplica); **atribuição ≠ aprovação** (ordem permanece PLANNED); resolver a origem tira a ocorrência da central (revalidação de estado no backend, sem cache).
+
+### §5 Interface de recuperação de inspeções — APROVADO (E2E H3 + suíte dedicada revalidada)
+- Situação/causa/próxima ação visíveis na central (DEAD_LETTERED = prioridade HIGH + "exige re-disparo manual com justificativa"); estados **falta modelo × falha transitória × falha permanente** diferenciados no texto.
+- Re-disparo exige motivo (422 `inspection.redispatch_reason_required`) e fica auditado (`INSPECTION_INTENT_REDISPATCH` com ator da identidade autenticada); não duplica intent; lista expõe `situation` + `canRedispatch` com api==db; origem que saiu do estado pendente é RESOLVED sem nova ação.
+- Suíte dedicada `verify-inspection-recovery-e2e.ps1` revalidada neste incremento: S1–S7 todos passam (adoção de origens órfãs sem reenviar o comando, PENDING_MODEL com ciclo longo, backoff→dead-letter com motivo, redispatch zera+audita+processa, dois workers concorrentes → 1 intent/1 run, lease recuperado após restart).
+
+### §6 Governança de papéis × contratação — APROVADO (prova API, E2E cenário I)
+- `SaveRoleAsync` valida o contrato com a mesma fonte canônica do gate de runtime: perfil concedendo recurso de módulo **não contratado** → 403 "módulo não contratado: {permissão}"; módulo **suspenso** → 403 "módulo suspenso: {módulo}" (**mensagens distintas**, mesma classe de negação); módulo contratado → 201.
+- Suspensão preserva perfis (nada destruído) e nega acesso efetivo no runtime (403); reativação libera gravação (201) e acesso (200).
+
+### §12/§13 — Defeitos corrigidos nesta fatia (causa raiz, todos cobertos pelo E2E verde)
+1. `SeasonCostService.Params` — expansão POCO do Dapper enviava NULLs **sem tipo** → Postgres 42P08 (`could not determine data type of parameter`) nos predicados `@P is null`; parâmetros agora com `DbType` explícito (list/overview/export.csv: 500 → 200).
+2. Estorno parcial #2 batia no unique `(tenant_id, source_event_id) where event_type='REVERSAL'` (`persistence.unique_violation`) → upsert `ON CONFLICT ... DO UPDATE` acumulando quantidade na linha canônica do consumo.
+3. `SaasService.SaveRoleAsync` — a classificação suspenso × não-contratado checava código de permissão contra conjunto de **módulos**; agora resolve os módulos de cada permissão via `Permissions.ModulesForPermission`.
+4. Harness: operador do fixture sem `work.read` (concessão via `identity_role_permissions` + re-login — o JWT embute as permissões); aspas erradas em `jsonb_set(...,'to_jsonb('...'::text)')`; `next_attempt_at` NOT NULL no force de dead-letter (coluna nunca nula no processor; o claim só pega `PENDING`/`PENDING_MODEL`).
+
+### §13 Banco de dados
+- Migrations incrementais **137** (`cost_reversal_net_integrity`) e **138** (`receipt_item_work_order_material_fk`); `full.sql` atualizado; **gates de setup do E2E** verificam presença das versões {11.25.0, 137.0.0, 138.0.0} + idempotência real (upgrade sobre banco atualizado).
+- **Upgrade documentado para `agro360_homolog`: 136 → 137 → 138** — pré-validação read-only em 2026-10-12: homolog @ 11.25.0 (mig 135), mig 136 ainda não aplicada; precondições limpas (`field_work_order_materials UNIQUE(tenant_id,id)` como alvo da FK, contadores de custódia íntegros, zero lançamentos com `reversed_amount > recognized_amount`, links nulos pós-136 → 138 aplica limpo). Ainda **não aplicado** na homolog.
+- Instalação limpa e upgrade validados em cluster PG18 descartável (template derivado do `full.sql`).
+
+### §14 Entrega / fechamento do incremento
+| Item | Estado | Evidência |
+| --- | --- | --- |
+| Jornada A–I (Bloco A original + G/H/I novos) | **APROVADO 103 PASS / 0 FAIL / 0 BLOCKED** | `artifacts/agro-journey-e2e-b28d889875594792b694c610ecf5b21a` |
+| Gates estáticos (build/arch/unit) | APROVADO | `GATES_DONE build=0 arch=0 unit=0` (187/187 · 390/390) |
+| Regressão Compras (12 etapas) | APROVADO 12/12 | `artifacts/procurement-journey-e2e-668e9b3ef3234891992eb5e74c79072b` (2026-10-12 08:28 UTC, schema 11.24.0) |
+| Regressão recuperação de inspeções (S1–S7) | APROVADO | `artifacts/inspection-recovery-e2e-683b5aba64304d9a87938d76a40cbff5` |
+| Homologação visual do browser | **BLOQUEADO** (trust do cert `C05DA1CA…` no desktop) | `Confiar-cert-agro360.bat` — ação única do usuário |
+| Programa Pecuária P1–P10 | PLANEJADO (auditoria de entrada concluída) | `docs/PECUARIA-PROGRAMA-P1-P10.md` |
+| Cenários executados com falha | **nenhum** | — |
+
+**Não executado nesta fatia** (documentado, não falha): §7–§8 comercialização de lote disponível → venda + resultado comercial; §9 lotes repetidos/safras recorrentes; sprints P1–P10.
+
+**Próxima jornada**: **Bloco B (§7–§8)** — evolução da comercialização: lote disponível → venda (auditar os agregados comerciais existentes; evoluir, **sem criar módulo paralelo**) + resultado comercial com memória de cálculo e reconciliação; funda a base usada pelo sprint P9. Em seguida, o programa de Pecuária inicia em **P1 (rebanho/identificação)** com re-auditoria do estado vigente.
+
+**Git**: baseline `main @ 79b59c9`; todo o trabalho desta entrega segue **não commitado** (sem push/merge/publicação).
+
+> Escopo deste incremento: resultado líquido confiável + Central de Trabalho agrícola + interface de recuperação + governança de papéis, com regressões preservadas e programa de Pecuária planejado. **Não declara o Agro360 inteiro homologado.**
+
+---
+
+## Bloco B (incremento de 2026-10-12) — §7–§8 comercialização do lote da safra → venda + resultado comercial — **APROVADO (E2E cenário J)**
+
+Escopo do prompt: evoluir o caminho comercial **canônico** (`sales_orders → fulfillment → dispatch → aceite formal`) **sem criar módulo paralelo de vendas**; política de preço explícita; recebível financeiro idempotente por aceite formal; resultado comercial com memória de cálculo e reconciliação **api==db**; novo cenário de jornada **J** sem quebrar A–I; registrar aprovado/falhou/bloqueado/não-executado.
+
+### Implementação (apenas gaps; nenhum ledger/status comercial novo em paralelo)
+
+- **Gap identificado na auditoria**: o ciclo financeiro da venda ficava aberto — a migration 126 fixou explicitamente que o SETTLE de programação de entrega é administrativo (sem escritura financeira/fiscal), e nenhum elo ligava aceite formal de entrega ao título a receber.
+- **Migration 139** `fulfillment_acceptance_receivable_link` (version `139.0.0`, transacional, idempotente): `finance_receivables.fulfillment_attempt_id` UUID nulo por padrão (histórico dos outros caminhos inalterado) + FK **composta** `(tenant_id, fulfillment_attempt_id) → fulfillment_delivery_attempts(tenant_id,id)` (elo no mesmo tenant) + unique parcial `ux_finance_receivables_fulfillment_attempt` (`where fulfillment_attempt_id is not null`) — **no máximo UM recebível por tentativa**, idempotência garantida pelo banco mesmo fora do replay por chave+hash. Embutida no `full.sql`.
+- **`LogisticsService.RecordDeliveryAttemptAsync`**: o recebível é emitido **somente no aceite formal** (tentativa com quantidade aceita > 0): `Σ quantidade aceita × unit_price` do item comercial, `Round(…, 2, AwayFromZero)`; status `OPEN` **nunca liquidado automaticamente** (simetria Compras: título OPEN no evento físico); sem conta contábil de receita ativa → 422 `sales.receivable_account_missing` (falha antes de escrever, transação inteira); auditoria `sales.receivable_emitted`; replay = chave idempotência + hash + unique parcial.
+- **Teste de arquitetura evoluído** (`IntegratedEvolutionIntegrityTests.JourneyWritersNeverWriteFinancialOrFiscalTables`): `Commercial360Service` (arquivo inteiro) + fatia de dispatch do `LogisticsService` **não podem** tocar `finance_*/fiscal_*/saas_billing*`; a fatia de aceite **deve** insertar em `finance_receivables` com `fulfillment_attempt_id` (evolução trancada em teste — regressão se o elo desaparecer).
+- **`HarvestService` (memória de cálculo comercial)**: SQL `GrossRevenue` = `Σ AcceptedQty × UnitPrice` sobre os itens de remessa da safra; três indicadores novos após `recognized-revenue`, com availability espelhando o da receita (vazio ≠ zero; pendências → `UNAVAILABLE` + explicação):
+  - `commercial-revenue-gross` — Σ aceita × unit_price (mesma base do faturamento, deduzidos retornos destinados);
+  - `commercial-revenue-returns` — `max(0, bruto − reconhecida)` (dedução por retornos);
+  - `commercial-margin` — `reconhecida − Σ cost_allocations CONFIRMED à safra (confirmed_at ≤ corte)` — mesmo critério do closing `/api/finance/season-costs/closing`; custos reconhecidos **sem alocação** não entram na margem (critério explícito na `Definition`).
+
+### Prova comportamental — cenário J da jornada (execução aprovada)
+
+Execução 7 de 2026-10-12: **132 PASS / 0 FAIL / 0 BLOCKED** (A–I idênticos + J), evidência `artifacts/agro-journey-e2e-ca8b7b6ee7f64d69bcf73694fcae8cc4`:
+
+- **Política de preço explícita**: venda sem política → 422 `price_policy_missing`; desconto além do teto → 422 `discount_exceeded`; pedido 30.000 un @ 1,10 = **33.000,00**.
+- **Máquina de estados do pedido (lei de domínio existente, sem mudança)**: criação direta em estado operacional → 422; `DRAFT → UNDER_REVIEW`; aprovação por operador sem `commercial.*` → 403; admin → `APPROVED`.
+- **Reserva**: invariante `available − reserved = 0` (reserva só incrementa `reserved`; o débito físico do `available` acontece no dispatch); replay concorrente → 1 reserva (itens|reservas = 1|1); mesma chave com outro conteúdo → 409.
+- **Dispatch**: movimento `SALE` único no lote (mov|qty = 1|20000); replay sem duplicar; versão stale → 409.
+- **Aceite × faturamento**: tentativa `FAILED` **não** fatura nada; aceite **parcial** (18.000 das 20.000 expedidas) → receivable **19.800,00** (`18.000 × 1,10`) `OPEN` com `fulfillment_attempt_id` ligando ao lote; remessa vira `RETURN_PENDING` (recusado = 2.000); replay do aceite não duplica o recebível (unique parcial).
+- **Portas de permissão**: `/api/finance/receivables` 200 com `finance.read` / 403 sem.
+- **Composição e resultado comercial (api==db)**: pedido 30.000 | cumprido 20.000 | status `FULFILLMENT` (parcial cumprido segue no estado operacional); indicadores da safra: bruto **19.800,00** | reconhecida **19.800,00** | returns **0** | margem **19.800,00 − apropriados(0)**; reconciliação com psql direto (net|bruto no banco == API); liquidação manual do título (204 `RECEIVED`, saldo 0) **não altera** a receita reconhecida nem o resultado (momentos distintos).
+
+### Banco de dados
+
+- Migration **139** incremental + `full.sql`; gates de setup do E2E agora verificam {11.25.0, 137.0.0, 138.0.0, **139.0.0**} + idempotência real.
+- **Upgrade documentado para `agro360_homolog`: 136 → 137 → 138 → 139** (precondições limpas validadas read-only; homolog @ 11.25.0/135). Ainda **não aplicado**.
+
+### Entrega / fechamento
+
+| Item | Estado | Evidência |
+| --- | --- | --- |
+| Jornada A–J (Bloco A original + G/H/I + J comercial) | **APROVADO 132 PASS / 0 FAIL / 0 BLOCKED** | `artifacts/agro-journey-e2e-ca8b7b6ee7f64d69bcf73694fcae8cc4` |
+| Gates estáticos (build/arch/unit) | APROVADO | `GATES_DONE build=0 arch=0 unit=0` (187/187 · 390/390) |
+| Regressão Compras (12 etapas) | APROVADO 12/12 | `artifacts/procurement-journey-e2e-e9ccde19f270413a931e4b6869bd10c5` (2026-10-12 12:34 UTC) |
+| Regressão recuperação de inspeções (S1–S7) | APROVADO | `artifacts/inspection-recovery-e2e-d9062554213249c9a4a73857f47bcd36` (auto-recuperação da API usada 1× ao vivo) |
+| Homologação visual do browser | **BLOQUEADO** (trust do cert `C05DA1CA…` no desktop) | `Confiar-cert-agro360.bat` — ação única do usuário |
+| Cenários executados com falha | **nenhum** (histórico de execuções 2–6: mortes de infra RAM absorvidas/diagnosticadas, ver EXECUTION-CHECKPOINT) | — |
+
+**Não executado nesta fatia** (documentado, não falha): §9 lotes repetidos/safras recorrentes; Pecuária P1–P10; Governo360 G1–G10.
+
+**Próxima jornada**: **Pecuária P1 (rebanho/identificação)** por `docs/PECUARIA-PROGRAMA-P1-P10.md` (auditoria de entrada concluída; re-auditar estado vigente antes de executar); depois P2→P10; depois Governo360 G1→G10.
+
+> Escopo desta seção: Bloco B §7–§8 com prova E2E, regressões preservadas e limites documentados (ver `docs/LIMITES.md`). **Não declara o Agro360 inteiro homologado.**
+
+## Pecuária P1 (incremento de 2026-10-12) — rebanho + identificação: ledger canônico de identificadores — **APROVADO (E2E 68/0/0)**
+
+Base: `docs/PECUARIA-PROGRAMA-P1-P10.md` §4 (ordem P1 → P2 → …). Re-auditoria de entrada já concluída na sessão anterior; esta fatia implementou **apenas gaps** e rodou os gates por sprint (build/arch/unit + E2E próprio + regressões A–J/Compras/S1–S7 + visual).
+
+### Implementação (apenas gaps; nenhum ledger/status paralelo criado)
+
+- **Ledger canônico de identificadores** `livestock_identifier_history` consolidado como fonte única de verdade (tipos travados por CHECK em `INTERNAL`/`EAR_TAG`/`RFID`; unique parcial ≤ 1 linha vigente por (tenant, tipo, valor)). Writer estático `LivestockIdentifierLedger` (abrir/alterar/fechar dentro da transação do comando); a tabela auxiliar legada `livestock_animal_identifiers` ficou **frozen para escrita**. SISBOV fora do escopo do ledger (LIMITES #36).
+- Os quatro fluxos passam pelo único writer: **registro** (EAR_TAG sempre + RFID quando presente, motivo `REGISTRATION`), **troca dedicada de brinco** (`POST .../tag`, motivo obrigatório → 422 `Reason.required`), **troca dedicada de RFID** (`POST .../rfid` — rota nova do P1, mesmo contrato) e **edição cadastral genérica** (`PUT .../animals/{id}`, motivo fixo `EDIT_CADASTRAL`). Conflitos amigáveis 409 `livestock.tag_not_unique`/`livestock.rfid_not_unique`; eventos `TAG_CHANGE`/`RFID_CHANGE` com anterior→atual+motivo; replay não duplica linha aberta.
+- **Status canônico em todas as superfícies**: enum renomeado `Slaughtered→Discarded` (abate = espécie de descarte justificado); as quatro superfícies de leitura (lista v1, detalhe v1, GET 360, detail 360) unificadas: status 5 → `DISCARDED` (antes divergia para `SLAUGHTERED`), status 6 → `RESERVED` (antes divergia para `OBSERVATION`).
+- **Defeitos de produto corrigidos na causa raiz** (encontrados no E2E do próprio P1): (1) materialização do `AnimalDto` na listagem por mapping direto de registro com ctor primário de 29 parâmetros — bug latente que nunca havia passado por E2E; alinhado ao padrão do detalhe (linha POCO + `ToDto()`), e a listagem passou a expor by-name; (2) a divergência de rótulos de status acima.
+- UI no escopo mínimo: mapa de status 4 idiomas + chaves na central de i18n, pill DISCARDED e tabela de identificadores no modal de detalhe; o restante do `livestock.js` segue pt-BR (LIMITES #39).
+
+### Prova comportamental — E2E do P1 (execução aprovada)
+
+`scripts/verify-livestock-p1-e2e.ps1`: **68 PASS / 0 FAIL / 0 BLOCKED** em cluster PG18 descartável c/ template incl. 140 — `artifacts/livestock-p1-e2e-8e7549bcc87b4d8eaddbd8b861cdbf3b`. L1 backfill idempotente (reexecução 8→8 linhas) · L2 detail expõe o histórico + nascimento conhecido×estimado · L3 acesso (anônimo 401; leitor c/ apenas `livestock.read` + escopo FARM + módulo contratado: lê 200 / escreve 403) · L4 registro escreve no ledger (auxiliar = 0 linhas p/ animais E2E) + 409 case-insensitive · L5/L6 trocas dedicadas (204, encerra+abre, evento, replay estável, 422 sem motivo, 409 conflito) · L7 PUT `EDIT_CADASTRAL` + remoção de RFID fecha linha sem substituto · L8 descarte → status 5 lido como `DISCARDED` e reserva → `RESERVED` nas quatro superfícies (8/8) · L9 reconciliação api==db + snapshot final + dashboard 200. Histórico honesto das execuções anteriores à aprovada (causas raiz isoladas e corrigidas uma a uma, sem pulo silencioso): 403 `forbidden_unit_scope` no fixture do leitor (middleware exige ≥ 1 escopo em `identity_user_unit_scope(s)`), materialização da listagem (defeito latente de produto) e precedência de operadores no SQL do próprio harness — detalhes em EXECUTION-CHECKPOINT §P1.
+
+### Banco de dados
+
+- Migration **140** (`140_livestock_identifier_history_backfill`, version `140.0.0`): backfill do estado vigente como linhas abertas (EAR_TAG←tag, RFID←rfid quando presente, INTERNAL←internal_identifier quando presente) com ON CONFLICT contra o próprio unique parcial do ledger; **zero DDL**; embutida no `full.sql`; gate de setup da jornada agora valida {11.25.0, 137–140} + idempotência incluindo a 140; templates `pg-journey-template` e `pg-agro-template` rebuildidos com ela.
+- **Upgrade documentado para `agro360_homolog`: 136 → 137 → 138 → 139 → 140** (pré-validação read-only 2026-10-12: ledger existente com 0 linhas, índice parcial presente, 4 animais-fonte → backfill esperado de 8 linhas sem colisão; homolog @ 11.25.0/135). Ainda **não aplicado**. Nota de versão descoberta na validação: migs ≤ 135 registram versões de release (mig 135 = `11.25.0`); migs 136+ usam número de arquivo (`136.0.0`…`140.0.0`) — `max(version)` léxico em `platform_schema_versions` é enganoso.
+
+### Entrega / fechamento
+
+| Item | Estado | Evidência |
+| --- | --- | --- |
+| E2E do P1 (L1–L9) | **APROVADO 68 PASS / 0 FAIL / 0 BLOCKED** | `artifacts/livestock-p1-e2e-8e7549bcc87b4d8eaddbd8b861cdbf3b` |
+| Gates estáticos (build/arch/unit) | APROVADO | `GATES_DONE build=0 arch=0 unit=0` (187/187 · 390/390) |
+| Regressão jornada A–J (template fixado a 140) | APROVADO 132/0/0 | `artifacts/agro-journey-e2e-0f99060fc6f445b59abce8af609add5f` |
+| Regressão Compras (12 etapas) | APROVADO 12/12 | `artifacts/procurement-journey-e2e-4a875726daff4e7c9a806597004b0f96` |
+| Regressão recuperação de inspeções (S1–S7) | APROVADO (todos os cenários) | `artifacts/inspection-recovery-e2e-c3add84e30174d00bfcf422d270a40b0` |
+| Homologação visual do browser | **BLOQUEADO** (trust do cert TP no desktop) | `Confiar-cert-agro360.bat` — ação única do usuário (programa §3: registrado, nunca pulado) |
+| Cenários executados com falha | **nenhum** (execuções prévias do E2E P1: causas raiz isoladas/corrigidas antes de revalidar; nada pulado em silêncio) | — |
+
+**Não executado nesta fatia** (documentado, não falha): Pecuária P2–P10; Governo360 G1–G10; §9/§10/§14 do programa anterior (pendentes para depois).
+
+**Próxima jornada**: **Pecuária P2 (entradas/saídas/movimentações)** por programa §4 — re-auditar o estado vigente antes de começar (o módulo evoluiu entre sprints; a idempotência de movimento hoje vive na coluna `notes`, frágil, e `reason_code` é livre sem catálogo). Depois de P10: Governo360 G1→G10.
+
+> Escopo desta seção: P1 com prova E2E, regressões preservadas e limites documentados (ver `docs/LIMITES.md` §H). **Não declara o Agro360 inteiro homologado.**
+
+## Pecuária P2 (incremento de 2026-10-13) — entradas/saídas/movimentações: idempotência formal + motivo validado no catálogo — **APROVADO (E2E 68/0/0)**
+
+Base: `docs/PECUARIA-PROGRAMA-P1-P10.md` §4 (ordem P1 → P2 → …). Re-auditoria de estado vigente concluída antes da implementação (DDL de movimentos/católogo, serviço, rotas, UI); implementados **apenas gaps** confirmados na auditoria.
+
+### Implementação (apenas gaps; nenhum ledger/estágio paralelo criado)
+
+- **Idempotência formal do movimento individual** (migration 141): coluna dedicada `livestock_animal_movements.idempotency_key varchar(160)` + unique parcial `(tenant_id, idempotency_key) where not null` — o indivíduo herda exatamente o padrão que o grupo (`livestock_herd_movements`) e os demais domínios (Compras/Inspeção/Jornada J) já usavam. Replay no endpoint agora casa pela coluna (antes: query `where notes=@Key` sobre coluna livre que nunca recebia a chave). **Sem backfill**: `notes` sempre foi texto livre; linhas legadas permanecem com key NULL (índice parcial ignora NULLs — zero colisão por construção). Sem fingerprint de conteúdo: mesma chave = replay do primeiro efeito; guarda de concorrência real é o unique parcial (segundo inseridor → 409).
+- **Validações amigáveis no endpoint de movimentação**: motivo deve existir + estar ativo no catálogo do tenant (`livestock_movement_reasons`) e direção compatível quando a operação expressa direção — 422 `reason_unknown`/`reason_inactive`/`reason_direction_mismatch`; conjunto fechado de kind por sujeito (animal ≠ grupo; `REVERSAL`/`RECONCILE` exclusivos de fluxo interno) — 422 `movement_kind_invalid`; responsável conferido como usuário do mesmo tenant (404). Regras em `LivestockRules.EnsureMovementKind`/`EnsureReasonDirection` com unit test. Fluxos internos mantêm seus códigos fixos (`SALE` na saída comercial por reserva, `RECONCILE` na conciliação).
+- **Defeito de produto corrigido na causa raiz** (encontrado no E2E do próprio P2): 5 sítios de listagem (`ListMovementsAsync` ×2, `ListWeighingsAsync`, `PerformanceAsync`, `CostSummaryAsync`) vinculavam `@From`/`@To` como `DateOnly?` nulos sem tipo → Postgres 42P08 → **500 em qualquer chamada sem `from`/`to`** (incl. a aba de movimentações da SPA); corrigido com sentinels `DateOnly.MinValue`/`MaxValue`, guards SQL inalterados.
+- UI inalterada por decisão (seleção mínima): o formulário de movimentações mantém os 5 motivos hardcoded (coerentes com o seed do catálogo) e não envia `idempotencyKey` — feature API-first; seletor dinâmico de catálogo segue backlog (mesmo padrão do i18n parcial do P1). Etapas "saída/trânsito/recebimento" continuam **fora do modelo**: TRANSFER permanece evento único e atômico (transporte/frete programados para o sprint P9).
+
+### Prova comportamental — E2E do P2 (execução aprovada)
+
+`scripts/verify-livestock-p2-e2e.ps1`: **68 PASS / 0 FAIL / 0 BLOCKED** em cluster PG18 descartável c/ template incl. 141 — `artifacts/livestock-p2-e2e-4b60a16e571546bcb5005e04f15cea27`. M1 idempotência da migration 141 (reexecução estável; linha legada do seed intacta com key NULL) · M2 jornada individual (registro D/E; TRANSFER interna c/ chave → 201 + trilha completa; replay mesmo id sem duplicar; **chave diferente com notas iguais NÃO deduplica** — prova do mecanismo novo; retroativo 409; LOCATION_CHANGE move piquete; EXIT+DEATH → status 4 lido `DEAD`) · M3 bateria de validações (tipo/motivo desconhecido/inativo/direção/SALE-sem-reserva/responsável 404/sujeito misto/ausente) · M4 grupo QUANTITY (TRANSFER 5 c/ chave → saldo 35 + troca de propriedade; replay estável sem segundo débito; EXIT → 34; saldo negativo 409; tipo inválido p/ grupo 422) · M5 acesso (anônimo 401; leitor lê 200 no escopo FARM e vê a linha do seed; header `X-Farm-ID` fora do escopo → 403 `forbidden_unit_scope`; escrita 403 sem mutar estado) · M6 reconciliação api==db + invariante uma-linha-por-chave nas duas tabelas + lista expõe a jornada + snapshot final + dashboard 200. Histórico honesto das 4 execuções prévias à aprovada (assertion do harness contando o evento ENTRY do registro; discovery do boolean `true`/`false` do Postgres 18; defeito 42P08 do produto; contrato de escopo via header `X-Farm-ID` vs query) — cada causa isolada antes de revalidar, em EXECUTION-CHECKPOINT §P2.
+
+### Banco de dados
+
+- Migration **141** (`141_livestock_animal_movement_idempotency`, version `141.0.0`): aditiva (1 coluna + unique index, `if not exists`), guard contra mig 068 ausente, versão `on conflict do nothing`; embutida no `full.sql` (bloco final, após o commit da 140); gate de setup da jornada agora valida {11.25.0, 137–141} = 6 versões + idempotência real incluindo a 141; templates `pg-journey-template` (P2/Compras/inspeção) e `pg-agro-template` (journey) rebuildidos com ela.
+- **Upgrade documentado para `agro360_homolog`: 136 → 137 → 138 → 139 → 140 → 141** (pré-validação read-only da 141 em 2026-10-13: tabela presente pela mig 068 com 1 linha existente → key NULL pós-migration, zero colisão; coluna/índice/versão ausentes; tabela irmã já com o padrão; homolog @ 11.25.0/135). Ainda **não aplicado**.
+
+### Entrega / fechamento
+
+| Item | Estado | Evidência |
+| --- | --- | --- |
+| E2E do P2 (M1–M6) | **APROVADO 68 PASS / 0 FAIL / 0 BLOCKED** | `artifacts/livestock-p2-e2e-4b60a16e571546bcb5005e04f15cea27` |
+| Gates estáticos (build/arch/unit) | APROVADO | `GATES_DONE build=0 arch=0 unit=0` (187/187 · 391/391) |
+| Regressão jornada A–J (template rebuilt p/ 141) | APROVADO 132/0/0 | `artifacts/agro-journey-e2e-c440b7b761014793ad1da0456a3d237a` |
+| Regressão Compras (12 etapas) | APROVADO 12/12 | `artifacts/procurement-journey-e2e-edb3b9d5f9864ff08ff0dccbb582b8ed` |
+| Regressão recuperação de inspeções (S1–S7) | APROVADO (todos os cenários; auto-recuperação OOM 1× ao vivo) | `artifacts/inspection-recovery-e2e-659ffc526779449494537da3381fb504` |
+| Homologação visual do browser | **BLOQUEADO** (trust do cert TP no desktop) | `Confiar-cert-agro360.bat` — ação única do usuário (programa §3: registrado, nunca pulado; acumula com o gate do P1) |
+| Cenários executados com falha | **nenhum** nas execuções finais (execuções prévias do E2E P2: causas raiz isoladas/corrigidas antes de revalidar; nada pulado em silêncio) | histórico em EXECUTION-CHECKPOINT §P2 |
+
+**Não executado nesta fatia** (documentado, não falha): Pecuária P3–P10 (P9 formaliza transporte/frete + dedup cross-path; P10 leiteira pode vir como incremento explícito); Governo360 G1–G10; §9/§10/§14 do programa anterior (pendentes para depois).
+
+**Próxima jornada**: **Pecuária P3 (pesagens/desempenho)** por programa §4 — re-auditar o estado vigente antes de começar (o módulo evolui entre sprints; `RecordWeighingAsync`/`ListWeighingsAsync`/`PerformanceAsync` foram tocados na correção 42P08 do P2 — conferir o estado atual, inclusive o comportamento "zero intervalo ⇒ sem indicador"). Depois P4→P10; então Governo360 G1→G10.
+
+> Escopo desta seção: P2 com prova E2E, regressões preservadas e limites documentados (ver `docs/LIMITES.md` §I). **Não declara o Agro360 inteiro homologado.**
+
+## Pecuária P3 (incremento de 2026-10-13) — pesagens/desempenho: trilha de evidência, idempotência formal e desempenho determinístico — **APROVADO (E2E 74/0/0)**
+
+Base: `docs/PECUARIA-PROGRAMA-P1-P10.md` §4 (ordem P1 → P2 → P3 → …). Re-auditoria de estado vigente concluída antes da implementação (DDL de pesagens/limites/eventos, serviços 360 e legado, rotas, UI, seeds, testes); implementados **apenas gaps** confirmados na auditoria — nenhum ledger/estágio paralelo criado.
+
+### Implementação (apenas gaps)
+
+- **Trilha de evidência + precisão de medição (migration 142):** coluna `measurement_precision varchar(20)` aditiva, sem backfill (seed permanece nulo — nada inventado); tetos método ≤ 40 / equipamento ≤ 80 / precisão ≤ 20 (422 `livestock.evidence_too_long`; somente espaços → null); projeção da lista expandida (`animalTag`, equipamento, responsável, lote de manejo, justificativa de revisão, `previousWeightKg`, `correctedFromId`, precisão, conversão) — NULL em dados antigos.
+- **Idempotência formal da pesagem:** chave normalizada (`null : Trim()`) + pré-check pela coluna + persistida em insert/evento; dedup por chave apenas (payload diferente → mesmo id; sem fingerprint de conteúdo) — contrato do P2.
+- **Validações amigáveis:** responsável = usuário do tenant no registro E na correção (404, sem efeito colateral); sujeitos coletivos validados na origem (grupo 404 / lote 404 / sem sujeito 422 / cabeças ≤ 0 422); conversão de unidade exige fator válido e explícito.
+- **Desempenho determinístico e honesto:** agregações ordenadas `weighed_at, id` (timestamp igual ⇒ ordem de inserção, determinístico); intervalo zero ⇒ ganho diário NULL (eventos e indicador — nunca zero, nunca crash); exatamente 1 pesagem ⇒ sem linha (vazio ≠ zero).
+- **Correção auditada:** nova linha com `corrected_from_id` + `previous_weight_kg` + evidência copiada; original marcada "substituída por correção auditada" (trilha preservada); 404 não cria linha; peso atual do animal refletido pela correção.
+- **UI:** o form de pesagem agora envia equipamento/precisão/responsável (busca de pessoas); o caminho coletivo segue API-first (mesmo padrão do movimento no P2).
+
+### Gaps aceitos (LIMITES §J, itens 52–67)
+
+Dois escritores de pesagem coexistem (legado `DateOnly` × 360 timestamp — unificação é backlog de produto); dois calculadores de ganho diário coexistem (semânticas preservadas, não unificadas em silêncio); espécie fixa BOVINE na conferência de limites coletivas; pesagem 360 retrodatada atualiza `current_weight_kg` (último registrado ≠ último medido); as pesagens do seed não têm eventos WEIGHING (sem retrospectiva inventada); `responsible_id`/`herd_id`/`handling_lot_id` sem FK (validação de serviço, padrão do P2). Sequência de upgrade da homolog documentada até **142** (pré-validada read-only em 2026-10-13, ainda não aplicada).
+
+### Aceite das portas (programa §3)
+
+| Porta | Resultado | Evidência |
+|---|---|---|
+| Gates build/arch/unit | APROVADO (build=0 arch=0 unit=0; 187/187 · 392/392) | `rebuild-gates.ps1` em 2026-10-13 |
+| E2E próprio do sprint (W0–W11) | APROVADO (74/0/0) | `artifacts/livestock-p3-e2e-6c12c9fb08824f618c2a2b16335bdd45` |
+| Regressão jornada A–J | APROVADO (132/0/0; `pg-agro-template` reconstruído em 142; gate de setup {11.25.0,137–142}=7 + upgrade idempotente incluindo a 142) | `artifacts/agro-journey-e2e-146cc0ba740e4195aaaff5561a5a7513` |
+| Regressão Compras (12 etapas) | APROVADO (12/12) | `artifacts/procurement-journey-e2e-e97166b4fd14425db341b4ed6ba97c2d` |
+| Regressão recuperação de inspeções (S1–S7) | APROVADO (todos os cenários; a execução de 02:36 UTC caiu só em S7 por OOM ambiental — worker morto junto do host — e a reexecução com harness inalterado passou integralmente) | `artifacts/inspection-recovery-e2e-1e4f930ee40845c58bd8f24aca0fd975` |
+| Homologação visual do browser | **BLOQUEADO** (trust do cert TP no desktop) | `Confiar-cert-agro360.bat` — ação única do usuário (programa §3: registrado, nunca pulado; acumula com P1 e P2) |
+| Cenários executados com falha | **nenhum** nas execuções finais (execuções prévias do E2E P3: causas raiz de harness isoladas/corrigidas antes de revalidar — BOM/interpolação/esperanças de contagem NULL; nada pulado em silêncio) | histórico em EXECUTION-CHECKPOINT §P3 |
+
+**Não executado nesta fatia** (documentado, não falha): Pecuária P4–P10; Governo360 G1–G10; §9/§10/§14 do programa anterior.
+
+**Próxima jornada**: **Pecuária P4 (sanidade/agenda)** por programa §4 — re-auditar o estado vigente antes de começar (inventário: motor de agenda/calendário ausente; `livestock_health_protocols` sem seeds e sem consumidor funcional — conferir o estado real antes de qualquer mudança). Depois P5→P10; então Governo360 G1→G10.
+
+> Escopo desta seção: P3 com prova E2E, regressões preservadas e limites documentados (ver `docs/LIMITES.md` §J). **Não declara o Agro360 inteiro homologado.**

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Agro360.Application.Contracts;
+using Agro360.Domain.Livestock;
 using Agro360.Infrastructure.Persistence;
 using Agro360.Multitenancy;
 using Agro360.SharedKernel;
@@ -19,7 +20,53 @@ public sealed class Livestock360Service(DatabaseExecutor db, ITenantContext tena
         return row?.ToDto();
     });
 
-    public Task<AnimalDto> UpdateAnimalAsync(Guid id, RegisterAnimalCommand command, CancellationToken ct) => Tx<AnimalDto>(async (c, t) => { var n = await c.ExecuteAsync(new CommandDefinition("update agro360.livestock_animals set farm_id=@FarmId,herd_id=@HerdId,tag=@Tag,rfid=@Rfid,species=@Species,breed=@Breed,sex=@Sex,birth_date=@BirthDate,mother_id=@MotherId,father_id=@FatherId,updated_at=now(),updated_by=@UserId,version=version+1 where tenant_id=@TenantId and id=@Id", new { command.FarmId, command.HerdId, Tag = Guard.Required(command.Tag, nameof(command.Tag), 80), command.Rfid, command.Species, command.Breed, command.Sex, command.BirthDate, command.MotherId, command.FatherId, tenant.TenantId, tenant.UserId, Id = id }, t, cancellationToken: ct)); if (n == 0) throw new NotFoundException("Animal", id); await Audit(c, t, "update", "Animal", id, command, ct); var row = await c.QuerySingleOrDefaultAsync<AnimalRow>(new CommandDefinition(AnimalSelect + " where tenant_id=@TenantId and id=@Id and deleted_at is null", new { tenant.TenantId, Id = id }, t, cancellationToken: ct)); return row?.ToDto() ?? throw new NotFoundException("Animal", id); });
+    public Task<AnimalDto> UpdateAnimalAsync(Guid id, RegisterAnimalCommand command, CancellationToken ct) => Tx<AnimalDto>(async (c, t) =>
+    {
+        var tag = Guard.Required(command.Tag, nameof(command.Tag), 80);
+        var rfid = string.IsNullOrWhiteSpace(command.Rfid) ? null : command.Rfid.Trim();
+        var current = await c.QuerySingleOrDefaultAsync(new CommandDefinition(
+            "select tag as \"Tag\", rfid as \"Rfid\" from agro360.livestock_animals where tenant_id=@TenantId and id=@Id for update",
+            new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
+        if (current is null) throw new NotFoundException("Animal", id);
+        var oldTag = (string)current.Tag!;
+        var oldRfid = current.Rfid as string;
+        var tagChanged = !string.Equals(oldTag, tag, StringComparison.OrdinalIgnoreCase);
+        var rfidChanged = (oldRfid ?? string.Empty) != (rfid ?? string.Empty);
+        if (tagChanged)
+        {
+            var tagTaken = await c.ExecuteScalarAsync<bool>(new CommandDefinition(
+                "select exists(select 1 from agro360.livestock_animals where tenant_id=@TenantId and lower(tag)=lower(@Tag) and id<>@Id and deleted_at is null)",
+                new { tenant.TenantId, Tag = tag, Id = id }, t, cancellationToken: ct));
+            if (tagTaken) throw new ConflictException("Identificador já utilizado neste cliente.", "livestock.tag_not_unique");
+        }
+        if (rfidChanged && rfid is not null)
+        {
+            var rfidTaken = await c.ExecuteScalarAsync<bool>(new CommandDefinition(
+                "select exists(select 1 from agro360.livestock_animals where tenant_id=@TenantId and lower(rfid)=lower(@Rfid) and id<>@Id and deleted_at is null)",
+                new { tenant.TenantId, Rfid = rfid, Id = id }, t, cancellationToken: ct));
+            if (rfidTaken) throw new ConflictException("Identificador já utilizado neste cliente.", "livestock.rfid_not_unique");
+        }
+        var n = await c.ExecuteAsync(new CommandDefinition("update agro360.livestock_animals set farm_id=@FarmId,herd_id=@HerdId,tag=@Tag,rfid=@Rfid,species=@Species,breed=@Breed,sex=@Sex,birth_date=@BirthDate,mother_id=@MotherId,father_id=@FatherId,updated_at=now(),updated_by=@UserId,version=version+1 where tenant_id=@TenantId and id=@Id", new { command.FarmId, command.HerdId, Tag = tag, Rfid = rfid, command.Species, command.Breed, command.Sex, command.BirthDate, command.MotherId, command.FatherId, tenant.TenantId, tenant.UserId, Id = id }, t, cancellationToken: ct));
+        if (n == 0) throw new NotFoundException("Animal", id);
+        // P1 (2026-10-12): edição cadastral que altera brinco/RFID também alimenta o ledger canônico de
+        // identificadores (motivo fixo EDIT_CADASTRAL — o endpoint genérico não recebe motivo livre).
+        if (tagChanged)
+        {
+            await LivestockIdentifierLedger.ChangeAsync(c, t, tenant.TenantId, id, "EAR_TAG", tag, "EDIT_CADASTRAL", tenant.UserId, ct);
+            await c.ExecuteAsync(new CommandDefinition("insert into agro360.livestock_animal_events(id,tenant_id,animal_id,event_type,occurred_on,data,created_at,created_by) values(gen_random_uuid(),@TenantId,@Id,'TAG_CHANGE',current_date,jsonb_build_object('previous',@Previous,'current',@Current,'reason','EDIT_CADASTRAL'),now(),@UserId)", new { tenant.TenantId, Id = id, Previous = oldTag, Current = tag, tenant.UserId }, t, cancellationToken: ct));
+        }
+        if (rfidChanged)
+        {
+            if (rfid is not null)
+                await LivestockIdentifierLedger.ChangeAsync(c, t, tenant.TenantId, id, "RFID", rfid, "EDIT_CADASTRAL", tenant.UserId, ct);
+            else
+                await LivestockIdentifierLedger.CloseAsync(c, t, tenant.TenantId, id, "RFID", "EDIT_CADASTRAL", tenant.UserId, ct);
+            await c.ExecuteAsync(new CommandDefinition("insert into agro360.livestock_animal_events(id,tenant_id,animal_id,event_type,occurred_on,data,created_at,created_by) values(gen_random_uuid(),@TenantId,@Id,'RFID_CHANGE',current_date,jsonb_build_object('previous',@Previous,'current',@Current,'reason','EDIT_CADASTRAL'),now(),@UserId)", new { tenant.TenantId, Id = id, Previous = oldRfid, Current = rfid, tenant.UserId }, t, cancellationToken: ct));
+        }
+        await Audit(c, t, "update", "Animal", id, command, ct);
+        var row = await c.QuerySingleOrDefaultAsync<AnimalRow>(new CommandDefinition(AnimalSelect + " where tenant_id=@TenantId and id=@Id and deleted_at is null", new { tenant.TenantId, Id = id }, t, cancellationToken: ct));
+        return row?.ToDto() ?? throw new NotFoundException("Animal", id);
+    });
     public Task ChangeAnimalStatusAsync(Guid id, string status, AnimalStatusCommand command, CancellationToken ct) => Tx(async (c, t) => { var code = status switch { "DEAD" => 4, "SOLD" => 3, "DISCARDED" => 5, _ => throw new DomainException("Status inválido.", "agro360.livestock_status_invalid") }; var n = await c.ExecuteAsync(new CommandDefinition("update agro360.livestock_animals set status=@Code,updated_at=now(),updated_by=@UserId,version=version+1 where tenant_id=@TenantId and id=@Id and status in (1,2,6); insert into agro360.livestock_animal_events(id,tenant_id,animal_id,event_type,occurred_on,data,created_at,created_by) select @EventId,@TenantId,@Id,@Status,@On,jsonb_build_object('reason',@Reason),now(),@UserId where exists(select 1 from agro360.livestock_animals where tenant_id=@TenantId and id=@Id and status=@Code)", new { Code = code, tenant.TenantId, tenant.UserId, Id = id, EventId = Guid.CreateVersion7(), Status = status, On = command.OccurredOn, command.Reason }, t, cancellationToken: ct)); if (n < 2) throw new ConflictException("Animal inexistente ou inativo.", "agro360.livestock_animal_not_active"); await Audit(c, t, status.ToLowerInvariant(), "Animal", id, command, ct); });
     public Task TransferAnimalAsync(Guid id, AnimalTransferCommand command, CancellationToken ct) => Tx(async (c, t) => { var old = await c.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition("select farm_id,paddock_id,status from agro360.livestock_animals where tenant_id=@TenantId and id=@Id for update", new { tenant.TenantId, Id = id }, t, cancellationToken: ct)) ?? throw new NotFoundException("Animal", id); await c.ExecuteAsync(new CommandDefinition("update agro360.livestock_animals set farm_id=@FarmId,paddock_id=@PaddockId,updated_at=now(),updated_by=@UserId,version=version+1 where tenant_id=@TenantId and id=@Id; insert into agro360.livestock_animal_movements(id,tenant_id,animal_id,from_farm_id,to_farm_id,from_paddock_id,to_paddock_id,moved_on,notes,created_at,created_by) values(@Movement,@TenantId,@Id,@OldFarm,@FarmId,@OldPaddock,@PaddockId,@On,@Notes,now(),@UserId)", new { command.FarmId, command.PaddockId, tenant.TenantId, tenant.UserId, Id = id, Movement = Guid.CreateVersion7(), OldFarm = (Guid)old.farm_id, OldPaddock = (Guid?)old.paddock_id, On = command.OccurredOn, command.Notes }, t, cancellationToken: ct)); await Audit(c, t, "transfer", "Animal", id, command, ct); });
     public Task<IReadOnlyList<dynamic>> ListHerdsAsync(CancellationToken ct) => List("select id, farm_id as \"farmId\", name, species, category, head_count as \"headCount\", status, control_mode as \"controlMode\" from agro360.livestock_herds where tenant_id=@TenantId and status='ACTIVE' and deleted_at is null order by name", ct);
@@ -31,7 +78,132 @@ public sealed class Livestock360Service(DatabaseExecutor db, ITenantContext tena
     public Task MovePaddockAsync(Guid id, bool occupy, PaddockMovementCommand command, CancellationToken ct) => Tx(async (c, t) => { var p = await c.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition("select status,last_released_at,rest_days from agro360.livestock_paddocks where tenant_id=@TenantId and id=@Id for update", new { tenant.TenantId, Id = id }, t, cancellationToken: ct)) ?? throw new NotFoundException("Piquete", id); if (occupy && ((string)p.status == "INACTIVE" || (string)p.status == "INATIVA")) throw new ConflictException("Piquete inativo não pode ser ocupado.", "agro360.pasture_inactive"); if (command.AnimalId is null && command.HerdId is null) throw new DomainException("Informe animal ou lote.", "agro360.livestock_subject_required"); var eventId = Guid.CreateVersion7(); await c.ExecuteAsync(new CommandDefinition("insert into agro360.livestock_paddock_movements(id,tenant_id,paddock_id,origin_paddock_id,animal_id,herd_id,movement_type,occurred_at,notes,created_by) values(@EventId,@TenantId,@Id,@Origin,@Animal,@Herd,@Type,@At,@Notes,@UserId); update agro360.livestock_paddocks set status=@Status,last_occupied_at=case when @Occupy then @At else last_occupied_at end,last_released_at=case when @Occupy then last_released_at else @At end,updated_at=now() where tenant_id=@TenantId and id=@Id; update agro360.livestock_animals set paddock_id=case when @Occupy then @Id else null end,updated_at=now(),version=version+1 where tenant_id=@TenantId and ((@Animal is not null and id=@Animal) or (@Herd is not null and herd_id=@Herd))", new { EventId = eventId, tenant.TenantId, Id = id, Origin = command.OriginPaddockId, Animal = command.AnimalId, Herd = command.HerdId, Type = occupy ? "ENTRY" : "EXIT", At = command.OccurredAt, command.Notes, tenant.UserId, Status = occupy ? "IN_USE" : "RESTING", Occupy = occupy }, t, cancellationToken: ct)); await Audit(c, t, occupy ? "occupy" : "release", "Paddock", id, command, ct); });
     public Task<IReadOnlyList<dynamic>> ListEventsAsync(string kind, CancellationToken ct) { var table = kind switch { "handling" => "handling_events", "health" => "health_events", "reproduction" => "reproduction_events", _ => throw new DomainException("Tipo inválido.", "agro360.livestock_event_type_invalid") }; return List($"select * from agro360.livestock_{table} where tenant_id=@TenantId order by occurred_on desc limit 500", ct); }
     public Task<Guid> AddHandlingAsync(HandlingEventCommand command, CancellationToken ct) => Tx<Guid>(async (c, t) => { if (command.AnimalId is null && command.HerdId is null) throw new DomainException("Informe animal ou lote.", "agro360.livestock_subject_required"); if (command.WeightKg < 0 || command.EstimatedCost < 0) throw new DomainException("Peso e custo não podem ser negativos.", "agro360.livestock_handling_values_invalid"); var id = Guid.CreateVersion7(); await c.ExecuteAsync(new CommandDefinition("insert into agro360.livestock_handling_events(id,tenant_id,animal_id,herd_id,event_type,occurred_on,responsible,notes,weight_kg,body_score,paddock_id,estimated_cost,created_by) values(@Id,@TenantId,@AnimalId,@HerdId,@Type,@OccurredOn,@Responsible,@Notes,@WeightKg,@BodyScore,@PaddockId,@EstimatedCost,@UserId); update agro360.livestock_animals set current_weight_kg=coalesce(@WeightKg,current_weight_kg),last_weight_date=case when @WeightKg is null then last_weight_date else @OccurredOn end,status=case when upper(@Type)='MORTALITY' then 4 when upper(@Type)='SALE' then 3 when upper(@Type)='DISCARD' then 5 else status end,version=version+1,updated_at=now() where tenant_id=@TenantId and id=@AnimalId and status in(1,2,6)", new { Id = id, tenant.TenantId, command.AnimalId, command.HerdId, command.Type, command.OccurredOn, command.Responsible, command.Notes, command.WeightKg, command.BodyScore, command.PaddockId, command.EstimatedCost, tenant.UserId }, t, cancellationToken: ct)); await Audit(c, t, "create", "HandlingEvent", id, command, ct); return id; });
-    public Task<Guid> AddHealthAsync(HealthEventCommand command, CancellationToken ct) => Tx<Guid>(async (c, t) => { if (command.Dose <= 0) throw new DomainException("Dose deve ser positiva.", "agro360.livestock_dose_invalid"); if (command.WithdrawalDays < 0) throw new DomainException("Carência inválida.", "agro360.livestock_withdrawal_invalid"); var id = Guid.CreateVersion7(); await Consume(c, t, command.WarehouseId, command.ProductId, command.Dose, command.Unit, id, "HEALTH_EVENT", ct); await c.ExecuteAsync(new CommandDefinition("insert into agro360.livestock_health_events(id,tenant_id,animal_id,herd_id,event_type,occurred_on,dose,unit,product_id,withdrawal_until,next_application,technician,diagnosis,notes,cost_amount,created_by) values(@Id,@TenantId,@AnimalId,@HerdId,@Type,@AppliedOn,@Dose,@Unit,@ProductId,@Withdrawal,@NextApplication,@Technician,@Diagnosis,@Notes,0,@UserId); update agro360.livestock_animals set withdrawal_until=greatest(coalesce(withdrawal_until,@Withdrawal),@Withdrawal),version=version+1,updated_at=now() where tenant_id=@TenantId and id=@AnimalId", new { Id = id, tenant.TenantId, command.AnimalId, command.HerdId, command.Type, command.AppliedOn, command.Dose, command.Unit, command.ProductId, Withdrawal = command.AppliedOn.AddDays(command.WithdrawalDays), command.NextApplication, command.Technician, command.Diagnosis, command.Notes, tenant.UserId }, t, cancellationToken: ct)); await Audit(c, t, "create", "HealthEvent", id, command, ct); return id; });
+    public Task<Guid> AddHealthAsync(HealthEventCommand command, CancellationToken ct) => Tx<Guid>(async (c, t) =>
+    {
+        if (command.Dose <= 0) throw new DomainException("Dose deve ser positiva.", "agro360.livestock_dose_invalid");
+        if (command.WithdrawalDays < 0) throw new DomainException("Carência inválida.", "agro360.livestock_withdrawal_invalid");
+        // P4: sujeito único obrigatório — o CHECK do ledger deixa de virar erro genérico 500.
+        if (command.AnimalId is null && command.HerdId is null)
+            throw new DomainException("Informe o animal ou o grupo da aplicação.", "agro360.livestock_health_subject_required");
+        // P4: mesmo contrato de chave das movimentações (P2) e pesagens (P3): whitespace -> null.
+        var key = string.IsNullOrWhiteSpace(command.IdempotencyKey) ? null : command.IdempotencyKey.Trim();
+        if (key is not null)
+        {
+            var replay = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+                "select id from agro360.livestock_health_events where tenant_id=@TenantId and idempotency_key=@Key",
+                new { tenant.TenantId, Key = key }, t, cancellationToken: ct));
+            if (replay is Guid found) return found;
+        }
+        if (command.AnimalId is Guid animalSubject)
+        {
+            var farm = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+                "select farm_id from agro360.livestock_animals where tenant_id=@TenantId and id=@Id and deleted_at is null",
+                new { tenant.TenantId, Id = animalSubject }, t, cancellationToken: ct))
+                ?? throw new NotFoundException("Animal", animalSubject);
+            if (tenant.FarmId is Guid scopedFarm && farm != scopedFarm)
+                throw new ForbiddenException("Animal fora da propriedade autorizada.");
+        }
+        else
+        {
+            var herdOk = await c.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+                "select farm_id from agro360.livestock_herds where tenant_id=@TenantId and id=@Id and deleted_at is null",
+                new { tenant.TenantId, Id = command.HerdId!.Value }, t, cancellationToken: ct))
+                ?? throw new NotFoundException("Grupo", command.HerdId!.Value);
+            if (tenant.FarmId is Guid scopedHerdFarm && herdOk != scopedHerdFarm)
+                throw new ForbiddenException("Grupo fora da propriedade autorizada.");
+        }
+        // P4: protocolo referenciado — validado (ativo + janela), carência do catálogo prevalece e
+        // deriva a restrição operacional na mesma transação (purpose DEMO ou carência zero não criam).
+        Guid? protocolId = null;
+        string? protocolVersion = null;
+        int withdrawalDays = command.WithdrawalDays;
+        bool createRestriction = false;
+        string restrictionPurpose = string.Empty;
+        bool restrictionDemo = false;
+        string restrictionReason = string.Empty;
+        if (command.ProtocolId is Guid pid)
+        {
+            var proto = await c.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition(
+                """
+                select name, version_label as "versionLabel", valid_from as "validFrom", valid_until as "validUntil",
+                       purpose, withdrawal_days as "withdrawalDays", active, demo_only as "demoOnly"
+                from agro360.livestock_health_protocols where tenant_id=@TenantId and id=@Id for update
+                """,
+                new { tenant.TenantId, Id = pid }, t, cancellationToken: ct))
+                ?? throw new NotFoundException("Protocolo", pid);
+            if (!(bool)proto.active)
+                throw new ConflictException("O protocolo está desativado.", "livestock.protocol_not_active");
+            var validFrom = (DateOnly)proto.validFrom;
+            var validUntil = (DateOnly?)proto.validUntil;
+            if (command.AppliedOn < validFrom || (validUntil.HasValue && command.AppliedOn > validUntil.Value))
+                throw new ConflictException($"A aplicação está fora da vigência do protocolo ({validFrom:d} a {(validUntil?.ToString("d", System.Globalization.CultureInfo.InvariantCulture) ?? "aberta")}).", "livestock.protocol_window_invalid");
+            protocolId = pid;
+            protocolVersion = (string)proto.versionLabel;
+            withdrawalDays = (int)proto.withdrawalDays;
+            var purpose = (string)proto.purpose;
+            if (purpose != "DEMO" && withdrawalDays > 0)
+            {
+                createRestriction = true;
+                restrictionPurpose = purpose;
+                restrictionDemo = (bool)proto.demoOnly;
+                restrictionReason = LivestockRules.EnsureReasonLength($"Carência por protocolo {proto.name} v{protocolVersion}", 240);
+            }
+            var overlap = await c.ExecuteScalarAsync<bool>(new CommandDefinition(
+                """
+                select exists(select 1 from agro360.livestock_restrictions r
+                              where r.tenant_id=@TenantId and r.status='ACTIVE' and r.purpose=@Purpose
+                                and (r.expected_until is null or r.expected_until >= @On)
+                                and ((@AnimalId is not null and r.animal_id=@AnimalId)
+                                  or (@AnimalId is null and r.herd_id=@HerdId)))
+                """,
+                new { tenant.TenantId, Purpose = restrictionPurpose, On = command.AppliedOn, AnimalId = command.AnimalId, HerdId = command.HerdId }, t, cancellationToken: ct));
+            if (createRestriction && overlap)
+                throw new ConflictException("Já existe restrição ativa com a mesma finalidade para este sujeito.", "livestock.restriction_overlap");
+        }
+        var id = Guid.CreateVersion7();
+        await Consume(c, t, command.WarehouseId, command.ProductId, command.Dose, command.Unit, id, "HEALTH_EVENT", ct);
+        await c.ExecuteAsync(new CommandDefinition(
+            """
+            insert into agro360.livestock_health_events(id,tenant_id,animal_id,herd_id,event_type,occurred_on,dose,unit,product_id,withdrawal_until,next_application,technician,diagnosis,notes,cost_amount,created_by,protocol_id,protocol_version_label,idempotency_key)
+            values(@Id,@TenantId,@AnimalId,@HerdId,@Type,@AppliedOn,@Dose,@Unit,@ProductId,@Withdrawal,@NextApplication,@Technician,@Diagnosis,@Notes,0,@UserId,@ProtocolId,@ProtocolVersion,@IdempotencyKey);
+            update agro360.livestock_animals set withdrawal_until=greatest(coalesce(withdrawal_until,@Withdrawal),@Withdrawal),version=version+1,updated_at=now() where tenant_id=@TenantId and id=@AnimalId
+            """,
+            new { Id = id, tenant.TenantId, command.AnimalId, command.HerdId, command.Type, command.AppliedOn, command.Dose, command.Unit, command.ProductId, Withdrawal = command.AppliedOn.AddDays(withdrawalDays), command.NextApplication, command.Technician, command.Diagnosis, command.Notes, tenant.UserId, ProtocolId = protocolId, ProtocolVersion = protocolVersion, IdempotencyKey = key }, t, cancellationToken: ct));
+        if (createRestriction)
+        {
+            await c.ExecuteAsync(new CommandDefinition(
+                """
+                insert into agro360.livestock_restrictions(id,tenant_id,animal_id,herd_id,purpose,protocol_id,source_event_id,reason,started_on,expected_until,status,demo_only,created_by)
+                values(@Id,@TenantId,@AnimalId,@HerdId,@Purpose,@ProtocolId,@EventId,@Reason,@On,@Until,'ACTIVE',@DemoOnly,@UserId)
+                """,
+                new { Id = Guid.CreateVersion7(), tenant.TenantId, command.AnimalId, command.HerdId, Purpose = restrictionPurpose, ProtocolId = protocolId, EventId = id, Reason = restrictionReason, On = command.AppliedOn, Until = command.AppliedOn.AddDays(withdrawalDays), DemoOnly = restrictionDemo, tenant.UserId }, t, cancellationToken: ct));
+        }
+        await Audit(c, t, "create", "HealthEvent", id, command, ct);
+        return id;
+    });
+
+    // P4: agenda de sanidade sobre o ledger de eventos (next_application + índice ix_health_due).
+    // Sem tabela nova; tratamentos v1 (/api/v1/.../treatments) não geram follow-up (documentado).
+    public Task<IReadOnlyList<dynamic>> AgendaAsync(Guid? farmId, DateOnly? from, DateOnly? until, bool overdueOnly, CancellationToken ct) =>
+        Tx<IReadOnlyList<dynamic>>(async (c, t) => (await c.QueryAsync(new CommandDefinition("""
+            select h.id, h.animal_id as "animalId", a.tag as "animalTag", h.herd_id as "herdId", hr.name as "herdName",
+                   h.event_type as "eventType", h.occurred_on as "occurredOn",
+                   p.name as "protocolName", p.version_label as "protocolVersion",
+                   h.next_application as "dueDate",
+                   case when h.next_application < current_date then 'OVERDUE'
+                        when h.next_application = current_date then 'DUE_TODAY'
+                        else 'UPCOMING' end as "state"
+            from agro360.livestock_health_events h
+            left join agro360.livestock_animals a on a.id=h.animal_id and a.tenant_id=h.tenant_id
+            left join agro360.livestock_herds hr on hr.id=h.herd_id and hr.tenant_id=h.tenant_id
+            left join agro360.livestock_health_protocols p on p.id=h.protocol_id and p.tenant_id=h.tenant_id
+            where h.tenant_id=@TenantId and h.next_application is not null
+              and (@FarmId is null or coalesce(a.farm_id,hr.farm_id)=@FarmId)
+              and (@From is null or h.next_application>=@From)
+              and (@Until is null or h.next_application<=@Until)
+              and (@OverdueOnly=false or h.next_application<=current_date)
+            order by h.next_application, h.id
+            """, new { tenant.TenantId, FarmId = farmId, From = from, Until = until, OverdueOnly = overdueOnly }, t, cancellationToken: ct))).AsList());
     public Task<Guid> AddReproductionAsync(ReproductionEventCommand command, CancellationToken ct) => Tx<Guid>(async (c, t) => { var female = await c.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition("select sex,status,species,farm_id from agro360.livestock_animals where tenant_id=@TenantId and id=@Id for update", new { tenant.TenantId, Id = command.FemaleId }, t, cancellationToken: ct)) ?? throw new NotFoundException("Matriz", command.FemaleId); if (!new[] { "F", "FEMALE", "FEMEA", "FÊMEA" }.Contains(((string)female.sex).ToUpperInvariant())) throw new DomainException("Somente fêmeas podem receber evento reprodutivo.", "agro360.livestock_female_required"); if ((short)female.status is not (1 or 2 or 6)) throw new ConflictException("Matriz não está ativa."); var type = command.Type.ToUpperInvariant(); if (type is "INSEMINATION" or "NATURAL_SERVICE") { var active = await c.ExecuteScalarAsync<bool>(new CommandDefinition("select exists(select 1 from agro360.livestock_reproduction_cycles where tenant_id=@TenantId and female_id=@FemaleId and status='ACTIVE')", new { tenant.TenantId, command.FemaleId }, t, cancellationToken: ct)); if (active) throw new ConflictException("Já existe ciclo reprodutivo ativo.", "agro360.livestock_reproduction_conflict"); } var id = Guid.CreateVersion7(); DateOnly? due = type == "PREGNANCY_DIAGNOSIS" && command.Positive == true ? command.OccurredOn.AddDays(GestationDays((string)female.species)) : null; await c.ExecuteAsync(new CommandDefinition("insert into agro360.livestock_reproduction_events(id,tenant_id,female_id,sire_id,event_type,occurred_on,genetic_lot,positive,expected_birth_on,notes,created_by) values(@Id,@TenantId,@FemaleId,@SireId,@Type,@OccurredOn,@GeneticLot,@Positive,@Due,@Notes,@UserId); insert into agro360.livestock_reproduction_cycles(id,tenant_id,female_id,started_on,status,expected_birth_on,created_by) select @Cycle,@TenantId,@FemaleId,@OccurredOn,'ACTIVE',@Due,@UserId where @Type in('INSEMINATION','NATURAL_SERVICE'); update agro360.livestock_reproduction_cycles set expected_birth_on=@Due,status=case when @Positive=false then 'CLOSED' else status end,updated_at=now() where tenant_id=@TenantId and female_id=@FemaleId and status='ACTIVE' and @Type='PREGNANCY_DIAGNOSIS'; update agro360.livestock_reproduction_cycles set status='CLOSED',ended_on=@OccurredOn,updated_at=now() where tenant_id=@TenantId and female_id=@FemaleId and status='ACTIVE' and @Type in('BIRTH','ABORTION')", new { Id = id, tenant.TenantId, command.FemaleId, command.SireId, Type = type, command.OccurredOn, command.GeneticLot, command.Positive, Due = due, command.Notes, tenant.UserId, Cycle = Guid.CreateVersion7() }, t, cancellationToken: ct)); if (type == "BIRTH" && command.CreateCalf) { if (string.IsNullOrWhiteSpace(command.CalfTag)) throw new DomainException("Identificação da cria é obrigatória.", "agro360.livestock_calf_tag_required"); await c.ExecuteAsync(new CommandDefinition("insert into agro360.livestock_animals(id,tenant_id,farm_id,tag,species,breed,sex,birth_date,mother_id,status,created_at,created_by,version) values(@Calf,@TenantId,@Farm,@Tag,@Species,'NÃO INFORMADA','U',@Born,@Mother,1,now(),@UserId,1)", new { Calf = Guid.CreateVersion7(), tenant.TenantId, Farm = (Guid)female.farm_id, Tag = command.CalfTag, Species = (string)female.species, Born = command.OccurredOn, Mother = command.FemaleId, tenant.UserId }, t, cancellationToken: ct)); } await Audit(c, t, "create", "ReproductionEvent", id, command, ct); return id; });
     public Task<IReadOnlyList<dynamic>> ListNutritionPlansAsync(CancellationToken ct) => List("select p.*,coalesce(sum(i.quantity_per_day*i.unit_cost),0) daily_cost from agro360.livestock_nutrition_plans p left join agro360.livestock_nutrition_plan_items i on i.plan_id=p.id where p.tenant_id=@TenantId group by p.id order by p.starts_on desc", ct);
     public Task<Guid> AddNutritionPlanAsync(NutritionPlanCommand command, CancellationToken ct) => Tx<Guid>(async (c, t) => { if (command.Items.Count == 0 || command.Items.Any(i => i.QuantityPerDay <= 0 || i.UnitCost < 0)) throw new DomainException("Dieta deve possuir itens válidos.", "agro360.livestock_diet_invalid"); var id = Guid.CreateVersion7(); await c.ExecuteAsync(new CommandDefinition("insert into agro360.livestock_nutrition_plans(id,tenant_id,farm_id,herd_id,name,starts_on,ends_on,status,created_by) values(@Id,@TenantId,@FarmId,@HerdId,@Name,@StartsOn,@EndsOn,'ACTIVE',@UserId)", new { Id = id, tenant.TenantId, command.FarmId, command.HerdId, command.Name, command.StartsOn, command.EndsOn, tenant.UserId }, t, cancellationToken: ct)); foreach (var i in command.Items) await c.ExecuteAsync(new CommandDefinition("insert into agro360.livestock_nutrition_plan_items(id,tenant_id,plan_id,product_id,quantity_per_day,unit,unit_cost) values(@Id,@TenantId,@Plan,@ProductId,@QuantityPerDay,@Unit,@UnitCost)", new { Id = Guid.CreateVersion7(), tenant.TenantId, Plan = id, i.ProductId, i.QuantityPerDay, i.Unit, i.UnitCost }, t, cancellationToken: ct)); await Audit(c, t, "create", "NutritionPlan", id, command, ct); return id; });
@@ -82,7 +254,7 @@ public sealed class Livestock360Service(DatabaseExecutor db, ITenantContext tena
         select id, farm_id as "FarmId", tag, rfid, species, breed, sex,
                birth_date as "BirthDate",
                case status when 1 then 'ACTIVE' when 2 then 'QUARANTINE'
-                   when 3 then 'SOLD' when 4 then 'DEAD' when 6 then 'RESERVED' else 'SLAUGHTERED' end as "Status",
+                   when 3 then 'SOLD' when 4 then 'DEAD' when 6 then 'RESERVED' else 'DISCARDED' end as "Status",
                current_weight_kg as "CurrentWeightKg", last_weight_date as "LastWeightDate",
                withdrawal_until as "WithdrawalUntil", version
         from agro360.livestock_animals
@@ -123,7 +295,8 @@ public sealed class Livestock360Service(DatabaseExecutor db, ITenantContext tena
         select count(*) from agro360.livestock_handling_events
         where tenant_id=@TenantId and weight_kg is not null and occurred_on>=current_date-interval '30 days';
         select count(*) from agro360.livestock_restrictions
-        where tenant_id=@TenantId and status='ACTIVE';
+        where tenant_id=@TenantId and status='ACTIVE'
+          and (expected_until is null or expected_until >= current_date);
         select count(*) from agro360.livestock_sale_reservations
         where tenant_id=@TenantId and status='ACTIVE';
         select count(*) filter(where movement_kind='ENTRY') as entries,

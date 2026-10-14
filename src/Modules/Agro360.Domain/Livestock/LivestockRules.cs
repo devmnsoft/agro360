@@ -11,6 +11,8 @@ public static class LivestockRules
     public static readonly string[] HandlingOrderStatuses = ["DRAFT", "SCHEDULED", "RELEASED", "IN_PROGRESS", "PAUSED", "COMPLETED", "CANCELLED"];
     public static readonly string[] HandlingOutcomes = ["PLANNED", "ATTENDED", "NOT_ATTENDED", "BLOCKED", "FAILED"];
     public static readonly string[] RestrictionPurposes = ["MILK", "SLAUGHTER", "SALE", "OPERATIONAL"];
+    // P4: o protocolo carrega um purpose extra (DEMO) que nunca vira restricao operacional.
+    public static readonly string[] ProtocolPurposes = ["MILK", "SLAUGHTER", "SALE", "OPERATIONAL", "DEMO"];
     public static readonly string[] CostNatures = ["REALIZED", "COMMITMENT", "ESTIMATE"];
     public static readonly short[] OnFarmStatuses = [1, 2, 6];
     public static readonly short[] TerminalStatuses = [3, 4, 5];
@@ -26,6 +28,29 @@ public static class LivestockRules
     {
         if (TerminalStatuses.Contains(status))
             throw new ConflictException($"Não é possível {operation} um animal já vendido, morto ou descartado.", "livestock.animal_not_active");
+    }
+
+    // P2: tipo de movimentacao validado contra o conjunto fechado do endpoint. RECONCILE e
+    // REVERSAL sao exclusivos de fluxos internos/sistema (nao chegam pelo endpoint publico);
+    // o grupo por quantidade nao aceita LOT_CHANGE/LOCATION_CHANGE.
+    public static void EnsureMovementKind(string kind, bool herdSubject)
+    {
+        var allowed = herdSubject
+            ? new[] { "ENTRY", "EXIT", "TRANSFER", "ADJUST" }
+            : MovementKinds.Where(k => k != "REVERSAL").ToArray();
+        if (!allowed.Contains(kind, StringComparer.OrdinalIgnoreCase))
+            throw new DomainException(herdSubject
+                ? "Tipo de movimentação inválido para grupo por quantidade."
+                : "Tipo de movimentação inválido.", "livestock.movement_kind_invalid");
+    }
+
+    // P2: motivo do catalogo validado contra a direcao da operacao quando a direcao e expressa
+    // (ENTRY/EXIT/TRANSFER/ADJUST). LOT_CHANGE/LOCATION_CHANGE aceitam qualquer motivo ativo.
+    public static void EnsureReasonDirection(string kind, string reason, string direction)
+    {
+        if (kind is not ("ENTRY" or "EXIT" or "TRANSFER" or "ADJUST")) return;
+        if (!string.Equals(direction, kind, StringComparison.OrdinalIgnoreCase))
+            throw new DomainException($"O motivo {reason} é classificado como {direction} e não se aplica à operação {kind}.", "livestock.reason_direction_mismatch");
     }
 
     public static void EnsureEventNotBeforeBirth(DateOnly occurredOn, DateOnly birthDate, bool estimated)
@@ -131,5 +156,41 @@ public static class LivestockRules
         var first = value[0];
         if (first is '=' or '+' or '-' or '@' or '\t')
             value = "'" + value;
+    }
+
+    // P4: finalidade do protocolo validada contra o conjunto fechado (CHECK do banco).
+    public static void EnsureProtocolPurpose(string purpose)
+    {
+        if (!ProtocolPurposes.Contains(purpose, StringComparer.OrdinalIgnoreCase))
+            throw new DomainException("Finalidade de sanidade inválida para o protocolo.", "livestock.protocol_purpose_invalid");
+    }
+
+    // P4: janela de validade coerente — valid_until, quando informada, não pode anteceder valid_from.
+    public static void EnsureProtocolWindow(DateOnly validFrom, DateOnly? validUntil)
+    {
+        if (validUntil.HasValue && validUntil.Value < validFrom)
+            throw new DomainException("O fim da vigência não pode ser anterior ao início.", "livestock.protocol_window_invalid");
+    }
+
+    // P4: carência declarada no protocolo (fonte do catálogo quando o protocolo é referenciado).
+    public static int EnsureWithdrawalDays(int withdrawalDays)
+    {
+        if (withdrawalDays < 0)
+            throw new DomainException("A carência não pode ser negativa.", "livestock.protocol_withdrawal_invalid");
+        return withdrawalDays;
+    }
+
+    // P4: motivo da restricao derivado de dados do protocolo (nome <=160 + versao <=40); garante o teto de 240.
+    public static string EnsureReasonLength(string reason, int max) =>
+        reason.Length <= max ? reason : reason.AsSpan(0, max).TrimEnd().ToString();
+
+    // P4: estado EFETIVO da restricao. O status gravado (ACTIVE/RELEASED/EXPIRED) e fonte unica;
+    // "ACTIVE" com expected_until vencida passa a valer como EXPIRED em bloqueios, KPIs e listas,
+    // sem reescrever o historico (correcao do seed ...153: 2026-09-25 vencida seguia bloqueando).
+    public static string EffectiveRestrictionStatus(string status, DateOnly? expectedUntil, DateOnly today)
+    {
+        if (status is "RELEASED" or "EXPIRED") return status;
+        if (expectedUntil.HasValue && expectedUntil.Value < today) return "EXPIRED";
+        return status;
     }
 }

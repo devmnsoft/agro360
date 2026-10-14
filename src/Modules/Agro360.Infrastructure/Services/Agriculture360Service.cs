@@ -187,6 +187,7 @@ public sealed class Agriculture360Service(DatabaseExecutor database, ITenantCont
              count(*) filter(where module='field-notes' and status='COMPLETED' and updated_at>=date_trunc('month',now())) CompletedThisMonth,
              sum((data->>'estimatedCost')::numeric) filter(where status not in ('CANCELLED','CLOSED')) PlannedCost,
              (select sum(e.recognized_amount) from agro360.cost_management_entries e where e.tenant_id=@TenantId and (@FarmId::uuid is null or e.farm_id=@FarmId)) RecognizedCost,
+              (select sum(e.recognized_amount-e.reversed_amount) from agro360.cost_management_entries e where e.tenant_id=@TenantId and (@FarmId::uuid is null or e.farm_id=@FarmId)) RecognizedNetCost,
              coalesce((select sum(op.covered_area_ha) from agro360.agriculture_operation_orders op
                        join agro360.agriculture_plan_operations po on po.tenant_id=op.tenant_id and po.id=op.operation_id
                        join agro360.agriculture_records wo on wo.tenant_id=op.tenant_id and wo.id=op.work_order_id
@@ -226,7 +227,7 @@ public sealed class Agriculture360Service(DatabaseExecutor database, ITenantCont
             core.PlannedCost, core.RecognizedCost,
             core.RecognizedCost.HasValue && core.ExecutedAreaHa > 0 ? Agro360.Domain.Finance.SeasonCostRules.RoundMoney(core.RecognizedCost.Value / core.ExecutedAreaHa) : null,
             core.OpenOccurrences, core.CriticalOccurrences, inputs,
-            core.Applications, core.Irrigations, core.ExpectedProduction, core.ActualProduction, alerts);
+            core.Applications, core.Irrigations, core.ExpectedProduction, core.ActualProduction, alerts, core.RecognizedNetCost);
     }, cancellationToken);
 
     private static void Validate(string module, AgricultureCommand x) { Agriculture360Rules.Period(module == "work-orders" ? x.PlannedAt : x.StartedAt, x.FinishedAt); if (module is "field-notes" or "plans" or "scouting" or "recommendations" or "applications" or "irrigations" or "work-orders") Agriculture360Rules.Required(x.PropertyId, "Propriedade"); if (module == "field-notes") Agriculture360Rules.Required(x.CropSeasonId, "Safra"); if (module is "field-notes" or "scouting" or "applications" or "irrigations" or "work-orders") Agriculture360Rules.Required(x.FieldId, "Talhão"); if (module == "plans") { Agriculture360Rules.Required(x.CropSeasonId, "Safra"); Agriculture360Rules.Required(x.CropId, "Cultura"); Agriculture360Rules.UniqueFields(x.FieldIds); } if (module == "applications") { Agriculture360Rules.Required(x.InventoryItemId, "Produto"); Agriculture360Rules.Positive(x.Dose, "Dose"); } if (module == "irrigations") Agriculture360Rules.Positive(x.Area, "Área"); if (module == "weather-records") { Agriculture360Rules.Required(x.PropertyId, "Propriedade"); Agriculture360Rules.Weather(x.Rainfall, x.Temperature, x.Humidity, x.Wind); } if (module == "work-orders" && x.Status == "COMPLETED") Agriculture360Rules.Required(x.ResponsibleId, "Responsável"); if (module == "scouting" && !new[] { "LOW", "MEDIUM", "HIGH", "CRITICAL" }.Contains(x.Severity)) throw new DomainException("Selecione uma severidade válida.", "agro360.agriculture_severity_invalid"); }
@@ -245,6 +246,7 @@ public sealed class Agriculture360Service(DatabaseExecutor database, ITenantCont
         public long CompletedThisMonth { get; init; }
         public decimal? PlannedCost { get; init; }
         public decimal? RecognizedCost { get; init; }
+        public decimal? RecognizedNetCost { get; init; }
         public decimal ExecutedAreaHa { get; init; }
         public decimal? ExpectedProduction { get; init; }
         public decimal? ActualProduction { get; init; }

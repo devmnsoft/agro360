@@ -34,15 +34,28 @@ public sealed class IntegratedEvolutionIntegrityTests
     [Fact]
     public void JourneyWritersNeverWriteFinancialOrFiscalTables()
     {
-        // Sem simular NF/credito/pagamento: os writers da jornada comercial/logistica nao escrevem em finance_*/fiscal_*.
+        // Sem simular NF/credito/pagamento: o writer comercial nao escreve em finance_*/fiscal_* e a SAIDA FISICA
+        // (dispatch) continua sem escritura financeira. Bloco B (2026-10-12): o recebivel e emitido SOMENTE no
+        // aceite formal (RecordDeliveryAttemptAsync) — um titulo OPEN por quantidade aceita, nunca liquidado
+        // automaticamente, simetria de Compras; a migration 139 garante no maximo UM recebeivel por tentativa.
         var commercial = Read("src/Modules/Agro360.Infrastructure/Services/Commercial360Service.cs");
         var logistics = Read("src/Modules/Agro360.Infrastructure/Services/LogisticsService.cs");
-        foreach (var source in new[] { commercial, logistics })
+        foreach (var source in new[] { commercial })
         {
             Assert.DoesNotContain("finance_", source, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("fiscal_", source, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("saas_billing", source, StringComparison.OrdinalIgnoreCase);
         }
+        var dispatch = MethodSlice(logistics, "public Task DispatchFulfillmentAsync(Guid id", "public Task<Guid> RecordDeliveryAttemptAsync(Guid id");
+        foreach (var source in new[] { dispatch })
+        {
+            Assert.DoesNotContain("finance_", source, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("fiscal_", source, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("saas_billing", source, StringComparison.OrdinalIgnoreCase);
+        }
+        var acceptance = MethodSlice(logistics, "public Task<Guid> RecordDeliveryAttemptAsync(Guid id", "public Task<Guid> RegisterReturnAsync(ReturnCommand command");
+        Assert.Contains("insert into agro360.finance_receivables", acceptance, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("fulfillment_attempt_id", acceptance, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

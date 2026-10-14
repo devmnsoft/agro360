@@ -183,7 +183,7 @@ public sealed class CycleVerificationService(
             // 7. Apropriação de Custo da Safra
             var entryId = await db.InTenantTransactionAsync(async (c, t) =>
                 await c.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition(
-                    "select id from agro360.cost_management_entries where tenant_id=@TenantId and source_key=@Key and allocated_amount < recognized_amount limit 1",
+                    "select id from agro360.cost_management_entries where tenant_id=@TenantId and source_key=@Key and allocated_amount < (recognized_amount - reversed_amount) limit 1",
                     new { tenant.TenantId, Key = orderId }, t, cancellationToken: ct)), ct);
 
             if (entryId.HasValue)
